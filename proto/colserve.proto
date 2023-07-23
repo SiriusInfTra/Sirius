@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+service ColServe {
+    rpc GetServerStatus(EmptyRequest) returns (ServerStatus) {}
+
+    rpc Shutdown(EmptyRequest) returns (EmptyRequest) {}
+
+    rpc Inference(InferRequest) returns (InferResult) {}
+
+    rpc Train(TrainRequest) returns (TrainResult) {}
+}
+
+message EmptyRequest {}
+
+message ServerStatus {
+    string status = 1;
+}
+
+message InferRequest {
+    string model = 1;
+    repeated int64 input_shape = 2 [packed=true];
+    bytes input = 3;
+}
+
+message InferResult {
+    string result = 1;
+}
+
+message TrainRequest {
+    string model = 1;
+}
+
+message TrainResult {
+    string result = 1;
+}
