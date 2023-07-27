@@ -1,9 +1,9 @@
-#include <glog/logging.h>
 #include <thread>
 #include <pthread.h>
 
-#include "grcp_server.h"
 #include "../model_store.h"
+#include "grcp_server.h"
+
 
 namespace colserve {
 namespace network {
@@ -115,6 +115,16 @@ void InferHandler::Stop() {
   LOG(INFO) << "InferHandler stop";
 }
 
+DLDataType InferHandler::InferData::GetInputDType() {
+  if (request_.input_dtype() == "float32") {
+    return DLDataType{kDLFloat, 32, 1};
+  } else if (request_.input_dtype() == "int8") {
+    return DLDataType{kDLInt, 8, 1};
+  } else {
+    LOG(FATAL) << "InferData: " << "Unknown input dtype " << request_.input_dtype();
+  }
+}
+
 std::vector<int64_t> InferHandler::InferData::GetInputShape() {
   std::vector<int64_t> shape;
   for (size_t i = 0; i < request_.input_shape_size(); ++i) {
@@ -128,9 +138,10 @@ bool InferHandler::InferData::Process(bool ok) {
   {
   case Status::kCreate:
     new InferData{id_ + 1, name_, service_, cq_};
-    LOG(INFO) << "Process InferData [Id " << id_ << "]";
+    LOG(INFO) << "Process InferData [" << GetModelName() << ", Id " << id_ << "]";
     status_ = Status::kFinish;
-    ModelStore::Get()->GetModel("dummy")->AddJob(this);
+    // ModelStore::Get()->GetModel("dummy")->AddJob(this);
+    ModelStore::Get()->GetModel(GetModelName())->AddJob(this);
     return true;
   case Status::kFinish:
     delete this;

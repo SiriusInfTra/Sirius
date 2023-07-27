@@ -18,8 +18,9 @@ message ServerStatus {
 
 message InferRequest {
     string model = 1;
-    repeated int64 input_shape = 2 [packed=true];
-    bytes input = 3;
+    string input_dtype = 2;
+    repeated int64 input_shape = 3 [packed=true];
+    bytes input = 4;
 }
 
 message InferResult {

@@ -5,3 +5,8 @@ build/
 .onnx
 
 models/*/
+
+.pkl_memoize_py3/
+
+.png
+.bin

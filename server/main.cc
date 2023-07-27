@@ -1,4 +1,5 @@
 #include <iostream>
+#include "model_store.h"
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/health_check_service_interface.h>
@@ -6,7 +7,6 @@
 
 #include "grpc/grcp_server.h"
 #include "colserve.grpc.pb.h"
-#include "model_store.h"
 
 
 int main(int argc, char *argv[]) {

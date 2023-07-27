@@ -1,6 +1,8 @@
 #include <iostream>
 #include <grpcpp/grpcpp.h>
 #include <chrono>
+#include <fstream>
+#include <glog/logging.h>
 
 #include "colserve.grpc.pb.h"
 
@@ -44,18 +46,25 @@ class Client {
     }
   }
   
-  std::string Infer() {
+  std::string Infer(const std::string &data_path) {
     InferRequest request;
     InferResult infer_result;
 
-    auto input = std::vector<float>(224 * 224 * 3, 1.0);
+    // auto input = std::vector<float>(224 * 224 * 3, 1.0);
+    std::ifstream data_file{data_path, std::ios::binary};
+    CHECK(data_file.good()) << "data " << data_path << " not exist";
+    std::string data{std::istreambuf_iterator<char>(data_file), std::istreambuf_iterator<char>()};
+    data_file.close();
 
-    request.set_model("resnet50");
-    request.set_input_shape(0, 1);
-    request.set_input_shape(1, 3);
-    request.set_input_shape(2, 224);
-    request.set_input_shape(3, 224);
-    request.set_input(input.data(), input.size() * sizeof(float));
+    request.set_model("mnist");
+    request.set_input_dtype("float32");
+    request.add_input_shape(1);
+    request.add_input_shape(1);
+    request.add_input_shape(28);
+    request.add_input_shape(28);
+    request.set_input(data.data(), data.size() * sizeof(char));
+
+    LOG(INFO) << "set input done";
 
     grpc::ClientContext context;
     grpc::Status status = stub_->Inference(&context, request, &infer_result);
@@ -88,7 +97,7 @@ int main() {
   std::cout << client.DummyInfer() << std::endl;
 
   begin = std::chrono::steady_clock::now();
-  reply = client.Infer();
+  reply = client.Infer("data/mnist/0.bin");
   end = std::chrono::steady_clock::now();
   std::cout << "recv: " << reply << " "
             << std::chrono::duration<double, std::milli>(end - begin).count()

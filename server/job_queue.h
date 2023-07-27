@@ -15,8 +15,9 @@ namespace colserve {
 
 class Job {
  public:
-  virtual network::InferHandler::InferData* GetInferData() { LOG(FATAL) << "not implemented"; };
-  virtual network::TrainHandler::TrainData* GetTrainData() { LOG(FATAL) << "not implemented"; };
+  virtual network::InferHandler::InferData* GetInferData() { LOG(FATAL) << "not implemented"; }
+  virtual network::TrainHandler::TrainData* GetTrainData() { LOG(FATAL) << "not implemented"; }
+  virtual std::ostream& Print(std::ostream& os) const { LOG(FATAL) << "not implemented"; }
  protected:
 };
 
@@ -27,7 +28,10 @@ class InferJob : public Job {
 
  private:
   network::InferHandler::InferData* data_;
+  virtual std::ostream& Print(std::ostream& os) const;
 };
+
+std::ostream& operator<<(std::ostream& os, const std::shared_ptr<Job>& job);
 
 class JobQueue {
  public:

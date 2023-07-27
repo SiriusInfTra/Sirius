@@ -1,7 +1,9 @@
 #ifndef COLSERVE_GRPC_SERVER_H
 #define COLSERVE_GRPC_SERVER_H
 
+#include <dlpack/dlpack.h>
 #include <grpc++/grpc++.h>
+#include <glog/logging.h>
 #include <thread>
 
 #include "colserve.grpc.pb.h"
@@ -38,7 +40,7 @@ class GRPCServer {
         : id_(id), name_(name), service_(service), cq_(cq) {}
     virtual bool Process(bool ok) = 0;
     uint64_t GetId() { return id_; }
-    std::string_view GetName() { return name_; }
+    const std::string& GetName() { return name_; }
    protected:
     const uint64_t id_;
     const std::string name_;
@@ -89,7 +91,7 @@ class CommonHandler : public GRPCServer::Handler {
           new CommonData<RequestType, ResponseType>{
               id_ + 1, name_, service_, cq_, register_func_, execute_func_};
           status_ = Status::kFinish;
-          LOG(INFO) << "Process CommonData [" << name_ << " Id " << id_ << "]";
+          LOG(INFO) << "Process CommonData [" << name_ << ", Id " << id_ << "]";
           execute_func_(this);
           return true;
         }
@@ -139,8 +141,9 @@ class InferHandler : public GRPCServer::Handler {
     }
     
     bool Process(bool ok) override;
-    std::string_view GetModelName() { return request_.model(); }
+    const std::string& GetModelName() { return request_.model(); }
     const char* GetInput() { return request_.input().c_str(); }
+    DLDataType GetInputDType();
     std::vector<int64_t> GetInputShape();
     size_t GetInputBytes() { return request_.input().size(); }
     InferResult& GetResponse() { return response_; }
