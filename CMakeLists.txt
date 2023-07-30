@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.26)
+cmake_minimum_required(VERSION 3.24)
 project(colserve)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -54,14 +54,14 @@ target_link_libraries(proto ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOB
 
 # add tvm runtime
 include_directories(
-  $ENV{HOME}/tvm/include
-  $ENV{HOME}/tvm/3rdparty/dmlc-core/include
-  $ENV{HOME}/tvm/3rdparty/dlpack/include
+  ${TVM_HOME}/include
+  ${TVM_HOME}/3rdparty/dmlc-core/include
+  ${TVM_HOME}/3rdparty/dlpack/include
 )
 
 link_directories(
-  $ENV{HOME}/tvm/build
-  $ENV{HOME}/tvm/3rdparty/dmlc-core/build
+  ${TVM_HOME}/build
+  ${TVM_HOME}/3rdparty/dmlc-core/build
 )
 
 
