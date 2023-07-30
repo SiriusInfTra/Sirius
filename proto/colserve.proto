@@ -16,6 +16,12 @@ message ServerStatus {
     string status = 1;
 }
 
+message TensorMsg {
+    string dtype = 1;
+    repeated int64 shape = 2;
+    bytes data = 3;
+}
+
 message InferRequest {
     string model = 1;
     string input_dtype = 2;
@@ -24,6 +30,7 @@ message InferRequest {
 }
 
 message InferResult {
+    repeated int64 output_shape = 1
     string result = 1;
 }
 
