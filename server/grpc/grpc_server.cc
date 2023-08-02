@@ -1,8 +1,9 @@
 #include <thread>
 #include <pthread.h>
 
-#include "../model_store.h"
+#include "../model_infer_store.h"
 #include "grcp_server.h"
+#include "../model_train_store.h"
 
 
 namespace colserve {
@@ -115,22 +116,54 @@ void InferHandler::Stop() {
   LOG(INFO) << "InferHandler stop";
 }
 
-DLDataType InferHandler::InferData::GetInputDType() {
-  if (request_.input_dtype() == "float32") {
+
+
+DLDataType InferHandler::InferData::GetInputDType(size_t i) {
+  if (request_.inputs(i).dtype() == "float32") {
     return DLDataType{kDLFloat, 32, 1};
-  } else if (request_.input_dtype() == "int8") {
+  } else if (request_.inputs(i).dtype() == "int8") {
     return DLDataType{kDLInt, 8, 1};
   } else {
-    LOG(FATAL) << "InferData: " << "Unknown input dtype " << request_.input_dtype();
+    LOG(FATAL) << "InferData: " << "Unknown input dtype " << request_.inputs(i).dtype();
   }
 }
 
-std::vector<int64_t> InferHandler::InferData::GetInputShape() {
+std::vector<int64_t> InferHandler::InferData::GetInputShape(size_t i) {
   std::vector<int64_t> shape;
-  for (size_t i = 0; i < request_.input_shape_size(); ++i) {
-    shape.push_back(request_.input_shape(i));
+  for (size_t j = 0; j < request_.inputs(i).shape().size(); ++j) {
+    shape.push_back(request_.inputs(i).shape(j));
   }
   return shape;
+}
+
+const char* InferHandler::InferData::GetInputData(size_t i) {
+  return request_.inputs(i).data().c_str();
+}
+
+size_t InferHandler::InferData::GetInputBytes(size_t i) {
+  return request_.inputs(i).data().size();
+}
+
+void InferHandler::InferData::AddOuput() {
+  response_.add_outputs();
+}
+
+void InferHandler::InferData::SetOutputDType(size_t i, const std::string &dtype) {
+  response_.mutable_outputs(i)->set_dtype(dtype);
+}
+
+void InferHandler::InferData::SetOutputShape(size_t i, const std::vector<int64_t> &shape) {
+  for (auto s : shape) {
+    response_.mutable_outputs(i)->add_shape(s);
+  }
+}
+
+void InferHandler::InferData::SetOutputData(size_t i, const char* data, size_t bytes) {
+  response_.mutable_outputs(i)->set_data(data, bytes);
+}
+
+std::string* InferHandler::InferData::MutableOutputData(size_t i) {
+  return response_.mutable_outputs(i)->mutable_data();
 }
 
 bool InferHandler::InferData::Process(bool ok) {
@@ -140,8 +173,8 @@ bool InferHandler::InferData::Process(bool ok) {
     new InferData{id_ + 1, name_, service_, cq_};
     LOG(INFO) << "Process InferData [" << GetModelName() << ", Id " << id_ << "]";
     status_ = Status::kFinish;
-    // ModelStore::Get()->GetModel("dummy")->AddJob(this);
-    ModelStore::Get()->GetModel(GetModelName())->AddJob(this);
+    // ModelInferStore::Get()->GetModel("dummy")->AddJob(this);
+    ModelInferStore::Get()->GetModel(GetModelName())->AddJob(this);
     return true;
   case Status::kFinish:
     delete this;
@@ -178,8 +211,27 @@ void TrainHandler::Stop() {
 }
 
 bool TrainHandler::TrainData::Process(bool ok) {
-  // TODO implement TrainData::Process
-  return false;
+    switch (status_)
+  {
+  case Status::kCreate:
+    new TrainData{id_ + 1, name_, service_, cq_};
+    LOG(INFO) << "Process TrainData [" << GetModelName() << ", Id " << id_ << "]";
+    status_ = Status::kFinish;
+    // ModelInferStore::Get()->GetModel("dummy")->AddJob(this);
+    // ModelInferStore::Get()->GetModel(GetModelName())->AddJob(this);
+    ModelTrainStore::Get()->AddJob(this);
+    return true;
+  case Status::kFinish:
+    delete this;
+    return true;
+  default:
+    return false;
+  }
+  return true;
+}
+
+void TrainHandler::TrainData::SetResult(const std::string &result) {
+  response_.set_result(result);
 }
 
 

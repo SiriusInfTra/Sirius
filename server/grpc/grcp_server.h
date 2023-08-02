@@ -142,10 +142,17 @@ class InferHandler : public GRPCServer::Handler {
     
     bool Process(bool ok) override;
     const std::string& GetModelName() { return request_.model(); }
-    const char* GetInput() { return request_.input().c_str(); }
-    DLDataType GetInputDType();
-    std::vector<int64_t> GetInputShape();
-    size_t GetInputBytes() { return request_.input().size(); }
+    DLDataType GetInputDType(size_t i);
+    std::vector<int64_t> GetInputShape(size_t i);
+    const char* GetInputData(size_t i);
+    size_t GetInputBytes(size_t i);
+
+    void AddOuput();
+    void SetOutputDType(size_t i, const std::string &dtype);
+    void SetOutputShape(size_t i, const std::vector<int64_t> &shape);
+    void SetOutputData(size_t i, const char* data, size_t bytes);
+    std::string* MutableOutputData(size_t i);
+
     InferResult& GetResponse() { return response_; }
     grpc::ServerAsyncResponseWriter<InferResult>& GetResponder() { return responder_; }
 
@@ -184,6 +191,14 @@ class TrainHandler : public GRPCServer::Handler {
     }
 
     bool Process(bool ok) override;
+    const std::string& GetModelName() { return request_.model(); }
+    // <Key>=<Value>, ...
+    const std::string& GetTrainArgs() { return request_.args(); }
+
+    void SetResult(const std::string& result);
+
+    TrainResult& GetResponse() { return response_; }
+    grpc::ServerAsyncResponseWriter<TrainResult>& GetResponder() { return responder_; }
     
     enum class Status { kCreate, kFinish };
     friend class TrainHandler;

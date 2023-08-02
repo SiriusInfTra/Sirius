@@ -21,6 +21,8 @@ class Job {
  protected:
 };
 
+std::ostream& operator<<(std::ostream& os, const std::shared_ptr<Job>& job);
+
 class InferJob : public Job {
  public:
   InferJob(network::InferHandler::InferData* data);
@@ -31,7 +33,15 @@ class InferJob : public Job {
   virtual std::ostream& Print(std::ostream& os) const;
 };
 
-std::ostream& operator<<(std::ostream& os, const std::shared_ptr<Job>& job);
+class TrainJob : public Job {
+ public:
+  TrainJob(network::TrainHandler::TrainData* data);
+  network::TrainHandler::TrainData* GetTrainData() override { return data_; }
+
+ private:
+  network::TrainHandler::TrainData* data_;
+  virtual std::ostream& Print(std::ostream& os) const;
+};
 
 class JobQueue {
  public:
@@ -50,7 +60,6 @@ class BatchJobQueue : public JobQueue {
 
  private:
   std::condition_variable put_job_;
-  std::queue<std::shared_ptr<Job>> queue_;
 };
 
 }

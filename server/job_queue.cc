@@ -20,6 +20,15 @@ std::ostream& InferJob::Print(std::ostream& os) const {
   return os;
 }
 
+TrainJob::TrainJob(network::TrainHandler::TrainData* data) 
+    : data_(data) {
+}
+
+std::ostream& TrainJob::Print(std::ostream& os) const {
+  os << "TrainJob [" << data_->GetModelName() << ", " << data_->GetId() << "]";
+  return os;
+}
+
 bool JobQueue::Put(const std::shared_ptr<Job> &job) {
   std::unique_lock lock{mutex_};
   queue_.push(job);

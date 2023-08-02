@@ -3,39 +3,42 @@
 #include <cstdlib>
 #include <iostream>
 #include <fstream>
+#include <chrono>
 
-#include "model_store.h"
+#include "model_infer_store.h"
 
 namespace colserve {
 
-std::unique_ptr<ModelStore> ModelStore::model_store_;
+std::unique_ptr<ModelInferStore> ModelInferStore::model_infer_store_;
 
-ModelStore* ModelStore::Get() {
-  if (model_store_ == nullptr) {
-    LOG(FATAL) << "ModelStore not initialized";
+ModelInferStore* ModelInferStore::Get() {
+  if (model_infer_store_ == nullptr) {
+    LOG(FATAL) << "ModelInferStore not initialized";
   }
-  return model_store_.get();
+  return model_infer_store_.get();
 }
 
-void ModelStore::Init(const std::filesystem::path &model_store_path) {
-  DLOG(INFO) << "ModelStore start initializing";
-  model_store_ = std::make_unique<ModelStore>();
-  model_store_->models_["dummy"] = std::make_unique<Model>();
+void ModelInferStore::Init(const std::filesystem::path &infer_store_path) {
+  DLOG(INFO) << "ModelInferStore start initializing";
+  model_infer_store_ = std::make_unique<ModelInferStore>();
+  model_infer_store_->models_["dummy"] = std::make_unique<Model>();
 
   std::map<std::string, std::string> models;
-  std::ifstream config_file(model_store_path / "config");
+  std::ifstream config_file(infer_store_path / "config");
   if (config_file.good()) {
     for (std::string line; std::getline(config_file, line);) {
       if (line.empty()) continue;
+      if (line[0] == '#') continue;
       std::istringstream iss(line);
       std::string model_name, device;
       iss >> model_name >> device;
       models[model_name] = device;
+      LOG(INFO) << model_name << " " << device;
     }
   }
 
   // mod.so, mod.json, mod.params should be in the model directory
-  for (const auto &entry : std::filesystem::directory_iterator(model_store_path)) {
+  for (const auto &entry : std::filesystem::directory_iterator(infer_store_path)) {
     if (entry.is_directory() && (models.empty() || models.count(entry.path().filename().string()))) {
       auto model_name = entry.path().filename().string();
       auto model_path = entry.path();
@@ -47,16 +50,16 @@ void ModelStore::Init(const std::filesystem::path &model_store_path) {
       } else {
         LOG(FATAL) << model_name << " unsupport device type " << models[model_name];
       }
-      model_store_->models_[model_name] = 
+      model_infer_store_->models_[model_name] = 
           std::make_unique<Model>(model_name, model_path, device);
-      LOG(INFO) << "ModelStore: "<< "Add " << model_name << ":" << models[model_name] << " into ModelStore";
+      LOG(INFO) << "ModelInferStore: "<< "Add " << model_name << ":" << models[model_name];
     }
   }
 
-  LOG(INFO) << "ModelStore initialized";
+  LOG(INFO) << "ModelInferStore initialized";
 }
 
-Model* ModelStore::GetModel(const std::string &name) {
+Model* ModelInferStore::GetModel(const std::string &name) {
   auto it = models_.find(name);
   if (it == models_.end()) {
     return nullptr;
@@ -128,7 +131,6 @@ void Model::InitMetaInfo() {
     DLOG(INFO) << "Model Input: " << name_ << " " << kv.first << " shape [ " << ss.str()  << "] dtype " << dtype;
   }
 
-  // TODO get output info
   TVMMap tvm_output_info =  graph_executor_.GetFunction("get_output_info")();
   shape_info = tvm::runtime::GetRef<TVMMap>(tvm_output_info["shape"].as<tvm::runtime::MapNode>());
   dtype_info = tvm::runtime::GetRef<TVMMap>(tvm_output_info["dtype"].as<tvm::runtime::MapNode>());
@@ -153,30 +155,50 @@ bool Model::Inference() {
     // tvm::runtime::NDArray input;
 
     bool err = false;
-    for (auto& input: input_info_) {
-      auto& input_id = input.first;
-      err = SetInput(input_id, jobs);
+    size_t idx = 0;
+
+    {
+      auto begin = std::chrono::steady_clock::now();
+      for (auto& input: input_info_) {
+        auto& input_id = input.first;
+        err = SetInput(idx++, input_id, jobs);
+      }
+      auto end = std::chrono::steady_clock::now();
+      DLOG(INFO) << "Inference SetInput: " << std::chrono::duration<double, std::milli>(end - begin).count();
     }
 
-    run_();
-
-    for (auto& output : output_info_) {
-      auto& output_id = output.first;
-      err = GetOutput(output_id, jobs);
+    {
+      auto begin = std::chrono::steady_clock::now();
+      run_();
+      auto end = std::chrono::steady_clock::now();
+      DLOG(INFO) << "Inference run: " << std::chrono::duration<double, std::milli>(end - begin).count();
     }
 
-    for (size_t i = 0; i < jobs.size(); i++) {
-      auto data = jobs[i]->GetInferData();
+    idx = 0;
+    {
+      auto begin = std::chrono::steady_clock::now();
+      for (auto& output : output_info_) {
+        for (auto& job : jobs)
+          job->GetInferData()->AddOuput();
+        auto& output_id = output.first;
+        err = GetOutput(idx++, output_id, jobs);
+      }
+      auto end = std::chrono::steady_clock::now();
+      DLOG(INFO) << "Inference GetOutput: " << std::chrono::duration<double, std::milli>(end - begin).count();
+    }
+
+    for (auto& job : jobs) {
+      auto data = job->GetInferData();
       data->GetResponder().Finish(data->GetResponse(), grpc::Status::OK, data);
-      LOG(INFO) << jobs[i] << " finished";
+      LOG(INFO) << job << " finished";
     }
   }
 }
 
-bool Model::SetInput(const std::string &input_id, const std::vector<std::shared_ptr<Job>> &jobs) {
+bool Model::SetInput(size_t idx, const std::string &input_id, const std::vector<std::shared_ptr<Job>> &jobs) {
   // check input shape
-  auto input_dtype = jobs[0]->GetInferData()->GetInputDType();
-  auto batch_shape = jobs[0]->GetInferData()->GetInputShape();
+  auto input_dtype = jobs[0]->GetInferData()->GetInputDType(idx);
+  auto batch_shape = jobs[0]->GetInferData()->GetInputShape(idx);
   batch_shape[0] = jobs.size();
   CHECK_EQ(batch_shape.size(), input_info_[input_id].first.size());
   for (size_t i = 0; i < batch_shape.size(); i++) {
@@ -187,21 +209,21 @@ bool Model::SetInput(const std::string &input_id, const std::vector<std::shared_
   tvm::runtime::NDArray input_arr = get_input_(input_id, device_);
   CHECK_EQ(input_arr.DataType(), tvm::runtime::DataType(input_dtype)) << "input dtype mismatch";
 
-  auto copy_batch_input_fn = [&jobs](void* data) {
+  auto copy_batch_input_fn = [&jobs](size_t idx, void* data) {
     size_t offset = 0;
-    for (size_t i = 0; i < jobs.size(); i++) {
+    for (auto job : jobs) {
       std::memcpy(static_cast<char*>(data) + offset,
-                  jobs[i]->GetInferData()->GetInput(),
-                  jobs[i]->GetInferData()->GetInputBytes());
+                  job->GetInferData()->GetInputData(idx),
+                  job->GetInferData()->GetInputBytes(idx));
     }
   };
 
   if (device_.device_type == kDLCPU) {
-      copy_batch_input_fn(input_arr->data);
+      copy_batch_input_fn(idx, input_arr->data);
   } else if (device_.device_type == kDLCUDA) {
     auto input_cpu = tvm::runtime::NDArray::Empty(
         input_info_[input_id].first, input_dtype, DLDevice{kDLCUDAHost, 0});
-    copy_batch_input_fn(input_cpu->data);
+    copy_batch_input_fn(idx, input_cpu->data);
     input_arr.CopyFrom(input_cpu);
   } else {
     LOG(FATAL) << "unsupport device type " << device_.device_type;
@@ -209,33 +231,19 @@ bool Model::SetInput(const std::string &input_id, const std::vector<std::shared_
   return true;
 }
 
-bool Model::GetOutput(const std::string &output_id, const std::vector<std::shared_ptr<Job>> &jobs) {
+bool Model::GetOutput(size_t idx, const std::string &output_id, const std::vector<std::shared_ptr<Job>> &jobs) {
   tvm::runtime::NDArray output_arr = get_output_(output_id);
-  tvm::runtime::NDArray output_cpu;
-  if (device_.device_type == kDLCPU) {
-    output_cpu = output_arr;
-  } else if (device_.device_type == kDLCUDA) {
-    output_cpu = output_arr.CopyTo(DLDevice{kDLCUDAHost, 0});
-  } else {
-    LOG(FATAL) << "unsupport device type " << device_.device_type;
-  }
-  CHECK_EQ(output_cpu.Shape()[0], jobs.size()) << "batch size mismatch";
-  for (size_t i = 0; i < jobs.size(); i++) {
-    auto data = jobs[i]->GetInferData();
-    
-
-    // // TODO hard code for mnist here, should be generalized
-    // int number = -1;
-    // float max_prob = -std::numeric_limits<float>::max();
-    // for (int i = 0; i < 10; i++) {
-    //   if (static_cast<float*>(output_cpu->data)[i] > max_prob) {
-    //     number = i;
-    //     max_prob = static_cast<float*>(output_cpu->data)[i];
-    //   }
-    // }
-    // LOG(INFO) << jobs[i] << " number " << number <<  " prob " << max_prob;
-    // data->GetResponse().set_result(
-    //     "result " + std::to_string(number));
+  CHECK_EQ(output_arr.Shape()[0], jobs.size()) << "batch size mismatch";
+  std::vector<int64_t> shape{output_arr.Shape().begin(), output_arr.Shape().end()};
+  shape[0] = 1;
+  for (auto& job : jobs) {
+    auto data = job->GetInferData();
+    data->SetOutputShape(idx, shape);
+    data->SetOutputDType(idx, tvm::runtime::DLDataType2String(output_arr.DataType()));
+    auto bytes = tvm::runtime::GetDataSize(*output_arr.operator->());
+    auto output = data->MutableOutputData(idx);
+    output->resize(bytes);
+    output_arr.CopyToBytes(output->data(), bytes);
   }
   return true;
 }

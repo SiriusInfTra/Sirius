@@ -64,12 +64,12 @@ link_directories(
   ${TVM_HOME}/3rdparty/dmlc-core/build
 )
 
-
 add_executable(${PROJECT_NAME} 
   server/main.cc
   server/grpc/grpc_server.cc
-  server/model_store.cc
   server/job_queue.cc
+  server/model_infer_store.cc
+  server/model_train_store.cc
 )
 target_link_libraries(${PROJECT_NAME} grpc++ proto glog::glog tvm_runtime)
 

@@ -1,5 +1,5 @@
-#ifndef COLSERVE_MODEL_STORE_H
-#define COLSERVE_MODEL_STORE_H
+#ifndef COLSERVE_MODEL_INFER_STORE_H
+#define COLSERVE_MODEL_INFER_STORE_H
 
 #include <iostream>
 #include <memory>
@@ -15,6 +15,7 @@
 #include <tvm/runtime/packed_func.h>
 #include <tvm/runtime/registry.h>
 #include <tvm/runtime/c_runtime_api.h>
+#include <tvm/runtime/device_api.h>
 
 #include "job_queue.h"
 #include "grpc/grcp_server.h"
@@ -23,15 +24,15 @@ namespace colserve {
 
 class Model;
 
-class ModelStore {
+class ModelInferStore {
  public:
-  static ModelStore* Get();
-  static void Init(const std::filesystem::path &model_store_path);
+  static ModelInferStore* Get();
+  static void Init(const std::filesystem::path &infer_store_path);
 
   Model* GetModel(const std::string &name);
 
  private:
-  static std::unique_ptr<ModelStore> model_store_;
+  static std::unique_ptr<ModelInferStore> model_infer_store_;
 
   std::unordered_map<std::string, std::unique_ptr<Model>> models_;
 };
@@ -45,8 +46,8 @@ class Model {
  private:
   void InitMetaInfo();
   bool Inference();
-  bool SetInput(const std::string &input_id, const std::vector<std::shared_ptr<Job>> &jobs);
-  bool GetOutput(const std::string &output_id, const std::vector<std::shared_ptr<Job>> &jobs);
+  bool SetInput(size_t idx, const std::string &input_id, const std::vector<std::shared_ptr<Job>> &jobs);
+  bool GetOutput(size_t idx, const std::string &output_id, const std::vector<std::shared_ptr<Job>> &jobs);
   
   std::string name_;
   DLDevice device_;
