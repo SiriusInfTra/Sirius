@@ -76,6 +76,9 @@ target_link_libraries(${PROJECT_NAME} grpc++ proto glog::glog tvm_runtime)
 add_executable(client client/client.cc)
 target_link_libraries(client grpc++ proto glog::glog)
 
+add_executable(hybrid_workload client/hybrid_workload.cc)
+target_link_libraries(hybrid_workload grpc++ proto glog::glog)
+
 
 
 

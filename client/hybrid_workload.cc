@@ -1,7 +1,10 @@
 #include <iostream>
 #include <vector>
 #include <memory>
+#include <fstream>
+#include <thread>
 #include <grpcpp/grpcpp.h>
+#include <glog/logging.h>
 
 #include "colserve.grpc.pb.h"
 
@@ -40,11 +43,14 @@ class Workload {
     }
   }
 
-  void Mnist(size_t req_per_sec) {
-    
+  void Mnist(size_t concurrency) {
+    static std::vector<std::string> mnist_input_datas;
+    if (mnist_input_datas.empty()) {
+      
+    }
   }
 
-  void Resnet(size_t req_per_sec) {
+  void Resnet(size_t concurrency) {
 
   }
   
@@ -54,7 +60,7 @@ class Workload {
 
  private:
   std::atomic<bool> running_{false};
-  std::vector<std::uniuqe_ptr<std::thread>> threads_;
+  std::vector<std::unique_ptr<std::thread>> threads_;
 
   std::unique_ptr<ColServe::Stub> stub_;
 };

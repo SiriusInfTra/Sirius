@@ -172,7 +172,7 @@ int main() {
 
   std::cout << client.DummyInfer() << std::endl;
 
-  auto mnist_data = ReadInput("data/mnist/input-0.bin");
+  auto mnist_data = ReadInput("data/mnist/input-7.bin");
   auto resnet_data = ReadInput("data/resnet/input-0.bin");
 
   begin = std::chrono::steady_clock::now();
@@ -189,7 +189,7 @@ int main() {
   //           << std::chrono::duration<double, std::milli>(end - begin).count()
   //           << std::endl;
 
-  std::cout << client.Train() << std::endl;
+  // std::cout << client.Train() << std::endl;
 
   return 0;
 }
