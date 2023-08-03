@@ -21,6 +21,13 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(glog)
 
+FetchContent_Declare(
+  CLI11
+  GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
+  GIT_TAG        v2.3.2
+)
+FetchContent_MakeAvailable(CLI11)
+
 
 # find_program(_GRPC_CPP_PLUGIN_EXECUTABLE grpc_cpp_plugin)
 # find_program(_PROTOBUF_PROTOC protoc)

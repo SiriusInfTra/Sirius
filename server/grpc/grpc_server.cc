@@ -177,6 +177,7 @@ bool InferHandler::InferData::Process(bool ok) {
     ModelInferStore::Get()->GetModel(GetModelName())->AddJob(this);
     return true;
   case Status::kFinish:
+    // LOG(INFO) << "Process InferData delete " << std::hex << this;
     delete this;
     return true;
   default:
@@ -222,6 +223,7 @@ bool TrainHandler::TrainData::Process(bool ok) {
     ModelTrainStore::Get()->AddJob(this);
     return true;
   case Status::kFinish:
+    // LOG(INFO) << "Process TrainData delete " << std::hex << this;
     delete this;
     return true;
   default:

@@ -189,8 +189,8 @@ bool Model::Inference() {
 
     for (auto& job : jobs) {
       auto data = job->GetInferData();
-      data->GetResponder().Finish(data->GetResponse(), grpc::Status::OK, data);
       LOG(INFO) << job << " finished";
+      data->GetResponder().Finish(data->GetResponse(), grpc::Status::OK, data);
     }
   }
 }

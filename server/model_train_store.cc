@@ -90,14 +90,15 @@ bool ModelTrainStore::Train() {
               << ss.str() << "), pid " << pid;
   }
 
-  std::array<char, 128> buf;
+  std::array<char, 1024> buf;
   auto fp = fdopen(pipe_fd[0], "r");
   while (fgets(buf.data(), buf.size(), fp)) {
     LOG(INFO) << "[PyTorch backend] Train: " << buf.data();
   }
-  fclose(fp);
 
+  fclose(fp);
   waitpid(pid, NULL, 0);
+  
   LOG(INFO) << "Train: " << job << " finished";
 
   data->SetResult("train ok");

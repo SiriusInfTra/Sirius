@@ -1,12 +1,12 @@
 .vscode
 build/
 
-.tar
-.onnx
+*.gz
+*.tar
+*.onnx
 
 models/*/
 
 .pkl_memoize_py3/
 
-.png
-.bin
+

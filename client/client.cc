@@ -4,6 +4,7 @@
 #include <fstream>
 #include <glog/logging.h>
 
+
 #include "colserve.grpc.pb.h"
 
 std::string ReadInput(const std::string &data_path) {
