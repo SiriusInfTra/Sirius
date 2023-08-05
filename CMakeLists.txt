@@ -23,7 +23,7 @@ FetchContent_MakeAvailable(glog)
 
 FetchContent_Declare(
   CLI11
-  GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
+  GIT_REPOSITORY https://github.com/CLIUtils/CLI11
   GIT_TAG        v2.3.2
 )
 FetchContent_MakeAvailable(CLI11)
@@ -81,10 +81,10 @@ add_executable(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME} grpc++ proto glog::glog tvm_runtime)
 
 add_executable(client client/client.cc)
-target_link_libraries(client grpc++ proto glog::glog)
+target_link_libraries(client grpc++ proto glog::glog CLI11::CLI11)
 
 add_executable(hybrid_workload client/hybrid_workload.cc)
-target_link_libraries(hybrid_workload grpc++ proto glog::glog)
+target_link_libraries(hybrid_workload grpc++ proto glog::glog CLI11::CLI11)
 
 
 

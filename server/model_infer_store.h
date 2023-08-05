@@ -40,7 +40,7 @@ class ModelInferStore {
 class Model {
  public:
   Model() : name_("dummy") {};
-  Model(const std::string &name, const std::filesystem::path &model_path, DLDevice device);
+  Model(const std::string &name, const std::filesystem::path &model_path, DLDevice device, size_t batch_size);
   bool AddJob(network::InferHandler::InferData* data);
 
  private:
@@ -51,6 +51,7 @@ class Model {
   
   std::string name_;
   DLDevice device_;
+  size_t batch_size_;
   BatchJobQueue job_queue_;
 
   tvm::runtime::Module rmod_;

@@ -169,13 +169,21 @@ std::string* InferHandler::InferData::MutableOutputData(size_t i) {
 bool InferHandler::InferData::Process(bool ok) {
   switch (status_)
   {
-  case Status::kCreate:
-    new InferData{id_ + 1, name_, service_, cq_};
-    LOG(INFO) << "Process InferData [" << GetModelName() << ", Id " << id_ << "]";
-    status_ = Status::kFinish;
-    // ModelInferStore::Get()->GetModel("dummy")->AddJob(this);
-    ModelInferStore::Get()->GetModel(GetModelName())->AddJob(this);
-    return true;
+  case Status::kCreate: {
+      new InferData{id_ + 1, name_, service_, cq_};
+      LOG(INFO) << "[Process InferData] [" << GetModelName() << ", Id " << id_ << "]";
+      status_ = Status::kFinish;
+      
+      auto model = ModelInferStore::Get()->GetModel(GetModelName());
+      if (!model) {
+        LOG(WARNING) << "[Process InferData] Model " << GetModelName() << " not found";
+        response_.set_result("model not found");
+        responder_.Finish(response_, grpc::Status::CANCELLED, (void*)this);
+      } else {
+        model->AddJob(this);
+      }
+      return true;
+    }
   case Status::kFinish:
     // LOG(INFO) << "Process InferData delete " << std::hex << this;
     delete this;

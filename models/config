@@ -1,2 +1,10 @@
-mnist cuda
-resnet152 cuda
+# mode_name, model_path, device, batch_size
+mnist
+  path        mnist-b16
+  device      cuda
+  batch-size  16
+
+resnet152
+  path        resnet152-b16
+  device      cuda
+  batch-size  16

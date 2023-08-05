@@ -6,9 +6,11 @@
 #include <chrono>
 #include <iomanip>
 #include <future>
+#include <map>
 #include <pthread.h>
 #include <grpcpp/grpcpp.h>
 #include <glog/logging.h>
+#include <CLI/CLI.hpp>
 
 #include "colserve.grpc.pb.h"
 
@@ -297,6 +299,15 @@ void InferWorker::FetchInferResult(Workload &workload)  {
     CHECK(status_[i].ok());
     auto end = std::chrono::steady_clock::now();
     latency_.push_back(std::chrono::duration<double, std::milli>(end - begins_[i].second).count());
+    // { // check outputs
+    //   std::stringstream ss;
+    //   ss << "request " << i << " result: ";
+    //   for (size_t j = 0; j < 10; j++) {
+    //     ss << reinterpret_cast<const float*>(infer_results_[i].outputs(0).data().data())[j] << " ";
+    //   }
+    //   ss << "\n";
+    //   std::cout << ss.str();
+    // }
     begins_[i].first = false;
     if (workload.running_) continue;
     else {
@@ -331,19 +342,42 @@ void TrainWorker::RequestTrain(Workload &workload) {
 }
 
 
-int main() {
+int main(int argc, char** argv) {
+  bool enable_train{true}, enable_infer{true};
+  std::set<std::string> infer_models, train_models;
+  int duration{10}, concurrency{10};
+  int num_epoch{1}, batch_size{1};
+  CLI::App app{"ColServe Hybrid Workload"};
+  app.add_flag("--infer,!--no-infer", enable_infer, "enable infer workload");
+  app.add_option("--infer-model", infer_models, "models of infer workload");
+  app.add_flag("--train,!--no-train", enable_train, "enable train workload");
+  app.add_option("--train-model", train_models, "models of train workload");
+  app.add_option("-d,--duration", duration, "duration of workload");
+  app.add_option("-c,--concurrency", concurrency, "concurrency of infer workload");
+  app.add_option("--num-epoch", num_epoch, "num_epoch of train workload");
+  app.add_option("--batch-size", batch_size, "batch_size of train workload");
+
+  CLI11_PARSE(app, argc, argv);
+
   std::string target = "localhost:8080";
   Workload workload(grpc::CreateChannel(target, grpc::InsecureChannelCredentials()));
   CHECK(workload.Hello());
 
   // construct workload
-  workload.InferMnist(10);
-  workload.InferResnet(10);
-  workload.TrainResnet(1, 1);
+  if (enable_infer) {
+    if (infer_models.count("mnist"))
+      workload.InferMnist(concurrency);
+    if (infer_models.count("resnet"))
+      workload.InferResnet(concurrency);
+  }
+  if (enable_train) {
+    if (train_models.count("resnet"))
+      workload.TrainResnet(num_epoch, batch_size);
+  }
 
-  workload.Run(std::chrono::seconds(10));
+  workload.Run(std::chrono::seconds(duration));
 
   LOG(INFO) << "report result ...";
-  workload.Report(std::chrono::seconds(10));
+  workload.Report(std::chrono::seconds(duration));
   return 0;
 }

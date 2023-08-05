@@ -183,12 +183,12 @@ int main() {
             << std::chrono::duration<double, std::milli>(end - begin).count()
             << std::endl;
 
-  // begin = std::chrono::steady_clock::now();
-  // reply = client.InferResnet(resnet_data);
-  // end = std::chrono::steady_clock::now();
-  // std::cout << "resnet recv: " << reply << " "
-  //           << std::chrono::duration<double, std::milli>(end - begin).count()
-  //           << std::endl;
+  begin = std::chrono::steady_clock::now();
+  reply = client.InferResnet(resnet_data);
+  end = std::chrono::steady_clock::now();
+  std::cout << "resnet recv: " << reply << " "
+            << std::chrono::duration<double, std::milli>(end - begin).count()
+            << std::endl;
 
   // std::cout << client.Train() << std::endl;
 
