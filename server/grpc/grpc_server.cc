@@ -4,6 +4,8 @@
 #include "../model_infer_store.h"
 #include "grcp_server.h"
 #include "../model_train_store.h"
+#include "../controller.h"
+#include "../config.h"
 
 
 namespace colserve {
@@ -185,7 +187,6 @@ bool InferHandler::InferData::Process(bool ok) {
       return true;
     }
   case Status::kFinish:
-    // LOG(INFO) << "Process InferData delete " << std::hex << this;
     delete this;
     return true;
   default:

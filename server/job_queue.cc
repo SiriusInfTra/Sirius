@@ -46,6 +46,11 @@ std::shared_ptr<Job> JobQueue::Get() {
   }
 }
 
+size_t JobQueue::NumJobs() {
+  std::unique_lock lock{mutex_};
+  return queue_.size();
+}
+
 bool BatchJobQueue::Put(const std::shared_ptr<Job> &job) {
   std::unique_lock lock{mutex_};
   queue_.push(job);

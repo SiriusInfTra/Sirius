@@ -1,10 +1,13 @@
-#include <glog/logging.h>
 #include <pthread.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <chrono>
+#include "model_infer_store.h"
+#include <glog/logging.h>
 
 #include "model_train_store.h"
+#include "controller.h"
+#include "config.h"
 
 
 namespace colserve {
@@ -35,6 +38,14 @@ void ModelTrainStore::Init(const std::filesystem::path &train_store_path) {
   LOG(INFO) << "ModelTrainStore initialized"; 
 }
 
+bool ModelTrainStore::Shutdown() {
+  if (model_train_store_->train_pid_ != -1) {
+    kill(model_train_store_->train_pid_, SIGKILL);
+    waitpid(model_train_store_->train_pid_, NULL, 0);
+  }
+  return true;
+}
+
 bool ModelTrainStore::AddJob(network::TrainHandler::TrainData* data) {
   job_queue_.Put(std::make_shared<TrainJob>(data));
   return true;
@@ -62,6 +73,10 @@ bool ModelTrainStore::Train() {
     args_str.push_back(args.substr(i, j - i));
     for (i = j + 1; i < args.size() && args[i] == ' '; i++);
   }
+  if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
+    args_str.push_back("--mode");
+    args_str.push_back("task-switch");
+  }
 
   std::stringstream ss;
   char* argv[args_str.size() + 1];
@@ -71,35 +86,51 @@ bool ModelTrainStore::Train() {
   }
   argv[args_str.size()] = 0;
   
-  int pipe_fd[2];
-  pipe(pipe_fd);
+  int from_child_pipe[2], to_child_pipe[2];
+  pipe(from_child_pipe);
+  pipe(to_child_pipe);
+
+  if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
+    Controller::Get()->WaitInferIdle();
+  }
 
   auto pid = fork();
+  train_pid_ = pid;
   CHECK_GE(pid, 0) << "ModelTrainStore: fork failed";
 
   if (pid == 0) {
-    close(pipe_fd[0]);
-    dup2(pipe_fd[1], STDOUT_FILENO);
+    close(to_child_pipe[1]);
+    dup2(to_child_pipe[0], STDIN_FILENO);
+    close(from_child_pipe[0]);
+    dup2(from_child_pipe[1], STDOUT_FILENO);
 
     auto err = execvp("python", argv);
     perror("execvp");
     CHECK_GE(err, 0) << "ModelTrainStore: spawn train worker fail, errno " << err;
   } else {
-    close(pipe_fd[1]);
+    close(to_child_pipe[0]);
+    close(from_child_pipe[1]);
+    // train_running_ = true;
+    // Controller::Get()->TrainStart();
     LOG(INFO) << "ModelTrainStore: " << "Train " << job << " ( "
               << ss.str() << "), pid " << pid;
   }
 
   std::array<char, 1024> buf;
-  auto fp = fdopen(pipe_fd[0], "r");
+  auto fp = fdopen(from_child_pipe[0], "r");
+
   while (fgets(buf.data(), buf.size(), fp)) {
     LOG(INFO) << "[PyTorch backend] Train: " << buf.data();
   }
 
   fclose(fp);
+  close(to_child_pipe[1]);
+  close(from_child_pipe[0]);
   waitpid(pid, NULL, 0);
-  
+
+  train_pid_ = -1;
   LOG(INFO) << "Train: " << job << " finished";
+  Controller::Get()->TrainEnd(); // double check train end
 
   data->SetResult("train ok");
   data->GetResponder().Finish(data->GetResponse(), grpc::Status::OK, data);

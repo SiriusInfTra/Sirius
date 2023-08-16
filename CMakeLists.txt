@@ -77,15 +77,37 @@ add_executable(${PROJECT_NAME}
   server/job_queue.cc
   server/model_infer_store.cc
   server/model_train_store.cc
+  server/controller.cc
+  server/config.cc
 )
-target_link_libraries(${PROJECT_NAME} grpc++ proto glog::glog tvm_runtime)
+target_link_libraries(${PROJECT_NAME} grpc++ proto glog::glog tvm_runtime CLI11::CLI11)
 
 add_executable(client client/client.cc)
 target_link_libraries(client grpc++ proto glog::glog CLI11::CLI11)
 
-add_executable(hybrid_workload client/hybrid_workload.cc)
+add_executable(hybrid_workload 
+  client/hybrid_workload.cc
+  client/workload/workload.cc
+  client/workload/util.cc
+)
 target_link_libraries(hybrid_workload grpc++ proto glog::glog CLI11::CLI11)
 
 
-
-
+# build python ext
+add_custom_target(
+  pycolserve ALL
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/server/python/pycolserve.egg-info
+)
+add_custom_command(
+  OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/server/python/pycolserve.egg-info
+  COMMAND ${CONDA_PREFIX}/bin/python
+  ARGS setup.py install
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/server/python
+  DEPENDS 
+    "${CMAKE_CURRENT_SOURCE_DIR}/server/python/setup.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/server/python/pycolserve.pxd"
+    "${CMAKE_CURRENT_SOURCE_DIR}/server/python/pycolserve.pyx"
+    "${CMAKE_CURRENT_SOURCE_DIR}/server/python/control_stub.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/server/python/control_stub.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/server/block_queue.h"
+)

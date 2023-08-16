@@ -47,6 +47,7 @@ class JobQueue {
  public:
   bool Put(const std::shared_ptr<Job> &job);
   std::shared_ptr<Job> Get();
+  size_t NumJobs();
   
  protected:
   std::mutex mutex_;

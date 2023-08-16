@@ -9,4 +9,8 @@ models/*/
 
 .pkl_memoize_py3/
 
+*.so
 
+*.egg-info/
+server/python/pycolserve.cpp
+dist/

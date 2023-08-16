@@ -6,6 +6,9 @@
 #include <chrono>
 
 #include "model_infer_store.h"
+#include "model_train_store.h"
+#include "controller.h"
+#include "config.h"
 
 namespace colserve {
 
@@ -89,6 +92,14 @@ Model* ModelInferStore::GetModel(const std::string &name) {
   }
 }
 
+size_t ModelInferStore::NumJobs() {
+  size_t num_jobs = 0;
+  for (auto &model : models_) {
+    num_jobs += model.second->NumJobs();
+  }
+  return num_jobs;
+}
+
 Model::Model(const std::string &name, const std::filesystem::path &model_path, DLDevice device, size_t batch_size)
     : name_(name), device_(device), batch_size_(batch_size) {
   // DLOG(INFO) << "Model " << name << " start initializing from " << model_path;
@@ -135,6 +146,10 @@ bool Model::AddJob(network::InferHandler::InferData* data) {
     data->GetResponder().Finish(data->GetResponse(), grpc::Status::OK, data);
     return true;
   }
+  Controller::Get()->InferRequestInc();
+  if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
+    Controller::Get()->InterruptTrain();
+  }
   return job_queue_.Put(std::make_shared<InferJob>(data));
 }
 
@@ -175,16 +190,27 @@ void Model::InitMetaInfo() {
 
 bool Model::Inference() {
   LOG(INFO) << "Model " << name_ << " inference thread start";
-  while (true) {
+  while (true) {  
     // TODO dynamic batching
     auto jobs = job_queue_.GetBatch(batch_size_, 10);
     LOG(INFO) << "[Model Inference] GetBatch " << jobs.size() << "/" << batch_size_;
+
+    double wait_train_stop_ms;
+    if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
+      auto begin = std::chrono::steady_clock::now();
+      Controller::Get()->WaitTrainNotRunning();
+      wait_train_stop_ms = std::chrono::duration<double, std::milli>(
+          std::chrono::steady_clock::now() - begin).count();
+      // DLOG(INFO) << "ModelInferStore: wait for train stop "
+      //            << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
+    }
 
     // tvm::runtime::NDArray input;
 
     bool err = false;
     size_t idx = 0;
 
+    double set_input_ms;
     {
       auto begin = std::chrono::steady_clock::now();
       for (auto& input: input_info_) {
@@ -192,16 +218,20 @@ bool Model::Inference() {
         err = SetInput(idx++, input_id, jobs);
       }
       auto end = std::chrono::steady_clock::now();
-      DLOG(INFO) << "Inference SetInput: " << std::chrono::duration<double, std::milli>(end - begin).count();
+      set_input_ms = std::chrono::duration<double, std::milli>(end - begin).count();
+      // DLOG(INFO) << "Inference SetInput: " << std::chrono::duration<double, std::milli>(end - begin).count();
     }
 
+    double infer_ms;
     {
       auto begin = std::chrono::steady_clock::now();
       run_();
       auto end = std::chrono::steady_clock::now();
-      DLOG(INFO) << "Inference run: " << std::chrono::duration<double, std::milli>(end - begin).count();
+      infer_ms = std::chrono::duration<double, std::milli>(end - begin).count();
+      // DLOG(INFO) << "Inference run: " << std::chrono::duration<double, std::milli>(end - begin).count();
     }
 
+    double get_output_ms;
     idx = 0;
     {
       auto begin = std::chrono::steady_clock::now();
@@ -212,13 +242,29 @@ bool Model::Inference() {
         err = GetOutput(idx++, output_id, jobs);
       }
       auto end = std::chrono::steady_clock::now();
-      DLOG(INFO) << "Inference GetOutput: " << std::chrono::duration<double, std::milli>(end - begin).count();
+      get_output_ms = std::chrono::duration<double, std::milli>(end - begin).count();
+      // DLOG(INFO) << "Inference GetOutput: " << std::chrono::duration<double, std::milli>(end - begin).count();
     }
+    std::stringstream ss;
+    ss << std::fixed << std::setprecision(2)
+       << "[Inference]: " << name_ << " "
+       << "set_input_ms=" << set_input_ms << " "
+       << "infer_ms=" << infer_ms << " "
+       << "get_output_ms=" << get_output_ms;
+    if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
+      ss << " wait_train_stop_ms=" << wait_train_stop_ms;
+    }
+    DLOG(INFO) << ss.str();
 
     for (auto& job : jobs) {
       auto data = job->GetInferData();
       LOG(INFO) << job << " finished";
       data->GetResponder().Finish(data->GetResponse(), grpc::Status::OK, data);
+    }
+
+    Controller::Get()->InferResponseInc(jobs.size());
+    if (Config::serve_mode == ServeMode::kTaskSwitchL1 && Controller::Get()->IsInferIdle()) {
+      Controller::Get()->ResumeTrain();
     }
   }
 }

@@ -7,7 +7,7 @@
 #include <filesystem>
 
 #ifdef GLOG_LOGGING_H
-  static_assert(false, "glog/glog.h should be included after c.h");
+  static_assert(false, "glog/glog.h should be included after this file");
 #endif
 
 #include <dlpack/dlpack.h>
@@ -28,8 +28,11 @@ class ModelInferStore {
  public:
   static ModelInferStore* Get();
   static void Init(const std::filesystem::path &infer_store_path);
+  static bool Shutdown() { return true; }
+
 
   Model* GetModel(const std::string &name);
+  size_t NumJobs();
 
  private:
   static std::unique_ptr<ModelInferStore> model_infer_store_;
@@ -42,6 +45,7 @@ class Model {
   Model() : name_("dummy") {};
   Model(const std::string &name, const std::filesystem::path &model_path, DLDevice device, size_t batch_size);
   bool AddJob(network::InferHandler::InferData* data);
+  size_t NumJobs() { return job_queue_.NumJobs(); }
 
  private:
   void InitMetaInfo();
