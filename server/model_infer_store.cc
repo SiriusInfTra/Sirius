@@ -131,6 +131,25 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path, D
 
   InitMetaInfo();
 
+  if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
+    reset_storage_ = graph_executor_.GetFunction("reset_storage");
+    reset_storage_();
+
+    alloc_storage_ = graph_executor_.GetFunction("alloc_storage");
+    // alloc_storage_();
+
+    // auto t0 = std::chrono::steady_clock::now();
+    pipeline_load_params_ = graph_executor_.GetFunction("pipeline_load_params");
+    // pipeline_load_params_();
+    // auto t1 = std::chrono::steady_clock::now();
+    // LOG(INFO) << "Model: " << name << " pipeline_load_params " 
+    //           << std::chrono::duration<double, std::milli>(t1 - t0).count() << " ms";
+    pipeline_run_ = graph_executor_.GetFunction("pipeline_run");
+
+    LOG(INFO) << "[Model]: " << name << " task switch by pipelining load/run";
+  }
+
+
   // get tvm packed functions for inference
   set_input_ = graph_executor_.GetFunction("set_input");
   get_input_ = graph_executor_.GetFunction("get_input");
@@ -147,9 +166,8 @@ bool Model::AddJob(network::InferHandler::InferData* data) {
     return true;
   }
   Controller::Get()->InferRequestInc();
-  if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
-    Controller::Get()->InterruptTrain();
-  }
+  // InterruptTrain check whether to interrupt train
+  Controller::Get()->InterruptTrain(); 
   return job_queue_.Put(std::make_shared<InferJob>(data));
 }
 
@@ -195,14 +213,29 @@ bool Model::Inference() {
     auto jobs = job_queue_.GetBatch(batch_size_, 10);
     LOG(INFO) << "[Model Inference] GetBatch " << jobs.size() << "/" << batch_size_;
 
-    double wait_train_stop_ms;
-    if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
+    auto infer_begin = std::chrono::steady_clock::now();
+
+    double wait_train_stop_ms = -1;
+    if (Config::serve_mode == ServeMode::kTaskSwitchL1 
+        || Config::serve_mode == ServeMode::kTaskSwitchL2
+        || Config::serve_mode == ServeMode::kTaskSwitchL3) {
       auto begin = std::chrono::steady_clock::now();
       Controller::Get()->WaitTrainNotRunning();
       wait_train_stop_ms = std::chrono::duration<double, std::milli>(
           std::chrono::steady_clock::now() - begin).count();
       // DLOG(INFO) << "ModelInferStore: wait for train stop "
       //            << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
+    }
+
+    std::future<tvm::runtime::TVMRetValue> future;
+    if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
+      alloc_storage_();
+      // pipeline_load_params_();
+      // std::this_thread::sleep_for(std::chrono::seconds(1));
+      auto t0 = std::chrono::steady_clock::now();
+      future = std::async(std::launch::async, pipeline_load_params_);
+      auto t1 = std::chrono::steady_clock::now();
+      LOG(INFO) << "pipeline load param async " << std::chrono::duration<double, std::milli>(t1 - t0).count() << " ms";
     }
 
     // tvm::runtime::NDArray input;
@@ -225,7 +258,12 @@ bool Model::Inference() {
     double infer_ms;
     {
       auto begin = std::chrono::steady_clock::now();
-      run_();
+      if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
+        pipeline_run_();
+        // run_();
+      } else {
+        run_();
+      }
       auto end = std::chrono::steady_clock::now();
       infer_ms = std::chrono::duration<double, std::milli>(end - begin).count();
       // DLOG(INFO) << "Inference run: " << std::chrono::duration<double, std::milli>(end - begin).count();
@@ -245,15 +283,18 @@ bool Model::Inference() {
       get_output_ms = std::chrono::duration<double, std::milli>(end - begin).count();
       // DLOG(INFO) << "Inference GetOutput: " << std::chrono::duration<double, std::milli>(end - begin).count();
     }
+    auto infer_end = std::chrono::steady_clock::now();
+
     std::stringstream ss;
     ss << std::fixed << std::setprecision(2)
        << "[Inference]: " << name_ << " "
        << "set_input_ms=" << set_input_ms << " "
        << "infer_ms=" << infer_ms << " "
        << "get_output_ms=" << get_output_ms;
-    if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
+    if (wait_train_stop_ms != -1) {
       ss << " wait_train_stop_ms=" << wait_train_stop_ms;
     }
+    ss << " total_infer_ms=" << std::chrono::duration<double, std::milli>(infer_end - infer_begin).count();
     DLOG(INFO) << ss.str();
 
     for (auto& job : jobs) {
@@ -265,6 +306,8 @@ bool Model::Inference() {
     Controller::Get()->InferResponseInc(jobs.size());
     if (Config::serve_mode == ServeMode::kTaskSwitchL1 && Controller::Get()->IsInferIdle()) {
       Controller::Get()->ResumeTrain();
+    } else if (Config::serve_mode == ServeMode::kTaskSwitchL3 && job_queue_.NumJobs() == 0) {
+      reset_storage_();
     }
   }
 }

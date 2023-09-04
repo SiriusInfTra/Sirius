@@ -40,8 +40,8 @@ void ModelTrainStore::Init(const std::filesystem::path &train_store_path) {
 
 bool ModelTrainStore::Shutdown() {
   if (model_train_store_->train_pid_ != -1) {
-    kill(model_train_store_->train_pid_, SIGKILL);
-    waitpid(model_train_store_->train_pid_, NULL, 0);
+    CHECK_EQ(kill(model_train_store_->train_pid_, SIGKILL), 0);
+    CHECK_EQ(waitpid(model_train_store_->train_pid_, NULL, 0), 0);
   }
   return true;
 }
@@ -75,9 +75,28 @@ bool ModelTrainStore::Train() {
   }
   if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
     args_str.push_back("--mode");
-    args_str.push_back("task-switch");
+    args_str.push_back("task-switch-l1");
+  } else if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
+    args_str.push_back("--mode");
+    args_str.push_back("task-switch-l3");
   }
 
+  while (true) {
+    if (LaunchTrain(job, args_str)) {
+      break;
+    } else {
+      LOG(INFO) << "[ModelTrainStore]: " << job << " killed, restart";
+    }
+  }
+
+  LOG(INFO) << "Train: " << job << " finished";
+
+  data->SetResult("train ok");
+  data->GetResponder().Finish(data->GetResponse(), grpc::Status::OK, data);
+  return true;
+}
+
+bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::string> &args_str) {
   std::stringstream ss;
   char* argv[args_str.size() + 1];
   for (size_t i = 0; i < args_str.size(); i++) {
@@ -85,14 +104,18 @@ bool ModelTrainStore::Train() {
     ss << args_str[i] << " ";
   }
   argv[args_str.size()] = 0;
-  
+
   int from_child_pipe[2], to_child_pipe[2];
   pipe(from_child_pipe);
   pipe(to_child_pipe);
 
-  if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
+  LOG(INFO) << "train wait infer idle";
+  if (Config::serve_mode == ServeMode::kTaskSwitchL1 
+      || Config::serve_mode == ServeMode::kTaskSwitchL2
+      || Config::serve_mode == ServeMode::kTaskSwitchL3) {
     Controller::Get()->WaitInferIdle();
   }
+  LOG(INFO) << "fork train";
 
   auto pid = fork();
   train_pid_ = pid;
@@ -126,15 +149,18 @@ bool ModelTrainStore::Train() {
   fclose(fp);
   close(to_child_pipe[1]);
   close(from_child_pipe[0]);
-  waitpid(pid, NULL, 0);
 
+  int status;
+  waitpid(pid, &status, 0);
   train_pid_ = -1;
-  LOG(INFO) << "Train: " << job << " finished";
   Controller::Get()->TrainEnd(); // double check train end
-
-  data->SetResult("train ok");
-  data->GetResponder().Finish(data->GetResponse(), grpc::Status::OK, data);
-  return true;
+  
+  // LOG(INFO) << "signaled " << WIFSIGNALED(status) << " " << WTERMSIG(status);
+  if (WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL) {
+    return false;
+  } else {
+    return true;
+  }
 }
 
 } // namespace colserve

@@ -1,5 +1,8 @@
+#include <signal.h>
+
 #include "controller.h"
 #include "config.h"
+#include "model_train_store.h"
 
 namespace colserve
 {
@@ -98,9 +101,17 @@ void Controller::MonitorTrain() {
 }
 
 bool Controller::InterruptTrain() {
-  if (!IsTrainIdle()) {
-    // LOG(INFO) << "Controller: Put InterruptTrain";
-    train_cmd_event_mq_->Put(static_cast<int>(Event::kInterruptTrain));
+  if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
+    if (!IsTrainIdle()) {
+      // LOG(INFO) << "Controller: Put InterruptTrain";
+      train_cmd_event_mq_->Put(static_cast<int>(Event::kInterruptTrain));
+    }
+  } else if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
+    if (ModelTrainStore::Get()->GetTrainPid() != -1) {
+      LOG(INFO) << "[Controller]: kill train";
+      CHECK_EQ((kill(ModelTrainStore::Get()->GetTrainPid(), SIGKILL)), 0);
+      // TrainEnd();
+    }
   }
   return true;
 }
@@ -136,6 +147,7 @@ void Controller::InferResponseInc(size_t inc) {
   infer_status_.num_responses += inc;
   if (infer_status_.num_responses == infer_status_.num_requests) {
     infer_status_.status = InferStatus::kIdle;
+    wait_infer_cv_.notify_one();
     LOG(INFO) << "[Controller] InferStatus -> kIdle";
   }
   // LOG(INFO) << "num_resp: " << infer_status_.num_responses

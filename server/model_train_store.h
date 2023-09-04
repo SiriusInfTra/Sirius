@@ -27,11 +27,13 @@ class ModelTrainStore {
   static bool Shutdown();
 
   bool AddJob(network::TrainHandler::TrainData* data);
+  pid_t GetTrainPid() { return train_pid_; }
 
  private:
   static std::unique_ptr<ModelTrainStore> model_train_store_;
 
   bool Train();
+  bool LaunchTrain(std::shared_ptr<Job> job, std::vector<std::string> &args);
   
   JobQueue job_queue_;
   std::unique_ptr<std::thread> thread_;

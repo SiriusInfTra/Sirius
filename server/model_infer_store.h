@@ -66,6 +66,12 @@ class Model {
   tvm::runtime::PackedFunc run_;
   tvm::runtime::PackedFunc get_output_;
 
+  // for task switch mode (l3)
+  tvm::runtime::PackedFunc reset_storage_;
+  tvm::runtime::PackedFunc alloc_storage_;
+  tvm::runtime::PackedFunc pipeline_load_params_;
+  tvm::runtime::PackedFunc pipeline_run_;
+
   // param_name -> [[shape], dtype]
   std::unordered_map<std::string, 
       std::pair<tvm::runtime::ShapeTuple, std::string>> input_info_, output_info_;

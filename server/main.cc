@@ -42,7 +42,7 @@ void init_config() {
 void Shutdown(int sig) {
   LOG(INFO) << "SIGINT received, shutting down...";
   colserve::ModelInferStore::Shutdown();
-  colserve::ModelTrainStore::Get()->Shutdown();
+  colserve::ModelTrainStore::Shutdown();
   std::terminate();
 }
 
