@@ -19,10 +19,12 @@ cdef extern from "control_stub.h" namespace "pycolserve":
         kTrainEnd,
         kInterruptTrainDone,
         kResumeTrainDone,
+        kColocateAdjustL1Done,
 
         # cmd 
         kInterruptTrain,
         kResumeTrain,
+        kColocateAdjustL1,
 
     cdef cppclass SwitchStub:
         SwitchStub() except +
@@ -31,6 +33,13 @@ cdef extern from "control_stub.h" namespace "pycolserve":
         void Stop()
         void TrainStart()
         void TrainEnd()
+
+    cdef cppclass ColocateStub:
+        ColocateStub() except +
+        void Stop()
+        int Cmd()
+        void Cmd(int)
+        void ColocateAdjustL1Done()
 
 
 

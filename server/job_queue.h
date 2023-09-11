@@ -8,6 +8,7 @@
 #include <shared_mutex>
 #include <mutex>
 #include <condition_variable>
+#include <chrono>
 
 #include "grpc/grcp_server.h"
 
@@ -18,7 +19,12 @@ class Job {
   virtual network::InferHandler::InferData* GetInferData() { LOG(FATAL) << "not implemented"; }
   virtual network::TrainHandler::TrainData* GetTrainData() { LOG(FATAL) << "not implemented"; }
   virtual std::ostream& Print(std::ostream& os) const { LOG(FATAL) << "not implemented"; }
+  void RecordEnqueued() { en_queue_time_ = std::chrono::steady_clock::now(); }
+  std::chrono::time_point<std::chrono::steady_clock> GetEnQueueTime() {
+    return en_queue_time_;
+  }
  protected:
+  std::chrono::time_point<std::chrono::steady_clock> en_queue_time_; 
 };
 
 std::ostream& operator<<(std::ostream& os, const std::shared_ptr<Job>& job);
@@ -58,9 +64,10 @@ class BatchJobQueue : public JobQueue {
  public:
   std::vector<std::shared_ptr<Job>> GetBatch(size_t batch_size, size_t timeout_ms = 0);
   bool Put(const std::shared_ptr<Job> &job);
-
+  double FirstJobQueueTime(); // ms
+  
  private:
-  std::condition_variable put_job_;
+  std::condition_variable put_job_cv_;
 };
 
 }

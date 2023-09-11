@@ -47,3 +47,29 @@ cdef class PySwitchStub:
 
     def __dealloc__(self):
         del self._stub
+
+
+cdef class PyColocateStub:
+    cdef ColocateStub* _stub
+
+    def __cinit__(self):
+        self._stub = new ColocateStub()
+
+    def stop(self):
+        self._stub.Stop()
+
+    @property
+    def cmd(self):
+        return self._stub.Cmd()
+    @cmd.setter
+    def cmd(self, cmd):
+        if cmd is None:
+            self._stub.Cmd(-1)
+        else:
+            self._stub.Cmd(cmd)
+
+    def adjust_l1_done(self):
+        self._stub.ColocateAdjustL1Done()
+
+    def __dealloc__(self):
+        del self._stub

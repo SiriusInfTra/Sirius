@@ -49,7 +49,9 @@ class InferWorker {
 
   void RequestInfer(Workload &workload);
   void RequestInferPoisson(Workload &workload, double request_per_sec);
-  void FetchInferResult(Workload &workload, std::function<double_ms_t(size_t)> interval_fn);
+  void FetchInferResult(Workload &workload, 
+                        std::function<double_ms_t(size_t)> interval_fn, 
+                        uint32_t show_result);
   void Report(Workload &workload, int verbose, std::ostream &os);
 
 private:
@@ -116,10 +118,14 @@ class Workload {
     }
   }
 
-  void InferMnist(size_t concurrency, std::function<double_ms_t(size_t)> interval_fn);
-  void InferMnistPoisson(size_t concurrency, double request_per_sec);
-  void InferResnet(size_t concurrency, std::function<double_ms_t(size_t)> interval_fn);
-  void InferResnetPoisson(size_t concurrency, double request_per_sec);
+  void InferMnist(size_t concurrency, std::function<double_ms_t(size_t)> interval_fn, 
+                  uint32_t show_result = 0);
+  void InferMnistPoisson(size_t concurrency, double request_per_sec, 
+                         uint32_t show_result = 0);
+  void InferResnet(size_t concurrency, std::function<double_ms_t(size_t)> interval_fn, 
+                   uint32_t show_result = 0);
+  void InferResnetPoisson(size_t concurrency, double request_per_sec, 
+                          uint32_t show_result = 0);
 
   void TrainResnet(size_t num_epoch, size_t batch_size);
 
@@ -134,10 +140,12 @@ class Workload {
 
   void Infer(const std::string &model, size_t concurrency, 
              std::function<void(std::vector<InferRequest>&)> set_request_fn,
-             std::function<double_ms_t(size_t)> interval_fn);
+             std::function<double_ms_t(size_t)> interval_fn,
+             uint32_t show_result);
   void InferPoisson(const std::string &model, size_t concurrency,
                     std::function<void(std::vector<InferRequest>&)> set_request_fn,
-                    double request_per_sec);
+                    double request_per_sec,
+                    uint32_t show_result);
 
   std::atomic<bool> running_{false};
   std::promise<void> ready_promise_;

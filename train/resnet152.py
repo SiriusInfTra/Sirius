@@ -1,10 +1,11 @@
+from typing import Iterable, Optional, Sequence, Union
 import torch
 from torch import nn
 from torch.optim.lr_scheduler import StepLR
 from torchvision import models
 from torchvision.datasets import FakeData
 from torchvision import transforms
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset, Sampler
 import time
 import argparse
 import random
@@ -36,6 +37,26 @@ class SwitchHook:
         self.stub.stop()
 
 
+class ColocateAdjustL1Exception(Exception):
+    pass
+
+class ColocateHook:
+    def __init__(self) -> None:
+        self.stub = pycolserve.PyColocateStub()
+
+    def get_hook(self):
+        def hook(module, input, output):
+            torch.cuda.synchronize()
+            # print(f'{module} {time.time()}')
+            if self.stub.cmd == pycolserve.Event.kColocateAdjustL1:
+                # print(f'receive kColocateAdjustL1 {time.time()}')
+                raise ColocateAdjustL1Exception("[Colocate Adjust]")
+        return hook
+    
+    def stop(self):
+        self.stub.stop()
+
+
 def register_fbward_hook(module:torch.nn.Module, hook):
     if len(list(module.children())) == 0:
         module.register_forward_hook(hook)
@@ -43,13 +64,20 @@ def register_fbward_hook(module:torch.nn.Module, hook):
     else:
         for child in module.children():
             register_fbward_hook(child, hook)
+
+    
+def gpu_mem():
+    free, total = torch.cuda.mem_get_info(0)
+    return (total - free) / 1024 / 1024 / 1024
         
 
-def train(num_epoch=10, batch_size=256, accumulation_steps=1, mode='normal', **kargs):
-    if mode == 'task-switch-l1':
+def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
+    if mode == 'task-switch-l1' or mode == 'colocate-l1':
         hook = kargs["hook"]
-
-    batch_size //= accumulation_steps
+    
+    ori_batch_size = batch_size
+    dynamic_epoch_batch_size = kargs["dynamic_epoch_batch_size"]
+    dynamic_epoch_batch_size_schedule = kargs["dynamic_epoch_batch_size_schedule"]
 
     model = models.resnet101()
     model = model.cuda(0)
@@ -60,16 +88,17 @@ def train(num_epoch=10, batch_size=256, accumulation_steps=1, mode='normal', **k
     scheduler = StepLR(optimizer, step_size=30, gamma=0.1)
 
     # dummy data
-    train_dataset = FakeData(100, (3, 224, 224), 50, transforms.ToTensor())
+    train_dataset = FakeData(500, (3, 224, 224), 50, transforms.ToTensor())
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False,
-                              num_workers=1,  pin_memory=True)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, 
+                              shuffle=False, pin_memory=True, drop_last=True, num_workers=1)
     
-    if mode == 'task-switch-l1':
+    if mode == 'task-switch-l1' or mode == 'colocate-l1':
         register_fbward_hook(model, hook.get_hook())
-        print("train in task switch mode")
+        print(f"train in {mode} mode")
 
     model.train()
+    micro_batch_size = batch_size
     for epoch in range(num_epoch):
         begin = time.time()
         batch_cnt = 0
@@ -78,38 +107,75 @@ def train(num_epoch=10, batch_size=256, accumulation_steps=1, mode='normal', **k
             targets:torch.Tensor
             images = images.to('cuda:0', non_blocking=True)
             targets = targets.to('cuda:0', non_blocking=True)
-
+            
+            # micro_batch_size = random.randint(1, batch_size)
+            # print(micro_batch_size)
             while True:
                 try:
                     # print('hook.cmd', hook.stub.cmd, flush=True)
                     if mode == 'task-switch-l1':
                         while hook.stub.cmd == pycolserve.Event.kInterruptTrain:
                             time.sleep(1e-3)
-
-                    output = model(images)
-                    loss = criterion(output, targets) / accumulation_steps
+                    for i in range(0, batch_size, micro_batch_size):
+                        output = model(images[i:i+micro_batch_size])
+                        loss = criterion(output, targets[i:i+micro_batch_size]) / (batch_size / micro_batch_size)
+                        # optimizer.zero_grad()
+                        loss.backward()
+                    optimizer.step()
                     optimizer.zero_grad()
-                    loss.backward()
-                    if (i + 1) % accumulation_steps == 0:
-                        optimizer.step()
-                        optimizer.zero_grad()
                     batch_cnt += 1
                 except SwitchL1Exception as e:
                     print(e, flush=True)
+                except ColocateAdjustL1Exception as e:
+                    # micro_batch_size = int(micro_batch_size / 2 + 0.5)
+                    micro_batch_size = max(1, int(random.random() * batch_size + 0.5))
+                    t0 = time.time()
+                    optimizer.zero_grad()
+                    torch.cuda.synchronize()
+                    ori_gpu_mem = gpu_mem()
+                    torch.cuda.empty_cache()
+                    t1 = time.time()
+                    hook.stub.cmd = None
+                    hook.stub.adjust_l1_done()
+                    print('colocate adj l1 free cache {:.1f}ms, new micro batch size {}, gpu mem {:.1f} -> {:.1f}'.format(
+                        (t1 - t0) * 1000, micro_batch_size, ori_gpu_mem, gpu_mem()))
                 else:
+                    # torch.cuda.synchronize()
+                    # ori_gpu_mem = gpu_mem()
+                    # torch.cuda.empty_cache()
+                    # print('end of batch gpu_mem {:.1f} -> {:.1f}'.format(ori_gpu_mem, gpu_mem()))
                     break
 
         scheduler.step()
         end = time.time()
-        free, total = torch.cuda.mem_get_info(0)
-        used_mem = (total - free) / 1024 / 1024 / 1024
-        print('[{} epoch {}] {:.3f}s | mini-batch {:.1f}ms | memory {:.2f}Gb'.format(
+        # free, total = torch.cuda.mem_get_info(0)
+        # used_mem = (total - free) / 1024 / 1024 / 1024
+        used_mem = gpu_mem()
+        print('[{} epoch {}] {:.3f}s | mini-batch {:.1f}ms | memory {:.2f}Gb | batch-size {} | micro-batch-size {}'.format(
                 model.__class__.__name__, epoch, 
                 end - begin, 
                 1000*(end-begin)/batch_cnt,
-                used_mem))
+                used_mem,
+                batch_size,
+                micro_batch_size))
+        if dynamic_epoch_batch_size and epoch + 1 < num_epoch:
+            t0 = time.time()
+            if len(dynamic_epoch_batch_size_schedule) > 0:
+                batch_size = dynamic_epoch_batch_size_schedule[epoch + 1]
+            else:
+                batch_size = int(ori_batch_size * random.random() + 0.5)
+            train_loader = DataLoader(train_dataset, batch_size=batch_size, 
+                                      shuffle=False, pin_memory=True, drop_last=True, num_workers=1)
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+            t1 = time.time()
+            print('epoch dynamic batch size: {} | {:.1f}ms | gpu_mem {:.1f}'.format(
+                batch_size, (t1 - t0) * 1000, gpu_mem()))
+
     if mode == 'task-switch-l1':
         hook.stub.train_end()
+        hook.stop()
+    elif mode == 'colocate-l1':
         hook.stop()
 
 
@@ -118,20 +184,32 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--num-epoch', type=int, default=10)
     parser.add_argument('--mode', type=str, default='normal', 
-                        choices=['normal', 'task-switch-l1', 'task-switch-l2','task-switch-l3'])
+                        choices=['normal', 'task-switch-l1', 'task-switch-l2','task-switch-l3', 'colocate-l1'])
+    parser.add_argument('--dynamic-epoch-batch-size', action='store_true', default=False)
+    parser.add_argument('--dynamic-epoch-batch-size-schedule', nargs='*', type=int)
     args = parser.parse_args()
     
     batch_size = args.batch_size
     num_epoch = args.num_epoch
+
+    if args.dynamic_epoch_batch_size and len(args.dynamic_epoch_batch_size_schedule) > 0:
+        batch_size = args.dynamic_epoch_batch_size_schedule[0]
+        num_epoch = len(args.dynamic_epoch_batch_size_schedule)
+
     print("resnet152 training, batch-size={}, num-epoch={}".format(batch_size, num_epoch))
 
     if 'task-switch-l1' in args.mode :
         hook = SwitchHook(args.mode)
         hook.stub.train_start()
+    elif 'colocate-l1' in args.mode:
+        hook = ColocateHook()
     else:
         hook = None
 
     try:
-        train(num_epoch=num_epoch, batch_size=batch_size, accumulation_steps=1, mode=args.mode, hook=hook)
+        train(num_epoch=num_epoch, batch_size=batch_size,
+              mode=args.mode, hook=hook, 
+              dynamic_epoch_batch_size=args.dynamic_epoch_batch_size,
+              dynamic_epoch_batch_size_schedule=args.dynamic_epoch_batch_size_schedule)
     except SwitchL1Exception as e:
         print(e) # should not reach here

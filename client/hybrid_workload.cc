@@ -28,28 +28,32 @@ int main(int argc, char** argv) {
   if (app.enable_infer) {
     if (app.infer_models.count("mnist")) {
       if (!app.interval_ms.count("mnist"))
-        workload.InferMnist(app.concurrency, nullptr);
+        workload.InferMnist(app.concurrency, nullptr, app.show_result);
       else
-        workload.InferMnist(app.concurrency, 
-            [&](size_t) {return colserve::workload::double_ms_t(app.interval_ms["mnist"]);});
+        workload.InferMnist(
+            app.concurrency, 
+            [&](size_t) {return colserve::workload::double_ms_t(app.interval_ms["mnist"]);},
+            app.show_result);
     }
     if (app.infer_models.count("mnist-p")) {
       if (app.poisson.count("mnist"))
-        workload.InferMnistPoisson(app.concurrency, app.poisson["mnist"]);
+        workload.InferMnistPoisson(app.concurrency, app.poisson["mnist"], app.show_result);
       else
         LOG(WARNING) << "mnist-p miss poisson dist parameter";
     }
 
     if (app.infer_models.count("resnet")) {
       if (!app.interval_ms.count("resnet"))
-        workload.InferResnet(app.concurrency, nullptr);
+        workload.InferResnet(app.concurrency, nullptr, app.show_result);
       else
-        workload.InferResnet(app.concurrency, 
-            [&](size_t) {return colserve::workload::double_ms_t(app.interval_ms["resnet"]);});
+        workload.InferResnet(
+            app.concurrency, 
+            [&](size_t) {return colserve::workload::double_ms_t(app.interval_ms["resnet"]);},
+            app.show_result);
     }
     if (app.infer_models.count("resnet-p")) {
       if (app.poisson.count("resnet"))
-        workload.InferResnetPoisson(app.concurrency, app.poisson["resnet"]);
+        workload.InferResnetPoisson(app.concurrency, app.poisson["resnet"], app.show_result);
       else
         LOG(WARNING) << "resnet-p miss poisson dist parameter";
     }

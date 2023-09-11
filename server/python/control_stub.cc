@@ -54,4 +54,44 @@ void SwitchStub::Cmd(int cmd) {
   cmd_ = cmd;
 }
 
+ColocateStub::ColocateStub() {
+  cmd_event_mq_ = std::make_unique<MemoryQueue<int>>("cmd-ctrl", false);
+  status_event_mq_ = std::make_unique<MemoryQueue<int>>("status-ctrl", false);
+
+  thread_.reset(new std::thread([&]() {
+    while (running_) {
+      int data;
+      bool succ = cmd_event_mq_->TimedGet(data, 1000);
+      if (succ) {
+        if (data == static_cast<int>(Event::kColocateAdjustL1)) {
+          LOG(INFO) << "[ColocateStub] Adjust L1";
+          cmd_ = static_cast<int>(Event::kColocateAdjustL1);
+        } else {
+          LOG(WARNING) << "[ColocateStub] Unknown command: " << data;
+        }
+      } else {
+        // LOG(INFO) << "[ColocateStub] No command";
+      }
+    }
+  }));
+}
+
+void ColocateStub::Stop() {
+  running_ = false;
+  thread_->join();
+}
+
+int ColocateStub::Cmd() {
+  return cmd_;
+}
+
+void ColocateStub::ColocateAdjustL1Done() {
+  status_event_mq_->Put(static_cast<int>(Event::kColocateAdjustL1Done));
+  LOG(INFO) << "[ColocateStub] Adjust L1 done";
+}
+
+void ColocateStub::Cmd(int cmd) {
+  cmd_ = cmd;
+}
+
 } // namespace pycolserve

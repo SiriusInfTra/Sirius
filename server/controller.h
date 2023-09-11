@@ -41,10 +41,12 @@ class Controller {
     kTrainEnd,
     kInterruptTrainDone,
     kResumeTrainDone,
+    kColocateAdjustL1Done,
 
     // cmd event (switch mode)
     kInterruptTrain,
     kResumeTrain,
+    kColocateAdjustL1,
   };
 
  private:

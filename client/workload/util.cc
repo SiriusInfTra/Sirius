@@ -22,6 +22,7 @@ AppBase::AppBase(const std::string &name) : app{name} {
   app.add_option("--batch-size", batch_size, "batch_size of train workload");
   app.add_option_no_stream("-l,--log", log, "log file");
   app.add_option("-v,--verbose", verbose, "verbose level");
+  app.add_option("--show-result", show_result, "show result");
 }
 
 

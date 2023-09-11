@@ -17,6 +17,7 @@
 #include <tvm/runtime/c_runtime_api.h>
 #include <tvm/runtime/device_api.h>
 
+#include "tvm/graph_executor.h"
 #include "job_queue.h"
 #include "grpc/grcp_server.h"
 
@@ -43,40 +44,38 @@ class ModelInferStore {
 class Model {
  public:
   Model() : name_("dummy") {};
-  Model(const std::string &name, const std::filesystem::path &model_path, DLDevice device, size_t batch_size);
+  Model(const std::string &name, const std::filesystem::path &model_path, DLDevice device, 
+        size_t batch_size, size_t num_worker = 1);
   bool AddJob(network::InferHandler::InferData* data);
   size_t NumJobs() { return job_queue_.NumJobs(); }
 
  private:
   void InitMetaInfo();
-  bool Inference();
-  bool SetInput(size_t idx, const std::string &input_id, const std::vector<std::shared_ptr<Job>> &jobs);
-  bool GetOutput(size_t idx, const std::string &output_id, const std::vector<std::shared_ptr<Job>> &jobs);
+  bool Inference(pthread_barrier_t* barrier = nullptr);
+  bool SetInput(tvm::GraphExecutor &graph_executor, size_t idx, const std::string &input_id, 
+                const std::vector<std::shared_ptr<Job>> &jobs);
+  bool GetOutput(tvm::GraphExecutor &graph_executor, 
+                 size_t idx, const std::string &output_id, const std::vector<std::shared_ptr<Job>> &jobs);
+  void MonitorJob();
   
   std::string name_;
   DLDevice device_;
   size_t batch_size_;
   BatchJobQueue job_queue_;
 
-  tvm::runtime::Module rmod_;
-  tvm::runtime::Module graph_executor_;
+  std::unique_ptr<tvm::GraphExecutorFactory> graph_executor_factory_;
 
-  tvm::runtime::PackedFunc set_input_;
-  tvm::runtime::PackedFunc get_input_;
-  tvm::runtime::PackedFunc run_;
-  tvm::runtime::PackedFunc get_output_;
-
-  // for task switch mode (l3)
-  tvm::runtime::PackedFunc reset_storage_;
-  tvm::runtime::PackedFunc alloc_storage_;
-  tvm::runtime::PackedFunc pipeline_load_params_;
-  tvm::runtime::PackedFunc pipeline_run_;
+  // infer scaling
+  double scale_up_queue_time_;
+  double scale_down_idle_time_;
 
   // param_name -> [[shape], dtype]
   std::unordered_map<std::string, 
-      std::pair<tvm::runtime::ShapeTuple, std::string>> input_info_, output_info_;
+      std::pair<std::vector<int64_t>, std::string>> input_info_, output_info_;
 
-  std::unique_ptr<std::thread> thread_;
+  // std::unique_ptr<std::thread> thread_;
+  std::vector<std::unique_ptr<std::thread>> infer_workers_;
+  std::unique_ptr<std::thread> job_monitor_;
 };
 
 
