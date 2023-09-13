@@ -11,6 +11,7 @@ enum class ServeMode {
   kTaskSwitchL3,  // switch infer/train, drop training (i.e. pipeswitch)
 
   kColocateL1,    // colocate infer/train, drop mini-batch -> adjust batch size -> relaunch
+  kColocateL2,    // adjust batch at end of epoch
 };
 
 class Config {

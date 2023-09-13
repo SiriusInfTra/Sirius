@@ -51,7 +51,7 @@ class Model {
 
  private:
   void InitMetaInfo();
-  bool Inference(pthread_barrier_t* barrier = nullptr);
+  bool Inference(uint32_t rank, pthread_barrier_t* barrier = nullptr);
   bool SetInput(tvm::GraphExecutor &graph_executor, size_t idx, const std::string &input_id, 
                 const std::vector<std::shared_ptr<Job>> &jobs);
   bool GetOutput(tvm::GraphExecutor &graph_executor, 
@@ -66,8 +66,11 @@ class Model {
   std::unique_ptr<tvm::GraphExecutorFactory> graph_executor_factory_;
 
   // infer scaling
-  double scale_up_queue_time_;
-  double scale_down_idle_time_;
+  double scale_up_queue_time_;  // ms
+  double scale_down_idle_time_; // ms
+  uint32_t max_num_worker_;
+  std::atomic<uint32_t> num_worker_;
+  std::vector<std::unique_ptr<std::atomic<bool>>> worker_running_;
 
   // param_name -> [[shape], dtype]
   std::unordered_map<std::string, 
@@ -76,6 +79,7 @@ class Model {
   // std::unique_ptr<std::thread> thread_;
   std::vector<std::unique_ptr<std::thread>> infer_workers_;
   std::unique_ptr<std::thread> job_monitor_;
+  
 };
 
 

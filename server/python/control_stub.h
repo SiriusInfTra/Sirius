@@ -15,11 +15,13 @@ enum class Event {
   kInterruptTrainDone,
   kResumeTrainDone,
   kColocateAdjustL1Done,
+  kColocateAdjustL2Done,
 
   // cmd event
   kInterruptTrain,
   kResumeTrain,
   kColocateAdjustL1,
+  kColocateAdjustL2,
 };
 
 class SwitchStub {
@@ -45,11 +47,16 @@ class ColocateStub {
   int Cmd();
   void Cmd(int cmd);
   void ColocateAdjustL1Done();
+  void ColocateAdjustL2Done();
+  void TrainStart();
+  void TrainEnd();
+  double PassedTimeFromSetCmd();
 
  private:
   bool running_{true};
   int cmd_{-1};
-  std::unique_ptr<MemoryQueue<int>> cmd_event_mq_, status_event_mq_;
+  std::chrono::time_point<std::chrono::steady_clock> set_cmd_time_;
+  std::unique_ptr<MemoryQueue<int>> cmd_event_mq_, status_event_mq_, adjust_event_mq_;
   std::unique_ptr<std::thread> thread_;
 };
 

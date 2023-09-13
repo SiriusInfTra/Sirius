@@ -24,8 +24,10 @@ class Controller {
   Controller();
   bool InterruptTrain();
   bool ResumeTrain();
+  bool ColocateAdjust();
   bool WaitTrainNotRunning();
   bool WaitInferIdle();
+  bool WaitColocateAdjustDone();
 
   void InferRequestInc(size_t inc=1);
   void InferResponseInc(size_t inc=1);
@@ -42,11 +44,14 @@ class Controller {
     kInterruptTrainDone,
     kResumeTrainDone,
     kColocateAdjustL1Done,
+    kColocateAdjustL2Done,
 
-    // cmd event (switch mode)
+    // cmd event: switch mode
     kInterruptTrain,
     kResumeTrain,
+    // cmd event: colocate mode
     kColocateAdjustL1,
+    kColocateAdjustL2,
   };
 
  private:
@@ -73,7 +78,7 @@ class Controller {
   InferStatus infer_status_;
   TrainStatus train_status_;
 
-  std::unique_ptr<MemoryQueue<int>> train_cmd_event_mq_, train_status_event_mq_;
+  std::unique_ptr<MemoryQueue<int>> train_cmd_event_mq_, train_status_event_mq_, train_adjust_event_mq_;
   
   std::mutex wait_train_mutex_, wait_infer_mutex_;
   std::condition_variable wait_train_cv_, wait_infer_cv_;

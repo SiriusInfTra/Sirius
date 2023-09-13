@@ -7,10 +7,16 @@ struct App : public colserve::workload::AppBase {
          "poisson distribution of infer models");
     app.add_option("--interval", interval_ms, 
         "interval (ms) of infer models");
+    app.add_option("--change-time-point", change_time_points, 
+        "dynamic concurrency change time point ");
+    app.add_option("--dynamic-concurrency", dynamic_concurrencys,
+        "dynamic concurrencys");
   }
 
   std::map<std::string, double> poisson;
   std::map<std::string, size_t> interval_ms;
+  std::map<std::string, std::vector<double>> change_time_points;
+  std::map<std::string, std::vector<size_t>> dynamic_concurrencys;
 };
 
 int main(int argc, char** argv) {
@@ -43,19 +49,33 @@ int main(int argc, char** argv) {
     }
 
     if (app.infer_models.count("resnet")) {
-      if (!app.interval_ms.count("resnet"))
-        workload.InferResnet(app.concurrency, nullptr, app.show_result);
-      else
+      if (!app.interval_ms.count("resnet")) {
+        workload.InferResnet("resnet152", app.concurrency, nullptr, app.show_result);
+      } else {
         workload.InferResnet(
+            "resnet152",
             app.concurrency, 
             [&](size_t) {return colserve::workload::double_ms_t(app.interval_ms["resnet"]);},
             app.show_result);
+      }
     }
     if (app.infer_models.count("resnet-p")) {
       if (app.poisson.count("resnet"))
         workload.InferResnetPoisson(app.concurrency, app.poisson["resnet"], app.show_result);
       else
-        LOG(WARNING) << "resnet-p miss poisson dist parameter";
+        LOG(FATAL) << "resnet-p miss poisson dist parameter";
+    }
+    if (app.infer_models.count("resnet-d")) {
+      if (app.dynamic_concurrencys.count("resnet") && app.change_time_points.count("resnet")) {
+        auto& change_times = app.change_time_points["resnet"];
+        auto& concurrencys = app.dynamic_concurrencys["resnet"];
+        // for (auto t : change_times) std::cout << t << " ";
+        // for (auto c : concurrencys) std::cout << c << " "; std::cout << std::endl;
+        CHECK_EQ(concurrencys.size(), change_times.size() + 1);
+        workload.InferResnetDynamic(change_times, concurrencys, app.show_result);
+      } else {
+        LOG(FATAL) << "resnet-d miss dynamic config parameter";
+      }
     }
       // workload.InferResnet(app.concurrency, nullptr);
   }

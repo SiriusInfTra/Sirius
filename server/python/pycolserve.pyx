@@ -71,5 +71,15 @@ cdef class PyColocateStub:
     def adjust_l1_done(self):
         self._stub.ColocateAdjustL1Done()
 
+    def adjust_l2_done(self):
+        self._stub.ColocateAdjustL2Done()
+
+    def train_start(self):
+        self._stub.TrainStart()
+
+    def train_end(self):
+        self._stub.TrainEnd()
+
+
     def __dealloc__(self):
         del self._stub

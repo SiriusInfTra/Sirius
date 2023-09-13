@@ -60,6 +60,7 @@ void Controller::Init() {
 Controller::Controller() {
   train_cmd_event_mq_ = std::make_unique<MemoryQueue<int>>("cmd-ctrl", true);
   train_status_event_mq_ = std::make_unique<MemoryQueue<int>>("status-ctrl", true);
+  train_adjust_event_mq_ = std::make_unique<MemoryQueue<int>>("adjust-ctrl", true);
   monitor_train_thread_ = std::make_unique<std::thread>(&Controller::MonitorTrain, this);
 }
 
@@ -124,6 +125,15 @@ bool Controller::ResumeTrain() {
   return true;
 }
 
+bool Controller::ColocateAdjust() {
+  if (!IsTrainIdle()) {
+    if (Config::serve_mode == ServeMode::kColocateL2) {
+      train_cmd_event_mq_->Put(static_cast<int>(Event::kColocateAdjustL2));
+    }
+  }
+  return true;
+}
+
 bool Controller::WaitTrainNotRunning() {
   std::unique_lock lock{wait_train_mutex_};
   wait_train_cv_.wait(lock, [&]() { return train_status_.status != TrainStatus::kRunning; });
@@ -133,6 +143,15 @@ bool Controller::WaitTrainNotRunning() {
 bool Controller::WaitInferIdle() {
   std::unique_lock lock{wait_infer_mutex_};
   wait_infer_cv_.wait(lock, [&](){ return infer_status_.status == InferStatus::kIdle; });
+  return true;
+}
+
+bool Controller::WaitColocateAdjustDone() {
+  if (!IsTrainIdle()) {
+    if (Config::serve_mode == ServeMode::kColocateL2) {
+      auto event = train_adjust_event_mq_->BlockGet();
+    }
+  }
   return true;
 }
 

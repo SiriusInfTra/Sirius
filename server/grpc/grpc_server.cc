@@ -173,7 +173,7 @@ bool InferHandler::InferData::Process(bool ok) {
   {
   case Status::kCreate: {
       new InferData{id_ + 1, name_, service_, cq_};
-      LOG(INFO) << "[Process InferData] [" << GetModelName() << ", Id " << id_ << "]";
+      VLOG(1) << "[Process InferData] [" << GetModelName() << ", Id " << id_ << "]";
       status_ = Status::kFinish;
       
       auto model = ModelInferStore::Get()->GetModel(GetModelName());

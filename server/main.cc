@@ -21,7 +21,8 @@ void init_cli_options() {
       ->check(CLI::IsMember({"normal", 
                              "task-switch-l1", 
                              "task-switch-l2", 
-                             "task-switch-l3"}));
+                             "task-switch-l3",
+                             "colocate-l2"}));
 }
 
 void init_config() {
@@ -34,6 +35,8 @@ void init_config() {
     cfg::serve_mode = colserve::ServeMode::kTaskSwitchL2;
   } else if (mode == "task-switch-l3") {
     cfg::serve_mode = colserve::ServeMode::kTaskSwitchL3;
+  } else if (mode == "colocate-l2") {
+    cfg::serve_mode = colserve::ServeMode::kColocateL2;
   } else {
     LOG(FATAL) << "unknown serve mode: " << mode;
   }

@@ -49,6 +49,9 @@ class InferWorker {
 
   void RequestInfer(Workload &workload);
   void RequestInferPoisson(Workload &workload, double request_per_sec);
+  void RequestInferDynamic(Workload &workload, 
+                           const std::vector<double> &change_time_points,
+                           const std::vector<size_t> &concurrency);
   void FetchInferResult(Workload &workload, 
                         std::function<double_ms_t(size_t)> interval_fn, 
                         uint32_t show_result);
@@ -122,9 +125,15 @@ class Workload {
                   uint32_t show_result = 0);
   void InferMnistPoisson(size_t concurrency, double request_per_sec, 
                          uint32_t show_result = 0);
-  void InferResnet(size_t concurrency, std::function<double_ms_t(size_t)> interval_fn, 
+  void InferMnistDynamic(const std::vector<double> &change_time_points, 
+                         const std::vector<size_t> &concurrencys, 
+                         uint32_t show_result = 0);
+  void InferResnet(const std::string &model, size_t concurrency, std::function<double_ms_t(size_t)> interval_fn, 
                    uint32_t show_result = 0);
   void InferResnetPoisson(size_t concurrency, double request_per_sec, 
+                          uint32_t show_result = 0);
+  void InferResnetDynamic(const std::vector<double> &change_time_points,
+                          const std::vector<size_t> &concurrencys,
                           uint32_t show_result = 0);
 
   void TrainResnet(size_t num_epoch, size_t batch_size);
@@ -136,7 +145,7 @@ class Workload {
   friend class TrainWorker;
  private:
   std::function<void(std::vector<InferRequest>&)> SetMnistRequestFn();
-  std::function<void(std::vector<InferRequest>&)> SetResnetRequestFn();
+  std::function<void(std::vector<InferRequest>&)> SetResnetRequestFn(const std::string &model);
 
   void Infer(const std::string &model, size_t concurrency, 
              std::function<void(std::vector<InferRequest>&)> set_request_fn,
@@ -145,6 +154,11 @@ class Workload {
   void InferPoisson(const std::string &model, size_t concurrency,
                     std::function<void(std::vector<InferRequest>&)> set_request_fn,
                     double request_per_sec,
+                    uint32_t show_result);
+  void InferDynamic(const std::string &mode,
+                    const std::vector<double> &change_time_points,
+                    const std::vector<size_t> &concurrencys,
+                    std::function<void(std::vector<InferRequest>&)> set_request_fn,
                     uint32_t show_result);
 
   std::atomic<bool> running_{false};

@@ -79,6 +79,9 @@ bool ModelTrainStore::Train() {
   } else if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
     args_str.push_back("--mode");
     args_str.push_back("task-switch-l3");
+  } else if (Config::serve_mode == ServeMode::kColocateL2) {
+    args_str.push_back("--mode");
+    args_str.push_back("colocate-l2");
   }
 
   while (true) {

@@ -5,6 +5,17 @@ mnist
   batch-size  16
 
 resnet152
-  path        resnet152-b16
+  path        resnet152-b4
   device      cuda
-  batch-size  16
+  batch-size  4
+  num-worker  1
+
+# resnet152-1
+#   path        resnet152-b16
+#   device      cuda
+#   batch-size  16
+# 
+# resnet152-2
+#   path        resnet152-b16
+#   device      cuda
+#   batch-size  16

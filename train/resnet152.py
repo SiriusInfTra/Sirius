@@ -72,12 +72,10 @@ def gpu_mem():
         
 
 def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
-    if mode == 'task-switch-l1' or mode == 'colocate-l1':
+    if mode == 'task-switch-l1' or mode == 'colocate-l1' or mode == 'colocate-l2':
         hook = kargs["hook"]
     
     ori_batch_size = batch_size
-    dynamic_epoch_batch_size = kargs["dynamic_epoch_batch_size"]
-    dynamic_epoch_batch_size_schedule = kargs["dynamic_epoch_batch_size_schedule"]
 
     model = models.resnet101()
     model = model.cuda(0)
@@ -95,7 +93,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
     
     if mode == 'task-switch-l1' or mode == 'colocate-l1':
         register_fbward_hook(model, hook.get_hook())
-        print(f"train in {mode} mode")
+    print(f"train in {mode} mode")
 
     model.train()
     micro_batch_size = batch_size
@@ -110,6 +108,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
             
             # micro_batch_size = random.randint(1, batch_size)
             # print(micro_batch_size)
+            batch_begin = time.time()
             while True:
                 try:
                     # print('hook.cmd', hook.stub.cmd, flush=True)
@@ -140,10 +139,16 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                     print('colocate adj l1 free cache {:.1f}ms, new micro batch size {}, gpu mem {:.1f} -> {:.1f}'.format(
                         (t1 - t0) * 1000, micro_batch_size, ori_gpu_mem, gpu_mem()))
                 else:
-                    # torch.cuda.synchronize()
-                    # ori_gpu_mem = gpu_mem()
-                    # torch.cuda.empty_cache()
-                    # print('end of batch gpu_mem {:.1f} -> {:.1f}'.format(ori_gpu_mem, gpu_mem()))
+                    if hook.stub.cmd == pycolserve.Event.kColocateAdjustL2:
+                        t0 = time.time()
+                        torch.cuda.synchronize()
+                        torch.cuda.empty_cache()
+                        micro_batch_size = micro_batch_size - 4
+                        hook.stub.cmd = None
+                        hook.stub.adjust_l2_done()
+                        t1 = time.time()
+                        print('batch adjust : bs {} {:.1f}ms | {:.1f}ms | gpu_mem {:.1f}'.format(
+                            micro_batch_size, (time.time()-batch_begin) * 1000, (t1 - t0) * 1000, gpu_mem()))
                     break
 
         scheduler.step()
@@ -158,24 +163,22 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                 used_mem,
                 batch_size,
                 micro_batch_size))
-        if dynamic_epoch_batch_size and epoch + 1 < num_epoch:
-            t0 = time.time()
-            if len(dynamic_epoch_batch_size_schedule) > 0:
-                batch_size = dynamic_epoch_batch_size_schedule[epoch + 1]
-            else:
-                batch_size = int(ori_batch_size * random.random() + 0.5)
-            train_loader = DataLoader(train_dataset, batch_size=batch_size, 
-                                      shuffle=False, pin_memory=True, drop_last=True, num_workers=1)
-            torch.cuda.synchronize()
-            torch.cuda.empty_cache()
-            t1 = time.time()
-            print('epoch dynamic batch size: {} | {:.1f}ms | gpu_mem {:.1f}'.format(
-                batch_size, (t1 - t0) * 1000, gpu_mem()))
+    
+        # if hook.stub.cmd == pycolserve.Event.kColocateAdjustL2:
+        #     t0 = time.time()
+        #     batch_size = int(batch_size - 2)
+        #     train_loader = DataLoader(train_dataset, batch_size=batch_size, 
+        #                               shuffle=False, pin_memory=True, drop_last=True, num_workers=1)
+        #     torch.cuda.synchronize()
+        #     torch.cuda.empty_cache()
+        #     hook.stub.cmd = None
+        #     hook.stub.adjust_l2_done()
+        #     t1 = time.time()
+        #     print('epoch adjust: bs {} | {:.1f}ms | gpu_mem {:.1f}'.format(
+        #         batch_size, (t1 - t0) * 1000, gpu_mem()))
 
-    if mode == 'task-switch-l1':
+    if mode == 'task-switch-l1' or mode == 'colocate-l1' or mode == 'colocate-l1':
         hook.stub.train_end()
-        hook.stop()
-    elif mode == 'colocate-l1':
         hook.stop()
 
 
@@ -184,32 +187,33 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--num-epoch', type=int, default=10)
     parser.add_argument('--mode', type=str, default='normal', 
-                        choices=['normal', 'task-switch-l1', 'task-switch-l2','task-switch-l3', 'colocate-l1'])
-    parser.add_argument('--dynamic-epoch-batch-size', action='store_true', default=False)
-    parser.add_argument('--dynamic-epoch-batch-size-schedule', nargs='*', type=int)
+                        choices=['normal', 
+                                 'task-switch-l1', 'task-switch-l2','task-switch-l3', 
+                                 'colocate-l1', 'colocate-l2'])
+    # parser.add_argument('--dynamic-epoch-batch-size', action='store_true', default=False)
+    # parser.add_argument('--dynamic-epoch-batch-size-schedule', nargs='*', type=int)
     args = parser.parse_args()
     
     batch_size = args.batch_size
     num_epoch = args.num_epoch
 
-    if args.dynamic_epoch_batch_size and len(args.dynamic_epoch_batch_size_schedule) > 0:
-        batch_size = args.dynamic_epoch_batch_size_schedule[0]
-        num_epoch = len(args.dynamic_epoch_batch_size_schedule)
+    # if args.dynamic_epoch_batch_size and len(args.dynamic_epoch_batch_size_schedule) > 0:
+    #     batch_size = args.dynamic_epoch_batch_size_schedule[0]
+    #     num_epoch = len(args.dynamic_epoch_batch_size_schedule)
 
     print("resnet152 training, batch-size={}, num-epoch={}".format(batch_size, num_epoch))
 
     if 'task-switch-l1' in args.mode :
         hook = SwitchHook(args.mode)
         hook.stub.train_start()
-    elif 'colocate-l1' in args.mode:
+    elif 'colocate-l1' in args.mode or 'colocate-l2' in args.mode:
         hook = ColocateHook()
+        hook.stub.train_start()
     else:
         hook = None
 
     try:
         train(num_epoch=num_epoch, batch_size=batch_size,
-              mode=args.mode, hook=hook, 
-              dynamic_epoch_batch_size=args.dynamic_epoch_batch_size,
-              dynamic_epoch_batch_size_schedule=args.dynamic_epoch_batch_size_schedule)
+              mode=args.mode, hook=hook)
     except SwitchL1Exception as e:
         print(e) # should not reach here

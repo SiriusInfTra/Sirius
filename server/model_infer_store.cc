@@ -50,6 +50,9 @@ void ModelInferStore::Init(const std::filesystem::path &infer_store_path) {
       CHECK(model.second.count("path"));
       CHECK(model.second.count("device"));
       CHECK(model.second.count("batch-size"));
+      if (!model.second.count("num-worker")) {
+        model.second["num-worker"] = "1";
+      }
       for (auto &kv : model.second) {
         ss << kv.first << "=" << kv.second << " ";
       }
@@ -75,7 +78,7 @@ void ModelInferStore::Init(const std::filesystem::path &infer_store_path) {
       LOG(FATAL) << model_name << " unsupport device type " << model_device;
     }
     model_infer_store_->models_[model_name] = 
-        std::make_unique<Model>(model_name, model_path, device, batch_size);
+        std::make_unique<Model>(model_name, model_path, device, batch_size, std::stoi(model.second["num-worker"]));
     LOG(INFO) << "ModelInferStore: "<< "Add " << model_name << ":" << model_device
               << ", batch-size=" << batch_size;
   }
@@ -121,19 +124,35 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path, D
 
   InitMetaInfo();
 
-  // TODO: fix following 
   if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
     graph_executor_factory_->ResetParamStorage();
     LOG(INFO) << "[Model]: " << name << " task switch by pipelining load/run";
   }
 
+
+  // config infer scaling
+  scale_up_queue_time_ = 200;
+  scale_down_idle_time_ = 5000;
+  max_num_worker_ = 5;
+  infer_workers_.resize(max_num_worker_);
+  worker_running_.resize(max_num_worker_);
+  for (size_t i = 0; i < max_num_worker_; i++) {
+    worker_running_[i] = std::make_unique<std::atomic<bool>>(false);
+  }
+
+  num_worker_ = 0;
   for (size_t i = 0; i < num_worker; i++) {
     pthread_barrier_t barrier;
     pthread_barrier_init(&barrier, nullptr, 2);
-    infer_workers_.push_back(std::make_unique<std::thread>(&Model::Inference, this, &barrier));
+    *worker_running_[i] = true;
+    // infer_workers_.push_back(std::make_unique<std::thread>(&Model::Inference, this, &barrier));
+    infer_workers_[i].reset(new std::thread{&Model::Inference, this, i, &barrier});
     pthread_barrier_wait(&barrier);
   }
-  job_monitor_.reset(new std::thread{&Model::MonitorJob, this});
+
+  if (Config::serve_mode == ServeMode::kColocateL2) {
+    job_monitor_.reset(new std::thread{&Model::MonitorJob, this});
+  }
 }
 
 bool Model::AddJob(network::InferHandler::InferData* data) {
@@ -175,7 +194,7 @@ void Model::InitMetaInfo() {
   }
 }
 
-bool Model::Inference(pthread_barrier_t* barrier) {
+bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
   LOG(INFO) << "Model " << name_ << " inference thread start";
   auto graph_executor = graph_executor_factory_->CreateGraphExecutor();
   if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
@@ -183,11 +202,27 @@ bool Model::Inference(pthread_barrier_t* barrier) {
   }
   if (barrier != nullptr) pthread_barrier_wait(barrier);
 
+  num_worker_.fetch_add(1, std::memory_order_relaxed);
   bool task_switch_l3_cold_start = true;
-  while (true) {  
+  auto last_get_batch_time = std::chrono::steady_clock::now();
+  while (true) {
+    if (Config::serve_mode == ServeMode::kColocateL2 
+        && std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now()-last_get_batch_time).count() >= scale_down_idle_time_) {
+      uint32_t num_worker = num_worker_;
+      if (num_worker - 1 > 0) {
+        // LOG(INFO) << "num_worker " << num_worker;
+        auto ok = num_worker_.compare_exchange_strong(num_worker, num_worker - 1,
+            std::memory_order_relaxed);
+        if (ok) break;
+      }
+    }
+
     // TODO dynamic batching
-    LOG(INFO) << "[Model inference] before batch";
-    auto jobs = job_queue_.GetBatch(batch_size_, 10);
+    auto jobs = job_queue_.GetBatch(batch_size_, 10, 100);
+    if (jobs.empty())
+      continue;
+    last_get_batch_time = std::chrono::steady_clock::now();
     LOG(INFO) << "[Model Inference] GetBatch " << jobs.size() << "/" << batch_size_;
 
     auto infer_begin = std::chrono::steady_clock::now();
@@ -269,7 +304,7 @@ bool Model::Inference(pthread_barrier_t* barrier) {
 
     std::stringstream ss;
     ss << std::fixed << std::setprecision(2)
-       << "[Inference]: " << name_ << " "
+       << "[Inference]: " << name_ << " (" << rank << ") "
        << "set_input_ms=" << set_input_ms << " "
        << "infer_ms=" << infer_ms << " "
        << "get_output_ms=" << get_output_ms;
@@ -281,7 +316,7 @@ bool Model::Inference(pthread_barrier_t* barrier) {
 
     for (auto& job : jobs) {
       auto data = job->GetInferData();
-      LOG(INFO) << job << " finished";
+      VLOG(1) << job << " finished";
       data->GetResponder().Finish(data->GetResponse(), grpc::Status::OK, data);
     }
 
@@ -294,6 +329,9 @@ bool Model::Inference(pthread_barrier_t* barrier) {
       task_switch_l3_cold_start = true;
     }
   }
+  LOG(INFO) << "[Inference] worker " << rank << " exit";
+  *worker_running_[rank] = false;
+  return true;
 }
 
 bool Model::SetInput(tvm::GraphExecutor &graph_executor, 
@@ -374,12 +412,37 @@ bool Model::GetOutput(tvm::GraphExecutor &graph_executor,
 
 void Model::MonitorJob() {
   while (true) {
+    for (size_t i = 0; i < max_num_worker_; i++) {
+      if (infer_workers_[i] != nullptr && !*worker_running_[i]) {
+        infer_workers_[i]->join();
+        infer_workers_[i].reset();
+        LOG(INFO) << "[Model] " << name_ << " decrease worker " << i;
+      }
+    }
+
     auto queue_time = job_queue_.FirstJobQueueTime();
-    // if (queue_time >= scale_up_queue_time_) {
-    //   // TODO scale up inference
-    //   infer_workers_.push_back(std::make_unique<std::thread>(&Model::Inference, this));
-    //   LOG(INFO) << "[Model] " << name_ << " increase worker";
-    // }
+    auto queue_size = job_queue_.NumJobs();
+    // if (queue_size >= batch_size_ * 2) {
+    if (queue_time >= scale_up_queue_time_) {
+      for (size_t i = 0; i < max_num_worker_; i++) {
+        if (infer_workers_[i] == nullptr) {
+          auto t0 = std::chrono::steady_clock::now();
+          Controller::Get()->ColocateAdjust();
+          Controller::Get()->WaitColocateAdjustDone();
+          auto t1 = std::chrono::steady_clock::now();
+          LOG(INFO) << "[Inference]: Wait adjust train batch size "
+                    << std::chrono::duration<double, std::milli>(t1-t0).count() << " ms";
+          pthread_barrier_t barrier;
+          pthread_barrier_init(&barrier, nullptr, 2);
+          *worker_running_[i] = true;
+          infer_workers_[i].reset(new std::thread{&Model::Inference, this, i, &barrier});
+          pthread_barrier_wait(&barrier);
+          LOG(INFO) << "[Model] " << name_ << " increase worker " << i;
+          std::this_thread::sleep_for(std::chrono::seconds(3));
+          break;
+        }
+      }
+    }
     
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }

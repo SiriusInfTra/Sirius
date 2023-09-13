@@ -73,11 +73,17 @@ double BatchJobQueue::FirstJobQueueTime() {
 }
 
 std::vector<std::shared_ptr<Job>> BatchJobQueue::GetBatch(
-    size_t batch_size, size_t timeout_ms) {
+    size_t batch_size, size_t interval_ms, size_t timeout_ms) {
   std::vector<std::shared_ptr<Job>> batch_jobs;
   {
     std::unique_lock<std::mutex> lock{mutex_};
-    put_job_cv_.wait(lock, [this] { return !this->queue_.empty(); });
+    // put_job_cv_.wait(lock, [this] { return !this->queue_.empty(); });
+    auto has_job = put_job_cv_.wait_for(lock,
+        std::chrono::milliseconds(timeout_ms), 
+        [this] { return !this->queue_.empty(); });
+    if (!has_job) {
+      return {};
+    }
     CHECK(!this->queue_.empty());
     batch_jobs.push_back(queue_.front());
     DLOG(INFO) << "put " << queue_.front() << " into batch_jobs";
@@ -85,7 +91,7 @@ std::vector<std::shared_ptr<Job>> BatchJobQueue::GetBatch(
   }
 
   auto begin = std::chrono::steady_clock::now();
-  std::chrono::microseconds timeout_us{timeout_ms * 1000};
+  std::chrono::microseconds timeout_us{interval_ms * 1000};
   std::chrono::microseconds rest_time_us{timeout_us};
 
   while (batch_jobs.size() < batch_size) {
@@ -107,8 +113,8 @@ std::vector<std::shared_ptr<Job>> BatchJobQueue::GetBatch(
     }
   }
   auto end = std::chrono::steady_clock::now();
-  DLOG(INFO) << "[BatchJobQueue]: batch interval " 
-             << std::chrono::duration<double, std::milli>(end - begin).count() << " ms";
+  // DLOG(INFO) << "[BatchJobQueue]: batch interval " 
+            //  << std::chrono::duration<double, std::milli>(end - begin).count() << " ms";
   CHECK(!batch_jobs.empty()) << "batch_jobs is empty";
   return batch_jobs;
 }

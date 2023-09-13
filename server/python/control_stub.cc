@@ -57,6 +57,7 @@ void SwitchStub::Cmd(int cmd) {
 ColocateStub::ColocateStub() {
   cmd_event_mq_ = std::make_unique<MemoryQueue<int>>("cmd-ctrl", false);
   status_event_mq_ = std::make_unique<MemoryQueue<int>>("status-ctrl", false);
+  adjust_event_mq_ = std::make_unique<MemoryQueue<int>>("adjust-ctrl", false);
 
   thread_.reset(new std::thread([&]() {
     while (running_) {
@@ -66,6 +67,11 @@ ColocateStub::ColocateStub() {
         if (data == static_cast<int>(Event::kColocateAdjustL1)) {
           LOG(INFO) << "[ColocateStub] Adjust L1";
           cmd_ = static_cast<int>(Event::kColocateAdjustL1);
+          set_cmd_time_ = std::chrono::steady_clock::now();
+        } else if (data == static_cast<int>(Event::kColocateAdjustL2)) {
+          LOG(INFO) << "[ColocateStub] Adjust L2";
+          cmd_ = static_cast<int>(Event::kColocateAdjustL2);
+          set_cmd_time_ = std::chrono::steady_clock::now();
         } else {
           LOG(WARNING) << "[ColocateStub] Unknown command: " << data;
         }
@@ -86,12 +92,30 @@ int ColocateStub::Cmd() {
 }
 
 void ColocateStub::ColocateAdjustL1Done() {
-  status_event_mq_->Put(static_cast<int>(Event::kColocateAdjustL1Done));
+  adjust_event_mq_->Put(static_cast<int>(Event::kColocateAdjustL1Done));
   LOG(INFO) << "[ColocateStub] Adjust L1 done";
+}
+
+void ColocateStub::ColocateAdjustL2Done() {
+  adjust_event_mq_->Put(static_cast<int>(Event::kColocateAdjustL2Done));
+  LOG(INFO) << "[ColocateStub] Adjust L2 done";
+}
+
+void ColocateStub::TrainStart() {
+  status_event_mq_->Put(static_cast<int>(Event::kTrainStart));
+}
+
+void ColocateStub::TrainEnd() {
+  status_event_mq_->Put(static_cast<int>(Event::kTrainEnd));
 }
 
 void ColocateStub::Cmd(int cmd) {
   cmd_ = cmd;
+}
+
+double ColocateStub::PassedTimeFromSetCmd() {
+  auto now = std::chrono::steady_clock::now();
+  return std::chrono::duration<double, std::milli>(now - set_cmd_time_).count();
 }
 
 } // namespace pycolserve
