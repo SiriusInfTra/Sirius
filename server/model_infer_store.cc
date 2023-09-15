@@ -125,10 +125,9 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path, D
   InitMetaInfo();
 
   if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
-    graph_executor_factory_->ResetParamStorage();
+    // graph_executor_factory_->ResetParamStorage();
     LOG(INFO) << "[Model]: " << name << " task switch by pipelining load/run";
   }
-
 
   // config infer scaling
   scale_up_queue_time_ = 200;
@@ -137,6 +136,7 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path, D
   infer_workers_.resize(max_num_worker_);
   worker_running_.resize(max_num_worker_);
   for (size_t i = 0; i < max_num_worker_; i++) {
+    graph_executor_pool_.push_back(graph_executor_factory_->CreateGraphExecutor());
     worker_running_[i] = std::make_unique<std::atomic<bool>>(false);
   }
 
@@ -196,9 +196,12 @@ void Model::InitMetaInfo() {
 
 bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
   LOG(INFO) << "Model " << name_ << " inference thread start";
-  auto graph_executor = graph_executor_factory_->CreateGraphExecutor();
+  // auto graph_executor = graph_executor_factory_->CreateGraphExecutor();
+  auto graph_executor = graph_executor_pool_[rank].get();
+  graph_executor->Init();
   if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
-    graph_executor->ResetBufStorage();
+    // graph_executor->ResetBufStorage();
+    graph_executor->ResetStorage();
   }
   if (barrier != nullptr) pthread_barrier_wait(barrier);
 
@@ -243,15 +246,16 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     if (Config::serve_mode == ServeMode::kTaskSwitchL3 && task_switch_l3_cold_start) {
       // alloc_storage_();
       auto t0 = std::chrono::steady_clock::now();
-      graph_executor_factory_->AllocParamStorage();
-      graph_executor->AllocBufStorage();
+      // graph_executor_factory_->AllocParamStorage();
+      // graph_executor->AllocBufStorage();
+      graph_executor->AllocStorage();
       graph_executor->ReSetupDataEntry();
       auto t1 = std::chrono::steady_clock::now();
       LOG(INFO) << "[Inference]: Alloc Storage "
                 << std::chrono::duration<double, std::milli>(t1-t0).count();
 
       future = std::async(std::launch::async, 
-          &tvm::GraphExecutorFactory::PipelineLoadParams, graph_executor_factory_.get());
+          &tvm::GraphExecutor::LoadParams, graph_executor);
       task_switch_l3_cold_start = false;
       // LOG(INFO) << "pipeline load param async " << std::chrono::duration<double, std::milli>(t1 - t0).count() << " ms";
     }
@@ -324,12 +328,14 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     if (Config::serve_mode == ServeMode::kTaskSwitchL1 && Controller::Get()->IsInferIdle()) {
       Controller::Get()->ResumeTrain();
     } else if (Config::serve_mode == ServeMode::kTaskSwitchL3 && job_queue_.NumJobs() == 0) {
-      graph_executor_factory_->ResetParamStorage();
-      graph_executor->ResetBufStorage();
+      // graph_executor_factory_->ResetParamStorage();
+      // graph_executor->ResetBufStorage();
+      graph_executor->ResetStorage();
       task_switch_l3_cold_start = true;
     }
   }
   LOG(INFO) << "[Inference] worker " << rank << " exit";
+  graph_executor->DeInit();
   *worker_running_[rank] = false;
   return true;
 }

@@ -21,6 +21,8 @@ namespace tvm {
 class GraphExecutor {
  public:
   GraphExecutor(GraphExecutorFactory &factory);
+  void Init();
+  void DeInit();
   void Run();
   void PipelineRun();
   TVMArray GetInput(int index) const;
@@ -30,9 +32,15 @@ class GraphExecutor {
   uint32_t GetInputIndex(const std::string &name) const;
   uint32_t GetOutputIndex(const std::string &name) const;
 
-  void ResetBufStorage();
-  void AllocBufStorage();
+  // void ResetBufStorage();
+  // void ResetParamStorage();
+  // void AllocBufStorage();
+  // void AllocParamStorage();
+  void ResetStorage();
+  void AllocStorage();
+  void LoadParams();
   void ReSetupDataEntry();
+
   
   uint32_t GetNumOfNodes() const { return factory_.nodes_.size(); }
   uint32_t entry_id(NodeEntry e) const {
@@ -44,15 +52,16 @@ class GraphExecutor {
   
 
  private:
-  void SetupStorage();
+  void SetupStorage(bool alloc);
   void SetupOpExecs();
   std::pair<std::function<void()>, std::shared_ptr<OpArgs>> CreateTVMOp(
     const TVMOpParam &param, const std::vector<DLTensor*>& args);
 
+  bool initialized_;
   GraphExecutorFactory &factory_;
 
   std::vector<TVMArray> storage_pool_;
-  std::map<uint32_t, uint32_t> op_node_storage_id_map_;
+  // std::map<uint32_t, uint32_t> op_node_storage_id_map_;
   std::vector<TVMArray> data_entry_;
   std::vector<size_t> data_alignment_;
 
@@ -62,7 +71,12 @@ class GraphExecutor {
   std::vector<std::vector<DLTensor*>> both_input_output_dltensors_;
   std::vector<std::vector<size_t>> input_param_nid_;
 
+  // std::map<uint32_t, bool> param_ready_;
+  std::vector<bool> param_ready_;
+
+  
   TVMStreamHandle run_stream_;
+  TVMStreamHandle load_param_stream_;
 };
 
 }

@@ -225,9 +225,9 @@ class GraphExecutorFactory {
   std::tuple<ShapeInfo, DtypeInfo> GetInputInfo() const;
   std::tuple<ShapeInfo, DtypeInfo> GetOutputInfo() const;
 
-  void ResetParamStorage();
-  void AllocParamStorage();
-  void PipelineLoadParams();
+  // void ResetParamStorage();
+  // void AllocParamStorage();
+  // void PipelineLoadParams();
 
   friend class GraphExecutor;
  private:
@@ -288,13 +288,11 @@ class GraphExecutorFactory {
   std::map<std::string, uint32_t> input_map_;
   std::map<std::string, uint32_t> output_map_;
   std::map<uint32_t, TVMArray> params_;
-  std::map<uint32_t, uint32_t> param_node_storage_id_map_;
-  std::map<uint32_t, bool> param_ready_;
+  // std::map<uint32_t, uint32_t> param_node_storage_id_map_;
 
   std::vector<PoolEntry> pool_entry_;
-  std::vector<TVMArray> storage_pool_;
+  // std::vector<TVMArray> storage_pool_;
 
-  TVMStreamHandle load_param_stream_;
 };
 
 } 

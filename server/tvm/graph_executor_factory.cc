@@ -38,8 +38,8 @@ GraphExecutorFactory::GraphExecutorFactory(
     output_map_[name] = i;
   }
 
-  load_param_stream_ = ::tvm::runtime::DeviceAPI::Get(devices_[0])
-      ->CreateStream(devices_[0]);
+  // load_param_stream_ = ::tvm::runtime::DeviceAPI::Get(devices_[0])
+  //     ->CreateStream(devices_[0]);
   LoadParams(params_file);
   SetupStorage();
 }
@@ -111,31 +111,31 @@ void GraphExecutorFactory::SetupStorage() {
   }
 
   // for (const auto &pit : pool_entry_) {
-  for (size_t sid = 0; sid < pool_entry_.size(); sid++) {
-    const auto &pit = pool_entry_[sid];
-    if (!pit.params_entry) {
-      continue;
-    }
-    const auto &cit = std::find_if(devices_.begin(), devices_.end(), [&pit](const DLDevice &d){
-      return static_cast<int>(d.device_type) == pit.device_type;
-    });
-    DLDevice dev = cit == devices_.end() ? devices_[0] : *cit;
-    std::vector<int64_t> shape = pit.shape;
-    if (shape.size() == 1) {
-      shape[0] = (shape[0] + 3) / 4;
-    }
-    ::tvm::runtime::Optional<::tvm::runtime::String> mem_scope;
-    if (!pit.scope.empty()) {
-      mem_scope = ::tvm::runtime::String(pit.scope);
-    }
-    storage_pool_.push_back(TVMArray::Empty(shape, pit.dtype, dev, mem_scope));
-    param_node_storage_id_map_[sid] = storage_pool_.size() - 1;
-  }
+  // for (size_t sid = 0; sid < pool_entry_.size(); sid++) {
+  //   const auto &pit = pool_entry_[sid];
+  //   if (!pit.params_entry) {
+  //     continue;
+  //   }
+  //   const auto &cit = std::find_if(devices_.begin(), devices_.end(), [&pit](const DLDevice &d){
+  //     return static_cast<int>(d.device_type) == pit.device_type;
+  //   });
+  //   DLDevice dev = cit == devices_.end() ? devices_[0] : *cit;
+  //   std::vector<int64_t> shape = pit.shape;
+  //   if (shape.size() == 1) {
+  //     shape[0] = (shape[0] + 3) / 4;
+  //   }
+  //   ::tvm::runtime::Optional<::tvm::runtime::String> mem_scope;
+  //   if (!pit.scope.empty()) {
+  //     mem_scope = ::tvm::runtime::String(pit.scope);
+  //   }
+  //   storage_pool_.push_back(TVMArray::Empty(shape, pit.dtype, dev, mem_scope));
+  //   param_node_storage_id_map_[sid] = storage_pool_.size() - 1;
+  // }
 
-  for (auto &p : params_) {
-    auto storage_id = attrs_.storage_id[p.first];
-    storage_pool_[param_node_storage_id_map_[storage_id]].CopyFrom(p.second);
-  }
+  // for (auto &p : params_) {
+  //   auto storage_id = attrs_.storage_id[p.first];
+  //   storage_pool_[param_node_storage_id_map_[storage_id]].CopyFrom(p.second);
+  // }
 }
 
 void GraphExecutorFactory::LoadParams(const std::string &params_file) {
@@ -197,24 +197,24 @@ std::tuple<GraphExecutorFactory::ShapeInfo, GraphExecutorFactory::DtypeInfo>
   return {shape_info, dtype_info};
 } 
 
-void GraphExecutorFactory::ResetParamStorage() {
-  using namespace ::tvm::runtime;
-  for (auto &it : param_ready_) {
-    it.second = false;
-  }
-  for (auto &s : storage_pool_) {
-    DeviceAPI::Get(s->device)->FreeDataSpace(s->device, s->data);
-    s.get_mutable()->dl_tensor.data = nullptr;
-  }
-}
+// void GraphExecutorFactory::ResetParamStorage() {
+//   using namespace ::tvm::runtime;
+//   for (auto &it : param_ready_) {
+//     it.second = false;
+//   }
+//   for (auto &s : storage_pool_) {
+//     DeviceAPI::Get(s->device)->FreeDataSpace(s->device, s->data);
+//     s.get_mutable()->dl_tensor.data = nullptr;
+//   }
+// }
 
-void GraphExecutorFactory::AllocParamStorage() {
-  using namespace ::tvm::runtime;
-  for (auto &s : storage_pool_) {
-    s.get_mutable()->dl_tensor.data =
-        DeviceAPI::Get(s->device)->AllocDataSpace(
-          s->device, s->ndim, s->shape, s->dtype);
-  }
+// void GraphExecutorFactory::AllocParamStorage() {
+//   using namespace ::tvm::runtime;
+//   for (auto &s : storage_pool_) {
+//     s.get_mutable()->dl_tensor.data =
+//         DeviceAPI::Get(s->device)->AllocDataSpace(
+//           s->device, s->ndim, s->shape, s->dtype);
+//   }
   // for (auto &p : params_) {
   //   auto sid = attrs_.storage_id[p.first];
   //   auto &pit = pool_entry_[sid];
@@ -228,21 +228,21 @@ void GraphExecutorFactory::AllocParamStorage() {
   //       DeviceAPI::Get(storage->device)->AllocDataSpace(
   //         storage->device, storage->ndim, storage->shape, storage->dtype, mem_scope);
   // }
-}
+// }
 
-void GraphExecutorFactory::PipelineLoadParams() {
-  for (auto &p : params_) {
-    auto sid = attrs_.storage_id[p.first];
-    sid = param_node_storage_id_map_[sid];
-    if (!param_ready_[p.first]) {
-      tvm::TVMArray::CopyFromTo(
-        p.second.operator->(), &storage_pool_[sid].get_mutable()->dl_tensor, load_param_stream_);
-      ::tvm::runtime::DeviceAPI::Get(storage_pool_[sid]->device)
-          ->StreamSync(storage_pool_[sid]->device, load_param_stream_);
-      param_ready_[p.first] = true;
-    }
-  }
-}
+// void GraphExecutorFactory::PipelineLoadParams() {
+//   for (auto &p : params_) {
+//     auto sid = attrs_.storage_id[p.first];
+//     sid = param_node_storage_id_map_[sid];
+//     if (!param_ready_[p.first]) {
+//       tvm::TVMArray::CopyFromTo(
+//         p.second.operator->(), &storage_pool_[sid].get_mutable()->dl_tensor, load_param_stream_);
+//       ::tvm::runtime::DeviceAPI::Get(storage_pool_[sid]->device)
+//           ->StreamSync(storage_pool_[sid]->device, load_param_stream_);
+//       param_ready_[p.first] = true;
+//     }
+//   }
+// }
 
 }
 }

@@ -5,6 +5,7 @@
 #include <memory>
 #include <unordered_map>
 #include <filesystem>
+#include <mutex>
 
 #ifdef GLOG_LOGGING_H
   static_assert(false, "glog/glog.h should be included after this file");
@@ -63,6 +64,7 @@ class Model {
   size_t batch_size_;
   BatchJobQueue job_queue_;
 
+  std::vector<std::unique_ptr<tvm::GraphExecutor>> graph_executor_pool_;
   std::unique_ptr<tvm::GraphExecutorFactory> graph_executor_factory_;
 
   // infer scaling
@@ -71,6 +73,7 @@ class Model {
   uint32_t max_num_worker_;
   std::atomic<uint32_t> num_worker_;
   std::vector<std::unique_ptr<std::atomic<bool>>> worker_running_;
+
 
   // param_name -> [[shape], dtype]
   std::unordered_map<std::string, 
