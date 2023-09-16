@@ -139,7 +139,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                     print('colocate adj l1 free cache {:.1f}ms, new micro batch size {}, gpu mem {:.1f} -> {:.1f}'.format(
                         (t1 - t0) * 1000, micro_batch_size, ori_gpu_mem, gpu_mem()))
                 else:
-                    if hook.stub.cmd == pycolserve.Event.kColocateAdjustL2:
+                    if mode == 'colocate-l2' and hook.stub.cmd == pycolserve.Event.kColocateAdjustL2:
                         t0 = time.time()
                         torch.cuda.synchronize()
                         torch.cuda.empty_cache()
@@ -147,8 +147,8 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                         hook.stub.cmd = None
                         hook.stub.adjust_l2_done()
                         t1 = time.time()
-                        print('batch adjust : bs {} {:.1f}ms | {:.1f}ms | gpu_mem {:.1f}'.format(
-                            micro_batch_size, (time.time()-batch_begin) * 1000, (t1 - t0) * 1000, gpu_mem()))
+                        print('batch {} adjust : bs {} {:.1f}ms | {:.1f}ms | gpu_mem {:.1f}'.format(
+                            i, micro_batch_size, (time.time()-batch_begin) * 1000, (t1 - t0) * 1000, gpu_mem()))
                     break
 
         scheduler.step()

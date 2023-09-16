@@ -11,19 +11,22 @@ struct App : public colserve::workload::AppBase {
         "dynamic concurrency change time point ");
     app.add_option("--dynamic-concurrency", dynamic_concurrencys,
         "dynamic concurrencys");
+    app.add_option("--dynamic-poisson", dynamic_poissons,
+        "dynamic poisson distribution of infer models");
   }
 
   std::map<std::string, double> poisson;
   std::map<std::string, size_t> interval_ms;
   std::map<std::string, std::vector<double>> change_time_points;
   std::map<std::string, std::vector<size_t>> dynamic_concurrencys;
+  std::map<std::string, std::vector<double>> dynamic_poissons;
 };
 
 int main(int argc, char** argv) {
   App app;
   CLI11_PARSE(app.app, argc, argv);
 
-  std::string target = "localhost:8080";
+  std::string target = "localhost:" + app.port;
   colserve::workload::Workload workload(
       grpc::CreateChannel(target, grpc::InsecureChannelCredentials()),
       std::chrono::seconds(app.duration)
@@ -76,6 +79,13 @@ int main(int argc, char** argv) {
       } else {
         LOG(FATAL) << "resnet-d miss dynamic config parameter";
       }
+    }
+    if (app.infer_models.count("resnet-dp")) {
+      CHECK(app.dynamic_poissons.count("resnet") && app.change_time_points.count("resnet"));
+      auto &change_times = app.change_time_points["resnet"];
+      auto &lambda = app.dynamic_poissons["resnet"];
+      CHECK_EQ(lambda.size(), change_times.size() + 1);
+      workload.InferResnetDynamicPoisson(app.concurrency, change_times, lambda, app.show_result);
     }
       // workload.InferResnet(app.concurrency, nullptr);
   }

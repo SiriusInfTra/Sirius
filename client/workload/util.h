@@ -16,6 +16,7 @@ class AppBase {
   AppBase(const std::string &name = "ColServe Workload");
 
   CLI::App app;
+  std::string port;
   bool enable_train{true}, enable_infer{true};
   std::set<std::string> infer_models, train_models;
   int duration{10}, concurrency{10};
