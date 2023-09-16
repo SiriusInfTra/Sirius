@@ -8,6 +8,7 @@
 #include "model_infer_store.h"
 #include "model_train_store.h"
 #include "controller.h"
+#include "profiler.h"
 #include "config.h"
 
 namespace colserve {
@@ -213,7 +214,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
         && std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now()-last_get_batch_time).count() >= scale_down_idle_time_) {
       uint32_t num_worker = num_worker_;
-      if (num_worker - 1 > 0) {
+      if (num_worker - 0 > 0) {
         // LOG(INFO) << "num_worker " << num_worker;
         auto ok = num_worker_.compare_exchange_strong(num_worker, num_worker - 1,
             std::memory_order_relaxed);
@@ -255,7 +256,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
                 << std::chrono::duration<double, std::milli>(t1-t0).count();
 
       future = std::async(std::launch::async, 
-          &tvm::GraphExecutor::LoadParams, graph_executor);
+          &tvm::GraphExecutor::LoadParams, graph_executor, true);
       task_switch_l3_cold_start = false;
       // LOG(INFO) << "pipeline load param async " << std::chrono::duration<double, std::milli>(t1 - t0).count() << " ms";
     }
@@ -335,6 +336,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     }
   }
   LOG(INFO) << "[Inference] worker " << rank << " exit";
+  Profiler::Get()->RecordEvent(Profiler::EventItem::InferExit);
   graph_executor->DeInit();
   *worker_running_[rank] = false;
   return true;
@@ -428,13 +430,15 @@ void Model::MonitorJob() {
 
     auto queue_time = job_queue_.FirstJobQueueTime();
     auto queue_size = job_queue_.NumJobs();
-    // if (queue_size >= batch_size_ * 2) {
-    if (queue_time >= scale_up_queue_time_) {
+    // if (queue_time >= scale_up_queue_time_) {
+    if (queue_size > batch_size_ * num_worker_) {
       for (size_t i = 0; i < max_num_worker_; i++) {
         if (infer_workers_[i] == nullptr) {
           auto t0 = std::chrono::steady_clock::now();
+          Profiler::Get()->RecordEvent(Profiler::EventItem::TrainAdjustStart);
           Controller::Get()->ColocateAdjust();
           Controller::Get()->WaitColocateAdjustDone();
+          Profiler::Get()->RecordEvent(Profiler::EventItem::TrainAdjustEnd);
           auto t1 = std::chrono::steady_clock::now();
           LOG(INFO) << "[Inference]: Wait adjust train batch size "
                     << std::chrono::duration<double, std::milli>(t1-t0).count() << " ms";
@@ -443,8 +447,9 @@ void Model::MonitorJob() {
           *worker_running_[i] = true;
           infer_workers_[i].reset(new std::thread{&Model::Inference, this, i, &barrier});
           pthread_barrier_wait(&barrier);
+          Profiler::Get()->RecordEvent(Profiler::EventItem::AddInfer);
           LOG(INFO) << "[Model] " << name_ << " increase worker " << i;
-          std::this_thread::sleep_for(std::chrono::seconds(3));
+          std::this_thread::sleep_for(std::chrono::microseconds(500));
           break;
         }
       }

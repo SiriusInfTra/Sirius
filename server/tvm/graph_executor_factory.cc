@@ -164,7 +164,7 @@ void GraphExecutorFactory::LoadParams(const std::string &params_file) {
     auto it = node_map_.find(names[i]);
     // LOG(INFO) << "find param in input_map " << it->first << " " << it->second;
     
-    params_[it->second] = temp;
+    params_[it->second] = temp.CopyTo(::tvm::Device{kDLCUDAHost, 0});
   }
 }
 

@@ -100,7 +100,7 @@ std::vector<std::shared_ptr<Job>> BatchJobQueue::GetBatch(
                       [this] { return !this->queue_.empty(); });
     if (!queue_.empty()) {
       batch_jobs.push_back(queue_.front());
-      DLOG(INFO) << "put " << queue_.front() << " into batch_jobs";
+      VLOG(1) << "put " << queue_.front() << " into batch_jobs";
       queue_.pop();
     }
     

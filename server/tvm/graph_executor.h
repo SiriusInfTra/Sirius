@@ -38,7 +38,7 @@ class GraphExecutor {
   // void AllocParamStorage();
   void ResetStorage();
   void AllocStorage();
-  void LoadParams();
+  void LoadParams(bool pipeline = false);
   void ReSetupDataEntry();
 
   

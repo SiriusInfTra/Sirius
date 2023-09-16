@@ -11,10 +11,12 @@
 #include "colserve.grpc.pb.h"
 #include "model_train_store.h"
 #include "controller.h"
+#include "profiler.h"
 #include "config.h"
 
 CLI::App app{"ColServe"};
 std::string mode = "normal";
+std::string port = "8080";
 
 void init_cli_options() {
   app.add_option("-m,--mode", mode)
@@ -23,6 +25,7 @@ void init_cli_options() {
                              "task-switch-l2", 
                              "task-switch-l3",
                              "colocate-l2"}));
+  app.add_option("-p,--port", port);
 }
 
 void init_config() {
@@ -44,8 +47,10 @@ void init_config() {
 
 void Shutdown(int sig) {
   LOG(INFO) << "SIGINT received, shutting down...";
+  colserve::Config::running = false;
   colserve::ModelInferStore::Shutdown();
   colserve::ModelTrainStore::Shutdown();
+  colserve::Profiler::Shutdown();
   std::terminate();
 }
 
@@ -57,10 +62,12 @@ int main(int argc, char *argv[]) {
   init_config();
 
   colserve::Controller::Init();
+  colserve::Profiler::Init("server-profile");
   colserve::ModelInferStore::Init("models");
   colserve::ModelTrainStore::Init("train");
+  colserve::Profiler::Start();
 
-  std::string server_address("0.0.0.0:8080");
+  std::string server_address("0.0.0.0:" + port);
   colserve::network::GRPCServer server;
   server.Start(server_address);
 

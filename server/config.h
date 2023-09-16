@@ -1,6 +1,8 @@
 #ifndef COLSERVE_CONFIG_H
 #define COLSERVE_CONFIG_H
 
+#include <atomic>
+
 namespace colserve {
 
 enum class ServeMode {
@@ -17,6 +19,8 @@ enum class ServeMode {
 class Config {
  public:
   static ServeMode serve_mode;
+  
+  static std::atomic<bool> running;
   
 };
 

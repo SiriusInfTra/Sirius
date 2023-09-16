@@ -3,6 +3,7 @@
 
 #include "graph_executor.h"
 #include <glog/logging.h>
+#include "../profiler.h"
 
 
 namespace colserve {
@@ -35,9 +36,13 @@ GraphExecutor::GraphExecutor(GraphExecutorFactory &factory)
 
 void GraphExecutor::Init() {
   if (!initialized_) {
+    Profiler::Get()->RecordEvent(Profiler::EventItem::InferAllocStorageStart);
     AllocStorage();
+    Profiler::Get()->RecordEvent(Profiler::EventItem::InferAllocStorageEnd);
     ReSetupDataEntry();
-    LoadParams();
+    Profiler::Get()->RecordEvent(Profiler::EventItem::InferLoadParamStart);
+    LoadParams(false);
+    Profiler::Get()->RecordEvent(Profiler::EventItem::InferLoadParamEnd);
     initialized_ = true;
   }
 }
@@ -147,7 +152,10 @@ uint32_t GraphExecutor::GetOutputIndex(const std::string &name) const {
 
 void GraphExecutor::ResetStorage() {
   using namespace ::tvm::runtime;
-  for (auto & e : data_entry_) {
+  for (auto &p : factory_.params_) {
+    param_ready_[p.first] = false;
+  }
+  for (auto &e : data_entry_) {
     e.get_mutable()->dl_tensor.data = nullptr;
   }
   for (auto &s : storage_pool_) {
@@ -165,16 +173,24 @@ void GraphExecutor::AllocStorage() {
   }
 }
 
-void GraphExecutor::LoadParams() {
+void GraphExecutor::LoadParams(bool pipeline) {
   for (auto &p : factory_.params_) {
     auto sid = factory_.attrs_.storage_id[p.first];
     if (!param_ready_[p.first]) {
       tvm::TVMArray::CopyFromTo(
         p.second.operator->(), &storage_pool_[sid].get_mutable()->dl_tensor, load_param_stream_);
-      ::tvm::runtime::DeviceAPI::Get(storage_pool_[sid]->device)
-          ->StreamSync(storage_pool_[sid]->device, load_param_stream_);
-      param_ready_[p.first] = true;
+      if (pipeline) {
+        ::tvm::runtime::DeviceAPI::Get(storage_pool_[sid]->device)
+            ->StreamSync(storage_pool_[sid]->device, load_param_stream_);
+        param_ready_[p.first] = true;
+      }
     }
+  }
+  if (!pipeline) {
+    ::tvm::runtime::DeviceAPI::Get(factory_.devices_[0])
+        ->StreamSync(factory_.devices_[0], load_param_stream_);
+    for (auto &p : factory_.params_)
+      param_ready_[p.first] = true;
   }
 }
 

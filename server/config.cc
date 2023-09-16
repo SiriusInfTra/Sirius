@@ -4,4 +4,6 @@ namespace colserve {
 
 ServeMode Config::serve_mode = ServeMode::kNormal;
 
+std::atomic<bool> Config::running = true;
+
 }

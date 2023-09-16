@@ -233,9 +233,9 @@ class MemoryQueue {
 
   std::string GetShmName(size_t version) {
     if (version == static_cast<size_t>(-1)) {
-      return "colserve-mq-" + std::string(getuid()) + "-" + name_;
+      return "colserve-mq-" + std::to_string(getuid()) + "-" + name_;
     } else {
-      return "colserve-mq-" + std::string(getuid()) + "-" + name_ + "-" + std::to_string(version);
+      return "colserve-mq-" + std::to_string(getuid()) + "-" + name_ + "-" + std::to_string(version);
     }
   }
   void Lock() {
