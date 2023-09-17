@@ -132,7 +132,7 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path, D
 
   // config infer scaling
   scale_up_queue_time_ = 200;
-  scale_down_idle_time_ = 5000;
+  scale_down_idle_time_ = 3000;
   max_num_worker_ = 5;
   infer_workers_.resize(max_num_worker_);
   worker_running_.resize(max_num_worker_);

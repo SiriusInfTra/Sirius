@@ -32,7 +32,7 @@ with open(log) as f:
 
         if parse_mem:
             m = re.search(r'(\d+(\.\d+)?):', line)
-            timeline.append(float(m.group(1)))
+            timeline.append(float(m.group(1)) - begin_time)
 
             m = re.search(r'Infer (\d+\.\d+) Mb', line)
             infer_mem.append(float(m.group(1)))
@@ -45,7 +45,7 @@ with open(log) as f:
 
         if paser_ev:
             m = re.search(r'(\d+(\.\d+)?):', line)
-            t = float(m.group(1))
+            t = float(m.group(1)) - begin_time
             
             m = re.search(r'[a-zA-Z]+', line)
             e = m.group(0)
@@ -58,8 +58,12 @@ infer_mem, train_mem = map(np.array, [infer_mem, train_mem])
 invert_train_mem = total_mem - train_mem 
 
 
-ax.plot(timeline, infer_mem, label='Infer')
-ax.plot(timeline, invert_train_mem, label='Train')
+ax.plot(timeline, infer_mem, label='Infer', linewidth=1)
+ax.fill_between(timeline, 0, infer_mem, alpha=0.1)
+
+ax.plot(timeline, invert_train_mem, label='Train', linewidth=1)
+ax.fill_between(timeline, invert_train_mem, total_mem, alpha=0.1)
+
 ax.vlines([t for t, e in events], 0.0, total_mem, color='black', linewidth=0.5, linestyles='dashed')
 
 
@@ -69,7 +73,10 @@ ax.vlines([t for t, e in events], 0.0, total_mem, color='black', linewidth=0.5, 
 
 
 ax.set_ylim(0, total_mem)
-ax.set_xlim(max(min(timeline), begin_time), 
-            min(max(timeline), end_time))
+ax.set_xlim(0,
+            min(max(timeline), end_time - begin_time))
+
+ax.set_xlabel("Time (ms)", fontsize=14)
+ax.set_ylabel("GPU Memory (MB)",fontsize=14)
 
 plt.savefig('memory-trace.svg')

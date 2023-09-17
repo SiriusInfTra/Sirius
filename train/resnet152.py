@@ -86,7 +86,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
     scheduler = StepLR(optimizer, step_size=30, gamma=0.1)
 
     # dummy data
-    train_dataset = FakeData(500, (3, 224, 224), 50, transforms.ToTensor())
+    train_dataset = FakeData(1000, (3, 224, 224), 50, transforms.ToTensor())
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, 
                               shuffle=False, pin_memory=True, drop_last=True, num_workers=1)
