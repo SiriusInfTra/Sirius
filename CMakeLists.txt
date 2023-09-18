@@ -59,6 +59,10 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 add_library(proto ${proto_srcs} ${proto_hdrs} ${grpc_srcs} ${grpc_hdrs})
 target_link_libraries(proto ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF} )
 
+# find cuda toolkit
+find_package(CUDAToolkit 11 REQUIRED)
+
+
 # add tvm runtime
 include_directories(
   ${TVM_HOME}/include
@@ -71,6 +75,7 @@ link_directories(
   ${TVM_HOME}/3rdparty/dmlc-core/build
 )
 
+
 add_executable(${PROJECT_NAME} 
   server/main.cc
   server/grpc/grpc_server.cc
@@ -80,9 +85,11 @@ add_executable(${PROJECT_NAME}
   server/model_infer_store.cc
   server/model_train_store.cc
   server/controller.cc
+  server/profiler.cc
   server/config.cc
 )
-target_link_libraries(${PROJECT_NAME} grpc++ proto glog::glog tvm_runtime CLI11::CLI11)
+target_link_libraries(${PROJECT_NAME} grpc++ proto glog::glog tvm_runtime CLI11::CLI11 
+    CUDA::nvml CUDA::cudart)
 
 add_executable(client client/client.cc)
 target_link_libraries(client grpc++ proto glog::glog CLI11::CLI11)
