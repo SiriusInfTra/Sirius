@@ -1,17 +1,24 @@
 from pycolserve cimport MemoryQueue, Event, SwitchStub
 
+cdef class PyCtrlMsgEntry:
+    cdef CtrlMsgEntry _entry
+    
+    def __cinit__(self, unsigned long long id, int cmd):
+        self._entry = CtrlMsgEntry(id, cmd)
+
+
 cdef class PyMemoryQueue:
-    cdef MemoryQueue[int]* _queue
+    cdef MemoryQueue[CtrlMsgEntry]* _queue
 
     def __cinit__(self, str name, bint is_server = False):
-        self._queue = new MemoryQueue[int](name.encode(), is_server)
+        self._queue = new MemoryQueue[CtrlMsgEntry](name.encode(), is_server)
       
-    def put(self, event):
-        self._queue.Put(event)
+    def put(self, PyCtrlMsgEntry entry):
+        self._queue.Put(entry._entry)
 
     def timed_get(self, size_t timeout_ms):
-        cdef int x = -1
-        if self._queue.TimedGet(x, timeout_ms):
+        x = PyCtrlMsgEntry(0, -1)
+        if self._queue.TimedGet(x._entry, timeout_ms):
             return x
         else:
             return None
@@ -52,8 +59,8 @@ cdef class PySwitchStub:
 cdef class PyColocateStub:
     cdef ColocateStub* _stub
 
-    def __cinit__(self):
-        self._stub = new ColocateStub()
+    def __cinit__(self, batch_size):
+        self._stub = new ColocateStub(batch_size)
 
     def stop(self):
         self._stub.Stop()
@@ -61,12 +68,10 @@ cdef class PyColocateStub:
     @property
     def cmd(self):
         return self._stub.Cmd()
-    @cmd.setter
-    def cmd(self, cmd):
-        if cmd is None:
-            self._stub.Cmd(-1)
-        else:
-            self._stub.Cmd(cmd)
+
+    @property
+    def target_batch_size(self):
+        return self._stub.TargetBatchSize()
 
     def adjust_l1_done(self):
         self._stub.ColocateAdjustL1Done()

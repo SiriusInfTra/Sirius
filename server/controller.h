@@ -10,6 +10,10 @@
 
 namespace colserve {
 
+struct CtrlMsgEntry {
+  uint64_t id;
+  int event;
+};
 
 class Controller {
  public:
@@ -22,12 +26,13 @@ class Controller {
   }
 
   Controller();
-  bool InterruptTrain();
-  bool ResumeTrain();
-  bool ColocateAdjust();
+  uint64_t InterruptTrain();
+  uint64_t ResumeTrain();
+  uint64_t ColocateAdjust();
   bool WaitTrainNotRunning();
   bool WaitInferIdle();
-  bool WaitColocateAdjustDone();
+  bool WaitColocateAdjustDone(uint64_t cmd_id);
+  uint64_t InferExit();
 
   void InferRequestInc(size_t inc=1);
   void InferResponseInc(size_t inc=1);
@@ -52,6 +57,7 @@ class Controller {
     // cmd event: colocate mode
     kColocateAdjustL1,
     kColocateAdjustL2,
+    kInferExit, // train adjust back
   };
 
  private:
@@ -78,11 +84,19 @@ class Controller {
   InferStatus infer_status_;
   TrainStatus train_status_;
 
-  std::unique_ptr<MemoryQueue<int>> train_cmd_event_mq_, train_status_event_mq_, train_adjust_event_mq_;
+  // std::unique_ptr<MemoryQueue<int>> , train_adjust_event_mq_;
+  std::unique_ptr<MemoryQueue<CtrlMsgEntry>> train_status_event_mq_, train_cmd_event_mq_;
   
+  // switch mode
   std::mutex wait_train_mutex_, wait_infer_mutex_;
   std::condition_variable wait_train_cv_, wait_infer_cv_;
   std::unique_ptr<std::thread> monitor_train_thread_;
+
+  // colocate mode
+  std::mutex wait_train_adjust_mutex_;
+  std::condition_variable wait_train_adjust_cv_;
+  uint64_t adjust_done_id_{0};
+  
   
  public:
   friend std::ostream& operator<<(std::ostream& os, const Controller::TrainStatus &status);

@@ -6,6 +6,7 @@
 #include <grpcpp/health_check_service_interface.h>
 #include <glog/logging.h>
 #include <CLI/CLI.hpp>
+#include <cuda.h>
 
 #include "grpc/grcp_server.h"
 #include "colserve.grpc.pb.h"
@@ -61,6 +62,7 @@ int main(int argc, char *argv[]) {
   CLI11_PARSE(app, argc, argv);
   init_config();
 
+  CHECK_EQ(cuInit(0), CUDA_SUCCESS);
   colserve::Controller::Init();
   colserve::Profiler::Init("server-profile");
   colserve::ModelInferStore::Init("models");

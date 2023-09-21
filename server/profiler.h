@@ -7,9 +7,10 @@
 #include <thread>
 #include <mutex>
 #include <fstream>
-
+#include <unordered_map>
 
 namespace colserve {
+
 
 class Profiler {
  public:
@@ -41,12 +42,22 @@ class Profiler {
     AddInfer,
     InferExit,
   };
-  
+  enum class PerfItem {
+    TrainAdjust,
+    InferAllocStorage,
+    InferLoadParam,
+  };
+
+
   Profiler(const std::string &profile_log_path);
   ~Profiler();
   void RecordEvent(EventItem item);
+  void RecordEvent(EventItem item, time_point_t tp);
+  void RecordPerf(PerfItem item, double value);
+  void RecordPerf(PerfItem item, time_point_t start, time_point_t end);
   
   friend std::ostream& operator<<(std::ostream &os, EventItem item);
+  friend std::ostream& operator<<(std::ostream &os, PerfItem item);
 
  private:
   double Passed();
@@ -59,11 +70,22 @@ class Profiler {
   std::vector<InferInfo> infer_info_;
   std::vector<std::tuple<double, ResourceInfo>> resource_info_;
   std::vector<std::tuple<double, EventItem>> event_info_;
-  std::mutex infer_info_mut_, event_info_mut_;
+  std::unordered_map<int, std::vector<double>> perf_info_;
+  std::mutex infer_info_mut_, event_info_mut_, perf_info_mut_;
 
   std::unique_ptr<std::thread> thread_;
 };
 
+#define PROFILE_START(item, idx) \
+    auto __t_ ## idx ## _ ## item ## _start_ = std::chrono::steady_clock::now(); 
+
+#define PROFILE_END(item, idx) \
+    auto __t_ ## idx ## _ ## item ## _end_ = std::chrono::steady_clock::now(); \
+    Profiler::Get()->RecordEvent(Profiler::EventItem::item##Start, __t_ ## idx ## _ ## item ## _start_); \
+    Profiler::Get()->RecordEvent(Profiler::EventItem::item##End, __t_ ## idx ## _ ## item ## _end_); \
+    Profiler::Get()->RecordPerf(Profiler::PerfItem::item, std::chrono::duration<double, std::milli>(__t_ ## idx ## _ ## item ## _end_ - __t_ ## idx ## _ ## item ## _start_).count());
+
+    
 }
 
 #endif

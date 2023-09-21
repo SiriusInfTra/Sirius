@@ -21,7 +21,7 @@ class AppBase {
   std::set<std::string> infer_models, train_models;
   int duration{10}, concurrency{10};
   int num_epoch{1}, batch_size{1};
-  
+
   std::string log;
   int verbose{0};
   uint32_t show_result{0};

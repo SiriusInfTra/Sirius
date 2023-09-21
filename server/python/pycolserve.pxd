@@ -12,6 +12,13 @@ cdef extern from "../block_queue.h" namespace "colserve":
         T BlockGet()
         bint TimedGet(T&, size_t)
 
+
+cdef extern from "../controller.h" namespace "colserve":
+    cdef struct CtrlMsgEntry:
+        unsigned long long id
+        int event
+
+
 cdef extern from "control_stub.h" namespace "pycolserve":
     cpdef enum class Event(int):
         # status 
@@ -37,14 +44,15 @@ cdef extern from "control_stub.h" namespace "pycolserve":
         void TrainEnd()
 
     cdef cppclass ColocateStub:
-        ColocateStub() except +
+        ColocateStub(int) except +
         void Stop()
         int Cmd()
-        void Cmd(int)
+        int TargetBatchSize()
         void ColocateAdjustL1Done()
         void ColocateAdjustL2Done()
         void TrainStart()
         void TrainEnd()
+
 
 
 

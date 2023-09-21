@@ -7,16 +7,13 @@
 #include <filesystem>
 #include <mutex>
 
-#ifdef GLOG_LOGGING_H
-  static_assert(false, "glog/glog.h should be included after this file");
-#endif
 
-#include <dlpack/dlpack.h>
-#include <tvm/runtime/module.h>
-#include <tvm/runtime/packed_func.h>
-#include <tvm/runtime/registry.h>
-#include <tvm/runtime/c_runtime_api.h>
-#include <tvm/runtime/device_api.h>
+// #include <dlpack/dlpack.h>
+// #include <tvm/runtime/module.h>
+// #include <tvm/runtime/packed_func.h>
+// #include <tvm/runtime/registry.h>
+// #include <tvm/runtime/c_runtime_api.h>
+// #include <tvm/runtime/device_api.h>
 
 #include "tvm/graph_executor.h"
 #include "job_queue.h"

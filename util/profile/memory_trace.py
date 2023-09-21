@@ -7,6 +7,7 @@ app = argparse.ArgumentParser("memory trace")
 app.add_argument('-l', type=str)
 app.add_argument('-b', type=int, default=0)
 app.add_argument('-e', type=int, default=3600*1e3)
+app.add_argument('--event', action='store_true')
 args = app.parse_args()
 # log = sys.argv[1]
 log = args.l
@@ -64,7 +65,8 @@ ax.fill_between(timeline, 0, infer_mem, alpha=0.1)
 ax.plot(timeline, invert_train_mem, label='Train', linewidth=1)
 ax.fill_between(timeline, invert_train_mem, total_mem, alpha=0.1)
 
-ax.vlines([t for t, e in events], 0.0, total_mem, color='black', linewidth=0.5, linestyles='dashed')
+if args.event:
+    ax.vlines([t for t, e in events], 0.0, total_mem, color='black', linewidth=0.5, linestyles='dashed')
 
 
 # print([t for t, e in events])

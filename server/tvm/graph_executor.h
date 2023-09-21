@@ -1,8 +1,8 @@
 #ifndef COLSERVE_GRAPH_EXECUTOR
 #define COLSERVE_GRAPH_EXECUTOR
 
-#include <tvm/runtime/device_api.h>
-#include <tvm/runtime/c_runtime_api.h>
+// #include <tvm/runtime/device_api.h>
+// #include <tvm/runtime/c_runtime_api.h>
 
 #include "graph_executor_factory.h"
 

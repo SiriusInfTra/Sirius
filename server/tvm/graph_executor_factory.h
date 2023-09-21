@@ -4,13 +4,17 @@
 #include <iostream>
 #include <map>
 
-#include <dlpack/dlpack.h>
-#include <dmlc/json.h>
-#include <dmlc/memory_io.h>
-#include <tvm/runtime/device_api.h>
-#include <tvm/runtime/packed_func.h>
-#include <tvm/runtime/module.h>
+// #include <dlpack/dlpack.h>
+// #include <dmlc/json.h>
+// #include <dmlc/memory_io.h>
+// #include <tvm/runtime/device_api.h>
+// #include <tvm/runtime/packed_func.h>
+// #include <tvm/runtime/module.h>
 
+
+// #include <glog/logging.h>
+
+#include "tvm.h"
 
 namespace colserve {
 namespace tvm {
@@ -214,7 +218,8 @@ struct GraphAttr {
 class GraphExecutor;
 class GraphExecutorFactory {
  public:
-  GraphExecutorFactory(const std::string &graph_json,
+  GraphExecutorFactory(const std::string &model_name,
+                       const std::string &graph_json,
                        const ::tvm::runtime::Module mod,
                        const std::string &params_file,
                        const std::vector<DLDevice> &devs);
@@ -274,6 +279,7 @@ class GraphExecutorFactory {
     return false;
   }
 
+  std::string model_name_;
   ::tvm::runtime::Module module_;
   std::vector<DLDevice> devices_;
 

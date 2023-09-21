@@ -24,11 +24,12 @@
 #ifndef TVM_RUNTIME_TEXTURE_H_
 #define TVM_RUNTIME_TEXTURE_H_
 
-#include <tvm/runtime/device_api.h>
+#include "tvm.h" 
 
 #include <memory>
 #include <string>
 #include <vector>
+
 
 namespace tvm {
 namespace runtime {

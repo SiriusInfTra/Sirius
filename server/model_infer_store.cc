@@ -4,6 +4,7 @@
 #include <iostream>
 #include <fstream>
 #include <chrono>
+#include <regex>
 
 #include "model_infer_store.h"
 #include "model_train_store.h"
@@ -12,6 +13,23 @@
 #include "config.h"
 
 namespace colserve {
+namespace {
+std::vector<std::string> ParseModelName(const std::string &model) {
+  std::regex r{"([a-zA-Z0-9]+)(\\[([0-9]+)\\])?"};
+  std::smatch match;
+  CHECK(std::regex_match(model, match, r));
+  CHECK_EQ(match.size(), 4);
+  if (match[3].str().empty()) {
+    return {match[1].str()};
+  } else {
+    std::vector<std::string> ret{match[1].str()};
+    for (int i = 1; i < std::stoi(match[3].str()); i++) {
+      ret.push_back(match[1].str() + "-" + std::to_string(i));
+    }
+    return ret;
+  }
+}
+}
 
 std::unique_ptr<ModelInferStore> ModelInferStore::model_infer_store_;
 
@@ -63,25 +81,26 @@ void ModelInferStore::Init(const std::filesystem::path &infer_store_path) {
 
   // mod.so, mod.json, mod.params should be in the model directory
   for (auto &model : models) {
-    auto model_name = model.first;
-    auto model_path = infer_store_path / model.second["path"];
-    auto model_device = model.second["device"];
-    size_t batch_size = std::stoi(model.second["batch-size"]);
-    CHECK(std::filesystem::exists(model_path)) << "ModelInferStore: " << model_path << " not exist";
-    CHECK(std::filesystem::is_directory(model_path)) << model_path << " is not a directory";
+    for (auto model_name : ParseModelName(model.first)) {
+      auto model_path = infer_store_path / model.second["path"];
+      auto model_device = model.second["device"];
+      size_t batch_size = std::stoi(model.second["batch-size"]);
+      CHECK(std::filesystem::exists(model_path)) << "ModelInferStore: " << model_path << " not exist";
+      CHECK(std::filesystem::is_directory(model_path)) << model_path << " is not a directory";
 
-    DLDevice device;
-    if (model_device == "cpu") {
-      device = DLDevice{kDLCPU, 0};
-    } else if (model_device == "cuda") {
-      device = DLDevice{kDLCUDA, 0};
-    } else {
-      LOG(FATAL) << model_name << " unsupport device type " << model_device;
+      DLDevice device;
+      if (model_device == "cpu") {
+        device = DLDevice{kDLCPU, 0};
+      } else if (model_device == "cuda") {
+        device = DLDevice{kDLCUDA, 0};
+      } else {
+        LOG(FATAL) << model_name << " unsupport device type " << model_device;
+      }
+      model_infer_store_->models_[model_name] = 
+          std::make_unique<Model>(model_name, model_path, device, batch_size, std::stoi(model.second["num-worker"]));
     }
-    model_infer_store_->models_[model_name] = 
-        std::make_unique<Model>(model_name, model_path, device, batch_size, std::stoi(model.second["num-worker"]));
-    LOG(INFO) << "ModelInferStore: "<< "Add " << model_name << ":" << model_device
-              << ", batch-size=" << batch_size;
+    LOG(INFO) << "ModelInferStore: "<< "Add " << model.first << ":" << model.second["device"]
+              << ", batch-size=" << model.second["batch-size"];
   }
 
   LOG(INFO) << "ModelInferStore initialized";
@@ -117,6 +136,7 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path, D
       ::tvm::runtime::Module::LoadFromFile((model_path / "mod.so").c_str(), "so");
 
   graph_executor_factory_ = std::make_unique<tvm::GraphExecutorFactory>(
+    name,
     (model_path / "mod.json").c_str(),
     rmod,
     (model_path / "mod.params").c_str(),
@@ -338,6 +358,9 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
   LOG(INFO) << "[Inference] worker " << rank << " exit";
   Profiler::Get()->RecordEvent(Profiler::EventItem::InferExit);
   graph_executor->DeInit();
+  if (Config::serve_mode == ServeMode::kColocateL2) {
+    Controller::Get()->InferExit();
+  }
   *worker_running_[rank] = false;
   return true;
 }
@@ -354,7 +377,7 @@ bool Model::SetInput(tvm::GraphExecutor &graph_executor,
   CHECK_LE(batch_shape[0], input_info_[input_id].first[0]) << "out of model batch size";
   for (size_t i = 1; i < batch_shape.size(); i++) {
     CHECK_EQ(batch_shape[i], input_info_[input_id].first[i])
-        << "input shape mismatch";
+        << "input shape[" << i << "] mismatch";
   }
 
   // tvm::runtime::NDArray input_arr = get_input_(input_id, device_);
@@ -435,13 +458,16 @@ void Model::MonitorJob() {
       for (size_t i = 0; i < max_num_worker_; i++) {
         if (infer_workers_[i] == nullptr) {
           auto t0 = std::chrono::steady_clock::now();
-          Profiler::Get()->RecordEvent(Profiler::EventItem::TrainAdjustStart);
-          Controller::Get()->ColocateAdjust();
-          Controller::Get()->WaitColocateAdjustDone();
-          Profiler::Get()->RecordEvent(Profiler::EventItem::TrainAdjustEnd);
+          auto id = Controller::Get()->ColocateAdjust();
+          Controller::Get()->WaitColocateAdjustDone(id);
           auto t1 = std::chrono::steady_clock::now();
           LOG(INFO) << "[Inference]: Wait adjust train batch size "
                     << std::chrono::duration<double, std::milli>(t1-t0).count() << " ms";
+          // PROFILE_END(TrainAdjust, 1);
+          Profiler::Get()->RecordEvent(Profiler::EventItem::TrainAdjustStart, t0);
+          Profiler::Get()->RecordEvent(Profiler::EventItem::TrainAdjustEnd, t1);
+          Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainAdjust, t0, t1);
+          
           pthread_barrier_t barrier;
           pthread_barrier_init(&barrier, nullptr, 2);
           *worker_running_[i] = true;

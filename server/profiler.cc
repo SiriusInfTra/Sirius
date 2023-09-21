@@ -31,20 +31,29 @@ namespace {
     } \
   } while (0);
 
-std::ostream& operator<<(std::ostream &os, Profiler::EventItem item) {
-#define LOG_EventItem(enum, item) \
-  case enum::item: os << #item; return os;
+#define LOG_ITEM(enum, item) case enum::item: os << #item; return os;
 
+std::ostream& operator<<(std::ostream &os, Profiler::EventItem item) {
   switch (item)
   {
-    LOG_EventItem(Profiler::EventItem, TrainAdjustStart)
-    LOG_EventItem(Profiler::EventItem, TrainAdjustEnd)
-    LOG_EventItem(Profiler::EventItem, InferAllocStorageStart)
-    LOG_EventItem(Profiler::EventItem, InferAllocStorageEnd)
-    LOG_EventItem(Profiler::EventItem, InferLoadParamStart)
-    LOG_EventItem(Profiler::EventItem, InferLoadParamEnd)
-    LOG_EventItem(Profiler::EventItem, AddInfer)
-    LOG_EventItem(Profiler::EventItem, InferExit)
+    LOG_ITEM(Profiler::EventItem, TrainAdjustStart)
+    LOG_ITEM(Profiler::EventItem, TrainAdjustEnd)
+    LOG_ITEM(Profiler::EventItem, InferAllocStorageStart)
+    LOG_ITEM(Profiler::EventItem, InferAllocStorageEnd)
+    LOG_ITEM(Profiler::EventItem, InferLoadParamStart)
+    LOG_ITEM(Profiler::EventItem, InferLoadParamEnd)
+    LOG_ITEM(Profiler::EventItem, AddInfer)
+    LOG_ITEM(Profiler::EventItem, InferExit)
+  default:
+    return os;
+  }
+}
+
+std::ostream& operator<<(std::ostream &os, Profiler::PerfItem item) {
+  switch (item) {
+    LOG_ITEM(Profiler::PerfItem, TrainAdjust)
+    LOG_ITEM(Profiler::PerfItem, InferAllocStorage)
+    LOG_ITEM(Profiler::PerfItem, InferLoadParam)
   default:
     return os;
   }
@@ -142,8 +151,26 @@ Profiler::~Profiler() {
 }
 
 void Profiler::RecordEvent(EventItem item) {
+  auto passed = Passed();
   std::unique_lock lock{event_info_mut_};
-  event_info_.push_back({Passed(), item});
+  event_info_.push_back({passed, item});
+}
+
+void Profiler::RecordEvent(EventItem item, Profiler::time_point_t tp) {
+  auto passed = std::chrono::duration<double, std::milli>(tp - stp_).count();
+  std::unique_lock lock{event_info_mut_};
+  event_info_.push_back({passed, item});
+}
+
+void Profiler::RecordPerf(PerfItem item, double value) {
+  auto key = static_cast<int>(item);
+  std::unique_lock lock{perf_info_mut_};
+  perf_info_[key].push_back(value);
+}
+
+void Profiler::RecordPerf(PerfItem item, Profiler::time_point_t start, Profiler::time_point_t end) {
+  auto value = std::chrono::duration<double, std::milli>(end - start).count();
+  RecordPerf(item, value);
 }
 
 double Profiler::Passed() {
@@ -167,6 +194,21 @@ void Profiler::WriteLog() {
     ofs << std::get<0>(e) << ": "
         << std::get<1>(e) << std::endl;
   }
+  ofs << std::endl;
+  ofs << "[Perf Info]" << std::endl;
+  for (auto &it : perf_info_) {
+    auto max = *std::max_element(it.second.begin(), it.second.end());
+    auto min = *std::min_element(it.second.begin(), it.second.end());
+    auto sum = std::accumulate(it.second.begin(), it.second.end(), 0.0);
+    double avg = -1;
+    if (it.second.size() > 0) {
+      avg = 1.0 * sum / it.second.size();
+    }
+    ofs << static_cast<PerfItem>(it.first) << std::fixed << std::setprecision(1) << ":"
+        << " avg " << avg << " max " << max << " min " << min
+        << std::endl;
+  }
+
   LOG(INFO) << "[Profiler] write prfile info to " << profile_log_path_;
 }
 

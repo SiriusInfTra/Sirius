@@ -3,7 +3,9 @@
 
 #include <memory>
 #include <thread>
+
 #include "../block_queue.h"
+#include "../controller.h"
 
 namespace pycolserve {
 using namespace colserve;
@@ -22,6 +24,7 @@ enum class Event {
   kResumeTrain,
   kColocateAdjustL1,
   kColocateAdjustL2,
+  kInferExit,
 };
 
 class SwitchStub {
@@ -30,22 +33,22 @@ class SwitchStub {
   void Stop();
   int Cmd();
   void Cmd(int cmd);
-  void TrainStart();
   void TrainEnd();
+  void TrainStart();
 
  private:
   bool running_{true};
   int cmd_{-1};
-  std::unique_ptr<MemoryQueue<int>> cmd_event_mq_, status_event_mq_;
+  std::unique_ptr<MemoryQueue<CtrlMsgEntry>> cmd_event_mq_, status_event_mq_;
   std::unique_ptr<std::thread> thread_;
 };
 
 class ColocateStub {
  public:
-  ColocateStub();
+  ColocateStub(int batch_size);
   void Stop();
   int Cmd();
-  void Cmd(int cmd);
+  int TargetBatchSize();
   void ColocateAdjustL1Done();
   void ColocateAdjustL2Done();
   void TrainStart();
@@ -55,8 +58,11 @@ class ColocateStub {
  private:
   bool running_{true};
   int cmd_{-1};
+  uint64_t cmd_id_;
+  int target_bs_, current_bs_;
+
   std::chrono::time_point<std::chrono::steady_clock> set_cmd_time_;
-  std::unique_ptr<MemoryQueue<int>> cmd_event_mq_, status_event_mq_, adjust_event_mq_;
+  std::unique_ptr<MemoryQueue<CtrlMsgEntry>> cmd_event_mq_, status_event_mq_; // adjust_event_mq_;
   std::unique_ptr<std::thread> thread_;
 };
 

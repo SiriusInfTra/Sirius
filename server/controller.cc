@@ -58,15 +58,16 @@ void Controller::Init() {
 }
 
 Controller::Controller() {
-  train_cmd_event_mq_ = std::make_unique<MemoryQueue<int>>("cmd-ctrl", true);
-  train_status_event_mq_ = std::make_unique<MemoryQueue<int>>("status-ctrl", true);
-  train_adjust_event_mq_ = std::make_unique<MemoryQueue<int>>("adjust-ctrl", true);
+  train_cmd_event_mq_ = std::make_unique<MemoryQueue<CtrlMsgEntry>>("cmd-ctrl", true);
+  train_status_event_mq_ = std::make_unique<MemoryQueue<CtrlMsgEntry>>("status-ctrl", true);
+  // train_adjust_event_mq_ = std::make_unique<MemoryQueue<int>>("adjust-ctrl", true);
   monitor_train_thread_ = std::make_unique<std::thread>(&Controller::MonitorTrain, this);
 }
 
 void Controller::MonitorTrain() {
   while (true) {
-    auto event = static_cast<Event>(train_status_event_mq_->BlockGet());
+    auto entry = static_cast<CtrlMsgEntry>(train_status_event_mq_->BlockGet());
+    auto event = static_cast<Event>(entry.event);
     auto cur_status = train_status_;
     // LOG(INFO) << "[Controller] MonitorTrain: " << event;
     switch (event){
@@ -83,12 +84,16 @@ void Controller::MonitorTrain() {
           || train_status_.status == TrainStatus::kRunning);
       train_status_.status = TrainStatus::kRunning;
       break;
+    case Event::kColocateAdjustL2Done:
+      adjust_done_id_ = entry.id;
+      wait_train_adjust_cv_.notify_all();
+      break;
     case Event::kTrainEnd:
       CHECK(train_status_.status == TrainStatus::kRunning
           || train_status_.status == TrainStatus::kIdle);
       train_status_.status = TrainStatus::kIdle;
       train_cmd_event_mq_->Clear();
-      break;    
+      break;
     default:
       break;
     }
@@ -101,11 +106,13 @@ void Controller::MonitorTrain() {
   }
 }
 
-bool Controller::InterruptTrain() {
+uint64_t Controller::InterruptTrain() {
+  static std::atomic<uint64_t> interrupt_cmd_id = 1;
+  auto cmd_id = interrupt_cmd_id.fetch_add(1, std::memory_order_relaxed);
   if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
     if (!IsTrainIdle()) {
       // LOG(INFO) << "Controller: Put InterruptTrain";
-      train_cmd_event_mq_->Put(static_cast<int>(Event::kInterruptTrain));
+      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(Event::kInterruptTrain)});
     }
   } else if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
     if (ModelTrainStore::Get()->GetTrainPid() != -1) {
@@ -114,24 +121,39 @@ bool Controller::InterruptTrain() {
       // TrainEnd();
     }
   }
-  return true;
+  return cmd_id;
 }
 
-bool Controller::ResumeTrain() {
+uint64_t Controller::ResumeTrain() {
+  static std::atomic<uint64_t> resume_cmd_id = 1;
+  auto cmd_id = resume_cmd_id.fetch_add(1, std::memory_order_relaxed);
   if (!IsTrainIdle()) {
     // LOG(INFO) << "Controller: Put ResumeTrain";
-    train_cmd_event_mq_->Put(static_cast<int>(Event::kResumeTrain));
+    train_cmd_event_mq_->Put({cmd_id, static_cast<int>(Event::kResumeTrain)});
   }
-  return true;
+  return cmd_id;
 }
 
-bool Controller::ColocateAdjust() {
+uint64_t Controller:: ColocateAdjust() {
+  static std::atomic<uint64_t> adjust_cmd_id = 1;
+  auto cmd_id = adjust_cmd_id.fetch_add(1, std::memory_order_relaxed);
   if (!IsTrainIdle()) {
     if (Config::serve_mode == ServeMode::kColocateL2) {
-      train_cmd_event_mq_->Put(static_cast<int>(Event::kColocateAdjustL2));
+      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(Event::kColocateAdjustL2)});
     }
   }
-  return true;
+  return cmd_id;
+}
+
+uint64_t Controller::InferExit() {
+  static std::atomic<uint64_t> infer_exit_id = 1;
+  auto cmd_id = infer_exit_id.fetch_add(1, std::memory_order_relaxed);
+  if (!IsTrainIdle()) {
+    if (Config::serve_mode == ServeMode::kColocateL2) {
+      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(Event::kInferExit)});
+    }
+  }
+  return cmd_id;
 }
 
 bool Controller::WaitTrainNotRunning() {
@@ -146,10 +168,12 @@ bool Controller::WaitInferIdle() {
   return true;
 }
 
-bool Controller::WaitColocateAdjustDone() {
+bool Controller::WaitColocateAdjustDone(uint64_t cmd_id) {
   if (!IsTrainIdle()) {
     if (Config::serve_mode == ServeMode::kColocateL2) {
-      auto event = train_adjust_event_mq_->BlockGet();
+      std::unique_lock lock{wait_train_adjust_mutex_};
+      wait_train_adjust_cv_.wait(lock, [&](){ return adjust_done_id_ >= cmd_id; });
+      // auto event = train_adjust_event_mq_->BlockGet();
     }
   }
   return true;
@@ -179,11 +203,11 @@ bool Controller::IsInferIdle() {
 
 void Controller::TrainStart() {
   // LOG(INFO) << "Controller Put TrainStart";
-  train_status_event_mq_->Put(static_cast<int>(Event::kTrainStart));
+  train_status_event_mq_->Put({0, static_cast<int>(Event::kTrainStart)});
 }
 
 void Controller::TrainEnd() {
-  train_status_event_mq_->Put(static_cast<int>(Event::kTrainEnd));
+  train_status_event_mq_->Put({0, static_cast<int>(Event::kTrainEnd)});
 }
 
 bool Controller::IsTrainIdle() {

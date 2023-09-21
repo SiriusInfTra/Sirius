@@ -1,5 +1,7 @@
 #include <numeric>
 #include <thread>
+#include <cuda.h>
+#include <cuda_runtime_api.h>
 
 #include "graph_executor.h"
 #include <glog/logging.h>
@@ -16,6 +18,16 @@ inline size_t GetDataAlignment(const DLTensor& arr) {
   return align;
 }
 }
+
+#define CU_CALL(func) \
+  do { \
+    auto err = func; \
+    if (err != CUDA_SUCCESS) { \
+      const char* pstr = nullptr; \
+      cuGetErrorString(err, &pstr); \
+      LOG(FATAL) << #func << ": " << pstr; \
+    } \
+  } while (0);
 
 GraphExecutor::GraphExecutor(GraphExecutorFactory &factory)
     : factory_(factory), initialized_(false) {
@@ -36,13 +48,20 @@ GraphExecutor::GraphExecutor(GraphExecutorFactory &factory)
 
 void GraphExecutor::Init() {
   if (!initialized_) {
-    Profiler::Get()->RecordEvent(Profiler::EventItem::InferAllocStorageStart);
+    // Profiler::Get()->RecordEvent(Profiler::EventItem::InferAllocStorageStart);
+    PROFILE_START(InferAllocStorage, 0);
     AllocStorage();
-    Profiler::Get()->RecordEvent(Profiler::EventItem::InferAllocStorageEnd);
+    PROFILE_END(InferAllocStorage, 0);
+    // Profiler::Get()->RecordEvent(Profiler::EventItem::InferAllocStorageEnd);
+    
     ReSetupDataEntry();
-    Profiler::Get()->RecordEvent(Profiler::EventItem::InferLoadParamStart);
+
+    // Profiler::Get()->RecordEvent(Profiler::EventItem::InferLoadParamStart);
+    PROFILE_START(InferLoadParam, 0);
     LoadParams(false);
-    Profiler::Get()->RecordEvent(Profiler::EventItem::InferLoadParamEnd);
+    PROFILE_END(InferLoadParam, 0);
+    // Profiler::Get()->RecordEvent(Profiler::EventItem::InferLoadParamEnd);
+    
     initialized_ = true;
   }
 }
@@ -215,6 +234,8 @@ void GraphExecutor::SetupStorage(bool alloc) {
     vtype.push_back(::tvm::runtime::String2DLDataType(s_type));
   }
 
+  size_t param_storage_size = 0;
+  size_t buffer_storage_size = 0;
   for (size_t sid = 0; sid < factory_.pool_entry_.size(); sid++) {
     const auto &pit = factory_.pool_entry_[sid];
     // if (pit.params_entry)
@@ -237,6 +258,11 @@ void GraphExecutor::SetupStorage(bool alloc) {
       storage_pool_.push_back(TVMArray::Empty(shape, pit.dtype, dev, mem_scope));
     }
     // op_node_storage_id_map_[sid] = storage_pool_.size() - 1;
+    if (pit.params_entry) {
+      param_storage_size += ::tvm::runtime::GetDataSize(*storage_pool_.back().operator->());
+    } else {
+      buffer_storage_size += ::tvm::runtime::GetDataSize(*storage_pool_.back().operator->());
+    }
   }
 
   data_entry_.resize(factory_.node_row_ptr_.back());
@@ -252,6 +278,14 @@ void GraphExecutor::SetupStorage(bool alloc) {
     data_entry_[i] = storage_pool_[storage_id].CreateView(factory_.attrs_.shape[i], vtype[i]);
     const DLTensor* tmp = data_entry_[i].operator->();
     data_alignment_[i] = details::GetDataAlignment(*tmp);
+  }
+
+  static std::set<std::string> logged;
+  if (!logged.count(factory_.model_name_)) {
+    logged.insert(factory_.model_name_);
+    LOG(INFO) << "[GraphExecutor] " << factory_.model_name_
+              << " params " << 1.0 * param_storage_size / 1024 / 1024 << " Mb"
+              << " intermediate " << 1.0 * buffer_storage_size / 1024 / 1024 << " Mb";
   }
 }
 

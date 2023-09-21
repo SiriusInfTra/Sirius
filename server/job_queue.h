@@ -11,6 +11,7 @@
 #include <chrono>
 
 #include "grpc/grcp_server.h"
+#include <glog/logging.h>
 
 namespace colserve {
 

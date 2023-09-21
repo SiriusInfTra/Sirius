@@ -89,7 +89,7 @@ add_executable(${PROJECT_NAME}
   server/config.cc
 )
 target_link_libraries(${PROJECT_NAME} grpc++ proto glog::glog tvm_runtime CLI11::CLI11 
-    CUDA::nvml CUDA::cudart)
+    CUDA::nvml CUDA::cudart CUDA::cuda_driver)
 
 add_executable(client client/client.cc)
 target_link_libraries(client grpc++ proto glog::glog CLI11::CLI11)

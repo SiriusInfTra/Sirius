@@ -41,8 +41,8 @@ class ColocateAdjustL1Exception(Exception):
     pass
 
 class ColocateHook:
-    def __init__(self) -> None:
-        self.stub = pycolserve.PyColocateStub()
+    def __init__(self, batch_size) -> None:
+        self.stub = pycolserve.PyColocateStub(batch_size)
 
     def get_hook(self):
         def hook(module, input, output):
@@ -115,6 +115,8 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                     if mode == 'task-switch-l1':
                         while hook.stub.cmd == pycolserve.Event.kInterruptTrain:
                             time.sleep(1e-3)
+                    if mode == 'colocate-l2':
+                        micro_batch_size = hook.stub.target_batch_size
                     for i in range(0, batch_size, micro_batch_size):
                         output = model(images[i:i+micro_batch_size])
                         loss = criterion(output, targets[i:i+micro_batch_size]) / (batch_size / micro_batch_size)
@@ -134,21 +136,22 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                     ori_gpu_mem = gpu_mem()
                     torch.cuda.empty_cache()
                     t1 = time.time()
-                    hook.stub.cmd = None
                     hook.stub.adjust_l1_done()
                     print('colocate adj l1 free cache {:.1f}ms, new micro batch size {}, gpu mem {:.1f} -> {:.1f}'.format(
                         (t1 - t0) * 1000, micro_batch_size, ori_gpu_mem, gpu_mem()))
                 else:
                     if mode == 'colocate-l2' and hook.stub.cmd == pycolserve.Event.kColocateAdjustL2:
                         t0 = time.time()
+                        old_gpu_memory = gpu_mem()
+                        old_batch_size = micro_batch_size
                         torch.cuda.synchronize()
                         torch.cuda.empty_cache()
-                        micro_batch_size = micro_batch_size - 4
-                        hook.stub.cmd = None
+                        micro_batch_size = hook.stub.target_batch_size
                         hook.stub.adjust_l2_done()
                         t1 = time.time()
-                        print('batch {} adjust : bs {} {:.1f}ms | {:.1f}ms | gpu_mem {:.1f}'.format(
-                            i, micro_batch_size, (time.time()-batch_begin) * 1000, (t1 - t0) * 1000, gpu_mem()))
+                        print('batch {} adjust : bs {} -> {} | {:.1f}ms | {:.1f}ms | gpu_mem {:.1f} -> {:.1f}'.format(
+                            i, old_batch_size, micro_batch_size, (time.time()-batch_begin) * 1000, (t1 - t0) * 1000, 
+                            old_gpu_memory, gpu_mem()))
                     break
 
         scheduler.step()
@@ -207,7 +210,7 @@ if __name__ == '__main__':
         hook = SwitchHook(args.mode)
         hook.stub.train_start()
     elif 'colocate-l1' in args.mode or 'colocate-l2' in args.mode:
-        hook = ColocateHook()
+        hook = ColocateHook(batch_size=batch_size)
         hook.stub.train_start()
     else:
         hook = None

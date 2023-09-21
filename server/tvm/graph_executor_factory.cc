@@ -1,19 +1,23 @@
 #include <fstream>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "texture.h"
 
 #include "graph_executor.h"
 #include "graph_executor_factory.h"
-#include <glog/logging.h>
+// #include <glog/logging.h>
 
 namespace colserve {
 namespace tvm {
 
 GraphExecutorFactory::GraphExecutorFactory(
+    const std::string &model_name,
     const std::string &graph_json,
     const ::tvm::runtime::Module mod,
     const std::string &params_file,
-    const std::vector<DLDevice> &devs) {
+    const std::vector<DLDevice> &devs) : model_name_(model_name) {
   std::ifstream graph_json_ifs{graph_json};
   std::string graph_json_str{(std::istreambuf_iterator<char>(graph_json_ifs)),
                              std::istreambuf_iterator<char>()};
@@ -139,9 +143,18 @@ void GraphExecutorFactory::SetupStorage() {
 }
 
 void GraphExecutorFactory::LoadParams(const std::string &params_file) {
-  std::ifstream ifs{params_file, std::ios::binary};
-  std::string params_blob{(std::istreambuf_iterator<char>(ifs)),
-                           std::istreambuf_iterator<char>()};
+  struct stat file_stat;
+  int params_fd = open(params_file.c_str(), O_RDONLY);
+  fstat(params_fd, &file_stat);
+  auto params_ptr = static_cast<const char*>(
+      mmap(NULL, file_stat.st_size, PROT_READ, MAP_PRIVATE, params_fd, 0U));
+  std::string params_blob;
+  params_blob.reserve(file_stat.st_size);
+  params_blob.assign(params_ptr, params_ptr + file_stat.st_size);
+  munmap((void*)params_ptr, file_stat.st_size);
+  // std::ifstream ifs{params_file, std::ios::binary};
+  // std::string params_blob{(std::istreambuf_iterator<char>(ifs)),
+  //                          std::istreambuf_iterator<char>()};
   dmlc::MemoryStringStream ms_strm(const_cast<std::string*>(&params_blob));
   dmlc::Stream* strm = &ms_strm;
   uint64_t header, reserved;
@@ -156,6 +169,7 @@ void GraphExecutorFactory::LoadParams(const std::string &params_file) {
   strm->Read(&sz);
   size_t size = static_cast<size_t>(sz);
   CHECK(size == names.size()) << "Invalid parameters file format";
+  size_t params_size = 0;
   for (size_t i = 0; i < size; ++i) {
     // The data_entry is allocated on device, NDArray.load always load the array into CPU.
     TVMArray temp;
@@ -163,9 +177,11 @@ void GraphExecutorFactory::LoadParams(const std::string &params_file) {
     CHECK(input_map_.count(names[i])) << "cannot find " << names[i] <<  " in model parameter"; 
     auto it = node_map_.find(names[i]);
     // LOG(INFO) << "find param in input_map " << it->first << " " << it->second;
-    
+
     params_[it->second] = temp.CopyTo(::tvm::Device{kDLCUDAHost, 0});
+    params_size += ::tvm::runtime::GetDataSize(*params_[it->second].operator->());
   }
+  VLOG(1) << params_file << " " << 1.0 * params_size / 1024 / 1024 << " Mb";
 }
 
 std::unique_ptr<GraphExecutor> GraphExecutorFactory::CreateGraphExecutor() {

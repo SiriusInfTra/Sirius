@@ -18,20 +18,21 @@ namespace colserve {
 
 namespace {
 template<typename T, typename = std::void_t<>>
-struct MQElement : public std::false_type {
+  struct MQElement : public std::false_type {
 };
 
-template<typename NumType>
-struct MQElement<NumType> : public std::true_type {
-  static_assert(std::is_arithmetic<NumType>::value, "invalid type");
-  static void to_memory(void* memory, const NumType &data) {
-    reinterpret_cast<NumType*>(memory)[0] = data;
+template<typename PodType>
+struct MQElement<PodType> : public std::true_type {
+  // static_assert(std::is_arithmetic<PodType>::value, "invalid type");
+  static_assert(std::is_pod<PodType>::value, "invalid type");
+  static void to_memory(void* memory, const PodType &data) {
+    reinterpret_cast<PodType*>(memory)[0] = data;
   }
-  static void to_data(void* memory, NumType &data) {
-    data = reinterpret_cast<NumType*>(memory)[0];
+  static void to_data(void* memory, PodType &data) {
+    data = reinterpret_cast<PodType*>(memory)[0];
   }
   static constexpr size_t size() {
-    return sizeof(NumType);
+    return sizeof(PodType);
   }
 };
 
@@ -59,7 +60,7 @@ class MemoryQueue {
   static constexpr auto to_data = MQElement<T>::to_data;
   static constexpr auto elem_size = MQElement<T>::size;
   MemoryQueue(const std::string &name, bool is_server) 
-      : name_(name), is_server_(is_server) {
+      : is_server_(is_server), name_(name)  {
     // std::string shm_name = "colserve-mq-" + name;
     auto shm_name = GetShmName(-1);
     if (is_server) {
@@ -247,7 +248,7 @@ class MemoryQueue {
   void GetSemUnwaited(T &data) {
     Lock();
     UpdateMemoryDataUnlocked();
-    CHECK_GT(memory_data_->len_, 0);
+    CHECK_GT(memory_data_->len_, 0UL);
     // T data = memory_data_->data_[memory_data_->idx_];
     to_data(&memory_data_->data_[memory_data_->idx_], data);
     memory_data_->idx_ = (memory_data_->idx_ + 1) % memory_data_->cap_;
