@@ -23,7 +23,7 @@ namespace {
     } \
   } while(0);
 
-#define CUDA_CALL(func) do {\
+#define CUDA_CALL(func) do { \
     auto error = func; \
     if (error != cudaSuccess) { \
       LOG(FATAL) << cudaGetErrorString(error); \
@@ -204,8 +204,15 @@ void Profiler::WriteLog() {
     if (it.second.size() > 0) {
       avg = 1.0 * sum / it.second.size();
     }
+    auto sorted = it.second;
+    sort(sorted.begin(), sorted.end());
     ofs << static_cast<PerfItem>(it.first) << std::fixed << std::setprecision(1) << ":"
-        << " avg " << avg << " max " << max << " min " << min
+        << " avg " << avg << " max " << max << " min " << min << " cnt " << it.second.size() << " |"
+        << " p99 " << sorted[int(0.99 * sorted.size())]
+        << " p95 " << sorted[int(0.95 * sorted.size())]
+        << " p90 " << sorted[int(0.90 * sorted.size())]
+        << " p80 " << sorted[int(0.80 * sorted.size())]
+        << " p70 " << sorted[int(0.50 * sorted.size())]
         << std::endl;
   }
 
