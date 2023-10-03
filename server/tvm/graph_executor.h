@@ -74,6 +74,7 @@ class GraphExecutor {
   // std::map<uint32_t, bool> param_ready_;
   std::vector<bool> param_ready_;
 
+  void* blob_mem_{nullptr};
   
   TVMStreamHandle run_stream_;
   TVMStreamHandle load_param_stream_;

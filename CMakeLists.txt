@@ -1,8 +1,10 @@
 cmake_minimum_required(VERSION 3.24)
-project(colserve)
+project(colserve LANGUAGES CXX CUDA)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 
+# find cuda toolkit
+find_package(CUDAToolkit 11 REQUIRED)
 
 include(FetchContent)
 set(FETCHCONTENT_QUIET OFF)
@@ -59,9 +61,6 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 add_library(proto ${proto_srcs} ${proto_hdrs} ${grpc_srcs} ${grpc_hdrs})
 target_link_libraries(proto ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF} )
 
-# find cuda toolkit
-find_package(CUDAToolkit 11 REQUIRED)
-
 
 # add tvm runtime
 include_directories(
@@ -75,8 +74,17 @@ link_directories(
   ${TVM_HOME}/3rdparty/dmlc-core/build
 )
 
+# sta lib
+add_library(sta SHARED
+  server/sta/cuda_allocator.cc
+  server/sta/tensor_pool.cc
+  server/sta/init.cc
+)
+target_include_directories(sta INTERFACE ${TVM_HOME}/3rdparty/dlpack/include)
+target_include_directories(sta PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/server/)
+target_link_libraries(sta PRIVATE CUDA::cudart PUBLIC glog::glog)
 
-add_executable(${PROJECT_NAME} 
+add_executable(${PROJECT_NAME}
   server/main.cc
   server/grpc/grpc_server.cc
   server/tvm/graph_executor_factory.cc
@@ -88,8 +96,13 @@ add_executable(${PROJECT_NAME}
   server/profiler.cc
   server/config.cc
 )
-target_link_libraries(${PROJECT_NAME} grpc++ proto glog::glog tvm_runtime CLI11::CLI11 
-    CUDA::nvml CUDA::cudart CUDA::cuda_driver)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/)
+
+target_link_libraries(${PROJECT_NAME} 
+  grpc++ proto tvm_runtime CLI11::CLI11 glog::glog
+  CUDA::nvml CUDA::cudart CUDA::cuda_driver
+  sta
+)
 
 add_executable(client client/client.cc)
 target_link_libraries(client grpc++ proto glog::glog CLI11::CLI11)
@@ -103,20 +116,22 @@ target_link_libraries(hybrid_workload grpc++ proto glog::glog CLI11::CLI11)
 
 
 # build python ext
-add_custom_target(
-  pycolserve ALL
-  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/server/python/pycolserve.egg-info
-)
-add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/server/python/pycolserve.egg-info
-  COMMAND ${CONDA_PREFIX}/bin/python
-  ARGS setup.py install
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/server/python
-  DEPENDS 
-    "${CMAKE_CURRENT_SOURCE_DIR}/server/python/setup.py"
-    "${CMAKE_CURRENT_SOURCE_DIR}/server/python/pycolserve.pxd"
-    "${CMAKE_CURRENT_SOURCE_DIR}/server/python/pycolserve.pyx"
-    "${CMAKE_CURRENT_SOURCE_DIR}/server/python/control_stub.h"
-    "${CMAKE_CURRENT_SOURCE_DIR}/server/python/control_stub.cc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/server/block_queue.h"
-)
+# add_custom_target(
+#   torch_col ALL
+#   DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/python/torch_col.egg-info
+# )
+# add_custom_command(
+#   OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/python/torch_col.egg-info
+#   COMMAND ${CONDA_PREFIX}/bin/python
+#   ARGS setup.py build_ext install 
+#   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/python
+#   DEPENDS 
+#     "${CMAKE_CURRENT_SOURCE_DIR}/python/setup.py"
+#     "${CMAKE_CURRENT_SOURCE_DIR}/python/torch_col/torch_col.pxd"
+#     "${CMAKE_CURRENT_SOURCE_DIR}/python/torch_col/torch_col.pyx"
+#     "${CMAKE_CURRENT_SOURCE_DIR}/python/torch_col/control_stub.h"
+#     "${CMAKE_CURRENT_SOURCE_DIR}/python/torch_col/control_stub.cc"
+#     "${CMAKE_CURRENT_SOURCE_DIR}/server/torch_col/block_queue.h"
+# )
+
+add_subdirectory(python)

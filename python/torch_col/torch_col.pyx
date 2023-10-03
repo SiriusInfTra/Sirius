@@ -1,4 +1,4 @@
-from pycolserve cimport MemoryQueue, Event, SwitchStub
+from .torch_col cimport MemoryQueue, Event, SwitchStub, ColocateStub, CtrlMsgEntry
 
 cdef class PyCtrlMsgEntry:
     cdef CtrlMsgEntry _entry

@@ -2,7 +2,7 @@
 
 #include "control_stub.h"
 
-namespace pycolserve {
+namespace torch_col {
 
 using namespace colserve;
 
@@ -137,4 +137,4 @@ double ColocateStub::PassedTimeFromSetCmd() {
   return std::chrono::duration<double, std::milli>(now - set_cmd_time_).count();
 }
 
-} // namespace pycolserve
+} // namespace torch_col

@@ -13,23 +13,23 @@ import threading
 import os, sys, select
 from multiprocessing.shared_memory import SharedMemory
 
-import pycolserve
+import torch_col
 
-# TODO: wrapp in pycolserve package
+# TODO: wrapp in torch_col package
 class SwitchL1Exception(Exception):
     pass
 
 class SwitchHook:
     def __init__(self, mode) -> None:
-        self.stub = pycolserve.PySwitchStub()
+        self.stub = torch_col.PySwitchStub()
         self.mode = mode
 
     def get_hook(self):
         def hook(module, input, output):
             torch.cuda.synchronize()
-            if self.stub.cmd == pycolserve.Event.kInterruptTrain:
+            if self.stub.cmd == torch_col.Event.kInterruptTrain:
                 raise SwitchL1Exception("[Task Switch]")
-            elif self.stub.cmd == pycolserve.Event.kResumeTrain:
+            elif self.stub.cmd == torch_col.Event.kResumeTrain:
                 self.stub.cmd = None
         return hook
     
@@ -42,13 +42,13 @@ class ColocateAdjustL1Exception(Exception):
 
 class ColocateHook:
     def __init__(self, batch_size) -> None:
-        self.stub = pycolserve.PyColocateStub(batch_size)
+        self.stub = torch_col.PyColocateStub(batch_size)
 
     def get_hook(self):
         def hook(module, input, output):
             torch.cuda.synchronize()
             # print(f'{module} {time.time()}')
-            if self.stub.cmd == pycolserve.Event.kColocateAdjustL1:
+            if self.stub.cmd == torch_col.Event.kColocateAdjustL1:
                 # print(f'receive kColocateAdjustL1 {time.time()}')
                 raise ColocateAdjustL1Exception("[Colocate Adjust]")
         return hook
@@ -113,7 +113,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                 try:
                     # print('hook.cmd', hook.stub.cmd, flush=True)
                     if mode == 'task-switch-l1':
-                        while hook.stub.cmd == pycolserve.Event.kInterruptTrain:
+                        while hook.stub.cmd == torch_col.Event.kInterruptTrain:
                             time.sleep(1e-3)
                     if mode == 'colocate-l2':
                         micro_batch_size = hook.stub.target_batch_size
@@ -140,7 +140,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                     print('colocate adj l1 free cache {:.1f}ms, new micro batch size {}, gpu mem {:.1f} -> {:.1f}'.format(
                         (t1 - t0) * 1000, micro_batch_size, ori_gpu_mem, gpu_mem()))
                 else:
-                    if mode == 'colocate-l2' and hook.stub.cmd == pycolserve.Event.kColocateAdjustL2:
+                    if mode == 'colocate-l2' and hook.stub.cmd == torch_col.Event.kColocateAdjustL2:
                         t0 = time.time()
                         old_gpu_memory = gpu_mem()
                         old_batch_size = micro_batch_size
@@ -167,7 +167,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                 batch_size,
                 micro_batch_size))
     
-        # if hook.stub.cmd == pycolserve.Event.kColocateAdjustL2:
+        # if hook.stub.cmd == torch_col.Event.kColocateAdjustL2:
         #     t0 = time.time()
         #     batch_size = int(batch_size - 2)
         #     train_loader = DataLoader(train_dataset, batch_size=batch_size, 

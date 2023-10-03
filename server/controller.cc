@@ -1,4 +1,5 @@
 #include <signal.h>
+#include <glog/logging.h>
 
 #include "controller.h"
 #include "config.h"
@@ -56,6 +57,13 @@ std::ostream& operator<<(std::ostream& os, const Controller::TrainStatus &status
 void Controller::Init() {
   controller_ = std::make_unique<Controller>();
 }
+
+Controller* Controller::Get(){
+    if (controller_ == nullptr) {
+      LOG(FATAL) << "Controller not initialized";
+    }
+    return controller_.get();
+  }
 
 Controller::Controller() {
   train_cmd_event_mq_ = std::make_unique<MemoryQueue<CtrlMsgEntry>>("cmd-ctrl", true);

@@ -5,7 +5,11 @@
 #include <array>
 #include <mutex>
 #include <pthread.h>
+#ifndef PY_EXTENSION_LOGGING
 #include <glog/logging.h>
+#else
+#include PY_EXTENSION_LOGGING
+#endif
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/fcntl.h>

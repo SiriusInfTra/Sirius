@@ -4,7 +4,6 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
-#include <glog/logging.h>
 
 #include "block_queue.h"
 
@@ -18,12 +17,7 @@ struct CtrlMsgEntry {
 class Controller {
  public:
   static void Init();
-  static Controller* Get() {
-    if (controller_ == nullptr) {
-      LOG(FATAL) << "Controller not initialized";
-    }
-    return controller_.get();
-  }
+  static Controller* Get();
 
   Controller();
   uint64_t InterruptTrain();

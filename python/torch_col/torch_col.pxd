@@ -2,10 +2,10 @@
 
 from libcpp.string cimport string
 
-cdef extern from "control_stub.cc" namespace "pycolserve":
-    pass
+# cdef extern from "./csrc/control_stub.cc" namespace "torch_col":
+#     pass
 
-cdef extern from "../block_queue.h" namespace "colserve":
+cdef extern from "<csrc/control_stub.h>" namespace "colserve":
     cdef cppclass MemoryQueue[T]:
         MemoryQueue(string, bint) except + 
         void Put(T)
@@ -13,13 +13,13 @@ cdef extern from "../block_queue.h" namespace "colserve":
         bint TimedGet(T&, size_t)
 
 
-cdef extern from "../controller.h" namespace "colserve":
+cdef extern from "<csrc/control_stub.h>" namespace "colserve":
     cdef struct CtrlMsgEntry:
         unsigned long long id
         int event
 
 
-cdef extern from "control_stub.h" namespace "pycolserve":
+cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
     cpdef enum class Event(int):
         # status 
         kTrainStart,

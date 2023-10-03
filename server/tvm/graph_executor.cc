@@ -178,18 +178,30 @@ void GraphExecutor::ResetStorage() {
     e.get_mutable()->dl_tensor.data = nullptr;
   }
   for (auto &s : storage_pool_) {
-    DeviceAPI::Get(s->device)->FreeDataSpace(s->device, s->data);
+    // DeviceAPI::Get(s->device)->FreeDataSpace(s->device, s->data);
     s.get_mutable()->dl_tensor.data = nullptr;
   }
+  CHECK(cudaFree(blob_mem_) == cudaSuccess);
 }
 
 void GraphExecutor::AllocStorage() {
   using namespace ::tvm::runtime;
+
+  size_t total_size = 0, off = 0;
   for (auto &s : storage_pool_) {
-    s.get_mutable()->dl_tensor.data =
-        DeviceAPI::Get(s->device)->AllocDataSpace(
-          s->device, s->ndim, s->shape, s->dtype);
+    total_size += GetDataSize(*s.operator->());
   }
+  CHECK(cudaMalloc(&blob_mem_, total_size) == cudaSuccess);
+  for (auto &s : storage_pool_) {
+    s.get_mutable()->dl_tensor.data = static_cast<char*>(blob_mem_) + off;
+    off += GetDataSize(*s.operator->());
+  }
+
+  // for (auto &s : storage_pool_) {
+  //   s.get_mutable()->dl_tensor.data =
+  //       DeviceAPI::Get(s->device)->AllocDataSpace(
+  //         s->device, s->ndim, s->shape, s->dtype);
+  // }
 }
 
 void GraphExecutor::LoadParams(bool pipeline) {

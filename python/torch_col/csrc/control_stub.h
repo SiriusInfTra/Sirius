@@ -4,10 +4,13 @@
 #include <memory>
 #include <thread>
 
-#include "../block_queue.h"
-#include "../controller.h"
+// #include <block_queue.h>
+// #include <controller.h>
+#include <server/block_queue.h>
+#include <server/controller.h>
+// #include "../../server/controller.h"
 
-namespace pycolserve {
+namespace torch_col {
 using namespace colserve;
 
 enum class Event {
