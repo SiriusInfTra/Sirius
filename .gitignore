@@ -12,5 +12,9 @@ models/*/
 *.so
 
 *.egg-info/
-server/python/pycolserve.cpp
+python/torch_col/torch_col.cpp
 dist/
+
+*.code-workspace
+
+*.pyc
