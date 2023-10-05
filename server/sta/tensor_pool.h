@@ -14,17 +14,21 @@ namespace sta {
 class STensor;
 class TensorContainer {
  public:
+  using memory_data_t = std::shared_ptr<CUDAMemPool::PoolEntry>;
+
   TensorContainer();
-  TensorContainer(const CUDAMemPool::PoolEntry &mdata_, std::vector<int64_t> shape, DLDataType dtype);
+  TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, DLDataType dtype);
+  TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, std::vector<int64_t> stride, 
+                  DLDataType dtype, size_t storage_offset);
   virtual ~TensorContainer();
 
   friend STensor;
  private:
   std::vector<int64_t> shape_;
-  std::vector<int64_t> strides_;
+  std::vector<int64_t> stride_;
   
   DLTensor tensor_;
-  CUDAMemPool::PoolEntry mdata_;
+  memory_data_t mdata_;
 };
 
 class STensor : public std::shared_ptr<TensorContainer> {
@@ -36,6 +40,11 @@ class STensor : public std::shared_ptr<TensorContainer> {
   template<typename... Args>
   STensor(Args&&... args) : 
       std::shared_ptr<TensorContainer>(std::make_shared<TensorContainer>(std::forward<Args>(args)...)) {}
+
+  TensorContainer::memory_data_t MData() {
+    return get()->mdata_;
+  }
+
   STensor& operator=(STensor &tensor) {
     std::shared_ptr<TensorContainer>::operator=(tensor);
     return *this;
@@ -60,8 +69,10 @@ class TensorPool {
   static TensorPool* Get();
 
   TensorPool();
-  uint64_t Empty(std::vector<int64_t> shape, DLDataType dtype);
-  void Free(uint64_t handle);
+  // uint64_t Empty(std::vector<int64_t> shape, DLDataType dtype);
+  uint64_t Insert(STensor tensor);
+  void Remove(uint64_t handle);
+
   STensor Tensor(uint64_t handle);
   const STensor CTensor(uint64_t handle) const;
   

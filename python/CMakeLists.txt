@@ -34,3 +34,20 @@ target_link_libraries(torch_col PRIVATE ${TORCH_LIBRARIES} Python::Python)
 target_link_libraries(torch_col 
   PUBLIC sta
   PUBLIC glog::glog)
+
+# build python ext
+add_custom_target(
+  torch_col_py_ext ALL
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/torch_col.egg-info
+)
+
+add_custom_command(
+  OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/torch_col.egg-info
+  COMMAND ${CONDA_PREFIX}/bin/python
+  ARGS setup.py build_ext install 
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  DEPENDS 
+    torch_col sta
+    "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/torch_col.pxd"
+    "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/torch_col.pyx"
+)

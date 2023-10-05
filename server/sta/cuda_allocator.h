@@ -23,13 +23,13 @@ class CUDAMemPool {
   static CUDAMemPool* Get();
   
   CUDAMemPool(std::size_t size);
-  PoolEntry Alloc(std::size_t size);
-  void Free(PoolEntry entry);
+  std::shared_ptr<PoolEntry> Alloc(std::size_t size);
 
  private:
+  static std::unique_ptr<CUDAMemPool> cuda_mem_pool_;
   static bool CmpPoolEntryByAddr(const PoolEntry &a, const PoolEntry &b);
 
-  static std::unique_ptr<CUDAMemPool> cuda_mem_pool_;
+  void Free(PoolEntry entry);
 
   std::mutex mutex_;
   std::set<PoolEntry, decltype(&CUDAMemPool::CmpPoolEntryByAddr)> entry_by_addr_;

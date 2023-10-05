@@ -6,6 +6,7 @@ namespace torch_col {
 struct Initializer {
   Initializer() {
     colserve::sta::Init();
+    ::google::InitGoogleLogging("torch_col");
   }
 };
 

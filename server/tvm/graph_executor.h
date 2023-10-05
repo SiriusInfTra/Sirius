@@ -14,7 +14,7 @@ namespace tvm {
 #define TVM_CCALL(func)                     \
   {                                         \
     int ret = (func);                       \
-    CHECK_EQ(ret, 0) << TVMGetLastError(); \
+    CHECK_EQ(ret, 0) << TVMGetLastError();  \
   }
 
 

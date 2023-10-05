@@ -4,6 +4,7 @@
 #include <torch/library.h>
 
 #include <sta/tensor_pool.h>
+#include <sta/tensor_methods.h>
 #include "tensor_impl.h"
 #include "dlpack_convert.h"
 
@@ -19,7 +20,20 @@ at::Tensor empty(
   auto scalar_type = at::dtype_or_default(dtype);
   auto dlpack_dtype = getDLDataType(scalar_type);
   std::vector<int64_t> size_vec(size.begin(), size.end());
-  auto handle = colserve::sta::TensorPool::Get()->Empty(size_vec, dlpack_dtype);
+  // auto handle = colserve::sta::TensorPool::Get()->Empty(size_vec, dlpack_dtype);
+  auto handle = colserve::sta::Empty(size_vec, dlpack_dtype);
+  return at::detail::make_tensor_base<ColTensorImpl>(std::make_shared<ColTensorImpl::Data>(handle));
+}
+
+at::Tensor as_strided(
+    const at::Tensor& self, at::IntArrayRef size, at::IntArrayRef stride,
+    c10::optional<int64_t> storage_offset) {
+  auto impl = dynamic_cast<ColTensorImpl*>(self.unsafeGetTensorImpl());
+  CHECK(impl) << "input tensor is not a ColTensor " << self.toString();
+  std::vector<int64_t> size_vec(size.begin(), size.end());
+  std::vector<int64_t> stride_vec(stride.begin(), stride.end());
+  auto handle = colserve::sta::AsStrided(
+      impl->Handle(), size_vec, stride_vec, storage_offset.value_or(0));
   return at::detail::make_tensor_base<ColTensorImpl>(std::make_shared<ColTensorImpl::Data>(handle));
 }
 }
@@ -27,6 +41,7 @@ at::Tensor empty(
 
 TORCH_LIBRARY_IMPL(aten, CUDA, m) {
   m.impl("empty.memory_format", TORCH_FN(empty));
+  m.impl("as_strided", TORCH_FN(as_strided));
 }
 
 

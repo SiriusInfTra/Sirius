@@ -33,9 +33,10 @@ CUDAMemPool::CUDAMemPool(std::size_t size) : entry_by_addr_{CmpPoolEntryByAddr} 
   
   std::unique_lock<std::mutex> lock{mutex_};
   entry_by_addr_.insert(entry);
-} 
+}
 
-CUDAMemPool::PoolEntry CUDAMemPool::Alloc(std::size_t size) {
+
+std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(std::size_t size) {
   std::unique_lock lock{mutex_};
   // auto it = std::lower_bound(entry_by_addr_.begin(), entry_by_addr_.end(), size, 
   //   [](const std::shared_ptr<PoolEntry> &a, const std::size_t &b) -> bool
@@ -57,9 +58,12 @@ CUDAMemPool::PoolEntry CUDAMemPool::Alloc(std::size_t size) {
       entry_by_addr_.insert(new_entry);
       entry.size = aligned_size;
     }
-    return PoolEntry{entry.addr, entry.size};
+    // return PoolEntry{entry.addr, entry.size};
+    return std::shared_ptr<CUDAMemPool::PoolEntry>(
+        new PoolEntry{entry.addr, entry.size},
+        [this](PoolEntry *entry) {Free(*entry); delete entry;});
   } else {
-    return PoolEntry{};
+    return nullptr;
   }
 }
 

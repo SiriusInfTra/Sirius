@@ -78,6 +78,8 @@ link_directories(
 add_library(sta SHARED
   server/sta/cuda_allocator.cc
   server/sta/tensor_pool.cc
+  server/sta/shape_helper.cc
+  server/sta/tensor_methods.cc
   server/sta/init.cc
 )
 target_include_directories(sta INTERFACE ${TVM_HOME}/3rdparty/dlpack/include)
@@ -114,24 +116,5 @@ add_executable(hybrid_workload
 )
 target_link_libraries(hybrid_workload grpc++ proto glog::glog CLI11::CLI11)
 
-
-# build python ext
-# add_custom_target(
-#   torch_col ALL
-#   DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/python/torch_col.egg-info
-# )
-# add_custom_command(
-#   OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/python/torch_col.egg-info
-#   COMMAND ${CONDA_PREFIX}/bin/python
-#   ARGS setup.py build_ext install 
-#   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/python
-#   DEPENDS 
-#     "${CMAKE_CURRENT_SOURCE_DIR}/python/setup.py"
-#     "${CMAKE_CURRENT_SOURCE_DIR}/python/torch_col/torch_col.pxd"
-#     "${CMAKE_CURRENT_SOURCE_DIR}/python/torch_col/torch_col.pyx"
-#     "${CMAKE_CURRENT_SOURCE_DIR}/python/torch_col/control_stub.h"
-#     "${CMAKE_CURRENT_SOURCE_DIR}/python/torch_col/control_stub.cc"
-#     "${CMAKE_CURRENT_SOURCE_DIR}/server/torch_col/block_queue.h"
-# )
 
 add_subdirectory(python)
