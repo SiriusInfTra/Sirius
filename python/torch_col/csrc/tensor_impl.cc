@@ -1,37 +1,55 @@
-#include "tensor_impl.h"
-#include "dlpack_convert.h"
-
 #include <undef_log.h>
 #include <glog/logging.h>
 
+#include "tensor_impl.h"
+#include "dlpack_convert.h"
+
 
 namespace torch_col {
-  
+
+using namespace colserve;
+
 ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data)
     : c10::TensorImpl(c10::DispatchKeySet{c10::DispatchKey::PrivateUse1,
                                           c10::DispatchKey::AutogradPrivateUse1},
                       GetTypeMeta(data),
-                      c10::DeviceType::CUDA),
+                      c10::Device{c10::DeviceType::CUDA, 0}),
       data_(data) {
   LOG(INFO) << "ColTensorImpl" << std::endl;
   set_sizes_strides_policy(SizesStridesPolicy::CustomSizes);
+  // UpdateStorage();
+  auto tensor = sta::TensorPool::Get()->Tensor(data_->handle);
+  auto mdata = tensor.MData();
+  storage_ = at::Storage{{}, mdata ? mdata->size : 0, 
+      c10::DataPtr{mdata ? mdata->addr : nullptr, 
+      c10::Device{c10::DeviceType::CUDA, static_cast<c10::DeviceIndex>(tensor->device.device_id)}}};
+  storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
 }
 
-colserve::sta::STensor ColTensorImpl::Tensor() const {
-  return colserve::sta::TensorPool::Get()->Tensor(data_->handle);
+ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data,
+                             const at::Storage &storage)
+    : c10::TensorImpl(c10::DispatchKeySet{c10::DispatchKey::PrivateUse1,
+                                          c10::DispatchKey::AutogradPrivateUse1},
+                      GetTypeMeta(data),
+                      c10::Device{c10::DeviceType::CUDA, 0}),
+      data_(data) {
+  auto tensor = sta::TensorPool::Get()->Tensor(data_->handle);
+  LOG(INFO) << "ColTensorImpl w/ storage" << std::endl;
+  set_sizes_strides_policy(SizesStridesPolicy::CustomSizes);
+  storage_ = storage;
+  storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
 }
 
-const colserve::sta::STensor ColTensorImpl::CTensor() const {
-  return colserve::sta::TensorPool::Get()->CTensor(data_->handle);
+sta::STensor ColTensorImpl::Tensor() const {
+  return sta::TensorPool::Get()->Tensor(data_->handle);
 }
 
-caffe2::TypeMeta ColTensorImpl::GetTypeMeta(const std::shared_ptr<Data> &data) {
-  auto tensor = colserve::sta::TensorPool::Get()->Tensor(data->handle);
-  return getCaffeTypeMeta(tensor->dtype);
+const sta::STensor ColTensorImpl::CTensor() const {
+  return sta::TensorPool::Get()->CTensor(data_->handle);
 }
 
 at::IntArrayRef ColTensorImpl::sizes_custom() const {
-  auto tensor = colserve::sta::TensorPool::Get()->Tensor(data_->handle);
+  auto tensor = sta::TensorPool::Get()->Tensor(data_->handle);
   return at::IntArrayRef(tensor->shape, tensor->ndim);
 }
 
@@ -55,6 +73,43 @@ int64_t ColTensorImpl::numel_custom() const {
 
 bool ColTensorImpl::is_contiguous_custom(at::MemoryFormat memory_format) const {
   return true;
+}
+
+bool ColTensorImpl::has_storage() const {
+  const_cast<ColTensorImpl*>(this)->UpdateStorage();
+  return storage_;
+}
+
+const at::Storage& ColTensorImpl::storage() const {
+  const_cast<ColTensorImpl*>(this)->UpdateStorage();
+  return storage_;
+}
+
+int64_t ColTensorImpl::storage_offset() const {
+  auto tensor = Tensor();
+  return tensor->byte_offset / (tensor->dtype.bits >> 3);
+}
+
+caffe2::TypeMeta ColTensorImpl::GetTypeMeta(const std::shared_ptr<Data> &data) {
+  auto tensor = sta::TensorPool::Get()->Tensor(data->handle);
+  return getCaffeTypeMeta(tensor->dtype);
+}
+
+void ColTensorImpl::UpdateStorage() {
+  auto tensor = sta::TensorPool::Get()->Tensor(data_->handle);
+  auto mdata = tensor.MData();
+  
+  if (mdata) {
+    storage_.set_data_ptr_noswap(c10::DataPtr{
+        mdata->addr, c10::Device{c10::DeviceType::CUDA, static_cast<c10::DeviceIndex>(tensor->device.device_id)}});
+    storage_.set_nbytes(mdata->size);
+  }
+  storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
+
+  // if (mdata != nullptr)
+  //   std::cout << "mdata: " << std::hex << mdata->addr << " " << mdata->size << " "
+  //             << static_cast<void*>(static_cast<char*>(storage_.data()) + tensor->byte_offset) 
+  //             << std::endl;
 }
 
 }

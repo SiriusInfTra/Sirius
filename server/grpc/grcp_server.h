@@ -1,11 +1,12 @@
 #ifndef COLSERVE_GRPC_SERVER_H
 #define COLSERVE_GRPC_SERVER_H
 
-#include <dlpack/dlpack.h>
+// #include <dlpack/dlpack.h>
 #include <grpc++/grpc++.h>
 #include <glog/logging.h>
 #include <thread>
 
+#include "../sta/dlpack.h"
 #include "colserve.grpc.pb.h"
 
 

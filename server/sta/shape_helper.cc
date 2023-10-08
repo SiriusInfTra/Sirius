@@ -4,18 +4,19 @@
 namespace colserve {
 namespace sta {
 
-size_t ComputeStorageNbytes(const std::vector<int64_t> &size,
-                            DLDataType dtype) {
+size_t ComputeStorageNbytes(at::IntArrayRef size,
+                            DLDataType dtype,
+                            size_t storage_offset) {
   size_t result = 1;
   for (auto s : size) {
     if (s == 0) return 0;
     result *= s;
   }
-  return result * (dtype.bits / 8);
+  return (result + storage_offset) * (dtype.bits / 8);
 }
 
-size_t ComputeStorageNbytes(const std::vector<int64_t> &size, 
-                            const std::vector<int64_t> &stride, 
+size_t ComputeStorageNbytes(at::IntArrayRef size, 
+                            at::IntArrayRef stride, 
                             DLDataType dtype,
                             size_t storage_offset) {
   size_t result = storage_offset;

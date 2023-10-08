@@ -3,9 +3,13 @@
 
 #include <memory>
 #include <unordered_map>
-#include <dlpack/dlpack.h>
+// #include <dlpack/dlpack.h>
 #include <vector>
+#include <optional>
+#include <ATen/Tensor.h>
 
+
+#include "dlpack.h"
 #include "cuda_allocator.h"
 
 namespace colserve {
@@ -21,6 +25,12 @@ class TensorContainer {
   TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, std::vector<int64_t> stride, 
                   DLDataType dtype, size_t storage_offset);
   virtual ~TensorContainer();
+
+  void SetTensor(TensorContainer::memory_data_t mdata, std::vector<int64_t> shape, 
+                 DLDataType dtype, std::optional<size_t> storage_offset);
+  void SetTensor(TensorContainer::memory_data_t mdata, std::vector<int64_t> shape, 
+                 std::vector<int64_t> stride, 
+                 DLDataType dtype, std::optional<size_t> storage_offset);
 
   friend STensor;
  private:
@@ -44,6 +54,8 @@ class STensor : public std::shared_ptr<TensorContainer> {
   TensorContainer::memory_data_t MData() {
     return get()->mdata_;
   }
+
+  void Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride);
 
   STensor& operator=(STensor &tensor) {
     std::shared_ptr<TensorContainer>::operator=(tensor);
@@ -73,7 +85,7 @@ class TensorPool {
   uint64_t Insert(STensor tensor);
   void Remove(uint64_t handle);
 
-  STensor Tensor(uint64_t handle);
+  STensor Tensor(uint64_t handle) const;
   const STensor CTensor(uint64_t handle) const;
   
  private:

@@ -7,6 +7,7 @@
 
 namespace torch_col {
 
+
 class ColTensorImpl : public c10::TensorImpl {
  public:
   struct Data {
@@ -18,6 +19,7 @@ class ColTensorImpl : public c10::TensorImpl {
   };
 
   explicit ColTensorImpl(std::shared_ptr<Data> data);
+  explicit ColTensorImpl(std::shared_ptr<Data> data, const at::Storage &storage);
 
   uint64_t Handle() const { return data_->handle; }
   colserve::sta::STensor Tensor() const;
@@ -29,13 +31,27 @@ class ColTensorImpl : public c10::TensorImpl {
   int64_t numel_custom() const override;
   bool is_contiguous_custom(at::MemoryFormat memory_format) const override;
 
+  bool has_storage() const override;
+  const at::Storage& storage() const override;
+  int64_t storage_offset() const override;
   
  private:
-  std::shared_ptr<Data> data_;
-
   static caffe2::TypeMeta GetTypeMeta(const std::shared_ptr<Data> &data);
+  
+  void UpdateStorage();
 
+  std::shared_ptr<Data> data_;
 };
+
+
+inline at::Tensor MakeColTensor(uint64_t handle) {
+  return at::detail::make_tensor_base<ColTensorImpl>(std::make_shared<ColTensorImpl::Data>(handle));
+}
+
+inline at::Tensor MakeColTensorAlias(uint64_t handle, const at::Tensor& tensor) {
+  return at::detail::make_tensor_base<ColTensorImpl>(
+      std::make_shared<ColTensorImpl::Data>(handle), tensor.storage());
+}
 
 }
 

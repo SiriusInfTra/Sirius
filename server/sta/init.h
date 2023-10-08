@@ -2,7 +2,6 @@
 #include "tensor_pool.h"
 
 
-
 namespace colserve {
 namespace sta {
 

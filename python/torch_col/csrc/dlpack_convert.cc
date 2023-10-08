@@ -1,5 +1,3 @@
-#include <ATen/DLConvertor.h>
-
 #include "dlpack_convert.h"
 
 
@@ -39,7 +37,8 @@ DLDataType getDLDataType(const at::ScalarType& scalar_type) {
       dtype.code = DLDataTypeCode::kDLFloat;
       break;
     case ScalarType::Bool:
-      TORCH_CHECK(false, "Bool type is not supported by dlpack");
+      // TORCH_CHECK(false, "Bool type is not supported by dlpack");
+      dtype.code = DLDataTypeCode::kDLBool;
       break;
     case ScalarType::ComplexHalf:
       dtype.code = DLDataTypeCode::kDLComplex;
@@ -68,8 +67,100 @@ DLDataType getDLDataType(const at::ScalarType& scalar_type) {
   return dtype;
 }
 
+c10::ScalarType toScalarType(const DLDataType& dtype) {
+  c10::ScalarType stype;
+  TORCH_CHECK(dtype.lanes == 1, "ATen does not support lanes != 1");
+  switch (dtype.code) {
+    case DLDataTypeCode::kDLUInt:
+      switch (dtype.bits) {
+        case 8:
+          stype = c10::ScalarType::Byte;
+          break;
+        default:
+          TORCH_CHECK(
+              false, "Unsupported kUInt bits " + c10::to_string(dtype.bits));
+      }
+      break;
+    case DLDataTypeCode::kDLInt:
+      switch (dtype.bits) {
+        case 8:
+          stype = c10::ScalarType::Char;
+          break;
+        case 16:
+          stype = c10::ScalarType::Short;
+          break;
+        case 32:
+          stype = c10::ScalarType::Int;
+          break;
+        case 64:
+          stype = c10::ScalarType::Long;
+          break;
+        default:
+          TORCH_CHECK(
+              false, "Unsupported kInt bits " + c10::to_string(dtype.bits));
+      }
+      break;
+    case DLDataTypeCode::kDLFloat:
+      switch (dtype.bits) {
+        case 16:
+          stype = c10::ScalarType::Half;
+          break;
+        case 32:
+          stype = c10::ScalarType::Float;
+          break;
+        case 64:
+          stype = c10::ScalarType::Double;
+          break;
+        default:
+          TORCH_CHECK(
+              false, "Unsupported kFloat bits " + c10::to_string(dtype.bits));
+      }
+      break;
+    case DLDataTypeCode::kDLBfloat:
+      switch (dtype.bits) {
+        case 16:
+          stype = c10::ScalarType::BFloat16;
+          break;
+        default:
+          TORCH_CHECK(
+              false, "Unsupported kFloat bits " + c10::to_string(dtype.bits));
+      }
+      break;
+    case DLDataTypeCode::kDLComplex:
+      switch (dtype.bits) {
+        case 32:
+          stype = c10::ScalarType::ComplexHalf;
+          break;
+        case 64:
+          stype = c10::ScalarType::ComplexFloat;
+          break;
+        case 128:
+          stype = c10::ScalarType::ComplexDouble;
+          break;
+        default:
+          TORCH_CHECK(
+              false, "Unsupported kFloat bits " + c10::to_string(dtype.bits));
+      }
+      break;
+    case DLDataTypeCode::kDLBool:
+      switch (dtype.bits) {
+        case 8:
+          stype = c10::ScalarType::Bool;
+          break;
+        default:
+          TORCH_CHECK(
+              false, "Unsupported kDLBool bits " + c10::to_string(dtype.bits));
+      }
+      break;
+    default:
+      TORCH_CHECK(
+          false, "Unsupported code " + c10::to_string(dtype.code));
+  }
+  return stype;
+}
+
 caffe2::TypeMeta getCaffeTypeMeta(const DLDataType &dtype) {
-  auto stype = at::toScalarType(dtype);
+  auto stype = toScalarType(dtype);
   return c10::scalarTypeToTypeMeta(stype);
 }
 

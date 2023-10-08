@@ -6,7 +6,8 @@
 #endif
 
 
-#include <dlpack/dlpack.h>
+// #include <dlpack/dlpack.h>
+#include "../sta/dlpack.h"
 #include <dmlc/json.h>
 #include <dmlc/memory_io.h>
 

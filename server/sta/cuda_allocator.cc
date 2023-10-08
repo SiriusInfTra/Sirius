@@ -1,8 +1,8 @@
 #include <iostream>
 #include <cuda_runtime_api.h>
-// #include <glog/logging.h>
 
 #include "cuda_allocator.h"
+#include <glog/logging.h>
 
 namespace colserve {
 namespace sta {
@@ -28,6 +28,8 @@ void CUDAMemPool::Init(std::size_t size) {
 
 CUDAMemPool::CUDAMemPool(std::size_t size) : entry_by_addr_{CmpPoolEntryByAddr} {
   CUDA_CALL(cudaSetDevice(0));
+  CUDA_CALL(cudaStreamCreate(&stream_));
+
   auto entry = PoolEntry{nullptr, size};
   CUDA_CALL(cudaMalloc(&entry.addr, size));
   
@@ -37,10 +39,38 @@ CUDAMemPool::CUDAMemPool(std::size_t size) : entry_by_addr_{CmpPoolEntryByAddr} 
 
 
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(std::size_t size) {
+  if (size == 0) {
+    return nullptr;
+  }
   std::unique_lock lock{mutex_};
-  // auto it = std::lower_bound(entry_by_addr_.begin(), entry_by_addr_.end(), size, 
-  //   [](const std::shared_ptr<PoolEntry> &a, const std::size_t &b) -> bool
-  //   {return a->size < b;});
+  return AllocUnCheckUnlock(size);
+}
+
+std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Resize(
+    std::shared_ptr<PoolEntry> entry, std::size_t size) {
+  if (size == 0) return nullptr;
+  if (entry != nullptr && entry->size >= size) {
+    return entry;
+  }
+  std::unique_lock lock{mutex_};
+  // case 1: extend the entry by merge with the next entry
+  
+  // case 2: alloc new entry
+  auto new_entry = AllocUnCheckUnlock(size);
+  CHECK(new_entry != nullptr) << "CUDAMemPool: out of memory";
+  return new_entry;
+}
+
+void CUDAMemPool::CopyFromTo(std::shared_ptr<PoolEntry> src, std::shared_ptr<PoolEntry> dst) {
+  if (src == nullptr || dst == nullptr) return;
+  if (src->addr == dst->addr) return;
+
+  CUDA_CALL(cudaMemcpyAsync(dst->addr, src->addr, 
+      std::min(src->size, dst->size), cudaMemcpyDefault, stream_));
+  CUDA_CALL(cudaStreamSynchronize(stream_));
+}
+
+std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::AllocUnCheckUnlock(std::size_t size) {
   auto it = entry_by_addr_.begin();
   for (; it != entry_by_addr_.end(); it++) {
     if (it->size >= size) break;
@@ -49,7 +79,7 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(std::size_t size) {
     auto entry = *it;
     entry_by_addr_.erase(it);
     
-    std::size_t aligned_size = (size + 1023) & ~1023;
+    size_t aligned_size = AlignSize(size);
     if (entry.size > aligned_size) {
       auto new_entry = PoolEntry{
           (void*)((std::size_t)entry.addr + aligned_size), 

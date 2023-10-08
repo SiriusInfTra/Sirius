@@ -16,46 +16,53 @@ TensorPool* TensorPool::Get() {
   return tensor_pool_.get();
 }
 
-TensorContainer::TensorContainer() : tensor_{}, mdata_{} {}
 
-TensorContainer::TensorContainer(memory_data_t mdata, std::vector<int64_t> shape, DLDataType dtype) 
-    : mdata_{mdata} {
-  shape_ = std::move(shape);
-  stride_.resize(shape_.size());
-  stride_.rbegin()[0] = 1;
-  for (int64_t i = static_cast<int64_t>(stride_.size()) - 2; i >= 0; i--) {
-    stride_[i] = stride_[i + 1] * shape_[i + 1];
-  }
-  tensor_ = DLTensor{
-    .data = mdata->addr,
-    .device = DLDevice{DLDeviceType::kDLCUDA, 0},
-    .ndim = static_cast<int32_t>(shape_.size()),
-    .dtype = dtype,
-    .shape = shape_.data(),
-    .strides = stride_.data(),
-    .byte_offset = 0
-  };
+TensorContainer::TensorContainer() : tensor_{0}, mdata_{0} {}
+TensorContainer::TensorContainer(memory_data_t mdata, std::vector<int64_t> shape, DLDataType dtype) {
+  SetTensor(mdata, shape, dtype, 0);
 }
+
 
 TensorContainer::TensorContainer(
     memory_data_t mdata, std::vector<int64_t> shape, std::vector<int64_t> stride,
-    DLDataType dtype, size_t storage_offset) 
-    : mdata_{mdata} {
-  shape_ = std::move(shape);
-  stride_ = std::move(stride);
-  tensor_ = DLTensor{
-    .data = mdata->addr,
-    .device = DLDevice{DLDeviceType::kDLCUDA, 0},
-    .ndim = static_cast<int32_t>(shape_.size()),
-    .dtype = dtype,
-    .shape = shape_.data(),
-    .strides = stride_.data(),
-    .byte_offset = storage_offset * dtype.bits / 8
-  };
+    DLDataType dtype, size_t storage_offset) {
+  SetTensor(mdata, shape, stride, dtype, storage_offset);
 }
 
 TensorContainer::~TensorContainer() {
   // CUDAMemPool::Get()->Free(mdata_);
+}
+
+void TensorContainer::SetTensor(TensorContainer::memory_data_t mdata, 
+    std::vector<int64_t> shape, DLDataType dtype, std::optional<size_t> storage_offset) {
+  std::vector<int64_t> stride(shape.size());
+  if (shape.size() > 0) {
+    stride.rbegin()[0] = 1;
+    for (int64_t i = static_cast<int64_t>(stride.size()) - 2; i >= 0; i--) {
+      stride[i] = stride[i + 1] * shape_[i + 1];
+    }
+  }
+  SetTensor(mdata, std::move(shape), std::move(stride), dtype, storage_offset);
+}
+
+void TensorContainer::SetTensor(TensorContainer::memory_data_t mdata, 
+    std::vector<int64_t> shape, std::vector<int64_t> stride, 
+    DLDataType dtype, std::optional<size_t> storage_offset) {
+  mdata_ = mdata;
+  shape_ = std::move(shape);
+  stride_ = std::move(stride);
+
+  size_t old_byte_offset = tensor_.byte_offset;
+  tensor_ = DLTensor{
+    .data = mdata ? mdata->addr : nullptr,
+    .device = DLDevice{DLDeviceType::kDLCUDA, 0},
+    .ndim = static_cast<int32_t>(shape_.size()),
+    .dtype = dtype,
+    .shape = shape_.data(),
+    .strides = stride_.data(),
+    .byte_offset = storage_offset.has_value() ? 
+                   storage_offset.value() * (dtype.bits >> 3) : old_byte_offset
+  };
 }
 
 // STensor STensor::AsStrided(const std::vector<int64_t> &size, 
@@ -91,13 +98,16 @@ void TensorPool::Remove(uint64_t handle) {
   tensor_by_handle_.erase(handle);
 }
 
-STensor TensorPool::Tensor(uint64_t handle) {
+STensor TensorPool::Tensor(uint64_t handle) const {
   // auto tensor = tensor_by_handle_.at(handle);
-  return tensor_by_handle_.at(handle);
+  // return tensor_by_handle_.at(handle);
+  auto it = tensor_by_handle_.find(handle);
+  CHECK(it != tensor_by_handle_.end()) << "TensorPool: handle " << handle << " not found";
+  return it->second;
 }
 
 const STensor TensorPool::CTensor(uint64_t handle) const {
-  return tensor_by_handle_.at(handle);
+  return Tensor(handle);
 }
 
 

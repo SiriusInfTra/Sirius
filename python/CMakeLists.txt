@@ -5,9 +5,6 @@ project(torch_col LANGUAGES CXX CUDA)
 find_package(Python REQUIRED COMPONENTS Development)
 set(CMAKE_CXX_STANDARD 17)
 
-find_package(Torch REQUIRED)
-
-FetchContent_MakeAvailable(glog)
 
 # Modify if you need a different default value
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
@@ -23,17 +20,12 @@ add_library(torch_col SHARED
   torch_col/csrc/init.cc
 )
 
-# target_include_directories(torch_col PRIVATE "../build/")
-# target_include_directories(torch_col PRIVATE "../server/sta")
-# target_link_directories(torch_col PRIVATE "../build/")
-target_include_directories(torch_col PUBLIC sta glog::glog)
+target_include_directories(torch_col PUBLIC sta)
 target_include_directories(torch_col PRIVATE colserve)
 target_include_directories(torch_col PRIVATE "../")
 
 target_link_libraries(torch_col PRIVATE ${TORCH_LIBRARIES} Python::Python)
-target_link_libraries(torch_col 
-  PUBLIC sta
-  PUBLIC glog::glog)
+target_link_libraries(torch_col PUBLIC sta glog::glog)
 
 # build python ext
 add_custom_target(
