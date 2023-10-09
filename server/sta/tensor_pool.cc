@@ -39,7 +39,7 @@ void TensorContainer::SetTensor(TensorContainer::memory_data_t mdata,
   if (shape.size() > 0) {
     stride.rbegin()[0] = 1;
     for (int64_t i = static_cast<int64_t>(stride.size()) - 2; i >= 0; i--) {
-      stride[i] = stride[i + 1] * shape_[i + 1];
+      stride[i] = stride[i + 1] * shape[i + 1];
     }
   }
   SetTensor(mdata, std::move(shape), std::move(stride), dtype, storage_offset);

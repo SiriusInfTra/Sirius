@@ -35,7 +35,6 @@ at::Tensor empty(
     c10::optional<at::Layout> layout, c10::optional<at::Device> device, 
     c10::optional<bool> pin_memory, c10::optional<at::MemoryFormat> memory_format) {
   CHECK(!device.has_value() || device.value().is_cuda());
-  std::cout << "empty " << size << std::endl;
   auto scalar_type = at::dtype_or_default(dtype);
   auto dlpack_dtype = getDLDataType(scalar_type);
   // auto handle = sta::TensorPool::Get()->Empty(size_vec, dlpack_dtype);
@@ -60,10 +59,11 @@ at::Tensor _reshape_alias(const at::Tensor& self, at::IntArrayRef size, at::IntA
 }
 
 const at::Tensor& resize_(const at::Tensor& self, at::IntArrayRef size, c10::optional<at::MemoryFormat> memory_format) {
+  std::cout <<  std::endl;
   auto impl = GetColTensorImpl(self);
   impl->Tensor().Resize(size, c10::nullopt);
-  // std::cout << "new ts " << self.sizes() << " " << self.numel() << " "
-  //           << self.data_ptr() << std::endl;
+  std::cout << "resize_ " << size << " new ts " << self.sizes() << " " << self.numel() << " "
+            << self.data_ptr() << std::endl;
   return self;
 }
 

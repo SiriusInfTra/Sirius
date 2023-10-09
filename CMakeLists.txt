@@ -21,7 +21,15 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/google/glog
   GIT_TAG        v0.6.0
 )
-FetchContent_MakeAvailable(glog)
+# FetchContent_MakeAvailable(glog)
+FetchContent_GetProperties(glog)
+if (NOT glog_POPULATED)
+  FetchContent_Populate(glog)
+  set(BUILD_SHARED_LIBS_OLD ${BUILD_SHARED_LIBS})
+  set(BUILD_SHARED_LIBS ON CACHE INTERNAL "build shared library" FORCE)
+  add_subdirectory(${glog_SOURCE_DIR} ${glog_BINARY_DIR})
+  set(BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS_OLD} CACHE INTERNAL "library build type" FORCE)
+endif()
 
 FetchContent_Declare(
   CLI11
@@ -30,6 +38,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(CLI11)
 
+find_package(Torch REQUIRED)
 
 # find_program(_GRPC_CPP_PLUGIN_EXECUTABLE grpc_cpp_plugin)
 # find_program(_PROTOBUF_PROTOC protoc)
@@ -82,9 +91,9 @@ add_library(sta SHARED
   server/sta/tensor_methods.cc
   server/sta/init.cc
 )
-target_include_directories(sta INTERFACE ${TVM_HOME}/3rdparty/dlpack/include)
+# target_include_directories(sta INTERFACE ${TVM_HOME}/3rdparty/dlpack/include)
 target_include_directories(sta PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/server/)
-target_link_libraries(sta PRIVATE CUDA::cudart PUBLIC glog::glog)
+target_link_libraries(sta PRIVATE CUDA::cudart ${TORCH_LIBRARIES} glog::glog)
 
 add_executable(${PROJECT_NAME}
   server/main.cc

@@ -6,9 +6,17 @@ namespace colserve {
 namespace sta {
 
 uint64_t Empty(at::IntArrayRef shape, DLDataType dtype) {
-  LOG(INFO) << shape;
   auto storage_nbytes = ComputeStorageNbytes(shape, dtype);
   auto entry = CUDAMemPool::Get()->Alloc(storage_nbytes);
+  std::stringstream ss;
+  ss << "Create empty " << shape << " nbytes " << storage_nbytes;
+  if (entry) {
+    ss << " " << std::hex << entry->addr;
+  } else {
+    ss << " nullptr";
+  }
+  LOG(INFO) << ss.str();
+  std::cout << ss.str() << std::endl;
   if (entry == nullptr && storage_nbytes != 0) {
     LOG(FATAL) << "Tensor Method Empty: Out of memory, required " << storage_nbytes << " bytes";
     return 0;
@@ -28,8 +36,8 @@ uint64_t AsStrided(uint64_t handle, at::IntArrayRef size,
 
 void STensor::Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride) {
   // std::cout << "resize tensor " << size << std::endl;
-  bool same_size = true;
-  if (size.size() == get()->tensor_.ndim) {
+  bool same_size = size.size() == get()->tensor_.ndim;
+  if (same_size) {
     for (size_t i = 0; i < size.size(); i++) {
       if (size[i] != get()->tensor_.shape[i]) {
         same_size = false;
@@ -51,15 +59,18 @@ void STensor::Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride) {
   }
 
   // std::cout << "storage_nbytes: " << storage_nbytes << std::endl;
+  std::stringstream ss;
+  ss << "Resize storage_nbytes: " << storage_nbytes;
   TensorContainer::memory_data_t mdata = MData();
   if (mdata == nullptr || mdata->size < storage_nbytes) {
     auto new_mdata = CUDAMemPool::Get()->Resize(mdata, storage_nbytes);
     CUDAMemPool::Get()->CopyFromTo(mdata, new_mdata);
     mdata = new_mdata;
   }
-  // if (mdata) {
-  //   std::cout << " mdata:" << mdata->addr << " " << mdata->size << std::endl;
-  // }
+  if (mdata) {
+    ss << " mdata:" << mdata->addr << " " << mdata->size;
+  }
+  std::cout << ss.str() << std::endl;
 
   if (stride.has_value()) {
     get()->SetTensor(mdata, size.vec(), stride.value().vec(), 
