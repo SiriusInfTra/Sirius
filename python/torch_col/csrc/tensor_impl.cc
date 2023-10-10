@@ -20,7 +20,7 @@ ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data)
   // UpdateStorage();
   auto tensor = sta::TensorPool::Get()->Tensor(data_->handle);
   auto mdata = tensor.MData();
-  storage_ = at::Storage{{}, mdata ? mdata->size : 0, 
+  storage_ = at::Storage{{}, mdata ? mdata->nbytes : 0, 
       c10::DataPtr{mdata ? mdata->addr : nullptr, 
       c10::Device{c10::DeviceType::CUDA, static_cast<c10::DeviceIndex>(tensor->device.device_id)}}};
   storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
@@ -102,7 +102,7 @@ void ColTensorImpl::UpdateStorage() {
   if (mdata) {
     storage_.set_data_ptr_noswap(c10::DataPtr{
         mdata->addr, c10::Device{c10::DeviceType::CUDA, static_cast<c10::DeviceIndex>(tensor->device.device_id)}});
-    storage_.set_nbytes(mdata->size);
+    storage_.set_nbytes(mdata->nbytes);
   }
   storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
 

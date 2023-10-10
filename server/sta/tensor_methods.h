@@ -13,11 +13,17 @@
 namespace colserve {
 namespace sta {
 
-uint64_t Empty(at::IntArrayRef shape, DLDataType dtype);
+uint64_t Empty(at::IntArrayRef size, DLDataType dtype);
 
-uint64_t AsStrided(uint64_t handle, at::IntArrayRef size, 
+uint64_t EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride, 
+                      DLDataType dtype);
+
+uint64_t ViewDtype(uint64_t handle, DLDataType dtype);
+
+uint64_t AsStrided(uint64_t handle, at::IntArrayRef size,
                    at::IntArrayRef stride, 
                    c10::optional<int64_t> storage_offset);
+
 
 }
 }

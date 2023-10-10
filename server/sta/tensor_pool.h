@@ -54,6 +54,21 @@ class STensor : public std::shared_ptr<TensorContainer> {
   TensorContainer::memory_data_t MData() {
     return get()->mdata_;
   }
+  std::vector<int64_t> ShapeVec() const {
+    return get()->shape_;
+  }
+  std::vector<int64_t> StrideVec() const {
+    return get()->stride_;
+  }
+  at::IntArrayRef Shape() const {
+    return at::IntArrayRef(get()->shape_);
+  }
+  at::IntArrayRef Stride() const {
+    return at::IntArrayRef(get()->stride_);
+  }
+  inline int64_t StorageOffset() const {
+    return get()->tensor_.byte_offset / (get()->tensor_.dtype.bits >> 3);
+  }
 
   void Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride);
 

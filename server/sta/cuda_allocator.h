@@ -17,25 +17,25 @@ class CUDAMemPool {
  public:
   struct PoolEntry {
     void* addr;
-    std::size_t size;
+    std::size_t nbytes;
   };
 
-  static void Init(std::size_t size);
+  static void Init(std::size_t nbytes);
   static CUDAMemPool* Get();
   
-  CUDAMemPool(std::size_t size);
-  std::shared_ptr<PoolEntry> Alloc(std::size_t size);
-  std::shared_ptr<PoolEntry> Resize(std::shared_ptr<PoolEntry> entry, std::size_t size);
+  CUDAMemPool(std::size_t nbytes);
+  std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes);
+  std::shared_ptr<PoolEntry> Resize(std::shared_ptr<PoolEntry> entry, std::size_t nbytes);
   void CopyFromTo(std::shared_ptr<PoolEntry> src, std::shared_ptr<PoolEntry> dst);
 
  private:
   static std::unique_ptr<CUDAMemPool> cuda_mem_pool_;
   static bool CmpPoolEntryByAddr(const PoolEntry &a, const PoolEntry &b);
 
-  std::shared_ptr<PoolEntry> AllocUnCheckUnlock(std::size_t size);
+  std::shared_ptr<PoolEntry> AllocUnCheckUnlock(std::size_t nbytes);
   void Free(PoolEntry entry);
-  inline size_t AlignSize(size_t size) {
-    return (size + 1023) & ~1023;
+  inline size_t AlignSize(size_t nbytes) {
+    return (nbytes + 1023) & ~1023;
   }
 
   std::mutex mutex_;

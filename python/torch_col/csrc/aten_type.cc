@@ -4,6 +4,7 @@
 #include <torch/library.h>
 #include <ATen/core/dispatch/Dispatcher.h>
 #include <ATen/Functions.h>
+#include <ATen/InferSize.h>
 
 #include <sta/tensor_pool.h>
 #include <sta/tensor_methods.h>
@@ -42,6 +43,20 @@ at::Tensor empty(
   return at::detail::make_tensor_base<ColTensorImpl>(std::make_shared<ColTensorImpl::Data>(handle));
 }
 
+at::Tensor empty_strided(
+    at::IntArrayRef size, at::IntArrayRef stride, 
+    c10::optional<at::ScalarType> dtype_opt, c10::optional<at::Layout> layout_opt, 
+    c10::optional<at::Device> device_opt, c10::optional<bool> pin_memory_opt) {
+  CHECK(!device_opt.has_value() || device_opt.value().is_cuda());
+  CHECK(!pin_memory_opt.has_value() || !pin_memory_opt.value());
+  DCHECK(!layout_opt.has_value() || layout_opt.value() == at::kStrided);
+
+  auto scalar_type = at::dtype_or_default(dtype_opt);
+  auto dlpack_dtype = getDLDataType(scalar_type);
+  auto handle = sta::EmptyStrided(size.vec(), stride.vec(), dlpack_dtype);
+  return MakeColTensor(handle);
+} 
+
 at::Tensor as_strided(
     const at::Tensor& self, at::IntArrayRef size, at::IntArrayRef stride,
     c10::optional<int64_t> storage_offset) {
@@ -59,7 +74,6 @@ at::Tensor _reshape_alias(const at::Tensor& self, at::IntArrayRef size, at::IntA
 }
 
 const at::Tensor& resize_(const at::Tensor& self, at::IntArrayRef size, c10::optional<at::MemoryFormat> memory_format) {
-  std::cout <<  std::endl;
   auto impl = GetColTensorImpl(self);
   impl->Tensor().Resize(size, c10::nullopt);
   std::cout << "resize_ " << size << " new ts " << self.sizes() << " " << self.numel() << " "
@@ -67,17 +81,49 @@ const at::Tensor& resize_(const at::Tensor& self, at::IntArrayRef size, c10::opt
   return self;
 }
 
+at::Tensor view(const at::Tensor& self, at::IntArrayRef size) {
+  auto impl = GetColTensorImpl(self);
+  at::DimVector inferred_size = at::infer_size_dv(size, self.numel());
+  auto stride = at::detail::computeStride(self.sizes(),
+                                          self.strides(),
+                                          inferred_size);
+  CHECK(stride.has_value()) << "view size is "
+    "not compatible with input tensor's size and stride (at least one dimension"
+    " spans across two contiguous subspaces). Use .reshape(...) instead.";
+  return MakeColTensorAlias(sta::AsStrided(
+      impl->Handle(), inferred_size, stride.value(), impl->storage_offset()), self);
+}
+
+at::Tensor view_dtype(const at::Tensor &self, at::ScalarType dtype) {
+  if (self.dtype() == dtype) {
+    return self;
+  }
+  auto impl = GetColTensorImpl(self);
+  return MakeColTensorAlias(sta::ViewDtype(
+      impl->Handle(), getDLDataType(dtype)), self);
+}
+
+at::Tensor alias(const at::Tensor &self) {
+  auto impl = GetColTensorImpl(self);
+  return MakeColTensorAlias(sta::AsStrided(
+      impl->Handle(), self.sizes(), self.strides(), impl->storage_offset()), self);
+}
+
 }
 
 
 TORCH_LIBRARY_IMPL(aten, CUDA, m) {
   m.impl("empty.memory_format", TORCH_FN(empty));
+  m.impl("empty_strided", TORCH_FN(empty_strided));
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("as_strided", TORCH_FN(as_strided));
   m.impl("_reshape_alias", TORCH_FN(_reshape_alias));
   m.impl("resize_", TORCH_FN(resize_));
+  m.impl("view", TORCH_FN(view));
+  m.impl("view.dtype", TORCH_FN(view_dtype));
+  m.impl("alias", TORCH_FN(alias));
 }
 
 TORCH_LIBRARY_IMPL(_, PrivateUse1, m) {
