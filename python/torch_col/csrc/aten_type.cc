@@ -1,15 +1,16 @@
-#include <ATen/Tensor.h>
+#include <ATen/ATen.h>
 #include <c10/core/TensorOptions.h>
 #include <c10/core/ScalarTypeToTypeMeta.h>
 #include <torch/library.h>
 #include <ATen/core/dispatch/Dispatcher.h>
-#include <ATen/Functions.h>
+#include <ATen/NativeFunctions.h>
 #include <ATen/InferSize.h>
 
 #include <sta/tensor_pool.h>
 #include <sta/tensor_methods.h>
 #include "tensor_impl.h"
 #include "dlpack_convert.h"
+#include "convolution.h"
 
 #include <glog/logging.h>
 
@@ -109,7 +110,6 @@ at::Tensor alias(const at::Tensor &self) {
       impl->Handle(), self.sizes(), self.strides(), impl->storage_offset()), self);
 }
 
-}
 
 
 TORCH_LIBRARY_IMPL(aten, CUDA, m) {
@@ -124,6 +124,9 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("view", TORCH_FN(view));
   m.impl("view.dtype", TORCH_FN(view_dtype));
   m.impl("alias", TORCH_FN(alias));
+
+  // m.impl("convolution_overrideable", convolution);
+  m.impl("_convolution", TORCH_FN(_convolution));
 }
 
 TORCH_LIBRARY_IMPL(_, PrivateUse1, m) {
@@ -131,4 +134,5 @@ TORCH_LIBRARY_IMPL(_, PrivateUse1, m) {
       &cuda_fallback>());
 }
 
+}
 }

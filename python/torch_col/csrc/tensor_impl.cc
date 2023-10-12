@@ -72,7 +72,7 @@ int64_t ColTensorImpl::numel_custom() const {
 }
 
 bool ColTensorImpl::is_contiguous_custom(at::MemoryFormat memory_format) const {
-  return true;
+  return Tensor().ComputeContiguous();
 }
 
 bool ColTensorImpl::has_storage() const {
@@ -87,7 +87,34 @@ const at::Storage& ColTensorImpl::storage() const {
 
 int64_t ColTensorImpl::storage_offset() const {
   auto tensor = Tensor();
-  return tensor->byte_offset / (tensor->dtype.bits >> 3);
+  return tensor.StorageOffset();
+}
+
+c10::intrusive_ptr<c10::TensorImpl> ColTensorImpl::shallow_copy_and_detach(
+    const c10::VariableVersion& version_counter,
+    bool allow_tensor_metadata_change) const {
+  return shallow_copy_and_detach_core_custom(
+      version_counter, allow_tensor_metadata_change);
+}
+
+c10::intrusive_ptr<c10::TensorImpl> ColTensorImpl::shallow_copy_and_detach(
+    c10::VariableVersion&& version_counter,
+    bool allow_tensor_metadata_change) const {
+  return shallow_copy_and_detach_core_custom(
+      std::move(version_counter), allow_tensor_metadata_change);
+}
+
+template <typename VariableVersion>
+c10::intrusive_ptr<c10::TensorImpl> ColTensorImpl::shallow_copy_and_detach_core_custom(
+    VariableVersion&& version_counter,
+    bool allow_tensor_metadata_change) const {
+  auto impl = c10::make_intrusive<ColTensorImpl>(data_, storage_);
+  copy_tensor_metadata(
+      /*src_impl=*/this,
+      /*dest_impl=*/impl.get(),
+      /*version_counter=*/std::forward<VariableVersion>(version_counter),
+      /*allow_tensor_metadata_change=*/allow_tensor_metadata_change);
+  return impl;
 }
 
 caffe2::TypeMeta ColTensorImpl::GetTypeMeta(const std::shared_ptr<Data> &data) {

@@ -14,6 +14,7 @@ endif()
 
 add_library(torch_col SHARED 
   torch_col/csrc/tensor_impl.cc
+  torch_col/csrc/convolution.cc
   torch_col/csrc/aten_type.cc
   torch_col/csrc/dlpack_convert.cc
   torch_col/csrc/control_stub.cc

@@ -70,6 +70,9 @@ class STensor : public std::shared_ptr<TensorContainer> {
     return get()->tensor_.byte_offset / (get()->tensor_.dtype.bits >> 3);
   }
 
+  bool ComputeContiguous() const;
+  size_t ComputeNumel() const;
+
   void Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride);
 
   STensor& operator=(STensor &tensor) {

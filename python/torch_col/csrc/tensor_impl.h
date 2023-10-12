@@ -34,11 +34,24 @@ class ColTensorImpl : public c10::TensorImpl {
   bool has_storage() const override;
   const at::Storage& storage() const override;
   int64_t storage_offset() const override;
+
+  c10::intrusive_ptr<c10::TensorImpl> shallow_copy_and_detach(
+      const c10::VariableVersion& version_counter,
+      bool allow_tensor_metadata_change) const override;
+  
+  c10::intrusive_ptr<c10::TensorImpl> shallow_copy_and_detach(
+      c10::VariableVersion&& version_counter,
+      bool allow_tensor_metadata_change) const override;
   
  private:
   static caffe2::TypeMeta GetTypeMeta(const std::shared_ptr<Data> &data);
   
   void UpdateStorage();
+
+  template <typename VariableVersion>
+  c10::intrusive_ptr<c10::TensorImpl> shallow_copy_and_detach_core_custom(
+      VariableVersion&& version_counter,
+      bool allow_tensor_metadata_change) const;
 
   std::shared_ptr<Data> data_;
 };

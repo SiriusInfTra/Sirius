@@ -65,6 +65,35 @@ void TensorContainer::SetTensor(TensorContainer::memory_data_t mdata,
   };
 }
 
+bool STensor::ComputeContiguous() const {
+  bool is_contiguous = true;
+  if (ComputeNumel() == 0)
+    return is_contiguous;
+  int64_t z = 1;
+  for (int64_t d = get()->tensor_.ndim - 1; d >= 0; d--) {
+    // const auto size_d = sizes_and_strides_.size_at_unchecked(d);
+    const auto size_d = get()->tensor_.shape[d];
+    if (size_d != 1) {
+      auto stride_d = get()->tensor_.strides[d];
+      if (stride_d == z) {
+        z *= size_d;
+      } else {
+        is_contiguous = false;
+        break;
+      }
+    }
+  }
+  return is_contiguous;
+}
+
+size_t STensor::ComputeNumel() const {
+  auto numel = 1;
+  for (auto dim : Shape()) {
+    numel *= dim;
+  }
+  return numel;
+}
+
 // STensor STensor::AsStrided(const std::vector<int64_t> &size, 
 //                            const std::vector<int64_t> &stride,
 //                            int64_t storage_offset) const {
