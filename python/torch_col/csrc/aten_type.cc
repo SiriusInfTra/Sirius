@@ -127,6 +127,7 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 
   // m.impl("convolution_overrideable", convolution);
   m.impl("_convolution", TORCH_FN(_convolution));
+  m.impl("convolution_backward", TORCH_FN(convolution_backward));
 }
 
 TORCH_LIBRARY_IMPL(_, PrivateUse1, m) {

@@ -21,6 +21,9 @@ add_library(torch_col SHARED
   torch_col/csrc/init.cc
 )
 
+target_compile_definitions(torch_col PRIVATE -DHAVE_AVX2_CPU_DEFINITION)
+target_compile_definitions(torch_col PRIVATE -DHAVE_AVX512_CPU_DEFINITION)
+
 target_include_directories(torch_col PUBLIC sta)
 target_include_directories(torch_col PRIVATE colserve)
 target_include_directories(torch_col PRIVATE "../")

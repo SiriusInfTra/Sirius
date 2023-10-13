@@ -113,6 +113,11 @@ at::Tensor _convolution(
     bool transposed_, at::IntArrayRef output_padding_, int64_t groups_,
     bool benchmark, bool deterministic, bool cudnn_enabled, bool allow_tf32);
 
+std::tuple<at::Tensor, at::Tensor, at::Tensor> convolution_backward(
+    const at::Tensor& grad_output_, const at::Tensor& input_, const at::Tensor& weight_,
+    const at::OptionalIntArrayRef bias_sizes_opt,
+    at::IntArrayRef stride, at::IntArrayRef padding, at::IntArrayRef dilation, bool transposed, at::IntArrayRef output_padding,
+    int64_t groups, std::array<bool, 3> output_mask);
 
 }
 
