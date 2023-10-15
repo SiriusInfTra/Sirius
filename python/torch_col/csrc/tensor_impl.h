@@ -2,8 +2,10 @@
 #define COLSERVE_TENSOR_H
 
 #include <c10/core/TensorImpl.h>
+#include <ATen/TensorOptions.h>
 
 #include <sta/tensor_pool.h>
+
 
 namespace torch_col {
 
@@ -65,6 +67,9 @@ inline at::Tensor MakeColTensorAlias(uint64_t handle, const at::Tensor& tensor) 
   return at::detail::make_tensor_base<ColTensorImpl>(
       std::make_shared<ColTensorImpl::Data>(handle), tensor.storage());
 }
+
+at::Tensor MakeColTensorEmpty(at::IntArrayRef size, const at::TensorOptions &options);
+at::Tensor MakeColTensorEmpty(at::IntArrayRef size, at::ScalarType scalar_type);
 
 }
 

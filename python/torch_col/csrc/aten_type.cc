@@ -5,12 +5,15 @@
 #include <ATen/core/dispatch/Dispatcher.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/InferSize.h>
+#include <ATen/core/op_registration/adaption.h>
 
 #include <sta/tensor_pool.h>
 #include <sta/tensor_methods.h>
 #include "tensor_impl.h"
 #include "dlpack_convert.h"
 #include "convolution.h"
+#include "cudnn/cudnn_custom.h"
+#include "override_ops/override_ops.h"
 
 #include <glog/logging.h>
 
@@ -40,7 +43,7 @@ at::Tensor empty(
   auto scalar_type = at::dtype_or_default(dtype);
   auto dlpack_dtype = getDLDataType(scalar_type);
   // auto handle = sta::TensorPool::Get()->Empty(size_vec, dlpack_dtype);
-  auto handle = sta::Empty(size.vec(), dlpack_dtype);
+  auto handle = sta::Empty(size, dlpack_dtype);
   return at::detail::make_tensor_base<ColTensorImpl>(std::make_shared<ColTensorImpl::Data>(handle));
 }
 
@@ -111,6 +114,86 @@ at::Tensor alias(const at::Tensor &self) {
 }
 
 
+at::Tensor nonzero(const at::Tensor & self) {
+  c10::optional<at::Device> common_device = at::nullopt;
+(void)common_device; // Suppress unused variable warning
+
+  c10::impl::check_and_update_common_device(common_device, self, "nonzero", "self");
+
+  const at::OptionalDeviceGuard device_guard(device_of(self));
+
+  at::Tensor out = MakeColTensorEmpty({0}, self.options().dtype(at::kLong));
+  // return at::native::nonzero_out_cuda(self, out);
+  return nonzero_out_cuda(self, out);
+}
+
+// cudnn
+at::Tensor cudnn_convolution(
+    const at::Tensor & self, const at::Tensor & weight, 
+    at::IntArrayRef padding, at::IntArrayRef stride, at::IntArrayRef dilation, 
+    int64_t groups, bool benchmark, bool deterministic, bool allow_tf32) {
+  c10::optional<at::Device> common_device = c10::nullopt;
+(void)common_device; // Suppress unused variable warning
+
+  c10::impl::check_and_update_common_device(common_device, self, "cudnn_convolution", "self");
+  c10::impl::check_and_update_common_device(common_device, weight, "cudnn_convolution", "weight");
+
+  const at::OptionalDeviceGuard device_guard(device_of(self));
+  return cudnn::cudnn_convolution_custom(
+      self, weight, padding, stride, dilation, groups, benchmark, deterministic, allow_tf32);
+}
+
+at::Tensor cudnn_convolution_transpose(
+    const at::Tensor & self, const at::Tensor & weight, 
+    at::IntArrayRef padding, at::IntArrayRef output_padding, 
+    at::IntArrayRef stride, at::IntArrayRef dilation, int64_t groups, 
+    bool benchmark, bool deterministic, bool allow_tf32) {
+  c10::optional<at::Device> common_device = c10::nullopt;
+(void)common_device; // Suppress unused variable warning
+
+  c10::impl::check_and_update_common_device(common_device, self, "cudnn_convolution_transpose", "self");
+  c10::impl::check_and_update_common_device(common_device, weight, "cudnn_convolution_transpose", "weight");
+
+  const at::OptionalDeviceGuard device_guard(device_of(self));
+  return cudnn::cudnn_convolution_transpose_custom(
+      self, weight, padding, output_padding, stride, dilation, groups, benchmark, deterministic, allow_tf32);
+}
+
+at::Tensor cudnn_convolution_relu(
+    const at::Tensor & self, const at::Tensor & weight, 
+    const c10::optional<at::Tensor> & bias, at::IntArrayRef stride, 
+    at::IntArrayRef padding, at::IntArrayRef dilation, int64_t groups) {
+  c10::optional<at::Device> common_device = c10::nullopt;
+(void)common_device; // Suppress unused variable warning
+
+  c10::impl::check_and_update_common_device(common_device, self, "cudnn_convolution_relu", "self");
+  c10::impl::check_and_update_common_device(common_device, weight, "cudnn_convolution_relu", "weight");
+  c10::impl::check_and_update_common_device(common_device, bias, "cudnn_convolution_relu", "bias");
+
+  const at::OptionalDeviceGuard device_guard(device_of(self));
+  return cudnn::cudnn_convolution_relu_custom(
+      self, weight, bias, stride, padding, dilation, groups);
+}
+
+
+at::Tensor cudnn_convolution_add_relu(
+    const at::Tensor & self, const at::Tensor & weight, 
+    const at::Tensor & z, const c10::optional<at::Scalar> & alpha, 
+    const c10::optional<at::Tensor> & bias, at::IntArrayRef stride, 
+    at::IntArrayRef padding, at::IntArrayRef dilation, int64_t groups) {
+  c10::optional<at::Device> common_device = c10::nullopt;
+(void)common_device; // Suppress unused variable warning
+
+  c10::impl::check_and_update_common_device(common_device, self, "cudnn_convolution_add_relu", "self");
+  c10::impl::check_and_update_common_device(common_device, weight, "cudnn_convolution_add_relu", "weight");
+  c10::impl::check_and_update_common_device(common_device, z, "cudnn_convolution_add_relu", "z");
+  c10::impl::check_and_update_common_device(common_device, bias, "cudnn_convolution_add_relu", "bias");
+
+  const at::OptionalDeviceGuard device_guard(device_of(self));
+  return cudnn::cudnn_convolution_add_relu_custom(
+      self, weight, z, alpha, bias, stride, padding, dilation, groups);
+}
+
 
 TORCH_LIBRARY_IMPL(aten, CUDA, m) {
   m.impl("empty.memory_format", TORCH_FN(empty));
@@ -128,6 +211,14 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   // m.impl("convolution_overrideable", convolution);
   m.impl("_convolution", TORCH_FN(_convolution));
   m.impl("convolution_backward", TORCH_FN(convolution_backward));
+
+  m.impl("nonzero", TORCH_FN(nonzero));
+
+  // cudnn
+  m.impl("cudnn_convolution", TORCH_FN(cudnn_convolution));
+  m.impl("cudnn_convolution_transpose", TORCH_FN(cudnn_convolution_transpose));
+  m.impl("cudnn_convolution_relu", TORCH_FN(cudnn_convolution_relu));
+  m.impl("cudnn_convolution_add_relu", TORCH_FN(cudnn_convolution_add_relu));
 }
 
 TORCH_LIBRARY_IMPL(_, PrivateUse1, m) {

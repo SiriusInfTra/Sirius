@@ -2,8 +2,23 @@ cmake_minimum_required(VERSION 3.24)
 
 project(torch_col LANGUAGES CXX CUDA)
 
-find_package(Python REQUIRED COMPONENTS Development)
 set(CMAKE_CXX_STANDARD 17)
+
+
+find_package(Python REQUIRED COMPONENTS Development)
+
+FetchContent_Declare(
+  cudnn_frontend
+  GIT_REPOSITORY https://github.com/NVIDIA/cudnn-frontend.git
+  GIT_TAG        v0.6.2  # e.g v1.28.0
+)
+# FetchContent_MakeAvailable(cudnn_frontend)
+
+FetchContent_GetProperties(cudnn_frontend)
+if (NOT cudnn_frontend_POPULATED)
+  FetchContent_Populate(cudnn_frontend)
+  set(CUDNN_FRONTEND_INCLUDE_DIR ${cudnn_frontend_SOURCE_DIR}/include)
+endif()
 
 
 # Modify if you need a different default value
@@ -15,18 +30,33 @@ endif()
 add_library(torch_col SHARED 
   torch_col/csrc/tensor_impl.cc
   torch_col/csrc/convolution.cc
+  torch_col/csrc/cudnn/cudnn_custom.cc
+  torch_col/csrc/cudnn/ConvShared.cpp
+  torch_col/csrc/cudnn/Conv_v7.cpp
+  torch_col/csrc/cudnn/Conv_v8.cpp
+  torch_col/csrc/cudnn/ConvPlaceholders.cpp
+  torch_col/csrc/cudnn/Descriptors.cpp
+  torch_col/csrc/cudnn/Types.cpp
+  torch_col/csrc/override_ops/nonzero.cu
   torch_col/csrc/aten_type.cc
   torch_col/csrc/dlpack_convert.cc
   torch_col/csrc/control_stub.cc
   torch_col/csrc/init.cc
 )
 
+target_compile_options(torch_col PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:
+                       -D__CUDA_NO_HALF_OPERATORS__>)
+
 target_compile_definitions(torch_col PRIVATE -DHAVE_AVX2_CPU_DEFINITION)
 target_compile_definitions(torch_col PRIVATE -DHAVE_AVX512_CPU_DEFINITION)
+target_compile_definitions(torch_col PRIVATE -DUSE_EXPERIMENTAL_CUDNN_V8_API)
 
 target_include_directories(torch_col PUBLIC sta)
 target_include_directories(torch_col PRIVATE colserve)
 target_include_directories(torch_col PRIVATE "../")
+target_include_directories(torch_col PRIVATE ${CUDNN_INCLUDE_DIR})
+target_include_directories(torch_col PRIVATE ${CUDNN_FRONTEND_INCLUDE_DIR})
+
 
 target_link_libraries(torch_col PRIVATE ${TORCH_LIBRARIES} Python::Python)
 target_link_libraries(torch_col PUBLIC sta glog::glog)

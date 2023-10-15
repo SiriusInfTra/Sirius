@@ -1,9 +1,10 @@
-#include <undef_log.h>
-#include <glog/logging.h>
+#include <sta/tensor_methods.h>
 
 #include "tensor_impl.h"
 #include "dlpack_convert.h"
 
+#include <undef_log.h>
+#include <glog/logging.h>
 
 namespace torch_col {
 
@@ -138,5 +139,23 @@ void ColTensorImpl::UpdateStorage() {
   //             << static_cast<void*>(static_cast<char*>(storage_.data()) + tensor->byte_offset) 
   //             << std::endl;
 }
+
+at::Tensor MakeColTensorEmpty(at::IntArrayRef size, const at::TensorOptions &options) {
+  CHECK(!options.has_device() || options.device_opt().value().is_cuda());
+  CHECK(!options.has_memory_format() || options.memory_format_opt().value() == at::MemoryFormat::Contiguous);
+  auto scalar_type = at::dtype_or_default(options.dtype_opt());
+  auto dlpack_dtype = getDLDataType(scalar_type);
+  // auto handle = sta::TensorPool::Get()->Empty(size_vec, dlpack_dtype);
+  auto handle = colserve::sta::Empty(size, dlpack_dtype);
+  return MakeColTensor(handle);
+}
+
+at::Tensor MakeColTensorEmpty(at::IntArrayRef size, at::ScalarType scalar_type) {
+  auto dlpack_dtype = getDLDataType(scalar_type);
+  auto handle = colserve::sta::Empty(size, dlpack_dtype);
+  return MakeColTensor(handle);
+
+}
+
 
 }

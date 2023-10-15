@@ -67,6 +67,11 @@ DLDataType getDLDataType(const at::ScalarType& scalar_type) {
   return dtype;
 }
 
+DLDataType getDLDataType(const caffe2::TypeMeta &meta_type) {
+  auto scalar_type = c10::typeMetaToScalarType(meta_type);
+  return getDLDataType(scalar_type);
+}
+
 c10::ScalarType toScalarType(const DLDataType& dtype) {
   c10::ScalarType stype;
   TORCH_CHECK(dtype.lanes == 1, "ATen does not support lanes != 1");

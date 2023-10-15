@@ -39,6 +39,9 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(CLI11)
 
 find_package(Torch REQUIRED)
+# find cudnn
+set(CUDNN_INCLUDE_DIR $ENV{CONDA_PREFIX}/include)
+set(CUDNN_LIBRARY $ENV{CONDA_PREFIX}/lib/libcudnn.so)
 
 # find_program(_GRPC_CPP_PLUGIN_EXECUTABLE grpc_cpp_plugin)
 # find_program(_PROTOBUF_PROTOC protoc)

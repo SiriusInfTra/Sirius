@@ -11,6 +11,7 @@
 namespace torch_col {
 
 DLDataType getDLDataType(const at::ScalarType& scalar_type);
+DLDataType getDLDataType(const caffe2::TypeMeta &meta_type);
 c10::ScalarType toScalarType(const DLDataType& dtype);
 caffe2::TypeMeta getCaffeTypeMeta(const DLDataType& dtype);
 
