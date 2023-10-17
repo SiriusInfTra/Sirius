@@ -22,14 +22,17 @@ std::string mode = "normal";
 std::string port = "8080";
 
 void init_cli_options() {
-  app.add_option("-m,--mode", mode)
+  app.add_option("-m,--mode", mode,
+      "server mode, see detail in server/config.h, default is normal")
       ->check(CLI::IsMember({"normal", 
                              "task-switch-l1", 
                              "task-switch-l2", 
                              "task-switch-l3",
                              "colocate-l2"}));
-  app.add_option("--use-sta", colserve::Config::use_shared_tensor);
-  app.add_option("-p,--port", port);
+  app.add_option("--use-sta", colserve::Config::use_shared_tensor, 
+      "use shared tensor allocator, default is 1");
+  app.add_option("-p,--port", port,
+      "gRPC server port, default is 8080");
 }
 
 void init_config() {
