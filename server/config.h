@@ -23,6 +23,9 @@ class Config {
   static std::atomic<bool> running;
   
   static bool use_shared_tensor;
+
+  static bool infer_raw_blob_alloc_;
+
 };
 
 }

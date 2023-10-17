@@ -1,9 +1,8 @@
 #ifndef COLSERVE_GRAPH_EXECUTOR
 #define COLSERVE_GRAPH_EXECUTOR
 
-// #include <tvm/runtime/device_api.h>
-// #include <tvm/runtime/c_runtime_api.h>
 #include <unordered_map>
+#include <memory>
 
 #include <sta/tensor_methods.h>
 #include <sta/tensor_pool.h>
@@ -95,7 +94,8 @@ class GraphExecutor {
   // std::map<uint32_t, bool> param_ready_;
   std::vector<bool> param_ready_;
 
-  void* blob_mem_{nullptr};
+  // void* blob_mem_{nullptr};
+  std::shared_ptr<sta::CUDAMemPool::PoolEntry> blob_mem_{nullptr};
   
   TVMStreamHandle exec_stream_;
   TVMStreamHandle load_param_stream_;

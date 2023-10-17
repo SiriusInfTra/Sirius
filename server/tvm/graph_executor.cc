@@ -211,6 +211,9 @@ void GraphExecutor::ResetStorage() {
     for (auto & s : raw_storage_pool_) {
       s.DeallocToNull();
     }
+    if (Config::infer_raw_blob_alloc_) {
+      blob_mem_.reset();
+    }
   }
 
   // for (auto &e : data_entry_) {
@@ -229,11 +232,27 @@ void GraphExecutor::AllocStorage() {
   if (Config::use_shared_tensor) {
     for (auto &s : storage_pool_) {
       auto tensor = sta::TensorPool::Get()->Tensor(s);
-      tensor.AllocForNull(Config::use_shared_tensor ? 0 : 1);
+      tensor.AllocForNull(false);
+    }
+  } else if (Config::infer_raw_blob_alloc_) {
+    size_t total_nbytes = 0, off = 0;
+    // constexpr size_t align = 4 * sizeof(int);
+    constexpr size_t align = 1;
+    static_assert(((align - 1) & align) == 0, "align must be power of 2");
+    for (auto &s : raw_storage_pool_) {
+      total_nbytes += (GetDataSize(*s.operator->()) + align - 1) & (~(align - 1));
+    }
+    blob_mem_ = sta::CUDAMemPool::RawAlloc(total_nbytes);
+    for (auto &s : raw_storage_pool_) {
+      size_t nbytes = (GetDataSize(*s.operator->()) + align - 1) & (~(align - 1));
+      auto mdata = std::shared_ptr<sta::CUDAMemPool::PoolEntry>(
+          new sta::CUDAMemPool::PoolEntry{static_cast<char*>(blob_mem_->addr) + off, nbytes});
+      s.AssignMDataForNull(mdata);
+      off += nbytes;
     }
   } else {
     for (auto &s: raw_storage_pool_) {
-      s.AllocForNull(Config::use_shared_tensor ? 0 : 1);
+      s.AllocForNull(true);
     }
   }
 
