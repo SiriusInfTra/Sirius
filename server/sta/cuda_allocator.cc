@@ -7,17 +7,12 @@
 namespace colserve {
 namespace sta {
 
-#define CUDA_CALL(func) do { \
-    auto error = func; \
-    if (error != cudaSuccess) { \
-      std::cout << cudaGetErrorString(error); \
-      exit(EXIT_FAILURE); \
-    } \
-  } while (0);
-
 std::unique_ptr<CUDAMemPool> CUDAMemPool::cuda_mem_pool_;
 
 CUDAMemPool* CUDAMemPool::Get() {
+  if (cuda_mem_pool_ == nullptr) {
+    LOG(FATAL) << "[CUDAMemPool]: CUDAMemPool not initialized";
+  }
   return cuda_mem_pool_.get();
 }
 
@@ -127,6 +122,17 @@ bool CUDAMemPool::CmpPoolEntryByAddr(const PoolEntry &a, const PoolEntry &b) {
   return a.addr < b.addr;
 }
 
+std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::RawAlloc(size_t nbytes) {
+  void* ptr;
+  CUDA_CALL(cudaSetDevice(0));
+  CUDA_CALL(cudaMalloc(&ptr, nbytes));
+  return std::shared_ptr<PoolEntry>(
+    new PoolEntry{ptr, nbytes}, [](PoolEntry *entry) {
+      CUDA_CALL(cudaSetDevice(0));
+      CUDA_CALL(cudaFree(entry->addr));
+      delete entry;
+    });
+}
 
 
 }

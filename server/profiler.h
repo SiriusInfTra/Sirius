@@ -19,6 +19,9 @@ class Profiler {
   static void Init(const std::string &profile_log_path);
   static void Start();
   static void Shutdown();
+  inline static double Milli(time_point_t begin, time_point_t end) {
+    return std::chrono::duration<double, std::milli>(end - begin).count();
+  }
   static Profiler* Get();
   
   struct ResourceInfo {
@@ -43,6 +46,9 @@ class Profiler {
     InferExit,
   };
   enum class PerfItem {
+    InferQueue,
+    InferProcess,
+
     TrainAdjust,
     InferAllocStorage,
     InferLoadParam,

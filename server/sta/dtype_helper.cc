@@ -1,5 +1,7 @@
 #include "dtype_helper.h"
 
+#include <glog/logging.h>
+
 namespace colserve {
 namespace sta {
 
@@ -33,6 +35,10 @@ std::ostream & operator<<(std::ostream &os, const DLDataType &dtype) {
   }
   os << ":" << dtype.bits << ":" << dtype.lanes << "]";
   return os;
+}
+
+bool operator==(const DLDataType &dtype1, const DLDataType &dtype2) {
+  return dtype1.code == dtype2.code && dtype1.bits == dtype2.bits && dtype1.lanes == dtype2.lanes;
 }
 
 }

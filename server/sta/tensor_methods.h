@@ -8,17 +8,29 @@
 #include <iostream>
 #include <vector>
 
+#include "tensor_pool.h"
 #include "dlpack.h"
+
 
 namespace colserve {
 namespace sta {
 
+uint64_t Null(at::IntArrayRef size, DLDataType dtype);
+
+STensor RawNull(at::IntArrayRef size, DLDataType dtype);
+
 uint64_t Empty(at::IntArrayRef size, DLDataType dtype);
+
+STensor RawEmpty(at::IntArrayRef size, DLDataType dtype);
 
 uint64_t EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride, 
                       DLDataType dtype);
 
 uint64_t ViewDtype(uint64_t handle, DLDataType dtype);
+
+uint64_t ViewShapeDtype(uint64_t handle, at::IntArrayRef size, DLDataType dtype);
+
+STensor RawViewShapeDtype(STensor tensor, at::IntArrayRef size, DLDataType dtype);
 
 uint64_t AsStrided(uint64_t handle, at::IntArrayRef size,
                    at::IntArrayRef stride, 

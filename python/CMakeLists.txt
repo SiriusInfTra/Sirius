@@ -26,8 +26,7 @@ if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
   set(CMAKE_CUDA_ARCHITECTURES 70)
 endif()
 
-
-add_library(torch_col SHARED 
+add_library(torch_col_tensor SHARED
   torch_col/csrc/tensor_impl.cc
   torch_col/csrc/convolution.cc
   torch_col/csrc/cudnn/cudnn_custom.cc
@@ -40,26 +39,33 @@ add_library(torch_col SHARED
   torch_col/csrc/override_ops/nonzero.cu
   torch_col/csrc/aten_type.cc
   torch_col/csrc/dlpack_convert.cc
+)
+
+target_compile_options(torch_col_tensor PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:
+                       -D__CUDA_NO_HALF_OPERATORS__>)
+
+target_compile_definitions(torch_col_tensor PRIVATE -DHAVE_AVX2_CPU_DEFINITION)
+target_compile_definitions(torch_col_tensor PRIVATE -DHAVE_AVX512_CPU_DEFINITION)
+target_compile_definitions(torch_col_tensor PRIVATE -DUSE_EXPERIMENTAL_CUDNN_V8_API)
+
+target_include_directories(torch_col_tensor PUBLIC sta)
+target_include_directories(torch_col_tensor PRIVATE colserve)
+target_include_directories(torch_col_tensor PRIVATE "../")
+target_include_directories(torch_col_tensor PRIVATE ${CUDNN_INCLUDE_DIR})
+target_include_directories(torch_col_tensor PRIVATE ${CUDNN_FRONTEND_INCLUDE_DIR})
+
+
+target_link_libraries(torch_col_tensor PRIVATE ${TORCH_LIBRARIES} Python::Python)
+target_link_libraries(torch_col_tensor PUBLIC sta glog::glog)
+
+add_library(torch_col SHARED 
   torch_col/csrc/control_stub.cc
   torch_col/csrc/init.cc
 )
 
-target_compile_options(torch_col PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:
-                       -D__CUDA_NO_HALF_OPERATORS__>)
-
-target_compile_definitions(torch_col PRIVATE -DHAVE_AVX2_CPU_DEFINITION)
-target_compile_definitions(torch_col PRIVATE -DHAVE_AVX512_CPU_DEFINITION)
-target_compile_definitions(torch_col PRIVATE -DUSE_EXPERIMENTAL_CUDNN_V8_API)
-
-target_include_directories(torch_col PUBLIC sta)
-target_include_directories(torch_col PRIVATE colserve)
 target_include_directories(torch_col PRIVATE "../")
-target_include_directories(torch_col PRIVATE ${CUDNN_INCLUDE_DIR})
-target_include_directories(torch_col PRIVATE ${CUDNN_FRONTEND_INCLUDE_DIR})
+target_link_libraries(torch_col PRIVATE glog::glog sta)
 
-
-target_link_libraries(torch_col PRIVATE ${TORCH_LIBRARIES} Python::Python)
-target_link_libraries(torch_col PUBLIC sta glog::glog)
 
 # build python ext
 add_custom_target(
@@ -73,7 +79,7 @@ add_custom_command(
   ARGS setup.py build_ext install 
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS 
-    torch_col sta
+    torch_col sta torch_col_tensor
     "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/torch_col.pxd"
     "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/torch_col.pyx"
 )

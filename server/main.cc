@@ -8,6 +8,8 @@
 #include <CLI/CLI.hpp>
 #include <cuda.h>
 
+#include <sta/init.h>
+
 #include "grpc/grcp_server.h"
 #include "colserve.grpc.pb.h"
 #include "model_train_store.h"
@@ -26,6 +28,7 @@ void init_cli_options() {
                              "task-switch-l2", 
                              "task-switch-l3",
                              "colocate-l2"}));
+  app.add_option("--use-sta", colserve::Config::use_shared_tensor);
   app.add_option("-p,--port", port);
 }
 
@@ -63,6 +66,9 @@ int main(int argc, char *argv[]) {
   init_config();
 
   CHECK_EQ(cuInit(0), CUDA_SUCCESS);
+  if (colserve::Config::use_shared_tensor) {
+    colserve::sta::Init();
+  }
   colserve::Controller::Init();
   colserve::Profiler::Init("server-profile");
   colserve::ModelInferStore::Init("models");

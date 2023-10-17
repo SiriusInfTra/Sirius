@@ -116,6 +116,10 @@ std::vector<std::shared_ptr<Job>> BatchJobQueue::GetBatch(
   // DLOG(INFO) << "[BatchJobQueue]: batch interval " 
             //  << std::chrono::duration<double, std::milli>(end - begin).count() << " ms";
   CHECK(!batch_jobs.empty()) << "batch_jobs is empty";
+
+  for (auto job : batch_jobs) { 
+    job->RecordDequeued();
+  }
   return batch_jobs;
 }
 

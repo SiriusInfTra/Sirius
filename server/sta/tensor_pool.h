@@ -15,12 +15,20 @@
 namespace colserve {
 namespace sta {
 
+using handle_t = uint64_t;
+
 class STensor;
 class TensorContainer {
  public:
   using memory_data_t = std::shared_ptr<CUDAMemPool::PoolEntry>;
 
   TensorContainer();
+
+  // null tensor container, same as normal tensor but without memory and have null flag set
+  TensorContainer(std::vector<int64_t> shape, DLDataType dtype);
+  TensorContainer(std::vector<int64_t> shape, std::vector<int64_t> stride, 
+                  DLDataType dtype, size_t storage_offset);
+  
   TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, DLDataType dtype);
   TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, std::vector<int64_t> stride, 
                   DLDataType dtype, size_t storage_offset);
@@ -36,6 +44,7 @@ class TensorContainer {
  private:
   std::vector<int64_t> shape_;
   std::vector<int64_t> stride_;
+  bool is_null_{false};
   
   DLTensor tensor_;
   memory_data_t mdata_;
@@ -69,11 +78,21 @@ class STensor : public std::shared_ptr<TensorContainer> {
   inline int64_t StorageOffset() const {
     return get()->tensor_.byte_offset / (get()->tensor_.dtype.bits >> 3);
   }
+  bool IsNull() const {
+    return get()->is_null_;
+  }
 
   bool ComputeContiguous() const;
   size_t ComputeNumel() const;
 
   void Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride);
+  void AllocForNull(bool raw_alloc);
+  void AssignMDataForNull(TensorContainer::memory_data_t mdata, bool check_memory_bound = false);
+  void DeallocToNull();
+
+  DLTensor* MutableDLTensor() {
+    return &get()->tensor_;
+  }
 
   STensor& operator=(STensor &tensor) {
     std::shared_ptr<TensorContainer>::operator=(tensor);
@@ -83,7 +102,7 @@ class STensor : public std::shared_ptr<TensorContainer> {
     std::shared_ptr<TensorContainer>::operator=(tensor);
     return *this;
   }
-  STensor& operator=(STensor &&tensor) {
+  STensor& operator=(STensor &&tensor) noexcept {
     std::shared_ptr<TensorContainer>::operator=(std::move(tensor));
     return *this;
   }

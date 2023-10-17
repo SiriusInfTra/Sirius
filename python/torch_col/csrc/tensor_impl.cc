@@ -16,7 +16,7 @@ ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data)
                       GetTypeMeta(data),
                       c10::Device{c10::DeviceType::CUDA, 0}),
       data_(data) {
-  LOG(INFO) << "ColTensorImpl" << std::endl;
+  // LOG(INFO) << "ColTensorImpl" << std::endl;
   set_sizes_strides_policy(SizesStridesPolicy::CustomSizes);
   // UpdateStorage();
   auto tensor = sta::TensorPool::Get()->Tensor(data_->handle);
@@ -35,7 +35,7 @@ ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data,
                       c10::Device{c10::DeviceType::CUDA, 0}),
       data_(data) {
   auto tensor = sta::TensorPool::Get()->Tensor(data_->handle);
-  LOG(INFO) << "ColTensorImpl w/ storage" << std::endl;
+  // LOG(INFO) << "ColTensorImpl w/ storage" << std::endl;
   set_sizes_strides_policy(SizesStridesPolicy::CustomSizes);
   storage_ = storage;
   storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);

@@ -21,6 +21,4 @@
 
 #include "../undef_log.h"
 
-#include <glog/logging.h>
-
 #endif

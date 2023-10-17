@@ -31,7 +31,8 @@ inline void CheckMemoryBound(at::IntArrayRef size,
                              size_t storage_offset,
                              const TensorContainer::memory_data_t mdata) {
   size_t nbytes = ComputeStorageNbytes(size, stride, dtype, storage_offset);
-  CHECK_LE(nbytes, mdata->nbytes) << "Out of memory bound";
+  CHECK_NE(mdata, nullptr);
+  CHECK_LE(nbytes, mdata->nbytes) << "CheckMemoryBound: Out of memory bound";
 }
 
 inline std::vector<int64_t> ComputeStridesForViewDtypeDownsize(at::IntArrayRef old_strides, int64_t size_ratio, 
@@ -65,6 +66,17 @@ inline std::vector<int64_t> ComputeStridesForViewDtypeUpsize(at::IntArrayRef old
   }
   new_strides[ndim - 1] = 1;
   return new_strides;
+}
+
+inline std::vector<int64_t> ComputeStrides(at::IntArrayRef size) {
+  std::vector<int64_t> stride(size.size());
+  if (size.size() > 0) {
+    stride.rbegin()[0] = 1;
+    for (int64_t i = static_cast<int64_t>(stride.size()) - 2; i >= 0; i--) {
+      stride[i] = stride[i + 1] * size[i + 1];
+    }
+  }
+  return stride;
 }
 
 

@@ -2,13 +2,15 @@
 #include "cuda_allocator.h"
 #include "shape_helper.h"
 
+#include <glog/logging.h>
+
 namespace colserve {
 namespace sta {
 
 std::unique_ptr<TensorPool> TensorPool::tensor_pool_ = nullptr;
 
 void TensorPool::Init() {
-  std::cout << "initlize TensorPool" << std::endl;
+  LOG(INFO) << "initlize TensorPool" << std::endl;
   tensor_pool_ = std::make_unique<TensorPool>();
 }
 
@@ -18,15 +20,24 @@ TensorPool* TensorPool::Get() {
 
 
 TensorContainer::TensorContainer() : tensor_{0}, mdata_{0} {}
-TensorContainer::TensorContainer(memory_data_t mdata, std::vector<int64_t> shape, DLDataType dtype) {
-  SetTensor(mdata, shape, dtype, 0);
+
+TensorContainer::TensorContainer(std::vector<int64_t> shape, DLDataType dltype) : is_null_{true} {
+  SetTensor(nullptr, std::move(shape), dltype, 0);
 }
 
+TensorContainer::TensorContainer(std::vector<int64_t> shape, std::vector<int64_t> stride, 
+                                 DLDataType dtype, size_t storage_offset) : is_null_{true} {
+  SetTensor(nullptr, std::move(shape), std::move(stride), dtype, storage_offset);
+}
+
+TensorContainer::TensorContainer(memory_data_t mdata, std::vector<int64_t> shape, DLDataType dtype) {
+  SetTensor(mdata, std::move(shape), dtype, 0);
+}
 
 TensorContainer::TensorContainer(
     memory_data_t mdata, std::vector<int64_t> shape, std::vector<int64_t> stride,
     DLDataType dtype, size_t storage_offset) {
-  SetTensor(mdata, shape, stride, dtype, storage_offset);
+  SetTensor(mdata, std::move(shape), std::move(stride), dtype, storage_offset);
 }
 
 TensorContainer::~TensorContainer() {

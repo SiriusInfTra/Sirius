@@ -30,6 +30,7 @@
 #include <string>
 #include <vector>
 
+#include <glog/logging.h>
 
 namespace tvm {
 namespace runtime {

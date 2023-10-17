@@ -644,7 +644,7 @@ at::Tensor _convolution(
       select_conv_backend_custom(input, weight, bias_sizes_opt, need_backward, params);
   at::MemoryFormat backend_memory_format = determine_backend_memory_format(input, weight, backend);
 
-  LOG(INFO) << "Convolution backend: " << backend << ", memory format: " << backend_memory_format;
+  DLOG(INFO) << "Convolution backend: " << backend << ", memory format: " << backend_memory_format;
 
   // Call the backend.
   at::Tensor output;
@@ -810,7 +810,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> convolution_backward(
   at::native::ConvBackend backend = select_conv_backend_custom(input, weight, bias_sizes_opt, /*need_backward=*/ true, params);
   at::MemoryFormat backend_memory_format = determine_backend_memory_format(input, weight, backend);
 
-  LOG(INFO) << "convolution_backward backend: " << backend << ", memory format: " << backend_memory_format;
+  DLOG(INFO) << "convolution_backward backend: " << backend << ", memory format: " << backend_memory_format;
 
   // Call the backend.
   at::Tensor backend_grad_input, backend_grad_weight, backend_grad_bias;

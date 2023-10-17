@@ -3,6 +3,11 @@ project(colserve LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
 
+if (NOT CMAKE_BUILD_TYPE)
+  message(STATUS "No build type selected, default to Release")
+  set(CMAKE_BUILD_TYPE "Release")
+endif()
+
 # find cuda toolkit
 find_package(CUDAToolkit 11 REQUIRED)
 
@@ -14,7 +19,15 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/grpc/grpc
   GIT_TAG        v1.56.2  # e.g v1.28.0
 )
-FetchContent_MakeAvailable(gRPC)
+# FetchContent_MakeAvailable(gRPC)
+FetchContent_GetProperties(gRPC)
+if (NOT grpc_POPULATED)
+  FetchContent_Populate(gRPC)
+  set(BUILD_TYPE_OLD ${CMAKE_BUILD_TYPE})
+  set(CMAKE_BUILD_TYPE "Release" CACHE INTERNAL "build type" FORCE)
+  add_subdirectory(${grpc_SOURCE_DIR} ${grpc_BINARY_DIR})
+  set(CMAKE_BUILD_TYPE ${BUILD_TYPE_OLD} CACHE INTERNAL "build type" FORCE)
+endif()
 
 FetchContent_Declare(
   glog
@@ -97,7 +110,8 @@ add_library(sta SHARED
 )
 # target_include_directories(sta INTERFACE ${TVM_HOME}/3rdparty/dlpack/include)
 target_include_directories(sta PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/server/)
-target_link_libraries(sta PRIVATE CUDA::cudart ${TORCH_LIBRARIES} glog::glog)
+target_link_libraries(sta PRIVATE CUDA::cudart glog::glog
+                          PUBLIC ${TORCH_LIBRARIES})
 
 add_executable(${PROJECT_NAME}
   server/main.cc

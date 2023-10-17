@@ -6,13 +6,17 @@
 #include <chrono>
 #include <regex>
 
+#include <sta/dtype_helper.h>
+
 #include "model_infer_store.h"
 #include "model_train_store.h"
 #include "controller.h"
 #include "profiler.h"
 #include "config.h"
 
+
 namespace colserve {
+
 namespace {
 std::vector<std::string> ParseModelName(const std::string &model) {
   std::regex r{"([a-zA-Z0-9]+)(\\[([0-9]+)\\])?"};
@@ -41,7 +45,7 @@ ModelInferStore* ModelInferStore::Get() {
 }
 
 void ModelInferStore::Init(const std::filesystem::path &infer_store_path) {
-  DLOG(INFO) << "ModelInferStore start initializing";
+  LOG(INFO) << "ModelInferStore start initializing";
   model_infer_store_ = std::make_unique<ModelInferStore>();
   model_infer_store_->models_["dummy"] = std::make_unique<Model>();
 
@@ -89,9 +93,7 @@ void ModelInferStore::Init(const std::filesystem::path &infer_store_path) {
       CHECK(std::filesystem::is_directory(model_path)) << model_path << " is not a directory";
 
       DLDevice device;
-      if (model_device == "cpu") {
-        device = DLDevice{kDLCPU, 0};
-      } else if (model_device == "cuda") {
+      if (model_device == "cuda") {
         device = DLDevice{kDLCUDA, 0};
       } else {
         LOG(FATAL) << model_name << " unsupport device type " << model_device;
@@ -198,7 +200,7 @@ void Model::InitMetaInfo() {
     std::stringstream ss;
     for (size_t i = 0; i < shape.size(); i++) 
       ss << shape[i] << " ";
-    DLOG(INFO) << "Model Input: " << name_ << " " << kv.first << " shape [ " << ss.str()  << "] dtype " << dtype;
+    LOG(INFO) << "Model Input: " << name_ << " " << kv.first << " shape [ " << ss.str()  << "] dtype " << dtype;
     CHECK_EQ(shape[0], batch_size_) << "batch size mismatch";
   }
 
@@ -210,7 +212,7 @@ void Model::InitMetaInfo() {
     std::stringstream ss;
     for (size_t i = 0; i < shape.size(); i++)
       ss << shape[i] << " ";
-    DLOG(INFO) << "Model Output: " << name_ << " " << kv.first << " shape [ " << ss.str()  << "] dtype " << dtype;
+    LOG(INFO) << "Model Output: " << name_ << " " << kv.first << " shape [ " << ss.str()  << "] dtype " << dtype;
     CHECK_EQ(shape[0], batch_size_) << "batch size mismatch";
   }
 }
@@ -247,7 +249,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     if (jobs.empty())
       continue;
     last_get_batch_time = std::chrono::steady_clock::now();
-    LOG(INFO) << "[Model Inference] GetBatch " << jobs.size() << "/" << batch_size_;
+    DLOG(INFO) << "[Model Inference] GetBatch " << jobs.size() << "/" << batch_size_;
 
     auto infer_begin = std::chrono::steady_clock::now();
 
@@ -329,7 +331,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
 
     std::stringstream ss;
     ss << std::fixed << std::setprecision(2)
-       << "[Inference]: " << name_ << " (" << rank << ") "
+       << "[Inference]: " << name_ << " (rank " << rank << ") "
        << "set_input_ms=" << set_input_ms << " "
        << "infer_ms=" << infer_ms << " "
        << "get_output_ms=" << get_output_ms;
@@ -337,11 +339,12 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
       ss << " wait_train_stop_ms=" << wait_train_stop_ms;
     }
     ss << " total_infer_ms=" << std::chrono::duration<double, std::milli>(infer_end - infer_begin).count();
-    DLOG(INFO) << ss.str();
+    LOG(INFO) << ss.str();
 
     for (auto& job : jobs) {
+      job->RecordFinished();
+      job->RecordProfile();
       auto data = job->GetInferData();
-      VLOG(1) << job << " finished";
       data->GetResponder().Finish(data->GetResponse(), grpc::Status::OK, data);
     }
 
@@ -355,6 +358,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
       task_switch_l3_cold_start = true;
     }
   }
+
   LOG(INFO) << "[Inference] worker " << rank << " exit";
   Profiler::Get()->RecordEvent(Profiler::EventItem::InferExit);
   graph_executor->DeInit();
@@ -381,8 +385,8 @@ bool Model::SetInput(tvm::GraphExecutor &graph_executor,
   }
 
   // tvm::runtime::NDArray input_arr = get_input_(input_id, device_);
-  auto input_arr = graph_executor.GetInput(input_id);
-  CHECK_EQ(input_arr.DataType(), ::tvm::runtime::DataType(input_dtype)) << "input dtype mismatch";
+  auto input_dev = graph_executor.GetInput(input_id);
+  CHECK(sta::DLDataTypeEqual(input_dev->dtype, input_dtype)) << "input dtype mismatch";
 
   auto copy_batch_input_fn = [&jobs](size_t idx, void* data) {
     size_t offset = 0;
@@ -395,13 +399,12 @@ bool Model::SetInput(tvm::GraphExecutor &graph_executor,
     }
   };
 
-  if (device_.device_type == kDLCPU) {
-      copy_batch_input_fn(idx, input_arr->data);
-  } else if (device_.device_type == kDLCUDA) {
-    auto input_cpu = ::tvm::runtime::NDArray::Empty(
-        input_info_[input_id].first, input_dtype, DLDevice{kDLCUDAHost, 0});
-    copy_batch_input_fn(idx, input_cpu->data);
-    input_arr.CopyFrom(input_cpu);
+  if (device_.device_type == kDLCUDA) {
+    auto input_host_buf = graph_executor.GetInputHostBuf(input_id);
+    copy_batch_input_fn(idx, input_host_buf->data);
+    // input_arr.CopyFrom(input_cpu);
+    ::tvm::runtime::NDArray::CopyFromTo(
+        input_host_buf, const_cast<DLTensor*>(input_dev), graph_executor.GetExecStream());
   } else {
     LOG(FATAL) << "unsupport device type " << device_.device_type;
   }
@@ -411,32 +414,33 @@ bool Model::SetInput(tvm::GraphExecutor &graph_executor,
 bool Model::GetOutput(tvm::GraphExecutor &graph_executor, 
                       size_t idx, const std::string &output_id, 
                       const std::vector<std::shared_ptr<Job>> &jobs) {
-  tvm::TVMArray output_cpu; // = get_output_(output_id);
-  if (device_.device_type == kDLCPU) {
-    // output_cpu = get_output_(output_id);
-    output_cpu = graph_executor.GetOutput(output_id);
-  } else {
-    // tvm::runtime::NDArray output_dev = get_output_(output_id);
+  const DLTensor* output_host_buf;
+  if (device_.device_type == kDLCUDA) {
     auto output_dev = graph_executor.GetOutput(output_id);
-    output_cpu = output_dev.CopyTo(DLDevice{kDLCPU, 0});
+    output_host_buf = graph_executor.GetOutputHostBuf(output_id);
+    ::tvm::runtime::NDArray::CopyFromTo(
+        output_dev, const_cast<DLTensor*>(output_host_buf), graph_executor.GetExecStream());
+    ::tvm::runtime::DeviceAPI::Get(device_)->StreamSync(device_, graph_executor.GetExecStream());
+  } else {
+    LOG(FATAL) << "unsupport device type " << device_.device_type;
   }
 
-  CHECK_LE(jobs.size(), output_cpu.Shape()[0]) << "out of model batch size";
-  std::vector<int64_t> shape{output_cpu.Shape().begin(), output_cpu.Shape().end()};
+  CHECK_LE(jobs.size(), static_cast<size_t>(output_host_buf->ndim)) << "out of model batch size";
+  std::vector<int64_t> shape{output_host_buf->shape, output_host_buf->shape + output_host_buf->ndim};
   shape[0] = 1;
 
   size_t offset = 0;
+  size_t output_nbytes = ::tvm::runtime::GetDataSize(*output_host_buf) / output_host_buf->shape[0];
   for (auto& job : jobs) {
     auto data = job->GetInferData();
     data->SetOutputShape(idx, shape);
-    data->SetOutputDType(idx, ::tvm::runtime::DLDataType2String(output_cpu.DataType()));
+    data->SetOutputDType(idx, ::tvm::runtime::DLDataType2String(output_host_buf->dtype));
     // copy output to infer data
-    auto bytes = ::tvm::runtime::GetDataSize(*output_cpu.operator->()) / output_cpu.Shape()[0];
     auto output = data->MutableOutputData(idx);
-    output->resize(bytes);
-    // output_cpu.CopyToBytes(output->data(), bytes);
-    std::memcpy(output->data(), static_cast<char*>(output_cpu->data) + offset, bytes);
-    offset += bytes;
+    output->resize(output_nbytes);
+    std::memcpy(output->data(), 
+                static_cast<char*>(output_host_buf->data) + offset, output_nbytes);
+    offset += output_nbytes;
   }
   return true;
 }

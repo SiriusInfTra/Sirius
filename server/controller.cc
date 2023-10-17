@@ -199,7 +199,7 @@ void Controller::InferResponseInc(size_t inc) {
   if (infer_status_.num_responses == infer_status_.num_requests) {
     infer_status_.status = InferStatus::kIdle;
     wait_infer_cv_.notify_one();
-    LOG(INFO) << "[Controller] InferStatus -> kIdle";
+    DLOG(INFO) << "[Controller] InferStatus -> kIdle";
   }
   // LOG(INFO) << "num_resp: " << infer_status_.num_responses
   //           << " num_req: " << infer_status_.num_requests;

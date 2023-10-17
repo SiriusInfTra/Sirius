@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <chrono>
 
+#include "profiler.h"
 #include "grpc/grcp_server.h"
 #include <glog/logging.h>
 
@@ -20,12 +21,23 @@ class Job {
   virtual network::InferHandler::InferData* GetInferData() { LOG(FATAL) << "not implemented"; }
   virtual network::TrainHandler::TrainData* GetTrainData() { LOG(FATAL) << "not implemented"; }
   virtual std::ostream& Print(std::ostream& os) const { LOG(FATAL) << "not implemented"; }
-  void RecordEnqueued() { en_queue_time_ = std::chrono::steady_clock::now(); }
+  inline void RecordEnqueued() { en_queue_time_ = std::chrono::steady_clock::now(); }
+  inline void RecordDequeued() { de_queue_time_ = std::chrono::steady_clock::now(); }
+  inline void RecordFinished() { finish_time_ = std::chrono::steady_clock::now(); }
+  inline void RecordProfile() {
+    Profiler::Get()->RecordPerf(Profiler::PerfItem::InferQueue, 
+        std::chrono::duration<double, std::milli>(de_queue_time_ - en_queue_time_).count());
+    Profiler::Get()->RecordPerf(Profiler::PerfItem::InferProcess,
+        std::chrono::duration<double, std::milli>(finish_time_ - de_queue_time_).count());
+  }
   std::chrono::time_point<std::chrono::steady_clock> GetEnQueueTime() {
     return en_queue_time_;
   }
  protected:
-  std::chrono::time_point<std::chrono::steady_clock> en_queue_time_; 
+  std::chrono::time_point<std::chrono::steady_clock> en_queue_time_, 
+                                                     de_queue_time_,
+                                                     finish_time_; 
+
 };
 
 std::ostream& operator<<(std::ostream& os, const std::shared_ptr<Job>& job);

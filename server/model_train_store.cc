@@ -109,8 +109,8 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
   argv[args_str.size()] = 0;
 
   int from_child_pipe[2], to_child_pipe[2];
-  pipe(from_child_pipe);
-  pipe(to_child_pipe);
+  CHECK_NE(pipe(from_child_pipe), -1);
+  CHECK_NE(pipe(to_child_pipe), -1);
 
   LOG(INFO) << "train wait infer idle";
   if (Config::serve_mode == ServeMode::kTaskSwitchL1 
@@ -130,6 +130,9 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
     close(from_child_pipe[0]);
     dup2(from_child_pipe[1], STDOUT_FILENO);
 
+    if (Config::use_shared_tensor) {
+      CHECK_NE(setenv("USE_SHARED_TENSOR", "1", 1), -1);
+    }
     auto err = execvp("python", argv);
     perror("execvp");
     CHECK_GE(err, 0) << "ModelTrainStore: spawn train worker fail, errno " << err;

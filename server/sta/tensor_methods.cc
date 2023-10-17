@@ -1,4 +1,5 @@
 #include <ATen/native/TensorConversions.h>
+#include <cuda_runtime_api.h>
 
 #include "tensor_methods.h"
 #include "tensor_pool.h"
@@ -8,37 +9,51 @@
 namespace colserve {
 namespace sta {
 
+uint64_t Null(at::IntArrayRef size, DLDataType dtype) {
+  return TensorPool::Get()->Insert(STensor(size.vec(), dtype));
+}
+
+STensor RawNull(at::IntArrayRef size, DLDataType dtype) {
+  return STensor(size.vec(), dtype);
+}
+
 uint64_t Empty(at::IntArrayRef size, DLDataType dtype) {
   auto storage_nbytes = ComputeStorageNbytes(size, dtype);
   auto entry = CUDAMemPool::Get()->Alloc(storage_nbytes);
-  std::stringstream ss;
-  ss << "Create empty size " << size << " nbytes " << storage_nbytes;
-  if (entry) {
-    ss << " " << std::hex << entry->addr;
-  } else {
-    ss << " nullptr";
-  }
-  LOG(INFO) << ss.str();
+  // std::stringstream ss;
+  // ss << "Create empty size " << size << " nbytes " << storage_nbytes;
+  // if (entry) {
+  //   ss << " " << std::hex << entry->addr;
+  // } else {
+  //   ss << " nullptr";
+  // }
+  // LOG(INFO) << ss.str();
   if (entry == nullptr) {
-    LOG(WARNING) << "Tensor Method Empty: tensor without memory";
+    DLOG(WARNING) << "Tensor Method Empty: tensor without memory";
   }
   return TensorPool::Get()->Insert(STensor(entry, size.vec(), dtype));
+}
+
+STensor RawEmpty(at::IntArrayRef size, DLDataType dtype) {
+  auto storage_nbytes = ComputeStorageNbytes(size, dtype);
+  auto entry = CUDAMemPool::RawAlloc(storage_nbytes);
+  return STensor(entry, size.vec(), dtype);
 }
 
 uint64_t EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride,
                       DLDataType dtype) {
   auto storage_nbytes = ComputeStorageNbytes(size, stride, dtype);
   auto entry = CUDAMemPool::Get()->Alloc(storage_nbytes);
-  std::stringstream ss;
-  ss << "Create empty_strided size " << size << " stride " << stride << " nbytes " << storage_nbytes;
-  if (entry) {
-    ss << " " << std::hex << entry->addr;
-  } else {
-    ss << " nullptr";
-  }
-  LOG(INFO) << ss.str();
+  // std::stringstream ss;
+  // ss << "Create empty_strided size " << size << " stride " << stride << " nbytes " << storage_nbytes;
+  // if (entry) {
+  //   ss << " " << std::hex << entry->addr;
+  // } else {
+  //   ss << " nullptr";
+  // }
+  // LOG(INFO) << ss.str();
   if (entry == nullptr) {
-    LOG(WARNING) << "Tensor Method EmptyStrided: tensor without memory";
+    DLOG(WARNING) << "Tensor Method EmptyStrided: tensor without memory";
   }
   return TensorPool::Get()->Insert(STensor(entry, size.vec(), stride.vec(), dtype, 0));
 }
@@ -77,12 +92,47 @@ uint64_t ViewDtype(uint64_t handle, DLDataType dtype) {
   }
 }
 
+uint64_t ViewShapeDtype(uint64_t handle, at::IntArrayRef size, DLDataType dtype) {
+  auto tensor = TensorPool::Get()->Tensor(handle);
+  // auto new_stride = ComputeStrides(size);
+  // int64_t new_elem_size = dtype.bits >> 3;
+  // auto bytes_offset = tensor->byte_offset;
+  // CHECK_EQ(bytes_offset % new_elem_size, 0);
+  // auto new_storage_offset = bytes_offset / new_elem_size;
+  // if (!tensor.IsNull()) {
+  //   CheckMemoryBound(tensor.Shape(), new_stride, dtype, new_storage_offset, tensor.MData());
+  //   return TensorPool::Get()->Insert(STensor(tensor.MData(), size.vec(), std::move(new_stride), dtype, new_storage_offset));
+  // } else {
+  //   return TensorPool::Get()->Insert(STensor(size.vec(), std::move(new_stride), dtype, new_storage_offset));
+  // }
+  auto view_tensor = RawViewShapeDtype(tensor, size, dtype);
+  return TensorPool::Get()->Insert(view_tensor);
+}
+
+STensor RawViewShapeDtype(STensor tensor, at::IntArrayRef size, DLDataType dtype) {
+  auto new_stride = ComputeStrides(size);
+  int64_t new_elem_size = dtype.bits >> 3;
+  auto bytes_offset = tensor->byte_offset;
+  CHECK_EQ(bytes_offset % new_elem_size, 0);
+  auto new_storage_offset = bytes_offset / new_elem_size;
+  if (!tensor.IsNull()) {
+    CheckMemoryBound(tensor.Shape(), new_stride, dtype, new_storage_offset, tensor.MData());
+    return STensor(tensor.MData(), size.vec(), std::move(new_stride), dtype, new_storage_offset);
+  } else {
+    return STensor(size.vec(), std::move(new_stride), dtype, new_storage_offset);
+  }
+}
+
 uint64_t AsStrided(uint64_t handle, at::IntArrayRef size,
                    at::IntArrayRef stride, c10::optional<int64_t> storage_offset) {
-  std::cout << "Astrided " << size << " " << stride << " " <<  storage_offset.value_or(0) << std::endl;
+  // DLOG(INFO) << "Astrided " << size << " " << stride << " " <<  storage_offset.value_or(0) << std::endl;
   auto tensor = TensorPool::Get()->Tensor(handle);
-  CheckMemoryBound(size, stride, tensor->dtype, storage_offset.value_or(0), tensor.MData());
-  return TensorPool::Get()->Insert(STensor(tensor.MData(), size.vec(), stride.vec(), tensor->dtype, storage_offset.value_or(0)));
+  if (!tensor.IsNull()) {
+    CheckMemoryBound(size, stride, tensor->dtype, storage_offset.value_or(0), tensor.MData());
+    return TensorPool::Get()->Insert(STensor(tensor.MData(), size.vec(), stride.vec(), tensor->dtype, storage_offset.value_or(0)));
+  } else {
+    return TensorPool::Get()->Insert(STensor(size.vec(), stride.vec(), tensor->dtype, storage_offset.value_or(0)));
+  }
 }
 
 void STensor::Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride) {
@@ -109,19 +159,19 @@ void STensor::Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride) {
         + get()->tensor_.byte_offset;
   }
 
-  // std::cout << "storage_nbytes: " << storage_nbytes << std::endl;
   std::stringstream ss;
-  ss << "Resize storage_nbytes: " << storage_nbytes;
+  // ss << "Resize storage_nbytes: " << storage_nbytes;
   TensorContainer::memory_data_t mdata = MData();
   if (mdata == nullptr || mdata->nbytes < storage_nbytes) {
     auto new_mdata = CUDAMemPool::Get()->Resize(mdata, storage_nbytes);
     CUDAMemPool::Get()->CopyFromTo(mdata, new_mdata);
     mdata = new_mdata;
   }
-  if (mdata) {
-    ss << " mdata:" << mdata->addr << " " << mdata->nbytes;
-  }
-  std::cout << ss.str() << std::endl;
+  // if (mdata) {
+  //   ss << " mdata:" << mdata->addr << " " << mdata->nbytes;
+  // }
+  // std::cout << ss.str() << std::endl;
+  DLOG(INFO) << "Resize storage_nbytes: " << storage_nbytes << " addr " << (mdata ? mdata->addr : 0);
 
   if (stride.has_value()) {
     get()->SetTensor(mdata, size.vec(), stride.value().vec(), 
@@ -129,6 +179,42 @@ void STensor::Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride) {
   } else {
     get()->SetTensor(mdata, size.vec(), get()->tensor_.dtype, std::nullopt);
   }
+}
+
+void STensor::AllocForNull(bool raw_alloc) {
+  CHECK(IsNull());
+  auto storage_nbytes = ComputeStorageNbytes(
+      get()->shape_, get()->stride_, get()->tensor_.dtype, StorageOffset());
+  TensorContainer::memory_data_t mdata;
+  if (!raw_alloc) {
+    mdata = CUDAMemPool::Get()->Alloc(storage_nbytes);
+  } else {
+    mdata = CUDAMemPool::RawAlloc(storage_nbytes);
+  }
+  if (storage_nbytes > 0 && mdata == nullptr) {
+    LOG(FATAL) << "Tensor AllocForNull: tensor without memory";
+  }
+  get()->mdata_ = mdata;
+  get()->tensor_.data = mdata->addr;
+  get()->is_null_ = false;
+}
+
+void STensor::AssignMDataForNull(TensorContainer::memory_data_t mdata, bool check_memory_bound) {
+  CHECK(IsNull());
+  if (check_memory_bound) {
+    CheckMemoryBound(get()->shape_, get()->stride_, get()->tensor_.dtype, StorageOffset(), mdata);
+  }
+  CHECK_NE(mdata, nullptr);
+  get()->mdata_ = mdata;
+  get()->tensor_.data = mdata->addr;
+  get()->is_null_ = false;
+}
+
+void STensor::DeallocToNull() {
+  CHECK(!IsNull());
+  get()->tensor_.data = 0;
+  get()->mdata_ = nullptr;
+  get()->is_null_ = true;
 }
 
 }

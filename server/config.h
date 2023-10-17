@@ -22,6 +22,7 @@ class Config {
   
   static std::atomic<bool> running;
   
+  static bool use_shared_tensor;
 };
 
 }

@@ -3,6 +3,10 @@
 
 // #include <tvm/runtime/device_api.h>
 // #include <tvm/runtime/c_runtime_api.h>
+#include <unordered_map>
+
+#include <sta/tensor_methods.h>
+#include <sta/tensor_pool.h>
 
 #include "graph_executor_factory.h"
 
@@ -25,12 +29,16 @@ class GraphExecutor {
   void DeInit();
   void Run();
   void PipelineRun();
-  TVMArray GetInput(int index) const;
-  TVMArray GetInput(const std::string &index) const;
-  TVMArray GetOutput(int index) const;
-  TVMArray GetOutput(const std::string &index) const;
+  const DLTensor* GetInput(int index) const;
+  const DLTensor* GetInput(const std::string &index) const;
+  const DLTensor* GetInputHostBuf(const std::string &index) const;
+  const DLTensor* GetOutput(int index) const;
+  const DLTensor* GetOutput(const std::string &index) const;
+  const DLTensor* GetOutputHostBuf(const std::string &index) const;
   uint32_t GetInputIndex(const std::string &name) const;
   uint32_t GetOutputIndex(const std::string &name) const;
+
+  TVMStreamHandle GetExecStream() const { return exec_stream_; }
 
   // void ResetBufStorage();
   // void ResetParamStorage();
@@ -60,23 +68,36 @@ class GraphExecutor {
   bool initialized_;
   GraphExecutorFactory &factory_;
 
-  std::vector<TVMArray> storage_pool_;
+  // std::vector<TVMArray> storage_pool_;
   // std::map<uint32_t, uint32_t> op_node_storage_id_map_;
-  std::vector<TVMArray> data_entry_;
+  // std::vector<TVMArray> data_entry_;
+
+  std::vector<sta::handle_t> storage_pool_;
+  std::vector<sta::handle_t> data_entry_;
+
+  // for no shared allocator
+  std::vector<sta::STensor> raw_storage_pool_;
+  std::vector<sta::STensor> raw_data_entry_;
+
   std::vector<size_t> data_alignment_;
 
   std::vector<std::function<void()>> op_execs_;
+  // node input and output dltensors
   std::vector<std::vector<DLTensor*>> input_dltensors_;
   std::vector<std::vector<DLTensor*>> output_dltensors_;
   std::vector<std::vector<DLTensor*>> both_input_output_dltensors_;
   std::vector<std::vector<size_t>> input_param_nid_;
+
+  // to avoid alloc pin memory during set input/get output
+  std::unordered_map<std::string, TVMArray> input_cpu_pin_bufs_,
+                                            output_cpu_pin_bufs_;
 
   // std::map<uint32_t, bool> param_ready_;
   std::vector<bool> param_ready_;
 
   void* blob_mem_{nullptr};
   
-  TVMStreamHandle run_stream_;
+  TVMStreamHandle exec_stream_;
   TVMStreamHandle load_param_stream_;
 };
 

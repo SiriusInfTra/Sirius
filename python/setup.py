@@ -23,6 +23,7 @@ class TorchColExtention(setuptools.command.build_ext.build_ext):
             shutil.rmtree(lib_dir)
         os.mkdir(lib_dir)
         shutil.copy('../build/python/libtorch_col.so', lib_dir)
+        shutil.copy('../build/python/libtorch_col_tensor.so', lib_dir)
         shutil.copy('../build/libsta.so', lib_dir)
 
 
@@ -38,7 +39,7 @@ def config_extension():
             "../",
             "./torch_col",
         ],
-        libraries=["rt", "sta", "torch_col"],
+        libraries=["rt", "sta", "torch_col", "torch_col_tensor"],
         library_dirs=[
             "../build",
             '../build/python'

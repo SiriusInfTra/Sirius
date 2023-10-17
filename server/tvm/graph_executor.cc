@@ -4,9 +4,10 @@
 #include <cuda_runtime_api.h>
 
 #include "graph_executor.h"
-#include <glog/logging.h>
 #include "../profiler.h"
+#include "../config.h"
 
+#include <glog/logging.h>
 
 namespace colserve {
 namespace tvm {
@@ -35,14 +36,14 @@ GraphExecutor::GraphExecutor(GraphExecutorFactory &factory)
   auto t0 = std::chrono::steady_clock::now();
   SetupStorage(false);
   SetupOpExecs();
-  run_stream_ = DeviceAPI::Get(factory_.devices_[0])
+  exec_stream_ = DeviceAPI::Get(factory_.devices_[0])
       ->CreateStream(factory_.devices_[0]);
   load_param_stream_ = DeviceAPI::Get(factory_.devices_[0])
       ->CreateStream(factory_.devices_[0]);
 
   param_ready_.resize(GetNumOfNodes(), false);
   auto t1 = std::chrono::steady_clock::now();
-  VLOG(1) << "[GraphExecutor] Create " 
+  DLOG(INFO) << "[GraphExecutor] Create " 
             << std::chrono::duration<double, std::milli>(t1-t0).count() << "ms";
 }
 
@@ -75,18 +76,18 @@ void GraphExecutor::DeInit() {
 void GraphExecutor::Run() {
   using namespace ::tvm::runtime;
   CHECK(initialized_);
-  DeviceAPI::Get(factory_.devices_[0])->SetStream(factory_.devices_[0], run_stream_);
+  DeviceAPI::Get(factory_.devices_[0])->SetStream(factory_.devices_[0], exec_stream_);
   for (size_t i = 0; i < op_execs_.size(); i++) {
     if (op_execs_[i]) op_execs_[i]();
   }
-  DeviceAPI::Get(factory_.devices_[0])->StreamSync(factory_.devices_[0], run_stream_);
+  DeviceAPI::Get(factory_.devices_[0])->StreamSync(factory_.devices_[0], exec_stream_);
 }
 
 void GraphExecutor::PipelineRun() {
   using namespace ::tvm::runtime;
   CHECK(initialized_);
   double wait_time = 0;
-  DeviceAPI::Get(factory_.devices_[0])->SetStream(factory_.devices_[0], run_stream_);
+  DeviceAPI::Get(factory_.devices_[0])->SetStream(factory_.devices_[0], exec_stream_);
   for (size_t i = 0; i < op_execs_.size(); i++) {
     if (op_execs_[i]) {
       auto t0 = std::chrono::steady_clock::now();
@@ -103,32 +104,52 @@ void GraphExecutor::PipelineRun() {
       auto t1 = std::chrono::steady_clock::now();
       wait_time += std::chrono::duration<double, std::milli>(t1-t0).count();
       op_execs_[i]();
-      DeviceAPI::Get(factory_.devices_[0])->StreamSync(factory_.devices_[0], run_stream_);
+      DeviceAPI::Get(factory_.devices_[0])->StreamSync(factory_.devices_[0], exec_stream_);
     }
   }
   LOG(INFO) << "pipeline run wait "<< wait_time << "ms";
 }
 
-TVMArray GraphExecutor::GetInput(int index) const {
+const DLTensor* GraphExecutor::GetInput(int index) const {
   CHECK(initialized_);
   CHECK_LT(static_cast<size_t>(index), factory_.input_nodes_.size());
   uint32_t eid = entry_id(factory_.input_nodes_[index], 0);
-  return data_entry_[eid];
+  if (Config::use_shared_tensor) {
+    auto input_view_tensor = sta::TensorPool::Get()->Tensor(data_entry_[eid]);
+    return input_view_tensor.operator->();
+  } else {
+    return raw_data_entry_[eid].operator->();
+  }
 }
 
-TVMArray GraphExecutor::GetInput(const std::string &index) const {
+const DLTensor* GraphExecutor::GetInput(const std::string &index) const {
   return GetInput(GetInputIndex(index));
 }
 
-TVMArray GraphExecutor::GetOutput(int index) const {
+const DLTensor* GraphExecutor::GetInputHostBuf(const std::string &index) const {
+  CHECK(initialized_);
+  return input_cpu_pin_bufs_.at(index).operator->();
+}
+
+const DLTensor* GraphExecutor::GetOutput(int index) const {
   CHECK(initialized_);
   CHECK_LE(static_cast<size_t>(index), factory_.outputs_.size());
   uint32_t eid = entry_id(factory_.outputs_[index]);
-  return data_entry_[eid];
+  if (Config::use_shared_tensor) {
+    auto output_view_tensor = sta::TensorPool::Get()->Tensor(data_entry_[eid]);
+    return output_view_tensor.operator->();
+  } else {
+    return raw_data_entry_[eid].operator->();
+  }
 }
 
-TVMArray GraphExecutor::GetOutput(const std::string &index) const {
+const DLTensor* GraphExecutor::GetOutput(const std::string &index) const {
   return GetOutput(GetOutputIndex(index));
+}
+
+const DLTensor* GraphExecutor::GetOutputHostBuf(const std::string &index) const {
+  CHECK(initialized_);
+  return output_cpu_pin_bufs_.at(index).operator->();
 }
 
 uint32_t GraphExecutor::GetInputIndex(const std::string &name) const {
@@ -174,28 +195,57 @@ void GraphExecutor::ResetStorage() {
   for (auto &p : factory_.params_) {
     param_ready_[p.first] = false;
   }
-  for (auto &e : data_entry_) {
-    e.get_mutable()->dl_tensor.data = nullptr;
+  if (Config::use_shared_tensor) {
+    for (auto &e : data_entry_) {
+      auto tensor = sta::TensorPool::Get()->Tensor(e);
+      tensor.DeallocToNull();
+    }
+    for (auto &s : storage_pool_) {
+      auto tensor = sta::TensorPool::Get()->Tensor(s);
+      tensor.DeallocToNull();
+    }
+  } else {
+    for (auto & e : raw_data_entry_) {
+      e.DeallocToNull();
+    }
+    for (auto & s : raw_storage_pool_) {
+      s.DeallocToNull();
+    }
   }
-  for (auto &s : storage_pool_) {
-    // DeviceAPI::Get(s->device)->FreeDataSpace(s->device, s->data);
-    s.get_mutable()->dl_tensor.data = nullptr;
-  }
-  CHECK(cudaFree(blob_mem_) == cudaSuccess);
+
+  // for (auto &e : data_entry_) {
+  //   e.get_mutable()->dl_tensor.data = nullptr;
+  // }
+  // for (auto &s : storage_pool_) {
+  //   // DeviceAPI::Get(s->device)->FreeDataSpace(s->device, s->data);
+  //   s.get_mutable()->dl_tensor.data = nullptr;
+  // }
+  // CHECK(cudaFree(blob_mem_) == cudaSuccess);
 }
 
 void GraphExecutor::AllocStorage() {
   using namespace ::tvm::runtime;
 
-  size_t total_size = 0, off = 0;
-  for (auto &s : storage_pool_) {
-    total_size += GetDataSize(*s.operator->());
+  if (Config::use_shared_tensor) {
+    for (auto &s : storage_pool_) {
+      auto tensor = sta::TensorPool::Get()->Tensor(s);
+      tensor.AllocForNull(Config::use_shared_tensor ? 0 : 1);
+    }
+  } else {
+    for (auto &s: raw_storage_pool_) {
+      s.AllocForNull(Config::use_shared_tensor ? 0 : 1);
+    }
   }
-  CHECK(cudaMalloc(&blob_mem_, total_size) == cudaSuccess);
-  for (auto &s : storage_pool_) {
-    s.get_mutable()->dl_tensor.data = static_cast<char*>(blob_mem_) + off;
-    off += GetDataSize(*s.operator->());
-  }
+
+  // size_t total_size = 0, off = 0;
+  // for (auto &s : storage_pool_) {
+  //   total_size += GetDataSize(*s.operator->());
+  // }
+  // CHECK(cudaMalloc(&blob_mem_, total_size) == cudaSuccess);
+  // for (auto &s : storage_pool_) {
+  //   s.get_mutable()->dl_tensor.data = static_cast<char*>(blob_mem_) + off;
+  //   off += GetDataSize(*s.operator->());
+  // }
 
   // for (auto &s : storage_pool_) {
   //   s.get_mutable()->dl_tensor.data =
@@ -208,11 +258,17 @@ void GraphExecutor::LoadParams(bool pipeline) {
   for (auto &p : factory_.params_) {
     auto sid = factory_.attrs_.storage_id[p.first];
     if (!param_ready_[p.first]) {
+      sta::STensor storage_tensor;
+      if (Config::use_shared_tensor) {
+        storage_tensor = sta::TensorPool::Get()->Tensor(storage_pool_[sid]);
+      } else {
+        storage_tensor = raw_storage_pool_[sid];
+      }
       tvm::TVMArray::CopyFromTo(
-        p.second.operator->(), &storage_pool_[sid].get_mutable()->dl_tensor, load_param_stream_);
+        p.second.operator->(), storage_tensor.MutableDLTensor(), load_param_stream_);
       if (pipeline) {
-        ::tvm::runtime::DeviceAPI::Get(storage_pool_[sid]->device)
-            ->StreamSync(storage_pool_[sid]->device, load_param_stream_);
+        ::tvm::runtime::DeviceAPI::Get(factory_.devices_[0])
+            ->StreamSync(factory_.devices_[0], load_param_stream_);
         param_ready_[p.first] = true;
       }
     }
@@ -234,9 +290,18 @@ void GraphExecutor::ReSetupDataEntry() {
     // } else {
     //   storage = &storage_pool_[op_node_storage_id_map_[sid]];
     // }
-    data_entry_[i].get_mutable()->dl_tensor.data =
-        storage_pool_[sid].get_mutable()->dl_tensor.data;
-    CHECK_NE(data_entry_[i]->data, nullptr);
+
+    // data_entry_[i].get_mutable()->dl_tensor.data =
+    //     storage_pool_[sid].get_mutable()->dl_tensor.data;
+    // CHECK_NE(data_entry_[i]->data, nullptr);
+    if (Config::use_shared_tensor) {
+      auto storage_tensor = sta::TensorPool::Get()->Tensor(storage_pool_[sid]);
+      auto data_entry_view_tensor = sta::TensorPool::Get()->Tensor(data_entry_[i]);
+      data_entry_view_tensor.AssignMDataForNull(storage_tensor.MData());
+    } else {
+      auto storage_tensor = raw_storage_pool_[sid];
+      raw_data_entry_[i].AssignMDataForNull(storage_tensor.MData());
+    }
   }
 }
 
@@ -264,20 +329,35 @@ void GraphExecutor::SetupStorage(bool alloc) {
     if (!pit.scope.empty()) {
       mem_scope = ::tvm::runtime::String(pit.scope);
     }
-    if (!alloc) {
-      storage_pool_.push_back(TVMArray::Null(shape, pit.dtype, dev, mem_scope));
+    CHECK(dev.device_type == kDLCUDA && dev.device_id == 0);
+    sta::STensor last_tensor;
+    if (Config::use_shared_tensor) {
+      if (!alloc) {
+        // storage_pool_.push_back(TVMArray::Null(shape, pit.dtype, dev, mem_scope));
+        storage_pool_.push_back(sta::Null(shape, pit.dtype));
+      } else {
+        // storage_pool_.push_back(TVMArray::Empty(shape, pit.dtype, dev, mem_scope));
+        storage_pool_.push_back(sta::Empty(shape, pit.dtype));
+      }
+      last_tensor = sta::TensorPool::Get()->CTensor(storage_pool_.back());
     } else {
-      storage_pool_.push_back(TVMArray::Empty(shape, pit.dtype, dev, mem_scope));
+      if (!alloc) {
+        raw_storage_pool_.push_back(sta::RawNull(shape, pit.dtype));
+      } else {
+        raw_storage_pool_.push_back(sta::RawEmpty(shape, pit.dtype));
+      }
+      last_tensor = raw_storage_pool_.back();
     }
     // op_node_storage_id_map_[sid] = storage_pool_.size() - 1;
     if (pit.params_entry) {
-      param_storage_size += ::tvm::runtime::GetDataSize(*storage_pool_.back().operator->());
+      param_storage_size += ::tvm::runtime::GetDataSize(*last_tensor.operator->());
     } else {
-      buffer_storage_size += ::tvm::runtime::GetDataSize(*storage_pool_.back().operator->());
+      buffer_storage_size += ::tvm::runtime::GetDataSize(*last_tensor.operator->());
     }
   }
 
   data_entry_.resize(factory_.node_row_ptr_.back());
+  raw_data_entry_.resize(factory_.node_row_ptr_.back());
   data_alignment_.resize(factory_.node_row_ptr_.back());
   for (size_t i = 0; i < data_entry_.size(); i++) {
     int storage_id = factory_.attrs_.storage_id[i];
@@ -287,9 +367,36 @@ void GraphExecutor::SetupStorage(bool alloc) {
     // } else {
     //   storage = &storage_pool_[op_node_storage_id_map_[storage_id]];
     // }
-    data_entry_[i] = storage_pool_[storage_id].CreateView(factory_.attrs_.shape[i], vtype[i]);
-    const DLTensor* tmp = data_entry_[i].operator->();
-    data_alignment_[i] = details::GetDataAlignment(*tmp);
+    // data_entry_[i] = storage_pool_[storage_id].CreateView(factory_.attrs_.shape[i], vtype[i]);
+    // const DLTensor* tmp = data_entry_[i].operator->();
+    sta::STensor data_entry_view_ts;
+    if (Config::use_shared_tensor) {
+      data_entry_[i] = sta::ViewShapeDtype(storage_pool_[storage_id], factory_.attrs_.shape[i], vtype[i]);
+      data_entry_view_ts = sta::TensorPool::Get()->CTensor(data_entry_[i]);
+    } else {
+      raw_data_entry_[i] = sta::RawViewShapeDtype(raw_storage_pool_[storage_id], factory_.attrs_.shape[i], vtype[i]);
+      data_entry_view_ts = raw_data_entry_[i];
+    }
+    data_alignment_[i] = details::GetDataAlignment(*data_entry_view_ts.operator->());
+  }
+
+  // setup cpu pin memory
+  for (auto nid : factory_.input_nodes_) {
+    if (!factory_.params_.count(nid)) {
+      auto & input_id = factory_.nodes_[nid].name;
+      auto & shape = factory_.attrs_.shape[nid];
+      auto & dtype = factory_.attrs_.dltype[nid];
+      input_cpu_pin_bufs_[input_id] = ::tvm::runtime::NDArray::Empty(
+          shape, ::tvm::runtime::String2DLDataType(dtype), {kDLCUDAHost, 0});
+    }
+  }
+  for (auto e : factory_.outputs_) {
+    auto nid = entry_id(e);
+    auto & output_id = factory_.nodes_[nid].name;
+    auto & shape = factory_.attrs_.shape[nid];
+    auto & dtype = factory_.attrs_.dltype[nid];
+    output_cpu_pin_bufs_[output_id] = ::tvm::runtime::NDArray::Empty(
+        shape, ::tvm::runtime::String2DLDataType(dtype), {kDLCUDAHost, 0});
   }
 
   static std::set<std::string> logged;
@@ -324,7 +431,14 @@ void GraphExecutor::SetupOpExecs() {
     std::vector<DLTensor*> args;
     for (const auto& e : inode.inputs) {
       uint32_t eid = entry_id(e);
-      args.push_back(const_cast<DLTensor*>(data_entry_[eid].operator->()));
+      // args.push_back(const_cast<DLTensor*>(data_entry_[eid].operator->()));
+      sta::STensor data_entry_view_tensor;
+      if (Config::use_shared_tensor) {
+        data_entry_view_tensor = sta::TensorPool::Get()->Tensor(data_entry_[eid]);
+      } else {
+        data_entry_view_tensor = raw_data_entry_[eid];
+      }
+      args.push_back(data_entry_view_tensor.MutableDLTensor());
 
       if (factory_.params_.count(e.node_id)) {
         input_param_nid_[nid].push_back(e.node_id);
@@ -332,7 +446,14 @@ void GraphExecutor::SetupOpExecs() {
     }
     for (uint32_t index = 0; index < inode.param.num_outputs; index++) {
       uint32_t eid = entry_id(nid, index);
-      args.push_back(const_cast<DLTensor*>(data_entry_[eid].operator->()));
+      // args.push_back(const_cast<DLTensor*>(data_entry_[eid].operator->()));
+      sta::STensor data_entry_view_tensor;
+      if (Config::use_shared_tensor) {
+        data_entry_view_tensor = sta::TensorPool::Get()->Tensor(data_entry_[eid]);
+      } else {
+        data_entry_view_tensor = raw_data_entry_[eid];
+      }
+      args.push_back(data_entry_view_tensor.MutableDLTensor());
     }
     CHECK(inode.op_type == "tvm_op");
 

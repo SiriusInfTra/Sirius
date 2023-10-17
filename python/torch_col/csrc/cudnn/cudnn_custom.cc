@@ -2,9 +2,6 @@
 #include "../tensor_impl.h"
 #include "cudnn_custom.h"
 
-#include "undef_log.h"
-#include <glog/logging.h>
-
 namespace torch_col { namespace cudnn {
 
 // ---------------------------------------------------------------------

@@ -12,9 +12,9 @@
 // #include <tvm/runtime/module.h>
 
 
-// #include <glog/logging.h>
 
 #include "tvm.h"
+
 
 namespace colserve {
 namespace tvm {
@@ -128,7 +128,7 @@ struct Node {
       } else if (key == "control_deps") {
         reader->Read(&control_deps);
       } else {
-        LOG(FATAL) << "do not support key " << key;
+        ICHECK(false) << "do not support key " << key;
       }
     }
     ICHECK_EQ(bitmask, 1 | 2 | 4) << "invalid format";
@@ -205,7 +205,7 @@ struct GraphAttr {
           size_t temp;
           reader->Read(&temp);
         } else {
-          LOG(FATAL) << "cannot skip graph attr " << key;
+          ICHECK(false) << "cannot skip graph attr " << key;
         }
         ICHECK(!reader->NextArrayItem());
       }
@@ -261,7 +261,7 @@ class GraphExecutorFactory {
       } else if (key == "metadata") {
         break;
       } else {
-        LOG(FATAL) << "key " << key << " is not supported";
+        ICHECK(false) << "key " << key << " is not supported";
       }
     }
     ICHECK_EQ(bitmask, 1 | 2 | 4 | 8 | 16) << "invalid format";

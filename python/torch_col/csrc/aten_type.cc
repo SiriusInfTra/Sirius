@@ -7,6 +7,7 @@
 #include <ATen/InferSize.h>
 #include <ATen/core/op_registration/adaption.h>
 
+#include <sta/init.h>
 #include <sta/tensor_pool.h>
 #include <sta/tensor_methods.h>
 #include "tensor_impl.h"
@@ -31,7 +32,7 @@ inline ColTensorImpl* GetColTensorImpl(const at::Tensor& tensor) {
 
 void cuda_fallback(const c10::OperatorHandle &op, torch::jit::Stack *stack) {
   auto schema = op.schema();
-  std::cout << "redispatching " << schema << " to CUDA" << std::endl;
+  DLOG(INFO) << "redispatching " << schema << " to CUDA" << std::endl;
   op.redispatchBoxed(c10::DispatchKeySet(c10::DispatchKey::CUDA), stack);
 }
 
@@ -80,8 +81,8 @@ at::Tensor _reshape_alias(const at::Tensor& self, at::IntArrayRef size, at::IntA
 const at::Tensor& resize_(const at::Tensor& self, at::IntArrayRef size, c10::optional<at::MemoryFormat> memory_format) {
   auto impl = GetColTensorImpl(self);
   impl->Tensor().Resize(size, c10::nullopt);
-  std::cout << "resize_ " << size << " new ts " << self.sizes() << " " << self.numel() << " "
-            << self.data_ptr() << std::endl;
+  // std::cout << "resize_ " << size << " new ts " << self.sizes() << " " << self.numel() << " "
+  //           << self.data_ptr() << std::endl;
   return self;
 }
 
@@ -225,6 +226,15 @@ TORCH_LIBRARY_IMPL(_, PrivateUse1, m) {
   m.fallback(torch::CppFunction::makeFromBoxedFunction<
       &cuda_fallback>());
 }
+
+struct ColTensorInitializer {
+  ColTensorInitializer() {
+    LOG(INFO) << "ColTensor Initialized";
+    colserve::sta::Init();
+  }
+};
+
+static ColTensorInitializer col_tensor_initializer __attribute__ ((init_priority (101)));
 
 }
 }

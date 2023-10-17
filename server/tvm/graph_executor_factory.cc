@@ -3,11 +3,12 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#include "texture.h"
 
 #include "graph_executor.h"
 #include "graph_executor_factory.h"
-// #include <glog/logging.h>
+#include "texture.h"
+
+#include <glog/logging.h>
 
 namespace colserve {
 namespace tvm {

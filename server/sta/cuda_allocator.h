@@ -13,6 +13,14 @@
 namespace colserve {
 namespace sta {
 
+#define CUDA_CALL(func) do { \
+    auto error = func; \
+    if (error != cudaSuccess) { \
+      std::cout << cudaGetErrorString(error); \
+      exit(EXIT_FAILURE); \
+    } \
+  } while (0);
+
 class CUDAMemPool {
  public:
   struct PoolEntry {
@@ -22,7 +30,9 @@ class CUDAMemPool {
 
   static void Init(std::size_t nbytes);
   static CUDAMemPool* Get();
-  
+
+  static std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes);
+
   CUDAMemPool(std::size_t nbytes);
   std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes);
   std::shared_ptr<PoolEntry> Resize(std::shared_ptr<PoolEntry> entry, std::size_t nbytes);
@@ -42,6 +52,8 @@ class CUDAMemPool {
   cudaStream_t stream_;
   std::set<PoolEntry, decltype(&CUDAMemPool::CmpPoolEntryByAddr)> entry_by_addr_;
 };
+
+
 
 }
 }

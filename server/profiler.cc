@@ -51,6 +51,8 @@ std::ostream& operator<<(std::ostream &os, Profiler::EventItem item) {
 
 std::ostream& operator<<(std::ostream &os, Profiler::PerfItem item) {
   switch (item) {
+    LOG_ITEM(Profiler::PerfItem, InferQueue)
+    LOG_ITEM(Profiler::PerfItem, InferProcess)
     LOG_ITEM(Profiler::PerfItem, TrainAdjust)
     LOG_ITEM(Profiler::PerfItem, InferAllocStorage)
     LOG_ITEM(Profiler::PerfItem, InferLoadParam)
@@ -180,21 +182,13 @@ double Profiler::Passed() {
 
 void Profiler::WriteLog() {
   std::ofstream ofs{profile_log_path_};
-  ofs << "[Memory Info]" << std::endl;
-  for (auto &r : resource_info_) {
-    ofs << std::get<0>(r) << ":"
-        << " Infer " << GetMemString(std::get<1>(r).infer_mem)
-        << " Train " << GetMemString(std::get<1>(r).train_mem)
-        << " Total " << GetMemString(std::get<1>(r).gpu_used_mem)
-        << std::endl;
-  }
-  ofs << std::endl;
   ofs << "[Event Info]" << std::endl;
   for (auto &e : event_info_) {
     ofs << std::get<0>(e) << ": "
         << std::get<1>(e) << std::endl;
   }
   ofs << std::endl;
+  
   ofs << "[Perf Info]" << std::endl;
   for (auto &it : perf_info_) {
     auto max = *std::max_element(it.second.begin(), it.second.end());
@@ -215,6 +209,17 @@ void Profiler::WriteLog() {
         << " p70 " << sorted[int(0.50 * sorted.size())]
         << std::endl;
   }
+  ofs << std::endl;
+
+  ofs << "[Memory Info]" << std::endl;
+  for (auto &r : resource_info_) {
+    ofs << std::get<0>(r) << ":"
+        << " Infer " << GetMemString(std::get<1>(r).infer_mem)
+        << " Train " << GetMemString(std::get<1>(r).train_mem)
+        << " Total " << GetMemString(std::get<1>(r).gpu_used_mem)
+        << std::endl;
+  }
+  ofs << std::endl;
 
   LOG(INFO) << "[Profiler] write prfile info to " << profile_log_path_;
 }
