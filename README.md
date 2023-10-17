@@ -10,7 +10,11 @@
 4. Set `TVM_HOME` environment and configure cmake. For conda env, execute `export CMAKE_PREFIX_PATH=${CONDA_PREFIX}/lib/python3.xx/site-packages/torch/share/cmake` to find pytorch.
 
 ```
-cmake -B build -DTVM_HOME=${TVM_HOME} -DgRPC_INSTALL=ON -GNinja
+cmake -DCMAKE_BUILD_TYPE=Release/Debug \
+      -DgRPC_INSTALL=ON \
+      -DgRPC_BUILD_TESTS=OFF \
+      -DCMAKE_PREFIX_PATH=${CONDA_PREFIX}/lib/python3.xx/site-packages/torch/share/cmake \
+      -B build -G Ninja
 cmake --build build --config Release/Debug
 ```
 
