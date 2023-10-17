@@ -10,24 +10,13 @@
 #include <cstddef>
 #include <cuda_runtime_api.h>
 
+#include "mempool.hpp"
+
 namespace colserve {
 namespace sta {
-
-#define CUDA_CALL(func) do { \
-    auto error = func; \
-    if (error != cudaSuccess) { \
-      std::cout << cudaGetErrorString(error); \
-      exit(EXIT_FAILURE); \
-    } \
-  } while (0);
-
 class CUDAMemPool {
  public:
-  struct PoolEntry {
-    void* addr;
-    std::size_t nbytes;
-  };
-
+  using PoolEntry = CUDAMemPoolImpl::PoolEntry;
   static void Init(std::size_t nbytes);
   static CUDAMemPool* Get();
 
@@ -40,17 +29,8 @@ class CUDAMemPool {
 
  private:
   static std::unique_ptr<CUDAMemPool> cuda_mem_pool_;
-  static bool CmpPoolEntryByAddr(const PoolEntry &a, const PoolEntry &b);
-
-  std::shared_ptr<PoolEntry> AllocUnCheckUnlock(std::size_t nbytes);
-  void Free(PoolEntry entry);
-  inline size_t AlignSize(size_t nbytes) {
-    return (nbytes + 1023) & ~1023;
-  }
-
-  std::mutex mutex_;
   cudaStream_t stream_;
-  std::set<PoolEntry, decltype(&CUDAMemPool::CmpPoolEntryByAddr)> entry_by_addr_;
+  CUDAMemPoolImpl *impl_;
 };
 
 
