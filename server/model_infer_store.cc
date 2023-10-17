@@ -425,7 +425,7 @@ bool Model::GetOutput(tvm::GraphExecutor &graph_executor,
     LOG(FATAL) << "unsupport device type " << device_.device_type;
   }
 
-  CHECK_LE(jobs.size(), static_cast<size_t>(output_host_buf->ndim)) << "out of model batch size";
+  CHECK_LE(jobs.size(), static_cast<size_t>(output_host_buf->shape[0])) << "out of model batch size";
   std::vector<int64_t> shape{output_host_buf->shape, output_host_buf->shape + output_host_buf->ndim};
   shape[0] = 1;
 
