@@ -351,7 +351,7 @@ bool Workload::Hello() {
     LOG(INFO) << "Server Status: " << server_status.status();
     return true;
   } else {
-    LOG(FATAL) << "Query Server Status Failed";
+    LOG(FATAL) << "Query Server Status Failed " << status.error_message() << "|" << status.error_details();
     return false;
   }
 }

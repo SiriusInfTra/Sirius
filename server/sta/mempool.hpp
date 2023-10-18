@@ -41,7 +41,6 @@ public:
     struct PoolEntry {
         void *addr;
         std::size_t nbytes;
-        void *handle;
     };
 
 private:
@@ -142,8 +141,8 @@ private:
     }
 
     std::shared_ptr<PoolEntry> makeSharedPtr(PoolEntryHandle *eh) {
-        auto *entry = new PoolEntry{reinterpret_cast<std::byte*>(devPtr_) + eh->addr, eh->nbytes, eh};
-        auto free = [this](PoolEntry *entry) { Free(reinterpret_cast<PoolEntryHandle *>(entry->handle)); delete entry; };
+        auto *entry = new PoolEntry{reinterpret_cast<std::byte*>(devPtr_) + eh->addr, eh->nbytes};
+        auto free = [this, eh](PoolEntry *entry) { Free(eh); delete entry; };
         return { entry, free };
     }
 
