@@ -225,26 +225,16 @@ public:
         entry->allocate = true;
         size2entry_->erase(iter);
 
-        if (auto *prev = getEntry(entry->prev); prev != empty_ && !prev->allocate) { /* merge prev */
-            updateFreeEntrySize(size2entry_->find(prev->nbytes), prev, prev->nbytes + nbytes_rest);
-            updateEntryAddr(addr2entry_->find(entry->addr), entry->addr + static_cast<std::ptrdiff_t>(nbytes_rest));
-            return makeSharedPtr(entry);
-        } else if (auto *next = getEntry(entry->next); next != empty_ && !next->allocate) { /* merge next */
-            updateFreeEntrySize(size2entry_->find(next->nbytes), next, next->nbytes + nbytes_rest);
-            updateEntryAddr(addr2entry_->find(next->addr), next->addr -  static_cast<std::ptrdiff_t>(nbytes_rest));
-            return makeSharedPtr(entry);
-        } else { /* split */
-            auto *split = reinterpret_cast<PoolEntryHandle*>(segment_.allocate(sizeof(PoolEntryHandle)));
-            split->nbytes = nbytes_rest;
-            split->allocate = false;
-            split->addr = entry->addr + static_cast<std::ptrdiff_t>(nbytes);
-            connect(split, getEntry(entry->next));
-            connect(entry, split);
-            auto handle = getHandle(split);
-            addr2entry_->insert(std::pair{split->addr, handle});
-            size2entry_->insert(std::pair{split->nbytes, handle});
-            return makeSharedPtr(entry);
-        }
+        auto *split = reinterpret_cast<PoolEntryHandle*>(segment_.allocate(sizeof(PoolEntryHandle)));
+        split->nbytes = nbytes_rest;
+        split->allocate = false;
+        split->addr = entry->addr + static_cast<std::ptrdiff_t>(nbytes);
+        connect(split, getEntry(entry->next));
+        connect(entry, split);
+        auto handle = getHandle(split);
+        addr2entry_->insert(std::pair{split->addr, handle});
+        size2entry_->insert(std::pair{split->nbytes, handle});
+        return makeSharedPtr(entry);
     }
 
 private:
