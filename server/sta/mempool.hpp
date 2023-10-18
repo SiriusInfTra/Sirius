@@ -150,6 +150,7 @@ public:
 
 
     explicit CUDAMemPoolImpl(MemPoolConfig config) : config_(std::move(config)), devPtr_(nullptr) {
+        config_.sharedMemoryName = config_.sharedMemoryName + "_" + std::getenv("USER");
         segment_ = bip::managed_shared_memory{bip::open_or_create, config_.sharedMemoryName.c_str(), config_.sharedMemorySize};
         auto atomic_init = [&] {
             mutex_ = segment_.find_or_construct<bip::interprocess_mutex>("ShareMutex")();
