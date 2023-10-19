@@ -19,8 +19,14 @@ class Profiler {
   static void Init(const std::string &profile_log_path);
   static void Start();
   static void Shutdown();
+  inline static time_point_t Now() {
+    return std::chrono::steady_clock::now();
+  }
   inline static double Milli(time_point_t begin, time_point_t end) {
     return std::chrono::duration<double, std::milli>(end - begin).count();
+  }
+  inline static double MilliFrom(time_point_t begin) {
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
   }
   static Profiler* Get();
   

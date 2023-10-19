@@ -2,9 +2,6 @@
 
 from libcpp.string cimport string
 
-# cdef extern from "./csrc/control_stub.cc" namespace "torch_col":
-#     pass
-
 cdef extern from "<csrc/control_stub.h>" namespace "colserve":
     cdef cppclass MemoryQueue[T]:
         MemoryQueue(string, bint) except + 
@@ -17,24 +14,10 @@ cdef extern from "<csrc/control_stub.h>" namespace "colserve":
     cdef struct CtrlMsgEntry:
         unsigned long long id
         int event
+        int value
 
 
 cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
-    cpdef enum class Event(int):
-        # status 
-        kTrainStart,
-        kTrainEnd,
-        kInterruptTrainDone,
-        kResumeTrainDone,
-        kColocateAdjustL1Done,
-        kColocateAdjustL2Done,
-
-        # cmd 
-        kInterruptTrain,
-        kResumeTrain,
-        kColocateAdjustL1,
-        kColocateAdjustL2,
-
     cdef cppclass SwitchStub:
         SwitchStub() except +
         int Cmd()
@@ -52,8 +35,3 @@ cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
         void ColocateAdjustL2Done()
         void TrainStart()
         void TrainEnd()
-
-
-
-
-

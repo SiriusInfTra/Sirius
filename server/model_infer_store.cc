@@ -169,11 +169,11 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path, D
     pthread_barrier_init(&barrier, nullptr, 2);
     *worker_running_[i] = true;
     // infer_workers_.push_back(std::make_unique<std::thread>(&Model::Inference, this, &barrier));
-    infer_workers_[i].reset(new std::thread{&Model::Inference, this, i, &barrier});
+    infer_workers_[i].reset(new std::thread{&Model::Inference, this, i, &barrier, -1});
     pthread_barrier_wait(&barrier);
   }
 
-  if (Config::serve_mode == ServeMode::kColocateL2) {
+  if (Config::IsColocateMode()) {
     job_monitor_.reset(new std::thread{&Model::MonitorJob, this});
   }
 }
@@ -217,7 +217,7 @@ void Model::InitMetaInfo() {
   }
 }
 
-bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
+bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier, pid_t waited_train) {
   LOG(INFO) << "Model " << name_ << " inference thread start";
   // auto graph_executor = graph_executor_factory_->CreateGraphExecutor();
   auto graph_executor = graph_executor_pool_[rank].get();
@@ -232,9 +232,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
   bool task_switch_l3_cold_start = true;
   auto last_get_batch_time = std::chrono::steady_clock::now();
   while (true) {
-    if (Config::serve_mode == ServeMode::kColocateL2 
-        && std::chrono::duration<double, std::milli>(
-        std::chrono::steady_clock::now()-last_get_batch_time).count() >= scale_down_idle_time_) {
+    if (Config::IsColocateMode() && Profiler::MilliFrom(last_get_batch_time) >= scale_down_idle_time_) {
       uint32_t num_worker = num_worker_;
       if (num_worker - 0 > 0) {
         // LOG(INFO) << "num_worker " << num_worker;
@@ -254,13 +252,10 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     auto infer_begin = std::chrono::steady_clock::now();
 
     double wait_train_stop_ms = -1;
-    if (Config::serve_mode == ServeMode::kTaskSwitchL1 
-        || Config::serve_mode == ServeMode::kTaskSwitchL2
-        || Config::serve_mode == ServeMode::kTaskSwitchL3) {
+    if (Config::IsSwitchMode()) {
       auto begin = std::chrono::steady_clock::now();
       Controller::Get()->WaitTrainNotRunning();
-      wait_train_stop_ms = std::chrono::duration<double, std::milli>(
-          std::chrono::steady_clock::now() - begin).count();
+      wait_train_stop_ms = Profiler::MilliFrom(begin);
       // DLOG(INFO) << "ModelInferStore: wait for train stop "
       //            << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
     }
@@ -362,8 +357,9 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
   LOG(INFO) << "[Inference] worker " << rank << " exit";
   Profiler::Get()->RecordEvent(Profiler::EventItem::InferExit);
   graph_executor->DeInit();
-  if (Config::serve_mode == ServeMode::kColocateL2) {
-    Controller::Get()->InferExit();
+  if (Config::IsColocateMode()) {
+    Controller::Get()->InferExit(
+      (waited_train != -1 && waited_train == ModelTrainStore::Get()->GetTrainPid()) ? 3 : 0);
   }
   *worker_running_[rank] = false;
   return true;
@@ -462,20 +458,27 @@ void Model::MonitorJob() {
       for (size_t i = 0; i < max_num_worker_; i++) {
         if (infer_workers_[i] == nullptr) {
           auto t0 = std::chrono::steady_clock::now();
-          auto id = Controller::Get()->ColocateAdjust();
-          Controller::Get()->WaitColocateAdjustDone(id);
-          auto t1 = std::chrono::steady_clock::now();
-          LOG(INFO) << "[Inference]: Wait adjust train batch size "
-                    << std::chrono::duration<double, std::milli>(t1-t0).count() << " ms";
-          // PROFILE_END(TrainAdjust, 1);
-          Profiler::Get()->RecordEvent(Profiler::EventItem::TrainAdjustStart, t0);
-          Profiler::Get()->RecordEvent(Profiler::EventItem::TrainAdjustEnd, t1);
-          Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainAdjust, t0, t1);
+          pid_t infer_waited_train;
+          if (!Controller::Get()->IsTrainIdle()) {
+            infer_waited_train = ModelTrainStore::Get()->GetTrainPid();
+            auto id = Controller::Get()->ColocateAdjust(3);
+            Controller::Get()->WaitColocateAdjustDone(id);
+            auto t1 = std::chrono::steady_clock::now();
+            LOG(INFO) << "[Inference]: Wait adjust train batch size before add infer "
+                      << std::chrono::duration<double, std::milli>(t1-t0).count() << " ms";
+            // PROFILE_END(TrainAdjust, 1);
+            Profiler::Get()->RecordEvent(Profiler::EventItem::TrainAdjustStart, t0);
+            Profiler::Get()->RecordEvent(Profiler::EventItem::TrainAdjustEnd, t1);
+            Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainAdjust, t0, t1);
+          } else {
+            infer_waited_train = -1;
+            LOG(INFO) << "[Inference]: add infer skip wait, train is idle";
+          }
           
           pthread_barrier_t barrier;
           pthread_barrier_init(&barrier, nullptr, 2);
           *worker_running_[i] = true;
-          infer_workers_[i].reset(new std::thread{&Model::Inference, this, i, &barrier});
+          infer_workers_[i].reset(new std::thread{&Model::Inference, this, i, &barrier, infer_waited_train});
           pthread_barrier_wait(&barrier);
           Profiler::Get()->RecordEvent(Profiler::EventItem::AddInfer);
           LOG(INFO) << "[Model] " << name_ << " increase worker " << i;

@@ -92,6 +92,7 @@ void Controller::MonitorTrain() {
           || train_status_.status == TrainStatus::kRunning);
       train_status_.status = TrainStatus::kRunning;
       break;
+    case Event::kColocateAdjustL1Done:
     case Event::kColocateAdjustL2Done:
       adjust_done_id_ = entry.id;
       wait_train_adjust_cv_.notify_all();
@@ -142,23 +143,25 @@ uint64_t Controller::ResumeTrain() {
   return cmd_id;
 }
 
-uint64_t Controller:: ColocateAdjust() {
+uint64_t Controller::ColocateAdjust(size_t batch_size) {
   static std::atomic<uint64_t> adjust_cmd_id = 1;
   auto cmd_id = adjust_cmd_id.fetch_add(1, std::memory_order_relaxed);
   if (!IsTrainIdle()) {
-    if (Config::serve_mode == ServeMode::kColocateL2) {
-      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(Event::kColocateAdjustL2)});
+    if (Config::serve_mode == ServeMode::kColocateL1) {
+      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(Event::kColocateAdjustL1), static_cast<int>(batch_size)});
+    } else if (Config::serve_mode == ServeMode::kColocateL2) {
+      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(Event::kColocateAdjustL2), static_cast<int>(batch_size)});
     }
   }
   return cmd_id;
 }
 
-uint64_t Controller::InferExit() {
+uint64_t Controller::InferExit(size_t batch_size) {
   static std::atomic<uint64_t> infer_exit_id = 1;
   auto cmd_id = infer_exit_id.fetch_add(1, std::memory_order_relaxed);
   if (!IsTrainIdle()) {
-    if (Config::serve_mode == ServeMode::kColocateL2) {
-      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(Event::kInferExit)});
+    if (Config::IsColocateMode()) {
+      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(Event::kInferExit), static_cast<int>(batch_size)});
     }
   }
   return cmd_id;
@@ -178,7 +181,7 @@ bool Controller::WaitInferIdle() {
 
 bool Controller::WaitColocateAdjustDone(uint64_t cmd_id) {
   if (!IsTrainIdle()) {
-    if (Config::serve_mode == ServeMode::kColocateL2) {
+    if (Config::IsColocateMode()) {
       std::unique_lock lock{wait_train_adjust_mutex_};
       wait_train_adjust_cv_.wait(lock, [&](){ return adjust_done_id_ >= cmd_id; });
       // auto event = train_adjust_event_mq_->BlockGet();

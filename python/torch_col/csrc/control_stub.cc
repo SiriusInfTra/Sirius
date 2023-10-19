@@ -66,14 +66,14 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
       if (succ) {
         if (data.event == static_cast<int>(Event::kColocateAdjustL1)
             || data.event == static_cast<int>(Event::kColocateAdjustL2)) {
-          this->target_bs_ -= 3;
+          this->target_bs_ -= data.value;
           LOG(INFO) << "[ColocateStub] Adjust batch size, target " << this->target_bs_;
           CHECK_LT(this->target_bs_, this->current_bs_);
           cmd_ = data.event;
           cmd_id_ = data.id;
           set_cmd_time_ = std::chrono::steady_clock::now();
         } else if (data.event == static_cast<int>(Event::kInferExit)) {
-          this->target_bs_ += 3;
+          this->target_bs_ += data.value;
           LOG(INFO) << "[ColocateStub] Infer Exit adjust back to " << this->target_bs_;
           CHECK_LE(this->target_bs_, this->current_bs_);
           if (this->target_bs_ == this->current_bs_) {
