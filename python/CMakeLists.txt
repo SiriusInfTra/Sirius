@@ -75,7 +75,7 @@ add_custom_target(
 
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/torch_col.egg-info
-  COMMAND ${CONDA_PREFIX}/bin/python
+  COMMAND $ENV{CONDA_PREFIX}/bin/python
   ARGS setup.py build_ext install 
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS 
