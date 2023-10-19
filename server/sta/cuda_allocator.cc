@@ -24,10 +24,10 @@ void CUDAMemPool::Init(std::size_t nbytes) {
 CUDAMemPool::CUDAMemPool(std::size_t nbytes)  {
 //    remove("/dev/shm/gpu_colocation_mempool");
     CUDAMemPoolImpl::MemPoolConfig config{
-        .cudaDevice = 0,
-        .cudaMemorySize = nbytes,
-        .sharedMemoryName = "gpu_colocation_mempool",
-        .sharedMemorySize = 1024 * 1024 * 1024, /* 1G */
+        .cuda_device = 0,
+        .cuda_memory_size = nbytes,
+        .shared_memory_name = "gpu_colocation_mempool",
+        .shared_memory_size = 1024 * 1024 * 1024, /* 1G */
     };
     impl_ = new CUDAMemPoolImpl{config};
     CUDA_CALL(cudaStreamCreate(&stream_));
