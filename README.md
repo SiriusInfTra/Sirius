@@ -7,14 +7,14 @@
 
 3. Install python dependencies `cython`, `numpy`, `onnxruntime`, `torchvision` and etc.
 
-4. Set `TVM_HOME` environment and configure cmake. For conda env, execute `export CMAKE_PREFIX_PATH=${CONDA_PREFIX}/lib/python3.xx/site-packages/torch/share/cmake` to find pytorch.
+4. Set `TVM_HOME` environment, run `echo $TVM_HOME` and `echo $CONDA_REFIX` to check. Then configure cmake.
 
 ```
 cmake -DCMAKE_BUILD_TYPE=Release/Debug \
       -DgRPC_INSTALL=ON \
       -DgRPC_BUILD_TESTS=OFF \
       -DCONDA_PREFIX=${CONDA_PREFIX} \
-      -DCMAKE_PREFIX_PATH=${CONDA_PREFIX}/lib/python3.xx/site-packages/torch/share/cmake \
+      -DCMAKE_PREFIX_PATH="${CONDA_PREFIX};${CONDA_PREFIX}/lib/python3.xx/site-packages/torch/share/cmake" \
       -B build -G Ninja
 cmake --build build --config Release/Debug
 ```

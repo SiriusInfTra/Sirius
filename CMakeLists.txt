@@ -8,8 +8,25 @@ if (NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release")
 endif()
 
+if (NOT DEFINED CONDA_PREFIX)
+  set(CONDA_PREFIX $ENV{CONDA_PREFIX})
+endif()
+message(STATUS "CONDA_PREFIX: " ${CONDA_PREFIX})
+
+if (NOT DEFINED TVM_HOME)
+  set(TVM_HOME $ENV{TVM_HOME})
+endif()
+message(STATUS "TVM_HOME: " ${TVM_HOME})
+
+
 # find cuda toolkit
 find_package(CUDAToolkit 11 REQUIRED)
+
+# Modify if you need a different default value
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+  set(CMAKE_CUDA_ARCHITECTURES 70)
+endif()
+
 
 include(FetchContent)
 set(FETCHCONTENT_QUIET OFF)
@@ -18,6 +35,7 @@ FetchContent_Declare(
   gRPC
   GIT_REPOSITORY https://github.com/grpc/grpc
   GIT_TAG        v1.56.2  # e.g v1.28.0
+  GIT_PROGRESS TRUE
 )
 # FetchContent_MakeAvailable(gRPC)
 FetchContent_GetProperties(gRPC)
@@ -33,6 +51,7 @@ FetchContent_Declare(
   glog
   GIT_REPOSITORY https://github.com/google/glog
   GIT_TAG        v0.6.0
+  GIT_PROGRESS TRUE
 )
 # FetchContent_MakeAvailable(glog)
 FetchContent_GetProperties(glog)
@@ -48,8 +67,11 @@ FetchContent_Declare(
   CLI11
   GIT_REPOSITORY https://github.com/CLIUtils/CLI11
   GIT_TAG        v2.3.2
+  GIT_PROGRESS TRUE
 )
 FetchContent_MakeAvailable(CLI11)
+
+
 
 find_package(Torch REQUIRED)
 # find cudnn
@@ -57,9 +79,9 @@ if(EXISTS /usr/local/cuda-11/include/cudnn.h)
   set(CUDNN_INCLUDE_DIR /usr/local/cuda-11/include)
   set(CUDNN_LIBRARY /usr/local/cuda-11/lib64libcudnn.so)
   message(STATUS "Found cudnn in /usr/lcoal/cuda")
-elseif((DEFINED $ENV{CONDA_PREFIX}) AND (EXISTS $ENV{CONDA_PREFIX}/include/cudnn.h))
-  set(CUDNN_INCLUDE_DIR $ENV{CONDA_PREFIX}/include)
-  set(CUDNN_LIBRARY $ENV{CONDA_PREFIX}/lib/libcudnn.so)
+elseif((DEFINED ${CONDA_PREFIX}) AND (EXISTS ${CONDA_PREFIX}/include/cudnn.h))
+  set(CUDNN_INCLUDE_DIR ${CONDA_PREFIX}/include)
+  set(CUDNN_LIBRARY ${CONDA_PREFIX}/lib/libcudnn.so)
   message(STATUS "Found cudnn in conda env")
 else()
   message(STATUS "cudnn not found")
@@ -96,18 +118,6 @@ add_library(proto ${proto_srcs} ${proto_hdrs} ${grpc_srcs} ${grpc_hdrs})
 target_link_libraries(proto ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF} )
 
 
-# add tvm runtime
-include_directories(
-  ${TVM_HOME}/include
-  ${TVM_HOME}/3rdparty/dmlc-core/include
-  ${TVM_HOME}/3rdparty/dlpack/include
-)
-
-link_directories(
-  ${TVM_HOME}/build
-  ${TVM_HOME}/3rdparty/dmlc-core/build
-)
-
 # sta lib
 add_library(sta SHARED
   server/sta/cuda_allocator.cc
@@ -134,6 +144,19 @@ add_executable(${PROJECT_NAME}
   server/profiler.cc
   server/config.cc
 )
+
+# add tvm runtime
+target_include_directories(${PROJECT_NAME} PUBLIC 
+  ${TVM_HOME}/include 
+  ${TVM_HOME}/3rdparty/dmlc-core/include 
+  ${TVM_HOME}/3rdparty/dlpack/include
+)
+
+target_link_directories(${PROJECT_NAME} PUBLIC
+  ${TVM_HOME}/build
+  ${TVM_HOME}/3rdparty/dmlc-core/build
+)
+
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/)
 
 target_link_libraries(${PROJECT_NAME} 
