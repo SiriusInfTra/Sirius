@@ -32,26 +32,26 @@ void CUDAMemPool::Init(std::size_t nbytes, bool master) {
 
 CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool master)  {
 //    remove("/dev/shm/gpu_colocation_mempool");
-    CUDAMemPoolImpl::MemPoolConfig config{
-        .cuda_device = 0,
-        .cuda_memory_size = nbytes,
-        .shared_memory_name = "gpu_colocation_mempool",
-        .shared_memory_size = 1024 * 1024 * 1024, /* 1G */
-    };
-    impl_ = new CUDAMemPoolImpl{config, master};
-    CUDA_CALL(cudaStreamCreate(&stream_));
+  CUDAMemPoolImpl::MemPoolConfig config{
+    .cuda_device = 0,
+    .cuda_memory_size = nbytes,
+    .shared_memory_name = "gpu_colocation_mempool",
+    .shared_memory_size = 1024 * 1024 * 1024, /* 1G */
+  };
+  impl_ = new CUDAMemPoolImpl{config, master};
+  CUDA_CALL(cudaSetDevice(config.cuda_device));
+  CUDA_CALL(cudaStreamCreate(&stream_));
 }
 
 
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(std::size_t nbytes) {
-    return impl_->Alloc(nbytes);
+  return impl_->Alloc(nbytes);
 }
 
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Resize(
-    std::shared_ptr<PoolEntry> entry, std::size_t nbytes) {
+  std::shared_ptr<PoolEntry> entry, std::size_t nbytes) {
     // TODO: handle reallocate
-    entry.reset();
-    return impl_->Alloc(nbytes);
+  return impl_->Alloc(nbytes);
 }
 
 void CUDAMemPool::CopyFromTo(std::shared_ptr<PoolEntry> src, std::shared_ptr<PoolEntry> dst) {
@@ -217,12 +217,12 @@ CUDAMemPoolImpl::~CUDAMemPoolImpl() {
   }
 }
 
-std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPoolImpl::Alloc(std::size_t nbytes) {
+std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPoolImpl:: Alloc(std::size_t nbytes) {
+  if (nbytes == 0) { return {nullptr}; }
   bip::scoped_lock locker(*mutex_);
   CheckMemPool();
-  CHECK_GT(nbytes, 0);
   nbytes = (nbytes + 1023) / 1024 * 1024; // simple align to 1024B
-  auto &&iter = size2entry_->lower_bound(nbytes);
+  auto iter = size2entry_->lower_bound(nbytes);
   if (iter == size2entry_->cend()) {
     throw std::bad_alloc();
   }
