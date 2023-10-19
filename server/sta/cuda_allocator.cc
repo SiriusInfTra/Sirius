@@ -25,12 +25,12 @@ CUDAMemPool* CUDAMemPool::Get() {
   return cuda_mem_pool_.get();
 }
 
-void CUDAMemPool::Init(std::size_t nbytes) {
+void CUDAMemPool::Init(std::size_t nbytes, bool master) {
   // LOG(INFO) << "[CUDA Memory Pool] initilized with size " << size / 1024 / 1024 << " Mb";
-  cuda_mem_pool_ = std::make_unique<CUDAMemPool>(nbytes);
+  cuda_mem_pool_ = std::make_unique<CUDAMemPool>(nbytes, master);
 }
 
-CUDAMemPool::CUDAMemPool(std::size_t nbytes)  {
+CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool master)  {
 //    remove("/dev/shm/gpu_colocation_mempool");
     CUDAMemPoolImpl::MemPoolConfig config{
         .cuda_device = 0,
@@ -38,7 +38,7 @@ CUDAMemPool::CUDAMemPool(std::size_t nbytes)  {
         .shared_memory_name = "gpu_colocation_mempool",
         .shared_memory_size = 1024 * 1024 * 1024, /* 1G */
     };
-    impl_ = new CUDAMemPoolImpl{config};
+    impl_ = new CUDAMemPoolImpl{config, master};
     CUDA_CALL(cudaStreamCreate(&stream_));
 }
 
@@ -157,8 +157,11 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPoolImpl::MakeSharedPtr(CUDAMemPo
   return {entry, free};
 }
 
-CUDAMemPoolImpl::CUDAMemPoolImpl(CUDAMemPoolImpl::MemPoolConfig config) : config_(std::move(config)), devPtr_(nullptr) {
+CUDAMemPoolImpl::CUDAMemPoolImpl(CUDAMemPoolImpl::MemPoolConfig config, bool force_master) : config_(std::move(config)), devPtr_(nullptr) {
   config_.shared_memory_name = config_.shared_memory_name + "_" + std::getenv("USER");
+  if (force_master) {
+    bip::shared_memory_object::remove(config_.shared_memory_name.c_str());
+  }
   segment_ = bip::managed_shared_memory{bip::open_or_create, config_.shared_memory_name.c_str(),
                                         config_.shared_memory_size};
   auto atomic_init = [&] {

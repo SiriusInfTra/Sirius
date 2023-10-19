@@ -5,8 +5,8 @@
 namespace colserve {
 namespace sta {
 
-void Init() {
-  CUDAMemPool::Init(6ULL << 30); // 12 Gb
+void Init(bool master) {
+  CUDAMemPool::Init(6ULL << 30, master); // 12 Gb
   TensorPool::Init();
 }
 

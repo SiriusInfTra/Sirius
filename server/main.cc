@@ -70,7 +70,7 @@ int main(int argc, char *argv[]) {
 
   CHECK_EQ(cuInit(0), CUDA_SUCCESS);
   if (colserve::Config::use_shared_tensor) {
-    colserve::sta::Init();
+    colserve::sta::Init(true);
   }
   colserve::Controller::Init();
   colserve::Profiler::Init("server-profile");

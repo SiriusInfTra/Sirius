@@ -46,6 +46,13 @@ public:
     std::size_t nbytes;
   };
 
+  explicit CUDAMemPoolImpl(MemPoolConfig config, bool force_master);
+
+  ~CUDAMemPoolImpl();
+
+  std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes);
+
+
 private:
   using Addr2EntryType = std::pair<std::ptrdiff_t, bip::managed_shared_memory::handle_t>;
   using Addr2EntryAllocator = bip::allocator<Addr2EntryType, bip::managed_shared_memory::segment_manager>;
@@ -92,15 +99,6 @@ private:
 
   std::shared_ptr<PoolEntry> MakeSharedPtr(PoolEntryHandle *eh);
 
-public:
-
-  explicit CUDAMemPoolImpl(MemPoolConfig config);
-
-  ~CUDAMemPoolImpl();
-
-  std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes);
-
-private:
   void Free(PoolEntryHandle *entry);
 
 };
@@ -109,12 +107,12 @@ private:
 class CUDAMemPool {
  public:
   using PoolEntry = CUDAMemPoolImpl::PoolEntry;
-  static void Init(std::size_t nbytes);
+  static void Init(std::size_t nbytes, bool master);
   static CUDAMemPool* Get();
 
   static std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes);
 
-  CUDAMemPool(std::size_t nbytes);
+  CUDAMemPool(std::size_t nbytes, bool master);
   std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes);
   std::shared_ptr<PoolEntry> Resize(std::shared_ptr<PoolEntry> entry, std::size_t nbytes);
   void CopyFromTo(std::shared_ptr<PoolEntry> src, std::shared_ptr<PoolEntry> dst);
