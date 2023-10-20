@@ -74,6 +74,10 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::RawAlloc(size_t nbytes) {
       });
 }
 
+CUDAMemPool::~CUDAMemPool() {
+  delete impl_;
+}
+
 
 CUDAMemPoolImpl::PoolEntryImpl *CUDAMemPoolImpl::GetEntry(CUDAMemPoolImpl::EntryHandle handle) {
   return reinterpret_cast<PoolEntryImpl *>(segment_.get_address_from_handle(handle));

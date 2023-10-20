@@ -119,9 +119,11 @@ class CUDAMemPool {
   static std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes);
 
   CUDAMemPool(std::size_t nbytes, bool master);
+  ~CUDAMemPool();
   std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes);
   std::shared_ptr<PoolEntry> Resize(std::shared_ptr<PoolEntry> entry, std::size_t nbytes);
   void CopyFromTo(std::shared_ptr<PoolEntry> src, std::shared_ptr<PoolEntry> dst);
+
 
  private:
   static std::unique_ptr<CUDAMemPool> cuda_mem_pool_;
