@@ -320,7 +320,7 @@ void CUDAMemPoolImpl::DumpSummary() {
   LOG(INFO) << "---------- mempool summary ----------";
   LOG(INFO) << "free blocks: " << size2entry_->size();
   LOG(INFO) << "free size: " << std::accumulate(size2entry_->cbegin(), size2entry_->cend(), 0L,
-                                                [](auto acc, auto &&pair) { return acc + pair.second; });
+                                                [](auto acc, auto &&pair) { return acc + pair.first; });
   LOG(INFO) << "largest free block size: " << (--size2entry_->cend())->first;
   LOG(INFO) << "total blocks: " << addr2entry_->size();
   LOG(INFO) << "total size: " << std::accumulate(addr2entry_->cbegin(), addr2entry_->cend(), 0L,
