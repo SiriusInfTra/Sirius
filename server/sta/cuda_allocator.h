@@ -52,6 +52,11 @@ public:
 
   std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes);
 
+  std::shared_ptr<PoolEntry> Resize(std::shared_ptr<PoolEntry> entry, std::size_t nbytes);
+
+  void DumpSummary();
+
+  void CopyFromTo(void *dst_dev_ptr, void *src_dev_ptr, size_t nbytes);
 
 private:
   using Addr2EntryType = std::pair<std::ptrdiff_t, bip::managed_shared_memory::handle_t>;
@@ -65,7 +70,7 @@ private:
   using RefCount = int;
   using EntryHandle = bip::managed_shared_memory::handle_t;
 
-  struct PoolEntryHandle {
+  struct PoolEntryImpl {
     std::ptrdiff_t addr_offset;
     std::size_t nbytes;
     EntryHandle prev;
@@ -79,27 +84,28 @@ private:
   Size2Entry *size2entry_;
   RefCount *ref_count_;
   MemPoolConfig config_;
-  PoolEntryHandle *empty_;
+  PoolEntryImpl *empty_;
   cudaIpcMemHandle_t *cuda_mem_handle_;
+  cudaStream_t cuda_memcpy_stream_;
 
   bool master_;
   void *devPtr_{};
 
-  inline PoolEntryHandle *GetEntry(EntryHandle handle);
+  inline PoolEntryImpl *GetEntry(EntryHandle handle);
 
-  inline bip::managed_shared_memory::handle_t GetHandle(PoolEntryHandle *entry);
+  inline bip::managed_shared_memory::handle_t GetHandle(PoolEntryImpl *entry);
 
-  inline void UpdateFreeEntrySize(Size2Entry::iterator iter, PoolEntryHandle *entry, size_t newSize);
+  inline void UpdateFreeEntrySize(Size2Entry::iterator iter, PoolEntryImpl *entry, size_t newSize);
 
   inline void UpdateEntryAddr(const Addr2Entry::iterator &iter, std::ptrdiff_t newAddr);
 
-  inline void ConnectPoolEntryHandle(PoolEntryHandle *eh1, PoolEntryHandle *eh2);
+  inline void ConnectPoolEntryHandle(PoolEntryImpl *eh1, PoolEntryImpl *eh2);
 
   inline void CheckMemPool();
 
-  std::shared_ptr<PoolEntry> MakeSharedPtr(PoolEntryHandle *eh);
+  std::shared_ptr<PoolEntry> MakeSharedPtr(PoolEntryImpl *eh);
 
-  void Free(PoolEntryHandle *entry);
+  void Free(PoolEntryImpl *entry);
 
 };
 
@@ -119,7 +125,6 @@ class CUDAMemPool {
 
  private:
   static std::unique_ptr<CUDAMemPool> cuda_mem_pool_;
-  cudaStream_t stream_;
   CUDAMemPoolImpl *impl_;
 };
 
