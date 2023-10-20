@@ -5,7 +5,7 @@
 namespace colserve {
 namespace sta {
 
-void Init();
+void Init(bool master = false);
 
 }
 }
