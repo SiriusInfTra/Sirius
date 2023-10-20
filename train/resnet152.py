@@ -1,4 +1,3 @@
-from typing import Iterable, Optional, Sequence, Union
 import torch
 from torch import nn
 from torch.optim.lr_scheduler import StepLR
@@ -8,10 +7,7 @@ from torchvision import transforms
 from torch.utils.data import DataLoader, Dataset, Sampler
 import time
 import argparse
-import random
-import threading
-import os, sys, select
-from multiprocessing.shared_memory import SharedMemory
+import os, sys
 
 import torch_col
 
@@ -44,13 +40,21 @@ class ColocateHook:
     def __init__(self, batch_size) -> None:
         self.stub = torch_col.PyColocateStub(batch_size)
 
+    def try_reply_adjust_l1(self):
+        if self.stub.cmd == torch_col.Event.kColocateAdjustL1:
+            self.stub.adjust_l1_done()
+
+    def reply_adjust_l1(self):
+        assert self.stub.cmd == torch_col.Event.kColocateAdjustL1
+        self.stub.adjust_l1_done()
+
     def get_hook(self):
         def hook(module, input, output):
             torch.cuda.synchronize()
             # print(f'{module} {time.time()}')
             if self.stub.cmd == torch_col.Event.kColocateAdjustL1:
                 # print(f'receive kColocateAdjustL1 {time.time()}')
-                raise ColocateAdjustL1Exception("[Colocate Adjust]")
+                raise ColocateAdjustL1Exception("[Colocate Adjust L1]")
         return hook
     
     def stop(self):
@@ -95,11 +99,19 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
         register_fbward_hook(model, hook.get_hook())
     print(f"train in {mode} mode")
 
+    total_killed_batch = 0
+    total_finished_batch = 0
+    total_tried_batch = 0
+
     model.train()
     micro_batch_size = batch_size
     for epoch in range(num_epoch):
         begin = time.time()
         batch_cnt = 0
+        killed_batch = 0
+        finished_batch = 0
+        tried_batch = 0
+        wait_bs_valid_sec = 0 # add infer may cause batch size <= 0
         for i, (images, targets) in enumerate(train_loader):
             images:torch.Tensor
             targets:torch.Tensor
@@ -115,30 +127,42 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                     if mode == 'task-switch-l1':
                         while hook.stub.cmd == torch_col.Event.kInterruptTrain:
                             time.sleep(1e-3)
-                    if mode == 'colocate-l2':
+                    if mode == 'colocate-l1' or mode == 'colocate-l2':
                         micro_batch_size = hook.stub.target_batch_size
+                        wait_bs_valid_begin = time.time()
+                        while micro_batch_size <= 0:
+                            time.sleep(1e-3)
+                            hook.try_reply_adjust_l1()
+                            micro_batch_size = hook.stub.target_batch_size
+                        wait_bs_valid_end = time.time()
+                        wait_bs_valid_sec += wait_bs_valid_end - wait_bs_valid_begin
                     for i in range(0, batch_size, micro_batch_size):
+                        tried_batch += 1
+                        total_tried_batch += 1
                         output = model(images[i:i+micro_batch_size])
                         loss = criterion(output, targets[i:i+micro_batch_size]) / (batch_size / micro_batch_size)
                         # optimizer.zero_grad()
                         loss.backward()
+                        finished_batch += 1
+                        total_finished_batch += 1
                     optimizer.step()
                     optimizer.zero_grad()
                     batch_cnt += 1
-                except SwitchL1Exception as e:
-                    print(e, flush=True)
-                except ColocateAdjustL1Exception as e:
+                except (ColocateAdjustL1Exception, SwitchL1Exception) as e:
                     # micro_batch_size = int(micro_batch_size / 2 + 0.5)
-                    micro_batch_size = max(1, int(random.random() * batch_size + 0.5))
+                    killed_batch += 1
+                    total_killed_batch += 1
+                    micro_batch_size = hook.stub.target_batch_size
                     t0 = time.time()
                     optimizer.zero_grad()
                     torch.cuda.synchronize()
                     ori_gpu_mem = gpu_mem()
                     torch.cuda.empty_cache()
                     t1 = time.time()
-                    hook.stub.adjust_l1_done()
-                    print('colocate adj l1 free cache {:.1f}ms, new micro batch size {}, gpu mem {:.1f} -> {:.1f}'.format(
-                        (t1 - t0) * 1000, micro_batch_size, ori_gpu_mem, gpu_mem()))
+                    if isinstance(e, ColocateAdjustL1Exception):
+                        hook.stub.adjust_l1_done()
+                    print('{} free cache {:.1f}ms, new micro batch size {}, gpu mem {:.1f} -> {:.1f}'.format(
+                        e, (t1 - t0) * 1000, micro_batch_size, ori_gpu_mem, gpu_mem()))
                 else:
                     if mode == 'colocate-l2' and hook.stub.cmd == torch_col.Event.kColocateAdjustL2:
                         t0 = time.time()
@@ -159,13 +183,13 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
         # free, total = torch.cuda.mem_get_info(0)
         # used_mem = (total - free) / 1024 / 1024 / 1024
         used_mem = gpu_mem()
-        print('[{} epoch {}] {:.3f}s | mini-batch {:.1f}ms | memory {:.2f}Gb | batch-size {} | micro-batch-size {}'.format(
-                model.__class__.__name__, epoch, 
-                end - begin, 
-                1000*(end-begin)/batch_cnt,
-                used_mem,
-                batch_size,
-                micro_batch_size))
+        batch_info = f'batch cnt {batch_cnt} avg {1e3*(end-begin)/batch_cnt:.1f}ms'
+        if mode == 'task-switch-l1' or mode == 'colocate-l1':
+            batch_info += f' | try {tried_batch} kill {killed_batch} finish {finished_batch}'
+        print('[{} epoch {}] {:.3f}s | {} | batch-size {} | micro-batch-size {} | memory {:.2f}Gb | wait_bs_valid {:.3f}s'.format(
+                model.__class__.__name__, epoch, end - begin,
+                batch_info, batch_size, micro_batch_size,
+                used_mem, wait_bs_valid_sec))
     
         # if hook.stub.cmd == torch_col.Event.kColocateAdjustL2:
         #     t0 = time.time()
@@ -180,9 +204,14 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
         #     print('epoch adjust: bs {} | {:.1f}ms | gpu_mem {:.1f}'.format(
         #         batch_size, (t1 - t0) * 1000, gpu_mem()))
 
-    if mode == 'task-switch-l1' or mode == 'colocate-l1' or mode == 'colocate-l1':
+    if mode == 'task-switch-l1' or mode == 'colocate-l1' or mode == 'colocate-l2':
         hook.stub.train_end()
         hook.stop()
+
+    if mode == 'task-switch-l1' or mode == 'colocate-l1':
+        print("[{}] Epoch x Batch {} | Batch Total Tried {} Killed {} Finished {}".format(
+            model.__class__.__name__,
+            num_epoch * ori_batch_size, total_tried_batch, total_killed_batch, total_finished_batch))
 
 
 if __name__ == '__main__':
@@ -220,5 +249,7 @@ if __name__ == '__main__':
               mode=args.mode, hook=hook)
     except SwitchL1Exception as e:
         print(e) # should not reach here
+
+    # print(torch.cuda.memory_summary())
 
     torch_col.ReleaseMempool()

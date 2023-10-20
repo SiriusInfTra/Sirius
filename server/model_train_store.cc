@@ -79,6 +79,9 @@ bool ModelTrainStore::Train() {
   } else if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
     args_str.push_back("--mode");
     args_str.push_back("task-switch-l3");
+  } else if (Config::serve_mode == ServeMode::kColocateL1) {
+    args_str.push_back("--mode");
+    args_str.push_back("colocate-l1");
   } else if (Config::serve_mode == ServeMode::kColocateL2) {
     args_str.push_back("--mode");
     args_str.push_back("colocate-l2");
@@ -87,8 +90,6 @@ bool ModelTrainStore::Train() {
   while (true) {
     if (LaunchTrain(job, args_str)) {
       break;
-    } else {
-      LOG(INFO) << "[ModelTrainStore]: " << job << " killed, restart";
     }
   }
 
@@ -112,17 +113,15 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
   CHECK_NE(pipe(from_child_pipe), -1);
   CHECK_NE(pipe(to_child_pipe), -1);
 
-  LOG(INFO) << "train wait infer idle";
-  if (Config::serve_mode == ServeMode::kTaskSwitchL1 
-      || Config::serve_mode == ServeMode::kTaskSwitchL2
-      || Config::serve_mode == ServeMode::kTaskSwitchL3) {
+  if (Config::IsSwitchMode()) {
+    LOG(INFO) << "[ModelTrainStore]: train wait infer idle in switch mode";
     Controller::Get()->WaitInferIdle();
   }
   LOG(INFO) << "fork train";
 
   auto pid = fork();
   train_pid_ = pid;
-  CHECK_GE(pid, 0) << "ModelTrainStore: fork failed";
+  CHECK_GE(pid, 0) << "[ModelTrainStore]: fork failed";
 
   if (pid == 0) {
     close(to_child_pipe[1]);
@@ -135,7 +134,7 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
     }
     auto err = execvp("python", argv);
     perror("execvp");
-    CHECK_GE(err, 0) << "ModelTrainStore: spawn train worker fail, errno " << err;
+    CHECK_GE(err, 0) << "[ModelTrainStore]: spawn train worker fail, errno " << err;
   } else {
     close(to_child_pipe[0]);
     close(from_child_pipe[1]);
@@ -162,8 +161,15 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
   Controller::Get()->TrainEnd(); // double check train end
   
   // LOG(INFO) << "signaled " << WIFSIGNALED(status) << " " << WTERMSIG(status);
-  if (WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL) {
-    return false;
+  if (WIFSIGNALED(status)) {
+    auto signal = WTERMSIG(status);
+    if (signal == SIGKILL) {
+      LOG(INFO) << "[ModelTrainStore]: " << job << " is killed, restart";
+      return false;
+    } else {
+      LOG(FATAL) << "[ModelTrainStore]: " << job << " failed, signal is " << strsignal(signal);
+      return false;
+    }
   } else {
     return true;
   }

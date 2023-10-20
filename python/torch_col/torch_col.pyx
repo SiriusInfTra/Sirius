@@ -1,4 +1,21 @@
-from .torch_col cimport MemoryQueue, Event, SwitchStub, ColocateStub, CtrlMsgEntry
+from .torch_col cimport *
+
+cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
+    cpdef enum class Event(int):
+        # status 
+        kTrainStart,
+        kTrainEnd,
+        kInterruptTrainDone,
+        kResumeTrainDone,
+        kColocateAdjustL1Done,
+        kColocateAdjustL2Done,
+
+        # cmd 
+        kInterruptTrain,
+        kResumeTrain,
+        kColocateAdjustL1,
+        kColocateAdjustL2,
+
 
 cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
     cpdef void ReleaseMempool()
@@ -6,8 +23,8 @@ cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
 cdef class PyCtrlMsgEntry:
     cdef CtrlMsgEntry _entry
     
-    def __cinit__(self, unsigned long long id, int cmd):
-        self._entry = CtrlMsgEntry(id, cmd)
+    def __cinit__(self, unsigned long long id, Event cmd):
+        self._entry = CtrlMsgEntry(id, int(cmd))
 
 
 cdef class PyMemoryQueue:

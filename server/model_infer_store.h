@@ -49,7 +49,7 @@ class Model {
 
  private:
   void InitMetaInfo();
-  bool Inference(uint32_t rank, pthread_barrier_t* barrier = nullptr);
+  bool Inference(uint32_t rank, pthread_barrier_t* barrier, pid_t waited_train);
   bool SetInput(tvm::GraphExecutor &graph_executor, size_t idx, const std::string &input_id, 
                 const std::vector<std::shared_ptr<Job>> &jobs);
   bool GetOutput(tvm::GraphExecutor &graph_executor, 

@@ -11,6 +11,7 @@ FetchContent_Declare(
   cudnn_frontend
   GIT_REPOSITORY https://github.com/NVIDIA/cudnn-frontend.git
   GIT_TAG        v0.6.2  # e.g v1.28.0
+  GIT_PROGRESS TRUE
 )
 # FetchContent_MakeAvailable(cudnn_frontend)
 
@@ -20,11 +21,6 @@ if (NOT cudnn_frontend_POPULATED)
   set(CUDNN_FRONTEND_INCLUDE_DIR ${cudnn_frontend_SOURCE_DIR}/include)
 endif()
 
-
-# Modify if you need a different default value
-if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-  set(CMAKE_CUDA_ARCHITECTURES 70)
-endif()
 
 add_library(torch_col_tensor SHARED
   torch_col/csrc/tensor_impl.cc
@@ -75,8 +71,8 @@ add_custom_target(
 
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/torch_col.egg-info
-  COMMAND ${CONDA_PREFIX}/bin/python
-  ARGS setup.py build_ext install 
+  COMMAND BUILD_DIR=${CMAKE_BINARY_DIR} ${CONDA_PREFIX}/bin/python
+  ARGS setup.py build_ext install
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS 
     torch_col sta torch_col_tensor
