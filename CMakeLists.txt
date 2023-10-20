@@ -38,9 +38,12 @@ FetchContent_Declare(
   GIT_PROGRESS TRUE
 )
 # FetchContent_MakeAvailable(gRPC)
+
 FetchContent_GetProperties(gRPC)
 if (NOT grpc_POPULATED)
   FetchContent_Populate(gRPC)
+  # https://github.com/protocolbuffers/protobuf/issues/12185#issuecomment-1594685860
+  set(ABSL_ENABLE_INSTALL ON)
   set(BUILD_TYPE_OLD ${CMAKE_BUILD_TYPE})
   set(CMAKE_BUILD_TYPE "Release" CACHE INTERNAL "build type" FORCE)
   add_subdirectory(${grpc_SOURCE_DIR} ${grpc_BINARY_DIR})
