@@ -101,7 +101,7 @@ private:
 
   inline void ConnectPoolEntryHandle(PoolEntryImpl *eh1, PoolEntryImpl *eh2);
 
-  inline void CheckMemPool();
+  inline bool CheckMemPool();
 
   std::shared_ptr<PoolEntry> MakeSharedPtr(PoolEntryImpl *eh);
 
