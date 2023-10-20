@@ -164,7 +164,7 @@ void STensor::Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride) {
   TensorContainer::memory_data_t mdata = MData();
   if (mdata == nullptr || mdata->nbytes < storage_nbytes) {
     auto new_mdata = CUDAMemPool::Get()->Resize(mdata, storage_nbytes);
-    CUDAMemPool::Get()->CopyFromTo(mdata, new_mdata);
+    // CUDAMemPool::Get()->CopyFromTo(mdata, new_mdata);
     mdata = new_mdata;
   }
   // if (mdata) {

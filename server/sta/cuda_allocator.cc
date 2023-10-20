@@ -51,7 +51,7 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Resize(
     std::shared_ptr<PoolEntry> entry, std::size_t nbytes) {
   // TODO: handle reallocate
   auto ptr = impl_->Alloc(nbytes);
-  impl_->CopyFromTo(ptr->addr, entry->addr, entry->nbytes);
+  CopyFromTo(entry, ptr);
   return ptr;
 }
 
@@ -321,6 +321,7 @@ void CUDAMemPoolImpl::DumpSummary() {
 }
 
 void CUDAMemPoolImpl::CopyFromTo(void *dst_dev_ptr, void *src_dev_ptr, size_t nbytes) {
+  CUDA_CALL(cudaSetDevice(0));
   CUDA_CALL(cudaMemcpyAsync(dst_dev_ptr, src_dev_ptr, nbytes, cudaMemcpyDefault, cuda_memcpy_stream_));
   CUDA_CALL(cudaStreamSynchronize(cuda_memcpy_stream_));
 }
