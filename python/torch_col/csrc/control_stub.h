@@ -30,6 +30,8 @@ enum class Event {
   kInferExit,
 };
 
+void ReleaseMempool();
+
 class SwitchStub {
  public:
   SwitchStub();

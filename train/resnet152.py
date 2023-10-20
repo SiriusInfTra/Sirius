@@ -220,3 +220,5 @@ if __name__ == '__main__':
               mode=args.mode, hook=hook)
     except SwitchL1Exception as e:
         print(e) # should not reach here
+
+    torch_col.ReleaseMempool()
