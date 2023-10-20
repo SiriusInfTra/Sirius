@@ -20,6 +20,7 @@
 CLI::App app{"ColServe"};
 std::string mode = "normal";
 std::string port = "8080";
+int max_live_minute = 15;
 
 void init_cli_options() {
   app.add_option("-m,--mode", mode,
@@ -28,11 +29,14 @@ void init_cli_options() {
                              "task-switch-l1", 
                              "task-switch-l2", 
                              "task-switch-l3",
+                             "colocate-l1",
                              "colocate-l2"}));
   app.add_option("--use-sta", colserve::Config::use_shared_tensor, 
       "use shared tensor allocator, default is 1");
   app.add_option("-p,--port", port,
       "gRPC server port, default is 8080");
+  app.add_option("--max-live-minute", max_live_minute,
+      "max server live minute, default is " + std::to_string(max_live_minute) + " minutes");
 }
 
 void init_config() {
@@ -45,6 +49,8 @@ void init_config() {
     cfg::serve_mode = colserve::ServeMode::kTaskSwitchL2;
   } else if (mode == "task-switch-l3") {
     cfg::serve_mode = colserve::ServeMode::kTaskSwitchL3;
+  } else if (mode == "colocate-l1") {
+    cfg::serve_mode = colserve::ServeMode::kColocateL1;
   } else if (mode == "colocate-l2") {
     cfg::serve_mode = colserve::ServeMode::kColocateL2;
   } else {
@@ -67,6 +73,12 @@ int main(int argc, char *argv[]) {
   init_cli_options();
   CLI11_PARSE(app, argc, argv);
   init_config();
+
+  std::thread shutdown_trigger([](){
+    std::this_thread::sleep_for(std::chrono::minutes(max_live_minute));
+    LOG(INFO) << "max live minute reached, shutting down...";
+    Shutdown(SIGINT);
+  });
 
   CHECK_EQ(cuInit(0), CUDA_SUCCESS);
   if (colserve::Config::use_shared_tensor) {

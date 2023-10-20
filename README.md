@@ -1,19 +1,20 @@
-## System Building 
+## Build system  
 
-1. Prepare the a new conda environment or use docker container,cuda version is `11.6`, cudnn version is `8.4`. Install `cmake>=3.24` and `ninja`, `gcc` should have `c++17` support.
+1. Prepare the a new conda environment or use docker container, cuda version is `11.6`, cudnn version is `8.4`. Install `boost`, `cmake>=3.24` and `ninja`, `gcc` should have `c++17` support.
 
  
-2. Clone and build [tvm](https://ipads.se.sjtu.edu.cn:1312/infer-train/tvm) for inference, and [pytorch](https://ipads.se.sjtu.edu.cn:1312/infer-train/pytorch) for training. Note CUDA backend should be enabled. Pay attention to pytorch `GLIBCXX_USE_CXX11_ABI` flag, which may cause ABI issues. 
+2. Clone and build [tvm](https://ipads.se.sjtu.edu.cn:1312/infer-train/tvm) for inference, and [pytorch](https://ipads.se.sjtu.edu.cn:1312/infer-train/pytorch) for training. Build [torchvision](https://github.com/pytorch/vision/tree/v0.13.1) to avoid symbol issues. Note CUDA backend should be enabled. Pay attention to pytorch `GLIBCXX_USE_CXX11_ABI` flag, which may cause ABI issues. 
 
 3. Install python dependencies `cython`, `numpy`, `onnxruntime`, `torchvision` and etc.
 
-4. Set `TVM_HOME` environment and configure cmake. For conda env, execute `export CMAKE_PREFIX_PATH=${CONDA_PREFIX}/lib/python3.xx/site-packages/torch/share/cmake` to find pytorch.
+4. Set `TVM_HOME` environment, run `echo $TVM_HOME` and `echo $CONDA_REFIX` to check. Then configure cmake.
 
 ```
 cmake -DCMAKE_BUILD_TYPE=Release/Debug \
       -DgRPC_INSTALL=ON \
       -DgRPC_BUILD_TESTS=OFF \
-      -DCMAKE_PREFIX_PATH=${CONDA_PREFIX}/lib/python3.xx/site-packages/torch/share/cmake \
+      -DCONDA_PREFIX=${CONDA_PREFIX} \
+      -DCMAKE_PREFIX_PATH="${CONDA_PREFIX};${CONDA_PREFIX}/lib/python3.xx/site-packages/torch/share/cmake" \
       -B build -G Ninja
 cmake --build build --config Release/Debug
 ```
@@ -65,11 +66,12 @@ Options
 
 ```
 GLOG_logtostderr=1 ./build/hybrid_workload \
-  -p 9090 \ # gRPC port
+  -p 8080 \ # gRPC port
   -d 30   \ # request duration in seconds
   -c 16   \ # the number of concurrency
   --infer --infer-model resnet152 \
   --train --train-model resnet --num-epoch 5 --batch-size 16 \
+  --show-result 10 \ # show first 10 elem in result tensor
   -v 1      # verbose
 ```
 

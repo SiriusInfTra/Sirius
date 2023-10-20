@@ -13,7 +13,7 @@ enum class ServeMode {
   kTaskSwitchL3,  // switch infer/train, drop training (i.e. pipeswitch)
 
   kColocateL1,    // colocate infer/train, drop mini-batch -> adjust batch size -> relaunch
-  kColocateL2,    // adjust batch at end of epoch
+  kColocateL2,    // adjust batch at end of mini-batch
 };
 
 class Config {
@@ -25,6 +25,17 @@ class Config {
   static bool use_shared_tensor;
 
   static bool infer_raw_blob_alloc_;
+
+  inline static bool IsSwitchMode() {
+    return Config::serve_mode == ServeMode::kTaskSwitchL1
+        || Config::serve_mode == ServeMode::kTaskSwitchL2
+        || Config::serve_mode == ServeMode::kTaskSwitchL3;
+  }
+
+  inline static bool IsColocateMode() {
+    return Config::serve_mode == ServeMode::kColocateL1
+        || Config::serve_mode == ServeMode::kColocateL2;
+  }
 
 };
 

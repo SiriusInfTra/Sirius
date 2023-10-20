@@ -22,9 +22,12 @@ class TorchColExtention(setuptools.command.build_ext.build_ext):
         if os.path.exists(lib_dir):
             shutil.rmtree(lib_dir)
         os.mkdir(lib_dir)
-        shutil.copy('../build/python/libtorch_col.so', lib_dir)
-        shutil.copy('../build/python/libtorch_col_tensor.so', lib_dir)
-        shutil.copy('../build/libsta.so', lib_dir)
+
+        build_dir = os.environ.get('BUILD_DIR', None)
+        print(f'copying lib from {build_dir}')
+        shutil.copy(f'{build_dir}/python/libtorch_col.so', lib_dir)
+        shutil.copy(f'{build_dir}/python/libtorch_col_tensor.so', lib_dir)
+        shutil.copy(f'{build_dir}/libsta.so', lib_dir)
 
 
 def config_extension():

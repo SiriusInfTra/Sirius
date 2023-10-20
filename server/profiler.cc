@@ -182,12 +182,6 @@ double Profiler::Passed() {
 
 void Profiler::WriteLog() {
   std::ofstream ofs{profile_log_path_};
-  ofs << "[Event Info]" << std::endl;
-  for (auto &e : event_info_) {
-    ofs << std::get<0>(e) << ": "
-        << std::get<1>(e) << std::endl;
-  }
-  ofs << std::endl;
   
   ofs << "[Perf Info]" << std::endl;
   for (auto &it : perf_info_) {
@@ -211,6 +205,13 @@ void Profiler::WriteLog() {
   }
   ofs << std::endl;
 
+  ofs << "[Event Info]" << std::endl;
+  for (auto &e : event_info_) {
+    ofs << std::get<0>(e) << ": "
+        << std::get<1>(e) << std::endl;
+  }
+  ofs << std::endl;
+  
   ofs << "[Memory Info]" << std::endl;
   for (auto &r : resource_info_) {
     ofs << std::get<0>(r) << ":"

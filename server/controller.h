@@ -12,6 +12,7 @@ namespace colserve {
 struct CtrlMsgEntry {
   uint64_t id;
   int event;
+  int value;
 };
 
 class Controller {
@@ -22,11 +23,11 @@ class Controller {
   Controller();
   uint64_t InterruptTrain();
   uint64_t ResumeTrain();
-  uint64_t ColocateAdjust();
+  uint64_t ColocateAdjust(size_t batch_size);
   bool WaitTrainNotRunning();
   bool WaitInferIdle();
   bool WaitColocateAdjustDone(uint64_t cmd_id);
-  uint64_t InferExit();
+  uint64_t InferExit(size_t batch_size);
 
   void InferRequestInc(size_t inc=1);
   void InferResponseInc(size_t inc=1);
