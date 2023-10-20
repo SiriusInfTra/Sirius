@@ -1,5 +1,6 @@
 #include <glog/logging.h>
-#include "sta/cuda_allocator.h"
+#include <sta/cuda_allocator.h>
+
 #include "control_stub.h"
 
 namespace torch_col {
