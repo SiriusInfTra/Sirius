@@ -251,3 +251,5 @@ if __name__ == '__main__':
         print(e) # should not reach here
 
     # print(torch.cuda.memory_summary())
+
+    torch_col.ReleaseMempool()

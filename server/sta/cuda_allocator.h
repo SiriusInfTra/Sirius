@@ -115,6 +115,7 @@ class CUDAMemPool {
   using PoolEntry = CUDAMemPoolImpl::PoolEntry;
   static void Init(std::size_t nbytes, bool master);
   static CUDAMemPool* Get();
+  static void ReleaseMempool();
 
   static std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes);
 

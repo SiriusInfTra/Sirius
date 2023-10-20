@@ -1,4 +1,5 @@
 #include <glog/logging.h>
+#include <sta/cuda_allocator.h>
 
 #include "control_stub.h"
 
@@ -137,4 +138,7 @@ double ColocateStub::PassedTimeFromSetCmd() {
   return std::chrono::duration<double, std::milli>(now - set_cmd_time_).count();
 }
 
+void ReleaseMempool() {
+  colserve::sta::CUDAMemPool::ReleaseMempool();
+}
 } // namespace torch_col

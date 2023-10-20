@@ -17,6 +17,9 @@ cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
         kColocateAdjustL2,
 
 
+cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
+    cpdef void ReleaseMempool()
+
 cdef class PyCtrlMsgEntry:
     cdef CtrlMsgEntry _entry
     

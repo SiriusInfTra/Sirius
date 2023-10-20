@@ -26,6 +26,10 @@ CUDAMemPool *CUDAMemPool::Get() {
   return cuda_mem_pool_.get();
 }
 
+void CUDAMemPool::ReleaseMempool() {
+  cuda_mem_pool_.reset();
+}
+
 void CUDAMemPool::Init(std::size_t nbytes, bool master) {
   // LOG(INFO) << "[CUDA Memory Pool] initilized with size " << size / 1024 / 1024 << " Mb";
   cuda_mem_pool_ = std::make_unique<CUDAMemPool>(nbytes, master);
@@ -41,6 +45,10 @@ CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool master) {
   };
   impl_ = new CUDAMemPoolImpl{config, master};
 }
+
+
+
+
 
 
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(std::size_t nbytes) {
@@ -76,8 +84,8 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::RawAlloc(size_t nbytes) {
 
 CUDAMemPool::~CUDAMemPool() {
   delete impl_;
+  impl_ = nullptr;
 }
-
 
 CUDAMemPoolImpl::PoolEntryImpl *CUDAMemPoolImpl::GetEntry(CUDAMemPoolImpl::EntryHandle handle) {
   return reinterpret_cast<PoolEntryImpl *>(segment_.get_address_from_handle(handle));
@@ -200,6 +208,7 @@ CUDAMemPoolImpl::CUDAMemPoolImpl(CUDAMemPoolImpl::MemPoolConfig config, bool for
 }
 
 CUDAMemPoolImpl::~CUDAMemPoolImpl() {
+  CUDA_CALL(cudaSetDevice(config_.cuda_device));
   CUDA_CALL(cudaStreamDestroy(cuda_memcpy_stream_));
   if (master_) {
     RefCount refCount;
