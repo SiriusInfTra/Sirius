@@ -18,7 +18,7 @@ namespace {
 #define NVML_CALL(func) do{ \
     auto error = func; \
     if (error != NVML_SUCCESS) { \
-      LOG(FATAL) << nvmlErrorString(error); \
+      LOG(FATAL) << #func << " " << nvmlErrorString(error); \
       exit(EXIT_FAILURE); \
     } \
   } while(0);
@@ -26,7 +26,7 @@ namespace {
 #define CUDA_CALL(func) do { \
     auto error = func; \
     if (error != cudaSuccess) { \
-      LOG(FATAL) << cudaGetErrorString(error); \
+    LOG(FATAL) << #func << " " << cudaGetErrorString(error); \
       exit(EXIT_FAILURE); \
     } \
   } while (0);

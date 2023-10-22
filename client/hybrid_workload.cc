@@ -82,10 +82,11 @@ int main(int argc, char** argv) {
       std::random_device rd;
       std::mt19937 gen;
       if (app.benchmark.seed == static_cast<uint64_t>(-1)) {
-        gen.seed(rd());
+        app.benchmark.seed = rd();
       } else {
-        gen.seed(app.benchmark.seed);
       }
+      LOG(INFO) << "Benchmark random seed " << app.benchmark.seed; 
+      gen.seed(app.benchmark.seed);
       std::uniform_real_distribution<> lambda_dist(0, app.benchmark.random_dynamic_possion);
       std::uniform_int_distribution<> req_model_num_dist(0, infer_models.size());
       std::vector<double> total_lambda{0};

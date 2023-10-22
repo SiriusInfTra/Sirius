@@ -131,6 +131,10 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
 
     if (Config::use_shared_tensor) {
       CHECK_NE(setenv("USE_SHARED_TENSOR", "1", 1), -1);
+      CHECK_NE(setenv("SHARED_TENSOR_HAS_SERVER", "1", 1), -1);
+      CHECK_NE(setenv("SHARED_TENSOR_POOL_GB", std::to_string(Config::cuda_memory_pool_gb).c_str(), 1), -1);
+    } else {
+      CHECK_NE(setenv("USE_SHARED_TENSOR", "0", 1), -1);
     }
     auto err = execvp("python", argv);
     perror("execvp");

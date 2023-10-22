@@ -33,6 +33,8 @@ void init_cli_options() {
                              "colocate-l2"}));
   app.add_option("--use-sta", colserve::Config::use_shared_tensor, 
       "use shared tensor allocator, default is 1");
+  app.add_option("--cuda-memory-pool-gb", colserve::Config::cuda_memory_pool_gb,
+      "cuda memory pool size in GB, default is 12");
   app.add_option("-p,--port", port,
       "gRPC server port, default is 8080");
   app.add_option("--max-live-minute", max_live_minute,
@@ -82,7 +84,9 @@ int main(int argc, char *argv[]) {
 
   CHECK_EQ(cuInit(0), CUDA_SUCCESS);
   if (colserve::Config::use_shared_tensor) {
-    colserve::sta::Init(true);
+    colserve::sta::Init(
+      static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1024 * 1024 * 1024),
+      true);
   }
   colserve::Controller::Init();
   colserve::Profiler::Init("server-profile");

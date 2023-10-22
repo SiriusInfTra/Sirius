@@ -8,7 +8,7 @@
 #define CUDA_CALL(func) do { \
   auto error = func; \
   if (error != cudaSuccess) { \
-    LOG(FATAL) << cudaGetErrorString(error); \
+    LOG(FATAL) << #func << " " << cudaGetErrorString(error); \
     exit(EXIT_FAILURE); \
   } \
   } while (0)

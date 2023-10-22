@@ -5,7 +5,8 @@
 namespace colserve {
 namespace sta {
 
-void Init(bool master = false);
+// memory pool nbytes will be ignored if is not master
+void Init(size_t memory_pool_nbytes = 0, bool master = false);
 
 }
 }

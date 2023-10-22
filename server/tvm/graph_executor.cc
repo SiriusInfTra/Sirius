@@ -211,7 +211,7 @@ void GraphExecutor::ResetStorage() {
     for (auto & s : raw_storage_pool_) {
       s.DeallocToNull();
     }
-    if (Config::infer_raw_blob_alloc_) {
+    if (Config::infer_raw_blob_alloc) {
       blob_mem_.reset();
     }
   }
@@ -234,7 +234,7 @@ void GraphExecutor::AllocStorage() {
       auto tensor = sta::TensorPool::Get()->Tensor(s);
       tensor.AllocForNull(false);
     }
-  } else if (Config::infer_raw_blob_alloc_) {
+  } else if (Config::infer_raw_blob_alloc) {
     size_t total_nbytes = 0, off = 0;
     // constexpr size_t align = 4 * sizeof(int);
     constexpr size_t align = 1;

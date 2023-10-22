@@ -24,7 +24,9 @@ class Config {
   
   static bool use_shared_tensor;
 
-  static bool infer_raw_blob_alloc_;
+  static double cuda_memory_pool_gb;
+
+  static bool infer_raw_blob_alloc;
 
   inline static bool IsSwitchMode() {
     return Config::serve_mode == ServeMode::kTaskSwitchL1
