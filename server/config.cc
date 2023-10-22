@@ -4,6 +4,8 @@ namespace colserve {
 
 ServeMode Config::serve_mode = ServeMode::kNormal;
 
+bool Config::check_mps = true;
+
 std::atomic<bool> Config::running = true;
 
 bool Config::use_shared_tensor = true;

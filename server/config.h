@@ -19,6 +19,8 @@ enum class ServeMode {
 class Config {
  public:
   static ServeMode serve_mode;
+
+  static bool check_mps;
   
   static std::atomic<bool> running;
   

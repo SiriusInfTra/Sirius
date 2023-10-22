@@ -1,4 +1,5 @@
 #include <iostream>
+#include <filesystem>
 #include <csignal>
 #include "model_infer_store.h"
 #include <grpcpp/grpcpp.h>
@@ -31,6 +32,8 @@ void init_cli_options() {
                              "task-switch-l3",
                              "colocate-l1",
                              "colocate-l2"}));
+  app.add_option("--mps", colserve::Config::check_mps, 
+      "check mps, default is 1");
   app.add_option("--use-sta", colserve::Config::use_shared_tensor, 
       "use shared tensor allocator, default is 1");
   app.add_option("--cuda-memory-pool-gb", colserve::Config::cuda_memory_pool_gb,

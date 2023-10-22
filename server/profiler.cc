@@ -93,28 +93,38 @@ Profiler::Profiler(const std::string &profile_log_path)
   NVML_CALL(nvmlInit());
   stp_ = std::chrono::steady_clock::now();
 
-  thread_.reset(new std::thread([this]() {
+  uint32_t dev_cnt;
+  NVML_CALL(nvmlDeviceGetCount_v2(&dev_cnt));
+  CHECK_GT(dev_cnt, 0);
+
+  uint32_t dev_id = 0;
+  nvmlDevice_t device;
+  auto visiable_device = std::getenv("CUDA_VISIBLE_DEVICES");
+  if (visiable_device != nullptr) {
+    auto s = std::string(visiable_device);
+    std::regex r{"[0-9]+"};
+    std::smatch m;
+    if (std::regex_search(s, m, r)) {
+      dev_id = std::stoi(m.str());
+    }
+  }
+
+  NVML_CALL(nvmlDeviceGetHandleByIndex(dev_id, &device));
+
+  // CHECK MPS
+  if (colserve::Config::check_mps) {
+    uint32_t info_cnt = 0;
+    auto nvml_err = nvmlDeviceGetMPSComputeRunningProcesses_v3(device, &info_cnt, NULL);
+    if (nvml_err == NVML_SUCCESS && info_cnt == 0) {
+      LOG(FATAL) << "MPS is not enabled, please start MPS server by nvidia-cuda-mps-control";
+    }
+  }
+
+  thread_.reset(new std::thread([this, device]() {
     while (!this->start_profile_) {
       std::this_thread::sleep_for(std::chrono::microseconds(10));
     }
     uint32_t pid = getpid();
-    uint32_t dev_cnt;
-    NVML_CALL(nvmlDeviceGetCount_v2(&dev_cnt));
-    CHECK_GT(dev_cnt, 0);
-
-    uint32_t dev_id = 0;
-    nvmlDevice_t device;
-    auto visiable_device = std::getenv("CUDA_VISIBLE_DEVICES");
-    if (visiable_device != nullptr) {
-      auto s = std::string(visiable_device);
-      std::regex r{"[0-9]+"};
-      std::smatch m;
-      if (std::regex_search(s, m, r)) {
-        dev_id = std::stoi(m.str());
-      }
-    }
-    
-    NVML_CALL(nvmlDeviceGetHandleByIndex(dev_id, &device));
     CUDA_CALL(cudaSetDevice(0));
     
     constexpr uint32_t max_info_cnt = 32;
