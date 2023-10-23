@@ -84,10 +84,18 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
     model = models.resnet101()
     model = model.cuda(0)
 
+    use_shared_tensor = os.environ.get('USE_SHARED_TENSOR', '0') == '1'
+
+    if use_shared_tensor:
+        print("Train params memory usage: {:.2f}M".format(torch_col.cuda_memory_pool_train_usage() / 1024 / 1024))
+
     criterion = nn.CrossEntropyLoss().cuda(0)
     optimizer = torch.optim.SGD(model.parameters(), 0.1, 
                                 momentum=0.9, weight_decay=1e-4)
     scheduler = StepLR(optimizer, step_size=30, gamma=0.1)
+
+    if use_shared_tensor:
+        print("Train after init memory pool usage: {:.2f}M".format(torch_col.cuda_memory_pool_train_usage() / 1024 / 1024))
 
     # dummy data
     train_dataset = FakeData(1000, (3, 224, 224), 50, transforms.ToTensor())
@@ -111,6 +119,8 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
         killed_batch = 0
         finished_batch = 0
         tried_batch = 0
+        killed_time = 0
+        finished_time = 0
         wait_bs_valid_sec = 0 # add infer may cause batch size <= 0
         for i, (images, targets) in enumerate(train_loader):
             images:torch.Tensor
@@ -121,6 +131,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
             # micro_batch_size = random.randint(1, batch_size)
             # print(micro_batch_size)
             batch_begin = time.time()
+            micro_batch_begin = None
             while True:
                 try:
                     # print('hook.cmd', hook.stub.cmd, flush=True)
@@ -137,6 +148,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                         wait_bs_valid_end = time.time()
                         wait_bs_valid_sec += wait_bs_valid_end - wait_bs_valid_begin
                     for i in range(0, batch_size, micro_batch_size):
+                        micro_batch_begin = time.time()
                         tried_batch += 1
                         total_tried_batch += 1
                         output = model(images[i:i+micro_batch_size])
@@ -145,6 +157,8 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                         loss.backward()
                         finished_batch += 1
                         total_finished_batch += 1
+                        # torch.cuda.synchronize()
+                        # finished_time += time.time() - micro_batch_begin
                     optimizer.step()
                     optimizer.zero_grad()
                     batch_cnt += 1
@@ -152,44 +166,57 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                     # micro_batch_size = int(micro_batch_size / 2 + 0.5)
                     killed_batch += 1
                     total_killed_batch += 1
+                    # torch.cuda.synchronize()
+                    # killed_time += time.time() - micro_batch_begin
                     micro_batch_size = hook.stub.target_batch_size
                     t0 = time.time()
                     optimizer.zero_grad()
                     torch.cuda.synchronize()
-                    ori_gpu_mem = gpu_mem()
+                    old_gpu_mem = gpu_mem()
                     torch.cuda.empty_cache()
                     t1 = time.time()
                     if isinstance(e, ColocateAdjustL1Exception):
                         hook.stub.adjust_l1_done()
-                    print('{} free cache {:.1f}ms, new micro batch size {}, gpu mem {:.1f} -> {:.1f}'.format(
-                        e, (t1 - t0) * 1000, micro_batch_size, ori_gpu_mem, gpu_mem()))
+                    if not use_shared_tensor:
+                        mem_info = f'gpu mem {old_gpu_mem:.1f} -> {gpu_mem():.1f}'
+                    else:
+                        mem_info = f'mem pool {torch_col.cuda_memory_pool_train_usage() / 1024 / 1024:.1f}M'
+                    print('{} free cache {:.1f}ms, new micro batch size {}, {}'.format(
+                        e, (t1 - t0) * 1000, micro_batch_size, mem_info))
                 else:
                     if mode == 'colocate-l2' and hook.stub.cmd == torch_col.Event.kColocateAdjustL2:
                         t0 = time.time()
-                        old_gpu_memory = gpu_mem()
+                        old_gpu_mem = gpu_mem()
                         old_batch_size = micro_batch_size
                         torch.cuda.synchronize()
                         torch.cuda.empty_cache()
                         micro_batch_size = hook.stub.target_batch_size
                         hook.stub.adjust_l2_done()
                         t1 = time.time()
-                        print('batch {} adjust : bs {} -> {} | {:.1f}ms | {:.1f}ms | gpu_mem {:.1f} -> {:.1f}'.format(
+                        if not use_shared_tensor:
+                            mem_info = f'gpu mem {old_gpu_mem:.1f} -> {gpu_mem():.1f}'
+                        else:
+                            mem_info = f'mem pool {torch_col.cuda_memory_pool_train_usage() / 1024 / 1024:.1f}M'
+                        print('batch {} adjust : bs {} -> {} | {:.1f}ms | {:.1f}ms | {}'.format(
                             i, old_batch_size, micro_batch_size, (time.time()-batch_begin) * 1000, (t1 - t0) * 1000, 
-                            old_gpu_memory, gpu_mem()))
+                            mem_info))
                     break
 
         scheduler.step()
         end = time.time()
         # free, total = torch.cuda.mem_get_info(0)
         # used_mem = (total - free) / 1024 / 1024 / 1024
-        used_mem = gpu_mem()
+        if not use_shared_tensor:
+            mem_info = f'memory {gpu_mem():.2f}Gb'
+        else:
+            mem_info = f'mem pool {torch_col.cuda_memory_pool_train_usage() / 1024 / 1024:.1f}M'
         batch_info = f'batch cnt {batch_cnt} avg {1e3*(end-begin)/batch_cnt:.1f}ms'
         if mode == 'task-switch-l1' or mode == 'colocate-l1':
-            batch_info += f' | try {tried_batch} kill {killed_batch} finish {finished_batch}'
-        print('[{} epoch {}] {:.3f}s | {} | batch-size {} | micro-batch-size {} | memory {:.2f}Gb | wait_bs_valid {:.3f}s'.format(
+            batch_info += f' | try {tried_batch} kill {killed_batch}, {killed_time*1e3:.1f}ms finish {finished_batch}, {finished_time*1e3:.1f}ms'
+        print('[{} epoch {}] {:.3f}s | {} | batch-size {} | micro-batch-size {} | {} | wait_bs_valid {:.3f}s'.format(
                 model.__class__.__name__, epoch, end - begin,
                 batch_info, batch_size, micro_batch_size,
-                used_mem, wait_bs_valid_sec))
+                mem_info, wait_bs_valid_sec))
     
         # if hook.stub.cmd == torch_col.Event.kColocateAdjustL2:
         #     t0 = time.time()

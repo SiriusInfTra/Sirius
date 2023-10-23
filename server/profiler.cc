@@ -4,6 +4,7 @@
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 
+#include "sta/cuda_allocator.h"
 #include "model_train_store.h"
 #include "profiler.h"
 #include "config.h"
@@ -128,26 +129,33 @@ Profiler::Profiler(const std::string &profile_log_path)
     CUDA_CALL(cudaSetDevice(0));
     
     constexpr uint32_t max_info_cnt = 32;
-    uint32_t info_cnt;
     nvmlProcessInfo_t infos[32];
     while (Config::running) {
-      info_cnt = max_info_cnt;
-      NVML_CALL(nvmlDeviceGetComputeRunningProcesses_v3(device, &info_cnt, infos));
-      // CHECK(info_cnt <= 2);
-      
-      size_t infer_mem = 0, train_mem = 0;
-      for (uint32_t i = 0; i < info_cnt; i++) {
-        if (infos[i].pid == pid) {
-          infer_mem = infos[i].usedGpuMemory;
-        } else if (infos[i].pid == ModelTrainStore::Get()->GetTrainPid()) {
-          train_mem = infos[i].usedGpuMemory;
+      size_t infer_mem = 0, train_mem = 0, total_mem = 0;
+
+      if (!Config::use_shared_tensor) {
+        uint32_t info_cnt = max_info_cnt;
+        NVML_CALL(nvmlDeviceGetComputeRunningProcesses_v3(device, &info_cnt, infos));
+        // CHECK(info_cnt <= 2);
+        
+        for (uint32_t i = 0; i < info_cnt; i++) {
+          if (infos[i].pid == pid) {
+            infer_mem = infos[i].usedGpuMemory;
+          } else if (infos[i].pid == ModelTrainStore::Get()->GetTrainPid()) {
+            train_mem = infos[i].usedGpuMemory;
+          }
         }
+        size_t free, total;
+        CUDA_CALL(cudaMemGetInfo(&free, &total));
+        total_mem = total - free;
+      } else {
+        infer_mem = sta::CUDAMemPool::InferMemUsage();
+        train_mem = sta::CUDAMemPool::TrainMemUsage();
+        total_mem = static_cast<size_t>(Config::cuda_memory_pool_gb * 1024 * 1024 * 1024);
       }
 
-      size_t free, total;
-      CUDA_CALL(cudaMemGetInfo(&free, &total));
       this->resource_info_.push_back({this->Passed(), 
-                                     {infer_mem, train_mem, total - free}});
+                                     {infer_mem, train_mem, total_mem}});
       // this->profile_log_ifs_ << this->Passed()
       //                        << " InferMem " << GetMemString(infer_mem)
       //                        << " TrainMem " << GetMemString(train_mem)

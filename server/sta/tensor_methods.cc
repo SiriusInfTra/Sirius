@@ -17,9 +17,9 @@ STensor RawNull(at::IntArrayRef size, DLDataType dtype) {
   return STensor(size.vec(), dtype);
 }
 
-uint64_t Empty(at::IntArrayRef size, DLDataType dtype) {
+uint64_t Empty(at::IntArrayRef size, DLDataType dtype, MemType mtype) {
   auto storage_nbytes = ComputeStorageNbytes(size, dtype);
-  auto entry = CUDAMemPool::Get()->Alloc(storage_nbytes);
+  auto entry = CUDAMemPool::Get()->Alloc(storage_nbytes, mtype);
   // std::stringstream ss;
   // ss << "Create empty size " << size << " nbytes " << storage_nbytes;
   // if (entry) {
@@ -34,16 +34,16 @@ uint64_t Empty(at::IntArrayRef size, DLDataType dtype) {
   return TensorPool::Get()->Insert(STensor(entry, size.vec(), dtype));
 }
 
-STensor RawEmpty(at::IntArrayRef size, DLDataType dtype) {
+STensor RawEmpty(at::IntArrayRef size, DLDataType dtype, MemType mtype) {
   auto storage_nbytes = ComputeStorageNbytes(size, dtype);
-  auto entry = CUDAMemPool::RawAlloc(storage_nbytes);
+  auto entry = CUDAMemPool::RawAlloc(storage_nbytes, mtype);
   return STensor(entry, size.vec(), dtype);
 }
 
 uint64_t EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride,
-                      DLDataType dtype) {
+                      DLDataType dtype, MemType mtype) {
   auto storage_nbytes = ComputeStorageNbytes(size, stride, dtype);
-  auto entry = CUDAMemPool::Get()->Alloc(storage_nbytes);
+  auto entry = CUDAMemPool::Get()->Alloc(storage_nbytes, mtype);
   // std::stringstream ss;
   // ss << "Create empty_strided size " << size << " stride " << stride << " nbytes " << storage_nbytes;
   // if (entry) {
@@ -181,15 +181,15 @@ void STensor::Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride) {
   }
 }
 
-void STensor::AllocForNull(bool raw_alloc) {
+void STensor::AllocForNull(MemType mtype, bool raw_alloc) {
   CHECK(IsNull());
   auto storage_nbytes = ComputeStorageNbytes(
       get()->shape_, get()->stride_, get()->tensor_.dtype, StorageOffset());
   TensorContainer::memory_data_t mdata;
   if (!raw_alloc) {
-    mdata = CUDAMemPool::Get()->Alloc(storage_nbytes);
+    mdata = CUDAMemPool::Get()->Alloc(storage_nbytes, mtype);
   } else {
-    mdata = CUDAMemPool::RawAlloc(storage_nbytes);
+    mdata = CUDAMemPool::RawAlloc(storage_nbytes, mtype);
   }
   if (storage_nbytes > 0 && mdata == nullptr) {
     LOG(FATAL) << "Tensor AllocForNull: tensor without memory";

@@ -31,6 +31,17 @@ class TorchColExtention(setuptools.command.build_ext.build_ext):
 
 
 def config_extension():
+    cmake_cache_path = pathlib.Path('../build/CMakeCache.txt')
+    assert cmake_cache_path.exists()
+
+    cuda_root = None
+    for line in cmake_cache_path.read_text().splitlines():
+        if line.startswith('CUDA_TOOLKIT_ROOT_DIR'):
+            cuda_root = line.split('=')[1]
+            break
+
+    assert cuda_root is not None
+
     cython_ext = Extension(
         name="torch_col._C", 
         sources=[
@@ -40,7 +51,9 @@ def config_extension():
         language="c++",
         include_dirs=[
             "../",
+            "../server",
             "./torch_col",
+            f"{cuda_root}/include",
         ],
         libraries=["rt", "sta", "torch_col", "torch_col_tensor"],
         library_dirs=[
@@ -48,7 +61,6 @@ def config_extension():
             '../build/python'
         ],
         # extra_link_args=["-lglog", "-Wl,-Bstatic"],
-#define 
         extra_compile_args=["-std=c++17", "-DPY_EXTENSION_LOGGING=\"logging.h\""],
     )
 

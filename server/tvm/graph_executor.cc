@@ -232,7 +232,7 @@ void GraphExecutor::AllocStorage() {
   if (Config::use_shared_tensor) {
     for (auto &s : storage_pool_) {
       auto tensor = sta::TensorPool::Get()->Tensor(s);
-      tensor.AllocForNull(false);
+      tensor.AllocForNull(sta::MemType::kInfer, false);
     }
   } else if (Config::infer_raw_blob_alloc) {
     size_t total_nbytes = 0, off = 0;
@@ -242,7 +242,7 @@ void GraphExecutor::AllocStorage() {
     for (auto &s : raw_storage_pool_) {
       total_nbytes += (GetDataSize(*s.operator->()) + align - 1) & (~(align - 1));
     }
-    blob_mem_ = sta::CUDAMemPool::RawAlloc(total_nbytes);
+    blob_mem_ = sta::CUDAMemPool::RawAlloc(total_nbytes, sta::MemType::kInfer);
     for (auto &s : raw_storage_pool_) {
       size_t nbytes = (GetDataSize(*s.operator->()) + align - 1) & (~(align - 1));
       auto mdata = std::shared_ptr<sta::CUDAMemPool::PoolEntry>(
@@ -252,7 +252,7 @@ void GraphExecutor::AllocStorage() {
     }
   } else {
     for (auto &s: raw_storage_pool_) {
-      s.AllocForNull(true);
+      s.AllocForNull(sta::MemType::kInfer, true);
     }
   }
 
@@ -356,14 +356,14 @@ void GraphExecutor::SetupStorage(bool alloc) {
         storage_pool_.push_back(sta::Null(shape, pit.dtype));
       } else {
         // storage_pool_.push_back(TVMArray::Empty(shape, pit.dtype, dev, mem_scope));
-        storage_pool_.push_back(sta::Empty(shape, pit.dtype));
+        storage_pool_.push_back(sta::Empty(shape, pit.dtype, sta::MemType::kInfer));
       }
       last_tensor = sta::TensorPool::Get()->CTensor(storage_pool_.back());
     } else {
       if (!alloc) {
         raw_storage_pool_.push_back(sta::RawNull(shape, pit.dtype));
       } else {
-        raw_storage_pool_.push_back(sta::RawEmpty(shape, pit.dtype));
+        raw_storage_pool_.push_back(sta::RawEmpty(shape, pit.dtype, sta::MemType::kInfer));
       }
       last_tensor = raw_storage_pool_.back();
     }

@@ -86,7 +86,7 @@ class STensor : public std::shared_ptr<TensorContainer> {
   size_t ComputeNumel() const;
 
   void Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride);
-  void AllocForNull(bool raw_alloc);
+  void AllocForNull(MemType mtype, bool raw_alloc);
   void AssignMDataForNull(TensorContainer::memory_data_t mdata, bool check_memory_bound = false);
   void DeallocToNull();
 

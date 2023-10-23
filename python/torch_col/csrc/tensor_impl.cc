@@ -146,13 +146,13 @@ at::Tensor MakeColTensorEmpty(at::IntArrayRef size, const at::TensorOptions &opt
   auto scalar_type = at::dtype_or_default(options.dtype_opt());
   auto dlpack_dtype = getDLDataType(scalar_type);
   // auto handle = sta::TensorPool::Get()->Empty(size_vec, dlpack_dtype);
-  auto handle = colserve::sta::Empty(size, dlpack_dtype);
+  auto handle = colserve::sta::Empty(size, dlpack_dtype, sta::MemType::kTrain);
   return MakeColTensor(handle);
 }
 
 at::Tensor MakeColTensorEmpty(at::IntArrayRef size, at::ScalarType scalar_type) {
   auto dlpack_dtype = getDLDataType(scalar_type);
-  auto handle = colserve::sta::Empty(size, dlpack_dtype);
+  auto handle = colserve::sta::Empty(size, dlpack_dtype, sta::MemType::kTrain);
   return MakeColTensor(handle);
 
 }

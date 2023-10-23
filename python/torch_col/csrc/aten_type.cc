@@ -44,7 +44,7 @@ at::Tensor empty(
   auto scalar_type = at::dtype_or_default(dtype);
   auto dlpack_dtype = getDLDataType(scalar_type);
   // auto handle = sta::TensorPool::Get()->Empty(size_vec, dlpack_dtype);
-  auto handle = sta::Empty(size, dlpack_dtype);
+  auto handle = sta::Empty(size, dlpack_dtype, sta::MemType::kTrain);
   return at::detail::make_tensor_base<ColTensorImpl>(std::make_shared<ColTensorImpl::Data>(handle));
 }
 
@@ -58,7 +58,7 @@ at::Tensor empty_strided(
 
   auto scalar_type = at::dtype_or_default(dtype_opt);
   auto dlpack_dtype = getDLDataType(scalar_type);
-  auto handle = sta::EmptyStrided(size.vec(), stride.vec(), dlpack_dtype);
+  auto handle = sta::EmptyStrided(size.vec(), stride.vec(), dlpack_dtype, sta::MemType::kTrain);
   return MakeColTensor(handle);
 } 
 

@@ -6,10 +6,11 @@
 #include <set>
 #include <memory>
 #include <atomic>
+#include <array>
 #include <iostream>
 #include <cstddef>
-#include <cuda_runtime_api.h>
-
+#include <thread>
+#include <chrono>
 
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/vector.hpp>
@@ -20,19 +21,20 @@
 #include <boost/functional/hash.hpp>
 #include <boost/thread/lock_guard.hpp>
 
-
 #include <cuda_runtime_api.h>
-
-#include <thread>
-#include <chrono>
-#include <iostream>
-
 
 namespace colserve {
 namespace sta {
 
 namespace bip = boost::interprocess;
 
+enum class MemType {
+  kInfer,
+  kTrain,
+  kMemTypeNum,
+};
+
+class CUDAMemPool;
 class CUDAMemPoolImpl {
 public:
   struct MemPoolConfig {
@@ -44,13 +46,14 @@ public:
   struct PoolEntry {
     void *addr;
     std::size_t nbytes;
+    MemType mtype;
   };
 
   explicit CUDAMemPoolImpl(MemPoolConfig config, bool force_master);
 
   ~CUDAMemPoolImpl();
 
-  std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes);
+  std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes, MemType mtype);
 
   std::shared_ptr<PoolEntry> Resize(std::shared_ptr<PoolEntry> entry, std::size_t nbytes);
 
@@ -58,6 +61,14 @@ public:
 
   void CopyFromTo(void *dst_dev_ptr, void *src_dev_ptr, size_t nbytes);
 
+  inline size_t InferMemUsage() {
+    return stat_->at(static_cast<size_t>(MemType::kInfer));
+  }
+  inline size_t TrainMemUsage() {
+    return stat_->at(static_cast<size_t>(MemType::kTrain));
+  }
+
+  friend class CUDAMemPool;
 private:
   using Addr2EntryType = std::pair<std::ptrdiff_t, bip::managed_shared_memory::handle_t>;
   using Addr2EntryAllocator = bip::allocator<Addr2EntryType, bip::managed_shared_memory::segment_manager>;
@@ -69,6 +80,10 @@ private:
 
   using RefCount = int;
   using EntryHandle = bip::managed_shared_memory::handle_t;
+
+  // statistic, to add more info
+  using StatValueType = std::atomic<size_t>;
+  using StatMap = std::array<StatValueType, static_cast<size_t>(MemType::kMemTypeNum)>;
 
   struct PoolEntryImpl {
     std::ptrdiff_t addr_offset;
@@ -88,8 +103,10 @@ private:
   cudaIpcMemHandle_t *cuda_mem_handle_;
   cudaStream_t cuda_memcpy_stream_;
 
+  StatMap *stat_;
+
   bool master_;
-  void *devPtr_{};
+  void *mem_pool_base_ptr_{};
 
   inline PoolEntryImpl *GetEntry(EntryHandle handle);
 
@@ -103,9 +120,9 @@ private:
 
   inline bool CheckMemPool();
 
-  std::shared_ptr<PoolEntry> MakeSharedPtr(PoolEntryImpl *eh);
+  std::shared_ptr<PoolEntry> MakeSharedPtr(PoolEntryImpl *eh, MemType mtype);
 
-  void Free(PoolEntryImpl *entry);
+  void Free(PoolEntryImpl *entry, MemType mtype);
 
 };
 
@@ -115,16 +132,17 @@ class CUDAMemPool {
   using PoolEntry = CUDAMemPoolImpl::PoolEntry;
   static void Init(std::size_t nbytes, bool master);
   static CUDAMemPool* Get();
+  static size_t InferMemUsage();
+  static size_t TrainMemUsage();
   static void ReleaseMempool();
 
-  static std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes);
+  static std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes, MemType mtype);
 
   CUDAMemPool(std::size_t nbytes, bool master);
   ~CUDAMemPool();
-  std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes);
+  std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes, MemType mtype);
   std::shared_ptr<PoolEntry> Resize(std::shared_ptr<PoolEntry> entry, std::size_t nbytes);
   void CopyFromTo(std::shared_ptr<PoolEntry> src, std::shared_ptr<PoolEntry> dst);
-
 
  private:
   static std::unique_ptr<CUDAMemPool> cuda_mem_pool_;

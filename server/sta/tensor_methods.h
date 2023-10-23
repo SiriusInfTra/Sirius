@@ -19,12 +19,12 @@ uint64_t Null(at::IntArrayRef size, DLDataType dtype);
 
 STensor RawNull(at::IntArrayRef size, DLDataType dtype);
 
-uint64_t Empty(at::IntArrayRef size, DLDataType dtype);
+uint64_t Empty(at::IntArrayRef size, DLDataType dtype, MemType mtype);
 
-STensor RawEmpty(at::IntArrayRef size, DLDataType dtype);
+STensor RawEmpty(at::IntArrayRef size, DLDataType dtype, MemType mtype);
 
 uint64_t EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride, 
-                      DLDataType dtype);
+                      DLDataType dtype, MemType mtype);
 
 uint64_t ViewDtype(uint64_t handle, DLDataType dtype);
 

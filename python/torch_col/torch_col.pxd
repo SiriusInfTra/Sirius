@@ -2,6 +2,15 @@
 
 from libcpp.string cimport string
 
+cdef extern from "<sta/cuda_allocator.h>" namespace "colserve::sta":
+    cdef cppclass CUDAMemPool:
+        @staticmethod
+        size_t InferMemUsage()
+
+        @staticmethod
+        size_t TrainMemUsage()
+
+
 cdef extern from "<csrc/control_stub.h>" namespace "colserve":
     cdef cppclass MemoryQueue[T]:
         MemoryQueue(string, bint) except + 

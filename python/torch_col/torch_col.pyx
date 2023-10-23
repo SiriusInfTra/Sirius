@@ -1,5 +1,16 @@
 from .torch_col cimport *
 
+
+def cuda_memory_pool_infer_usage():
+    return CUDAMemPool.InferMemUsage()
+
+def cuda_memory_pool_train_usage():
+    return CUDAMemPool.TrainMemUsage()
+
+cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
+    cpdef void ReleaseMempool()
+
+
 cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
     cpdef enum class Event(int):
         # status 
@@ -15,10 +26,6 @@ cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
         kResumeTrain,
         kColocateAdjustL1,
         kColocateAdjustL2,
-
-
-cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
-    cpdef void ReleaseMempool()
 
 cdef class PyCtrlMsgEntry:
     cdef CtrlMsgEntry _entry
