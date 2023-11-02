@@ -2,6 +2,7 @@ import pathlib, shutil
 import argparse
 import subprocess
 import datetime
+import sys
 import time
 from typing import Optional, List, Dict
 import tempfile
@@ -70,11 +71,11 @@ class System:
 
         # first launch mps
         if self.mps:
-            self.cmd_trace.append("sudo /opt/mps-control/launch-mps-daemon.sh")
+            self.cmd_trace.append("sudo /opt/mps-control/launch-mps-daemon-private.sh")
             self.mps_server = self.server = subprocess.Popen(
-                ['sudo', '/opt/mps-control/launch-mps-daemon.sh',
+                ['sudo', '/opt/mps-control/launch-mps-daemon-private.sh',
                  '--device', os.environ['CUDA_VISIBLE_DEVICES'], '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']],
-                stderr=subprocess.PIPE, stdout=subprocess.PIPE, env=os.environ.copy())
+                stderr=sys.stderr, stdout=sys.stdout, env=os.environ.copy())
         else:
             cmd += ["--mps", "0"]
             self.mps_server = None
@@ -82,10 +83,11 @@ class System:
         self.cmd_trace.append(" ".join(cmd))
         print(" ".join(cmd))
 
-        time.sleep(1)
+        time.sleep(10)
         with open(server_log, "w") as log_file:
-            self.server = subprocess.Popen(cmd, 
-                stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
+            env = os.environ.copy()
+            env["CUDA_VISIBLE_DEVICES"] = "0"
+            self.server = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=env)
 
         while True:
             with open(server_log, "r") as log_file:
@@ -208,7 +210,9 @@ class Workload:
 
         client_log = pathlib.Path(server.log_dir) / self.client_log
         with open(client_log, "w") as log_file:
-            completed = subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
+            env = os.environ.copy()
+            env["CUDA_VISIBLE_DEVICES"] = "0"
+            completed = subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=env)
             if completed.returncode != 0:
                 raise Exception(f"Workload exited with code {completed.returncode}")
 
