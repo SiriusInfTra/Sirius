@@ -2,14 +2,33 @@ import pathlib, shutil
 import argparse
 import subprocess
 import datetime
+import sys
 import time
 from typing import Optional, List, Dict
 import tempfile
 import itertools
 import os
+import pynvml
+
+
+GPU_UUIDs = []
+pynvml.nvmlInit()
+for i in range(pynvml.nvmlDeviceGetCount()):
+    handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+    GPU_UUIDs.append(pynvml.nvmlDeviceGetUUID(handle).decode())
+print(GPU_UUIDs)
+
+if 'CUDA_VISIBLE_DEVICES' in os.environ:
+    CUDA_VISIBLE_DEVICES = os.environ['CUDA_VISIBLE_DEVICES']
+    CUDA_VISIBLE_DEVICES_UUID = []
+    for id in CUDA_VISIBLE_DEVICES.split(","):
+        try:
+            CUDA_VISIBLE_DEVICES_UUID.append(GPU_UUIDs[int(id.strip())])
+        except:
+            CUDA_VISIBLE_DEVICES_UUID.append(id.strip())
+    os.environ['CUDA_VISIBLE_DEVICES'] = ",".join(CUDA_VISIBLE_DEVICES_UUID)
 
 os.environ['GLOG_logtostderr'] = "1"
-
 
 class System:
     class ServerMode:
@@ -70,9 +89,12 @@ class System:
 
         # first launch mps
         if self.mps:
-            self.cmd_trace.append("sudo /opt/mps-control/launch-mps-daemon.sh")
+            self.cmd_trace.append(" ".join([
+                "sudo", "/opt/mps-control/launch-mps-daemon-private.sh"
+                "--device", os.environ['CUDA_VISIBLE_DEVICES'], "--mps-pipe", os.environ['CUDA_MPS_PIPE_DIRECTORY']
+            ]))
             self.mps_server = self.server = subprocess.Popen(
-                ['sudo', '/opt/mps-control/launch-mps-daemon.sh',
+                ['sudo', '/opt/mps-control/launch-mps-daemon-private.sh',
                  '--device', os.environ['CUDA_VISIBLE_DEVICES'], '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']],
                 stderr=subprocess.PIPE, stdout=subprocess.PIPE, env=os.environ.copy())
         else:
@@ -103,13 +125,17 @@ class System:
             self.server = None
         self.infer_model_config_path = None
         if self.mps_server is not None:
-            # quit_mps = subprocess.run(['sudo', '/opt/mps-control/quit-mps-daemon-private.sh', '--device', ],
-            #                           capture_output=True, env=os.environ.copy())
-            self.mps_server.send_signal(subprocess.signal.SIGINT)
+            quit_mps = subprocess.run([
+                'sudo', '/opt/mps-control/quit-mps-daemon-private.sh', 
+                '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']], 
+                capture_output=True, env=os.environ.copy())
             self.mps_server.wait()
             self.mps_server = None
-        # self.cmd_trace.append("sudo /opt/mps-control/quit-mps-daemon.sh")
-        with open(f'{self.log_dir}/cmd_trace', 'w') as f:
+        self.cmd_trace.append(" ".join([
+            'sudo', '/opt/mps-control/quit-mps-daemon-private.sh',
+            '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']
+        ]))
+        with open(f'{self.log_dir}/cmd-trace', 'w') as f:
             f.write("\n\n".join(self.cmd_trace))
         self.log_dir = None
 

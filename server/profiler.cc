@@ -103,19 +103,27 @@ Profiler::Profiler(const std::string &profile_log_path)
   NVML_CALL(nvmlDeviceGetCount_v2(&dev_cnt));
   CHECK_GT(dev_cnt, 0);
 
-  uint32_t dev_id = 0;
+  // uint32_t dev_id = 0;
+  std::string gpu_uuid;
   nvmlDevice_t device;
   auto visiable_device = std::getenv("CUDA_VISIBLE_DEVICES");
   if (visiable_device != nullptr) {
     auto s = std::string(visiable_device);
-    std::regex r{"[0-9]+"};
+    std::regex r{"GPU-[^ ,]+"};
     std::smatch m;
     if (std::regex_search(s, m, r)) {
-      dev_id = std::stoi(m.str());
+      // dev_id = std::stoi(m.str());
+      gpu_uuid = m.str();
+    } else {
+      LOG(FATAL) << "please use UUID in CUDA_VISIBLE_DEVICES, get UUID by nvidia-smi -L";
     }
   }
 
-  NVML_CALL(nvmlDeviceGetHandleByIndex(dev_id, &device));
+  if (!gpu_uuid.empty()) {
+    NVML_CALL(nvmlDeviceGetHandleByUUID(gpu_uuid.c_str(), &device));
+  } else {
+    NVML_CALL(nvmlDeviceGetHandleByIndex(0, &device));
+  }
 
   // CHECK MPS
   if (colserve::Config::check_mps) {
