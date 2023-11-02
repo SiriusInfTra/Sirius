@@ -52,8 +52,14 @@ class Profiler {
     InferExit,
   };
   enum class PerfItem {
-    InferQueue,
-    InferProcess,
+    // job level
+    InferJobQueue,
+    InferJobProcess,
+
+    // batch level
+    InferSetInput,
+    InferExec,
+    InferGetOutput,
 
     TrainAdjust,
     InferAllocStorage,

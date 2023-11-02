@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <filesystem>
 #include <mutex>
+#include <optional>
 
 
 // #include <dlpack/dlpack.h>
@@ -42,8 +43,11 @@ class ModelInferStore {
 class Model {
  public:
   Model() : name_("dummy") {};
-  Model(const std::string &name, const std::filesystem::path &model_path, DLDevice device, 
-        size_t batch_size, size_t num_worker = 1);
+  // Model(const std::string &name, const std::filesystem::path &model_path, DLDevice device, 
+  //       size_t batch_size, size_t num_worker, size_t max_num_worker);
+  Model(const std::string &name, const std::filesystem::path &model_path,
+        std::optional<const std::map<std::string, tvm::TVMArray>> params,
+        DLDevice device, size_t batch_size, size_t num_worker, size_t max_num_worker);
   bool AddJob(network::InferHandler::InferData* data);
   size_t NumJobs() { return job_queue_.NumJobs(); }
 

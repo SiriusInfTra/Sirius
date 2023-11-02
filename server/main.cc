@@ -42,6 +42,10 @@ void init_cli_options() {
       "gRPC server port, default is 8080");
   app.add_option("--max-live-minute", max_live_minute,
       "max server live minute, default is " + std::to_string(max_live_minute) + " minutes");
+  app.add_option("--infer-model-config", colserve::Config::infer_model_config_path, 
+      "infer model config path, default is config in models store");
+  app.add_option("--profile-log", colserve::Config::profile_log_path, 
+      "profile log path, default is server-profile");
 }
 
 void init_config() {
@@ -92,7 +96,7 @@ int main(int argc, char *argv[]) {
       true);
   }
   colserve::Controller::Init();
-  colserve::Profiler::Init("server-profile");
+  colserve::Profiler::Init(colserve::Config::profile_log_path);
   colserve::ModelInferStore::Init("models");
   colserve::ModelTrainStore::Init("train");
   colserve::Profiler::Start();

@@ -51,7 +51,15 @@ void ModelInferStore::Init(const std::filesystem::path &infer_store_path) {
 
   // model_name -> [key -> value]
   std::map<std::string, std::map<std::string, std::string>> models;
-  std::ifstream config_file(infer_store_path / "config");
+  
+  std::filesystem::path config_file_path;
+  if (Config::infer_model_config_path.at(0) == '/') {
+    config_file_path = Config::infer_model_config_path;
+  } else {
+    config_file_path = infer_store_path / Config::infer_model_config_path;
+  }
+
+  std::ifstream config_file(config_file_path);
   if (config_file.good()) {
     std::string cur_model;
     for (std::string line; std::getline(config_file, line);) {
@@ -76,6 +84,9 @@ void ModelInferStore::Init(const std::filesystem::path &infer_store_path) {
       if (!model.second.count("num-worker")) {
         model.second["num-worker"] = "1";
       }
+      if (!model.second.count("max-worker")) {
+        model.second["max-worker"] = "1";
+      }
       for (auto &kv : model.second) {
         ss << kv.first << "=" << kv.second << " ";
       }
@@ -85,13 +96,15 @@ void ModelInferStore::Init(const std::filesystem::path &infer_store_path) {
 
   // mod.so, mod.json, mod.params should be in the model directory
   for (auto &model : models) {
+    auto model_path = infer_store_path / model.second["path"];
+    CHECK(std::filesystem::exists(model_path)) << "ModelInferStore: " << model_path << " not exist";
+    CHECK(std::filesystem::is_directory(model_path)) << model_path << " is not a directory";
+    auto model_params = tvm::GraphExecutorFactory::LoadParamsAsTVMArray(
+        (model_path / "mod.params").c_str());
+    
     for (auto model_name : ParseModelName(model.first)) {
-      auto model_path = infer_store_path / model.second["path"];
       auto model_device = model.second["device"];
       size_t batch_size = std::stoi(model.second["batch-size"]);
-      CHECK(std::filesystem::exists(model_path)) << "ModelInferStore: " << model_path << " not exist";
-      CHECK(std::filesystem::is_directory(model_path)) << model_path << " is not a directory";
-
       DLDevice device;
       if (model_device == "cuda") {
         device = DLDevice{kDLCUDA, 0};
@@ -99,7 +112,10 @@ void ModelInferStore::Init(const std::filesystem::path &infer_store_path) {
         LOG(FATAL) << model_name << " unsupport device type " << model_device;
       }
       model_infer_store_->models_[model_name] = 
-          std::make_unique<Model>(model_name, model_path, device, batch_size, std::stoi(model.second["num-worker"]));
+          std::make_unique<Model>(model_name, model_path, model_params,
+                                  device, batch_size,
+                                  std::stoi(model.second["num-worker"]),
+                                  std::stoi(model.second["max-worker"]));
     }
     LOG(INFO) << "ModelInferStore: "<< "Add " << model.first << ":" << model.second["device"]
               << ", batch-size=" << model.second["batch-size"];
@@ -125,9 +141,10 @@ size_t ModelInferStore::NumJobs() {
   return num_jobs;
 }
 
-Model::Model(const std::string &name, const std::filesystem::path &model_path, DLDevice device, 
-             size_t batch_size, size_t num_worker)
-    : name_(name), device_(device), batch_size_(batch_size) {
+Model::Model(const std::string &name, const std::filesystem::path &model_path,
+             std::optional<const std::map<std::string, tvm::TVMArray>> params,
+             DLDevice device, size_t batch_size, size_t num_worker, size_t max_num_worker)
+    : name_(name), device_(device), batch_size_(batch_size), max_num_worker_(max_num_worker) {
   // DLOG(INFO) << "Model " << name << " start initializing from " << model_path;
   CHECK(std::filesystem::exists(model_path / "mod.so"));
   CHECK(std::filesystem::exists(model_path / "mod.json"));
@@ -137,13 +154,23 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path, D
   auto rmod = 
       ::tvm::runtime::Module::LoadFromFile((model_path / "mod.so").c_str(), "so");
 
-  graph_executor_factory_ = std::make_unique<tvm::GraphExecutorFactory>(
-    name,
-    (model_path / "mod.json").c_str(),
-    rmod,
-    (model_path / "mod.params").c_str(),
-    std::vector{device}
-  );
+  if (!params.has_value()) {
+    graph_executor_factory_ = std::make_unique<tvm::GraphExecutorFactory>(
+      name,
+      (model_path / "mod.json").c_str(),
+      rmod,
+      (model_path / "mod.params").c_str(),
+      std::vector{device}
+    );
+  } else {
+    graph_executor_factory_ = std::make_unique<tvm::GraphExecutorFactory>(
+      name,
+      (model_path / "mod.json").c_str(),
+      rmod,
+      params.value(),
+      std::vector{device}
+    );
+  }
 
   InitMetaInfo();
 
@@ -155,7 +182,7 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path, D
   // config infer scaling
   scale_up_queue_time_ = 200;
   scale_down_idle_time_ = 3000;
-  max_num_worker_ = 5;
+  // max_num_worker_ = 5;
   infer_workers_.resize(max_num_worker_);
   worker_running_.resize(max_num_worker_);
   for (size_t i = 0; i < max_num_worker_; i++) {
@@ -336,6 +363,9 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier, pid_t waited_tr
     ss << " total_infer_ms=" << std::chrono::duration<double, std::milli>(infer_end - infer_begin).count();
     LOG(INFO) << ss.str();
 
+    Profiler::Get()->RecordPerf(Profiler::PerfItem::InferSetInput, set_input_ms);
+    Profiler::Get()->RecordPerf(Profiler::PerfItem::InferExec, infer_ms);
+    Profiler::Get()->RecordPerf(Profiler::PerfItem::InferGetOutput, get_output_ms);
     for (auto& job : jobs) {
       job->RecordFinished();
       job->RecordProfile();
@@ -401,6 +431,7 @@ bool Model::SetInput(tvm::GraphExecutor &graph_executor,
     // input_arr.CopyFrom(input_cpu);
     ::tvm::runtime::NDArray::CopyFromTo(
         input_host_buf, const_cast<DLTensor*>(input_dev), graph_executor.GetExecStream());
+    ::tvm::runtime::DeviceAPI::Get(device_)->StreamSync(device_, graph_executor.GetExecStream());
   } else {
     LOG(FATAL) << "unsupport device type " << device_.device_type;
   }

@@ -52,8 +52,13 @@ std::ostream& operator<<(std::ostream &os, Profiler::EventItem item) {
 
 std::ostream& operator<<(std::ostream &os, Profiler::PerfItem item) {
   switch (item) {
-    LOG_ITEM(Profiler::PerfItem, InferQueue)
-    LOG_ITEM(Profiler::PerfItem, InferProcess)
+    LOG_ITEM(Profiler::PerfItem, InferJobQueue)
+    LOG_ITEM(Profiler::PerfItem, InferJobProcess)
+
+    LOG_ITEM(Profiler::PerfItem, InferSetInput)
+    LOG_ITEM(Profiler::PerfItem, InferExec)
+    LOG_ITEM(Profiler::PerfItem, InferGetOutput)
+
     LOG_ITEM(Profiler::PerfItem, TrainAdjust)
     LOG_ITEM(Profiler::PerfItem, InferAllocStorage)
     LOG_ITEM(Profiler::PerfItem, InferLoadParam)
@@ -218,7 +223,9 @@ void Profiler::WriteLog() {
         << " p95 " << sorted[int(0.95 * sorted.size())]
         << " p90 " << sorted[int(0.90 * sorted.size())]
         << " p80 " << sorted[int(0.80 * sorted.size())]
-        << " p70 " << sorted[int(0.50 * sorted.size())]
+        << " p70 " << sorted[int(0.70 * sorted.size())]
+        << " p60 " << sorted[int(0.60 * sorted.size())]
+        << " p50 " << sorted[int(0.50 * sorted.size())]
         << std::endl;
   }
   ofs << std::endl;

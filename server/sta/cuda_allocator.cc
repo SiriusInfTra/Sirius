@@ -75,9 +75,25 @@ void CUDAMemPool::CopyFromTo(std::shared_ptr<PoolEntry> src, std::shared_ptr<Poo
 
 
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::RawAlloc(size_t nbytes, MemType mtype) {
+  static bool initilized = false;
+  static bool unified_memory = false;
+  if (!initilized) {
+    const char* env = getenv("STA_RAW_ALLOC_UNIFIED_MEMORY");
+    if (env && atoi(env) != 0) {
+      unified_memory = true;
+      LOG(INFO) << "sta raw alloc using unified memory";
+
+    }
+    initilized = true;
+  }
+
   void *ptr;
   CUDA_CALL(cudaSetDevice(0));
-  CUDA_CALL(cudaMalloc(&ptr, nbytes));
+  if (!unified_memory) {
+    CUDA_CALL(cudaMalloc(&ptr, nbytes));
+  } else {
+    CUDA_CALL(cudaMallocManaged(&ptr, nbytes));
+  }
   return std::shared_ptr<PoolEntry>(
       new PoolEntry{ptr, nbytes, mtype}, [](PoolEntry *entry) {
         CUDA_CALL(cudaSetDevice(0));

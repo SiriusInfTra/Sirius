@@ -49,6 +49,42 @@ GraphExecutorFactory::GraphExecutorFactory(
   SetupStorage();
 }
 
+GraphExecutorFactory::GraphExecutorFactory(
+    const std::string &model_name,
+    const std::string &graph_json,
+    const ::tvm::runtime::Module mod,
+    const std::map<std::string, TVMArray> &params,
+    const std::vector<DLDevice> &devs) : model_name_(model_name) {
+  std::ifstream graph_json_ifs{graph_json};
+  std::string graph_json_str{(std::istreambuf_iterator<char>(graph_json_ifs)),
+                             std::istreambuf_iterator<char>()};
+  std::istringstream is(graph_json_str);
+  dmlc::JSONReader reader(&is);
+  this->Load(&reader);
+  for (size_t i = 0; i < nodes_.size(); i++) {
+    node_map_[nodes_[i].name] = i;
+  }
+  module_ = mod;
+  devices_ = devs;
+  for (size_t i = 0; i < input_nodes_.size(); i++) {
+    auto nid = input_nodes_[i];
+    std::string &name = nodes_[nid].name;
+    input_map_[name] = i;
+  }
+  for (size_t i = 0; i < outputs_.size(); i++) {
+    auto nid = outputs_[i].node_id;
+    std::string &name = nodes_[nid].name;
+    // std::stringstream ss;
+    // ss << name << ":" << i;
+    output_map_[name] = i;
+  }
+
+  // load_param_stream_ = ::tvm::runtime::DeviceAPI::Get(devices_[0])
+  //     ->CreateStream(devices_[0]);
+  LoadParams(params);
+  SetupStorage();
+}
+
 void GraphExecutorFactory::SetupStorage() {
   std::vector<DLDataType> vtype;
   for (const std::string &s_type : attrs_.dltype) {
@@ -185,6 +221,62 @@ void GraphExecutorFactory::LoadParams(const std::string &params_file) {
   VLOG(1) << params_file << " " << 1.0 * params_size / 1024 / 1024 << " Mb";
 }
 
+void GraphExecutorFactory::LoadParams(const std::map<std::string, TVMArray> &params) {
+  for (const auto &p : params) {
+    CHECK(input_map_.count(p.first)) << "cannot find " << p.first <<  " in model parameter";
+    auto it = node_map_.find(p.first);
+    params_[it->second] = p.second.CopyTo(::tvm::Device{kDLCUDAHost, 0});
+  }
+}
+
+std::map<std::string, TVMArray> GraphExecutorFactory::LoadParamsAsTVMArray(const std::string &params_file) {
+  struct stat file_stat;
+  int params_fd = open(params_file.c_str(), O_RDONLY);
+  fstat(params_fd, &file_stat);
+  auto params_ptr = static_cast<const char*>(
+      mmap(NULL, file_stat.st_size, PROT_READ, MAP_PRIVATE, params_fd, 0U));
+  std::string params_blob;
+  params_blob.reserve(file_stat.st_size);
+  params_blob.assign(params_ptr, params_ptr + file_stat.st_size);
+  munmap((void*)params_ptr, file_stat.st_size);
+  // std::ifstream ifs{params_file, std::ios::binary};
+  // std::string params_blob{(std::istreambuf_iterator<char>(ifs)),
+  //                          std::istreambuf_iterator<char>()};
+  dmlc::MemoryStringStream ms_strm(const_cast<std::string*>(&params_blob));
+  dmlc::Stream* strm = &ms_strm;
+  uint64_t header, reserved;
+  constexpr uint64_t kTVMNDArrayListMagic = 0xF7E58D4F05049CB7;
+  CHECK(strm->Read(&header)) << "Invalid parameters file format";
+  CHECK(header == kTVMNDArrayListMagic) << "Invalid parameters file format";
+  CHECK(strm->Read(&reserved)) << "Invalid parameters file format";
+
+  std::vector<std::string> names;
+  CHECK(strm->Read(&names)) << "Invalid parameters file format";
+  uint64_t sz;
+  strm->Read(&sz);
+  size_t size = static_cast<size_t>(sz);
+  CHECK(size == names.size()) << "Invalid parameters file format";
+  size_t params_size = 0;
+  std::map<std::string, TVMArray> params_ret;
+  for (size_t i = 0; i < size; ++i) {
+    // The data_entry is allocated on device, NDArray.load always load the array into CPU.
+    TVMArray temp;
+    temp.Load(strm);
+
+    params_ret[names[i]] = temp;
+    params_size += ::tvm::runtime::GetDataSize(*temp.operator->());
+
+    // CHECK(input_map_.count(names[i])) << "cannot find " << names[i] <<  " in model parameter"; 
+    // auto it = node_map_.find(names[i]);
+    // LOG(INFO) << "find param in input_map " << it->first << " " << it->second;
+
+    // params_[it->second] = temp.CopyTo(::tvm::Device{kDLCUDAHost, 0});
+    // params_size += ::tvm::runtime::GetDataSize(*params_[it->second].operator->());
+  }
+  VLOG(1) << params_file << " " << 1.0 * params_size / 1024 / 1024 << " Mb";
+  return params_ret;
+}
+
 std::unique_ptr<GraphExecutor> GraphExecutorFactory::CreateGraphExecutor() {
   return std::make_unique<GraphExecutor>(*this);
 }
@@ -212,7 +304,7 @@ std::tuple<GraphExecutorFactory::ShapeInfo, GraphExecutorFactory::DtypeInfo>
     dtype_info[nodes_[nid].name] = attrs_.dltype[nid];
   }
   return {shape_info, dtype_info};
-} 
+}
 
 // void GraphExecutorFactory::ResetParamStorage() {
 //   using namespace ::tvm::runtime;

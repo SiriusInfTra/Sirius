@@ -2,6 +2,7 @@
 #define COLSERVE_CONFIG_H
 
 #include <atomic>
+#include <iostream>
 
 namespace colserve {
 
@@ -29,6 +30,10 @@ class Config {
   static double cuda_memory_pool_gb;
 
   static bool infer_raw_blob_alloc;
+
+  static std::string profile_log_path;
+
+  static std::string infer_model_config_path;
 
   inline static bool IsSwitchMode() {
     return Config::serve_mode == ServeMode::kTaskSwitchL1

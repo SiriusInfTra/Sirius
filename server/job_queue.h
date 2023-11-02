@@ -25,9 +25,9 @@ class Job {
   inline void RecordDequeued() { de_queue_time_ = std::chrono::steady_clock::now(); }
   inline void RecordFinished() { finish_time_ = std::chrono::steady_clock::now(); }
   inline void RecordProfile() {
-    Profiler::Get()->RecordPerf(Profiler::PerfItem::InferQueue, 
+    Profiler::Get()->RecordPerf(Profiler::PerfItem::InferJobQueue, 
         std::chrono::duration<double, std::milli>(de_queue_time_ - en_queue_time_).count());
-    Profiler::Get()->RecordPerf(Profiler::PerfItem::InferProcess,
+    Profiler::Get()->RecordPerf(Profiler::PerfItem::InferJobProcess,
         std::chrono::duration<double, std::milli>(finish_time_ - de_queue_time_).count());
   }
   std::chrono::time_point<std::chrono::steady_clock> GetEnQueueTime() {

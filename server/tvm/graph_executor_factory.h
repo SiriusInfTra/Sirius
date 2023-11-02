@@ -223,12 +223,19 @@ class GraphExecutorFactory {
                        const ::tvm::runtime::Module mod,
                        const std::string &params_file,
                        const std::vector<DLDevice> &devs);
+  GraphExecutorFactory(const std::string &model_name,
+                       const std::string &graph_json,
+                       const ::tvm::runtime::Module mod,
+                       const std::map<std::string, TVMArray> &params,
+                       const std::vector<DLDevice> &devs);
   std::unique_ptr<GraphExecutor> CreateGraphExecutor();
 
   using ShapeInfo = std::map<std::string, std::vector<int64_t>>;
   using DtypeInfo = std::map<std::string, std::string>;
   std::tuple<ShapeInfo, DtypeInfo> GetInputInfo() const;
   std::tuple<ShapeInfo, DtypeInfo> GetOutputInfo() const;
+
+  static std::map<std::string, TVMArray> LoadParamsAsTVMArray(const std::string &params_file);
 
   // void ResetParamStorage();
   // void AllocParamStorage();
@@ -238,6 +245,7 @@ class GraphExecutorFactory {
  private:
   void SetupStorage();
   void LoadParams(const std::string &params_file);
+  void LoadParams(const std::map<std::string, TVMArray> &params);
   void Load(dmlc::JSONReader* reader) {
     reader->BeginObject();
     int bitmask = 0;
