@@ -44,6 +44,10 @@ class ColocateHook:
         if self.stub.cmd == torch_col.Event.kColocateAdjustL1:
             self.stub.adjust_l1_done()
 
+    def try_reply_adjust_l2(self):
+        if self.stub.cmd == torch_col.Event.kColocateAdjustL2:
+            self.stub.adjust_l2_done()
+
     def reply_adjust_l1(self):
         assert self.stub.cmd == torch_col.Event.kColocateAdjustL1
         self.stub.adjust_l1_done()
@@ -144,6 +148,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                         while micro_batch_size <= 0:
                             time.sleep(1e-3)
                             hook.try_reply_adjust_l1()
+                            hook.try_reply_adjust_l2()
                             micro_batch_size = hook.stub.target_batch_size
                         wait_bs_valid_end = time.time()
                         wait_bs_valid_sec += wait_bs_valid_end - wait_bs_valid_begin
