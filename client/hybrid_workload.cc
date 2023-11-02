@@ -19,7 +19,6 @@ struct App : public colserve::workload::AppBase {
 
     auto benchmark_group = app.add_option_group("benchmark");
     benchmark_group->add_flag("--benchmark", benchmark.enable, "enable benchmark");
-    benchmark_group->add_option("--seed", benchmark.seed, "random seed");
     benchmark_group->add_option("--random-dynamic-poisson", 
                                 benchmark.random_dynamic_possion, "random dynamic poisson");
     // app.add_option("--benchmark-poisson", , "micro benchmark");
@@ -33,7 +32,6 @@ struct App : public colserve::workload::AppBase {
   
   struct {
     bool enable{false};
-    uint64_t seed{static_cast<uint64_t>(-1)};
     double random_dynamic_possion;
   } benchmark;
 };
@@ -73,20 +71,22 @@ int main(int argc, char** argv) {
     }
   }
 
+
+  if (app.seed == static_cast<uint64_t>(-1)) {
+    std::random_device rd;
+    app.seed = rd();
+  }
+  LOG(INFO) << "Workload random seed " << app.seed;
+
+
   if (app.enable_infer) {
     if (app.benchmark.enable) {
       std::vector<std::string> models;
       for (auto &m : infer_models) { 
         models.push_back(m.first); 
       }
-      std::random_device rd;
       std::mt19937 gen;
-      if (app.benchmark.seed == static_cast<uint64_t>(-1)) {
-        app.benchmark.seed = rd();
-      } else {
-      }
-      LOG(INFO) << "Benchmark random seed " << app.benchmark.seed; 
-      gen.seed(app.benchmark.seed);
+      gen.seed(app.seed);
       std::uniform_real_distribution<> lambda_dist(0, app.benchmark.random_dynamic_possion);
       std::uniform_int_distribution<> req_model_num_dist(0, infer_models.size());
       std::vector<double> total_lambda{0};

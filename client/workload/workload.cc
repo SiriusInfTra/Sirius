@@ -38,8 +38,7 @@ void InferWorker::RequestInferPoisson(Workload &workload, double request_per_sec
   // if server cannot serve requests required by possion dist, 
   // it will fallback to normal busy requesting
   double req_per_10ms = 1.0 * request_per_sec / 100;
-  std::random_device rd;
-  std::mt19937 gen(rd());
+  std::mt19937 gen(AppBase::seed);
   std::poisson_distribution<> dist(req_per_10ms);
 
   workload.ready_future_.wait();
@@ -75,9 +74,7 @@ void InferWorker::RequestInferDynamicPoisson(
   workload.ready_future_.wait();
   LOG(INFO) << log_prefix.str() << "RequestInfer start";
 
-  std::random_device rd;
-  std::mt19937 gen(rd());
-
+  std::mt19937 gen(AppBase::seed);
 
   auto begin = std::chrono::steady_clock::now();\
   size_t idx = 0;
@@ -492,7 +489,7 @@ void Workload::InferDynamicPoisson(
     const std::vector<double> &lambdas,
     // std::function<void(std::vector<InferRequest>&)> set_request_fn,
     uint32_t show_result) {
-  CHECK(change_time_points.size() + 1 == lambdas.size()) << model;
+  CHECK_EQ(change_time_points.size() + 1, lambdas.size()) << model;
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
     model, concurrency, set_request_fn, *this);
@@ -510,7 +507,7 @@ void Workload::InferDynamic(const std::string &model,
                             const std::vector<size_t> &concurrencys,
                             // std::function<void(std::vector<InferRequest>&)> set_request_fn,
                             uint32_t show_result) {
-  CHECK(change_time_points.size() + 1 == concurrencys.size()) << model;
+  CHECK_EQ(change_time_points.size() + 1, concurrencys.size()) << model;
   auto set_request_fn = GetSetRequestFn(model);
   auto max_concurrency = *std::max_element(concurrencys.begin(), concurrencys.end());
   auto worker = std::make_unique<InferWorker>(

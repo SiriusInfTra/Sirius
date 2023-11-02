@@ -25,6 +25,8 @@ class AppBase {
   std::string log;
   int verbose{0};
   uint32_t show_result{0};
+
+  static uint64_t seed;
 };
 
 }
