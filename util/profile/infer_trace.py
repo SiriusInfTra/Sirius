@@ -7,7 +7,7 @@ import argparse
 
 app = argparse.ArgumentParser("infer trace")
 app.add_argument('-l', type=str, required=True)
-app.add_argument('-o', type=str, required=True)
+app.add_argument('-o', type=str, required=False, default=None)
 app.add_argument('-g', action='store_true')
 args = app.parse_args()
 
@@ -17,8 +17,9 @@ outdir = args.o
 group = args.g
 infers = []
 
-if not pathlib.Path(outdir).exists():
-    pathlib.Path(outdir).mkdir()
+if outdir is not None:
+    if not pathlib.Path(outdir).exists():
+        pathlib.Path(outdir).mkdir()
 
 with open(log, "r") as F:
     cur_model = None
@@ -42,7 +43,6 @@ with open(log, "r") as F:
 
 infers = pd.DataFrame(infers, columns=["model", "request_time", "response_time", "latency"])
 
-
 for model in set(infers["model"]):
     model_infers = infers[infers["model"] == model]
     fig, axs = plt.subplots(1, 3, figsize=(15, 5))
@@ -65,9 +65,16 @@ for model in set(infers["model"]):
     axs[2].hlines(sorted_latecy[int(len(sorted_latecy) * 0.99)], 0, 1, colors="r", linestyles="dashed")
     axs[2].set_title(f"{model} latency cdf")
 
-    plt.savefig(f"{outdir}/{model}.svg")
-    print(f"save {model}.svg")
+    if outdir is not None:
+        plt.savefig(f"{outdir}/{model}.svg")
+        print(f"save {model}.svg")
     
+    print('''{}:
+    p99: {} | p95: {} | p90: {}
+'''.format(model,
+           sorted_latecy[int(len(sorted_latecy) * 0.99)],
+           sorted_latecy[int(len(sorted_latecy) * 0.95)],
+           sorted_latecy[int(len(sorted_latecy) * 0.90)]))
 
         
         
