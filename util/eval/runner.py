@@ -15,7 +15,7 @@ GPU_UUIDs = []
 pynvml.nvmlInit()
 for i in range(pynvml.nvmlDeviceGetCount()):
     handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-    GPU_UUIDs.append(pynvml.nvmlDeviceGetUUID(handle).decode())
+    GPU_UUIDs.append(pynvml.nvmlDeviceGetUUID(handle))
 print(GPU_UUIDs)
 
 if 'CUDA_VISIBLE_DEVICES' in os.environ:
@@ -30,6 +30,7 @@ if 'CUDA_VISIBLE_DEVICES' in os.environ:
 
 os.environ['GLOG_logtostderr'] = "1"
 
+# enum class ServeMode
 class System:
     class ServerMode:
         Normal = "normal"
@@ -107,7 +108,7 @@ class System:
         time.sleep(10)
         with open(server_log, "w") as log_file:
             env = os.environ.copy()
-            env["CUDA_VISIBLE_DEVICES"] = "0"
+            # env["CUDA_VISIBLE_DEVICES"] = "0"
             self.server = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=env)
 
         while True:
@@ -151,6 +152,9 @@ class Workload:
                  dynamic_poisson:Optional[Dict[str, List[int]]]=None,
                  benchmark:bool=False, 
                  benchmark_random_dynamic_poisson:Optional[int]=None, 
+                 trace_id:Optional[int]=None,
+                 peak_request:Optional[int]=None, scale_factor:Optional[float]=None,
+                 period:Optional[int]=None, period_duration:Optional[float]=None,
                  seed:Optional[int]=None,
                  train:bool=False, train_model:Optional[List[str]]=None, 
                  num_epoch:Optional[int]=None, batch_size:Optional[int]=None):
@@ -171,6 +175,12 @@ class Workload:
         self.batch_size = batch_size
         self.client_log = client_log
         self.workload_log = workload_log
+
+        self.trace_id = trace_id
+        self.peak_request = peak_request
+        self.scale_factor = scale_factor
+        self.period = period
+        self.period_duration = period_duration
 
     def launch(self, server:System):
         assert server.server is not None
@@ -204,6 +214,17 @@ class Workload:
                     cmd += [m] + [str(p) for p in ps]
                     if i + 1 != len(item_list):
                         cmd += ["%%"]
+            if self.trace_id is not None:
+                cmd += ["--trace_id", str(self.trace_id)]
+            if self.peak_request is not None:
+                cmd += ["--peak_request", str(self.peak_request)]
+            if self.scale_factor is not None:
+                cmd += ["--scale_factor", str(self.scale_factor)]
+            if self.period is not None:
+                cmd += ["--period", str(self.period)]
+            if self.period_duration is not None:
+                cmd += ["--period_duration", str(self.period_duration)]
+
         else:
             cmd += ["--no-infer"]
 
@@ -236,9 +257,7 @@ class Workload:
         client_log = pathlib.Path(server.log_dir) / self.client_log
         with open(client_log, "w") as log_file:
             env = os.environ.copy()
-            env["CUDA_VISIBLE_DEVICES"] = "0"
+            # env["CUDA_VISIBLE_DEVICES"] = "0"
             completed = subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=env)
             if completed.returncode != 0:
                 raise Exception(f"Workload exited with code {completed.returncode}")
-
-        
