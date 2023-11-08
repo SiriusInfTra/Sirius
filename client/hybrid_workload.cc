@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <numeric>
 #include <random>
 #include <regex>
 
@@ -16,6 +18,18 @@ struct App : public colserve::workload::AppBase {
         "dynamic concurrencys");
     app.add_option("--dynamic-poisson", dynamic_poissons,
         "dynamic poisson distribution of infer models");
+    
+    /* azure */
+    app.add_option("--period_duration", period_duration,
+        "duration of a period in seconds. default: 60.");
+    app.add_option("--peak_request", peak_num_reqeust,
+        "peek num of reqeust in a period. Either peak_request or scale_factor should set.");
+    app.add_option("--scale_factor", scale_factor,
+        "azure trace scale factor. Either peak_request or scale_factor should set.");
+    app.add_option("--trace_id", trace_id, 
+        "azure trace id: [0~14].");
+    app.add_option("--period", period,
+        "azure trace max period. [1~1440], default 3.");
 
     auto benchmark_group = app.add_option_group("benchmark");
     benchmark_group->add_flag("--benchmark", benchmark.enable, "enable benchmark");
@@ -29,6 +43,13 @@ struct App : public colserve::workload::AppBase {
   std::map<std::string, std::vector<double>> change_time_points;
   std::map<std::string, std::vector<size_t>> dynamic_concurrencys;
   std::map<std::string, std::vector<double>> dynamic_poissons;
+  
+  /* azure */
+  unsigned period_duration  = 0;
+  unsigned peak_num_reqeust = 0;
+  double   scale_factor     = 0.0;
+  unsigned trace_id         = 0;
+  unsigned period           = 0;
   
   struct {
     bool enable{false};
@@ -57,6 +78,29 @@ int main(int argc, char** argv) {
   App app;
   CLI11_PARSE(app.app, argc, argv);
 
+  std::vector<std::vector<unsigned int>> azure_data;
+  if (app.trace_id > 0) {
+    CHECK_LE(app.trace_id, 14);
+    azure_data = colserve::workload::load_azure(app.trace_id, app.period_duration);
+    if (app.peak_num_reqeust > 0 && app.scale_factor > 0) {
+      LOG(FATAL) << "Either peak_request OR scale_factor should be set, not both.";
+    } else if (app.peak_num_reqeust == 0 && app.scale_factor == 0.0) {
+      LOG(FATAL) << "Either peak_request OR scale_factor should be set, not neither.";
+    } else if (app.peak_num_reqeust > 0) {
+      std::vector<unsigned> sums(azure_data.front().size());
+      for(size_t k = 0; k < sums.size(); ++k) {
+        sums[k] = std::accumulate(azure_data.cbegin(), azure_data.cend(), 0U, [k](unsigned counter, auto &&vec) { return counter + vec[k]; });
+      }
+      unsigned max_req_real = *std::max_element(sums.cbegin(), sums.cend());
+      app.scale_factor = static_cast<double>(app.peak_num_reqeust) / static_cast<double>(max_req_real);
+      LOG(INFO) << "Calculate scale_factor based on peek_requst=" << app.peak_num_reqeust  << ", real_peek_request=" << max_req_real 
+        << ", scale_factor=" << app.scale_factor << ", scale_peek_request="  << app.scale_factor * max_req_real << ".";
+    }
+    LOG(INFO) << "Load azure workload, trace_id=" << app.trace_id << ", period=" << app.period << ", scale_factor=" << app.scale_factor;
+    app.duration = app.period_duration * app.period + 1;
+    LOG(INFO) << "Duration is overwritten. duration=" << app.duration << "."; 
+  }
+
   std::string target = "localhost:" + app.port;
   colserve::workload::Workload workload(
       grpc::CreateChannel(target, grpc::InsecureChannelCredentials()),
@@ -77,6 +121,7 @@ int main(int argc, char** argv) {
     app.seed = rd();
   }
   LOG(INFO) << "Workload random seed " << app.seed;
+
 
 
   if (app.enable_infer) {
@@ -134,6 +179,7 @@ int main(int argc, char** argv) {
       }
 
     } else {
+      
       for (auto &m : infer_models) {
         auto [model, type] = m;
         if (type.empty()) {
@@ -154,6 +200,10 @@ int main(int argc, char** argv) {
           CHECK(app.change_time_points.count(model));
           CHECK(app.dynamic_poissons.count(model));
           workload.InferDynamicPoisson(model, app.concurrency, app.change_time_points[model], app.dynamic_poissons[model], app.show_result);
+        } else if (type == "azure") {
+          static unsigned azure_model_num = std::count_if(infer_models.cbegin(), infer_models.cend(), 
+                [](auto &&m) { auto [model, type] = m; return type == "azure"; });
+          workload.InferAzure(model, azure_model_num, azure_data, app.scale_factor, app.period_duration, app.concurrency, app.show_result);
         } else {
           LOG(FATAL) << "unknown workload " << model << " type " << type ;
         }

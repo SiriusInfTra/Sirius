@@ -4,6 +4,7 @@
 #include <iostream>
 #include <fstream>
 #include <CLI/CLI.hpp>
+#include <limits>
 #include <glog/logging.h>
 
 namespace colserve {
@@ -29,8 +30,11 @@ class AppBase {
   static uint64_t seed;
 };
 
+std::vector<std::vector<unsigned>> load_azure(
+    unsigned trace_id, unsigned period = std::numeric_limits<unsigned>::max());
 }
 }
+
 
 
 #endif

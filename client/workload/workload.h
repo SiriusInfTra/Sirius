@@ -2,6 +2,7 @@
 #define COLSYS_WORKLOAD_H_
 
 #include <iostream>
+#include <unordered_map>
 #include <vector>
 #include <memory>
 #include <fstream>
@@ -55,6 +56,7 @@ class InferWorker {
   void RequestInferDynamic(Workload &workload, 
                            std::vector<double> change_time_points,
                            std::vector<size_t> concurrency);
+  void RequestInferAzure(Workload &workload, const std::vector<double> &req_nums, double period_duration);
   void FetchInferResult(Workload &workload, 
                         std::function<double_ms_t(size_t)> interval_fn, 
                         uint32_t show_result);
@@ -101,6 +103,11 @@ class TrainWorker {
 
   // std::vector<double> latency_;
   std::vector<Record> records_;
+};
+
+struct AzureTrace {
+  std::vector<double> req_nums;
+  double duration_period;
 };
 
 class Workload {
@@ -153,6 +160,10 @@ class Workload {
                            const std::vector<double> &change_time_points,
                            const std::vector<double> &lambdas,
                            uint32_t show_result = 0);
+  void InferAzure(const std::string &model, unsigned model_num, 
+                  const std::vector<std::vector<unsigned>> &trace_data,
+                  double scale_factor, double period_duration,
+                  size_t concurrency, uint32_t show_result = 0);
 
   void TrainResnet(size_t num_epoch, size_t batch_size);
 
@@ -196,6 +207,8 @@ class Workload {
   std::vector<std::unique_ptr<TrainWorker>> train_workers_;
 
   std::unique_ptr<ColServe::Stub> stub_;
+
+  std::unordered_map<std::string, AzureTrace> azure_model_index_;
 };
 
 }

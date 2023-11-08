@@ -1,5 +1,12 @@
+#include <algorithm>
+#include <chrono>
+#include <numeric>
 #include <random>
+#include <ratio>
+#include <thread>
+#include <utility>
 
+#include "glog/logging.h"
 #include "workload.h"
 
 
@@ -145,7 +152,50 @@ void InferWorker::RequestInferDynamic(Workload &workload,
     }
   }
   LOG(INFO) << log_prefix.str() << "RequestInfer stop";
+}
 
+void InferWorker::RequestInferAzure(Workload &workload, const std::vector<double> &req_nums, double period_duration) {
+  std::stringstream log_prefix;
+  log_prefix << "[InferWorker(" << std::hex << std::this_thread::get_id() << ") " << model_ << " azure] "; 
+  workload.ready_future_.wait();
+  LOG(INFO) << log_prefix.str() << "RequestInfer start, req_nums[0:3]={" << req_nums[0] << "," << req_nums[1] << "," << req_nums[2] << "},"
+    << " max_req_num=" << *std::max_element(req_nums.cbegin(), req_nums.cend());
+
+  std::mt19937 gen(AppBase::seed);
+  // std::poisson_distribution<> dist(req_per_10ms);
+
+  workload.ready_future_.wait();
+  LOG(INFO) << log_prefix.str() << "RequestInfer start";
+  auto start = std::chrono::steady_clock::now();
+  auto total_sleep = std::chrono::duration<double>::zero();
+  while(workload.running_) {
+    size_t minute_id = std::chrono::duration_cast<std::chrono::minutes>(std::chrono::steady_clock::now()- start).count();
+    if (minute_id >= req_nums.size()) {
+      LOG(WARNING) << "workload still running but minute_id >= period: " << minute_id << " vs " <<  req_nums.size() << ".";
+      break;
+    }
+    double req_per_s = req_nums[minute_id] / period_duration;
+    std::exponential_distribution<> dist(req_per_s);
+    double sleep_for = dist(gen);
+    total_sleep += std::chrono::seconds(1) * sleep_for;
+    LOG(INFO) << "sleep_for=" << sleep_for << ", total_sleep=" << total_sleep.count() << ".";
+    auto sleep_until = start + total_sleep;
+    std::this_thread::sleep_until(sleep_until);
+    size_t i = 0;
+    for (; i < concurrency_; i++) {
+      CHECK_NE(request_status_[i].status_, InferReqStatus::kDone);
+      if (request_status_[i].status_ == InferReqStatus::kReady) {
+        request_status_[i].status_ = InferReqStatus::kWait;
+        request_status_[i].request_time_ = std::chrono::steady_clock::now();
+        contexts_[i] = std::make_unique<grpc::ClientContext>();
+        rpcs_[i] = workload.stub_->AsyncInference(contexts_[i].get(), requests_[i], &cq_);
+        rpcs_[i]->Finish(&infer_results_[i], &rpc_status_[i], (void*)i);
+        break;
+      }
+    }
+    CHECK_NE(i, concurrency_);
+  }
+    LOG(INFO) << log_prefix.str() << "RequestInfer stop";
 }
 
 void InferWorker::FetchInferResult(Workload &workload, 
@@ -516,6 +566,28 @@ void Workload::InferDynamic(const std::string &model,
   threads_.push_back(std::make_unique<std::thread>(
       &InferWorker::RequestInferDynamic, worker.get(), std::ref(*this),
       change_time_points, concurrencys));
+  threads_.push_back(std::make_unique<std::thread>(
+      &InferWorker::FetchInferResult, worker.get(), std::ref(*this),
+      nullptr, show_result));
+  infer_workers_.push_back(std::move(worker));
+}
+
+void Workload::InferAzure(const std::string &model, unsigned model_num, const std::vector<std::vector<unsigned>> &trace_data, double scale_factor, double period_duration, size_t concurrency, uint32_t show_result) {
+  std::vector<double> req_nums(trace_data.front().size());
+  for(size_t minute_id = 0; minute_id < req_nums.size(); ++minute_id) {
+    unsigned counter = 0U;
+    for(size_t func_id = azure_model_index_.size(); func_id < trace_data.size(); func_id += model_num) {
+      counter += trace_data[func_id][minute_id];
+    }
+    req_nums[minute_id] = static_cast<double>(counter) * scale_factor;
+  }
+  azure_model_index_.emplace(std::make_pair(model, colserve::workload::AzureTrace{req_nums, period_duration}));
+  auto set_request_fn = GetSetRequestFn(model);
+  auto worker = std::make_unique<InferWorker>(
+    model, concurrency, set_request_fn, *this);
+  threads_.push_back(std::make_unique<std::thread>(
+      &InferWorker::RequestInferAzure, worker.get(), std::ref(*this),
+      req_nums, period_duration));
   threads_.push_back(std::make_unique<std::thread>(
       &InferWorker::FetchInferResult, worker.get(), std::ref(*this),
       nullptr, show_result));
