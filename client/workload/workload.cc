@@ -169,12 +169,12 @@ void InferWorker::RequestInferAzure(Workload &workload, const std::vector<double
   auto start = std::chrono::steady_clock::now();
   auto total_sleep = std::chrono::duration<double>::zero();
   while(workload.running_) {
-    size_t minute_id = std::chrono::duration_cast<std::chrono::minutes>(std::chrono::steady_clock::now()- start).count();
+    size_t minute_id = std::chrono::duration_cast<std::chrono::seconds>((std::chrono::steady_clock::now()- start) / period_duration).count();
     if (minute_id >= req_nums.size()) {
       LOG(WARNING) << "workload still running but minute_id >= period: " << minute_id << " vs " <<  req_nums.size() << ".";
       break;
     }
-    double req_per_s = req_nums[minute_id] / period_duration;
+    double req_per_s = req_nums[minute_id] / 60;
     std::exponential_distribution<> dist(req_per_s);
     double sleep_for = dist(gen);
     total_sleep += std::chrono::seconds(1) * sleep_for;

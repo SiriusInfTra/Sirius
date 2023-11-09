@@ -45,8 +45,8 @@ struct App : public colserve::workload::AppBase {
   std::map<std::string, std::vector<double>> dynamic_poissons;
   
   /* azure */
-  unsigned period_duration  = 0;
-  unsigned peak_num_reqeust = 0;
+  double   period_duration  = 0;
+  double   peak_num_reqeust = 0;
   double   scale_factor     = 0.0;
   unsigned trace_id         = 0;
   unsigned period           = 0;
@@ -81,15 +81,15 @@ int main(int argc, char** argv) {
   std::vector<std::vector<unsigned int>> azure_data;
   if (app.trace_id > 0) {
     CHECK_LE(app.trace_id, 14);
-    azure_data = colserve::workload::load_azure(app.trace_id, app.period_duration);
+    azure_data = colserve::workload::load_azure(app.trace_id, app.period);
     if (app.peak_num_reqeust > 0 && app.scale_factor > 0) {
       LOG(FATAL) << "Either peak_request OR scale_factor should be set, not both.";
     } else if (app.peak_num_reqeust == 0 && app.scale_factor == 0.0) {
       LOG(FATAL) << "Either peak_request OR scale_factor should be set, not neither.";
     } else if (app.peak_num_reqeust > 0) {
       std::vector<unsigned> sums(azure_data.front().size());
-      for(size_t k = 0; k < sums.size(); ++k) {
-        sums[k] = std::accumulate(azure_data.cbegin(), azure_data.cend(), 0U, [k](unsigned counter, auto &&vec) { return counter + vec[k]; });
+      for(size_t minute_id = 0; minute_id < sums.size(); ++minute_id) {
+        sums[minute_id] = std::accumulate(azure_data.cbegin(), azure_data.cend(), 0U, [minute_id](unsigned counter, auto &&vec) { return counter + vec[minute_id]; });
       }
       unsigned max_req_real = *std::max_element(sums.cbegin(), sums.cend());
       app.scale_factor = static_cast<double>(app.peak_num_reqeust) / static_cast<double>(max_req_real);
