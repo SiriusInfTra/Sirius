@@ -89,14 +89,14 @@ signal.signal(signal.SIGINT, lambda sig, frame: sigint_handle(system))
 # os.environ["STA_RAW_ALLOC_UNIFIED_MEMORY"] = "0"
 # os.environ["TORCH_UNIFIED_MEMORY"] = "0"
 
-SimpleDemo(system, 'normal', True, True)
-Microbenchmark(system, 'normal',True, True)
+# SimpleDemo(system, 'normal', True, True)
+# Microbenchmark(system, 'normal',True, True)
 
 
 system.mode = System.ServerMode.ColocateL2
 infer_model_comm_config['num-worker'] = '0'
-SimpleDemo(system, 'strawman', True, True)
-Microbenchmark(system, 'strawman', True, True)
+# SimpleDemo(system, 'strawman', True, True)
+# Microbenchmark(system, 'strawman', True, True)
 
 system.use_sta = True
 SimpleDemo(system, 'op1-sta', False, True)

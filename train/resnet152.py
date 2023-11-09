@@ -111,6 +111,8 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
         register_fbward_hook(model, hook.get_hook())
     print(f"train in {mode} mode")
 
+
+
     total_killed_batch = 0
     total_finished_batch = 0
     total_tried_batch = 0
@@ -118,6 +120,10 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
     model.train()
     micro_batch_size = batch_size
     for epoch in range(num_epoch):
+        print(f"!!!!!!!!!!!Now epoch={epoch}.")
+        print("iterator before")
+        train_loader1 = list(train_loader)
+        print("iterator end")
         begin = time.time()
         batch_cnt = 0
         killed_batch = 0
@@ -126,11 +132,14 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
         killed_time = 0
         finished_time = 0
         wait_bs_valid_sec = 0 # add infer may cause batch size <= 0
-        for i, (images, targets) in enumerate(train_loader):
+        print(f"before Batch")
+        for i, (images, targets) in enumerate(train_loader1):
+            print(f"Batch {i}")
             images:torch.Tensor
             targets:torch.Tensor
             images = images.to('cuda:0', non_blocking=True)
             targets = targets.to('cuda:0', non_blocking=True)
+            print(f"tranfer data")
             
             # micro_batch_size = random.randint(1, batch_size)
             # print(micro_batch_size)
@@ -147,8 +156,11 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                         wait_bs_valid_begin = time.time()
                         while micro_batch_size <= 0:
                             time.sleep(1e-3)
+                            print("try_reply_adjust_l1")
                             hook.try_reply_adjust_l1()
+                            print("try_reply_adjust_l2")
                             hook.try_reply_adjust_l2()
+                            print("target_batch_size")
                             micro_batch_size = hook.stub.target_batch_size
                         wait_bs_valid_end = time.time()
                         wait_bs_valid_sec += wait_bs_valid_end - wait_bs_valid_begin
@@ -176,9 +188,13 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                     micro_batch_size = hook.stub.target_batch_size
                     t0 = time.time()
                     optimizer.zero_grad()
+                    print("synchronize")
                     torch.cuda.synchronize()
+                    print("old_gpu_mem")
                     old_gpu_mem = gpu_mem()
+                    print("empty_cache")
                     torch.cuda.empty_cache()
+                    print("ColocateAdjustL1Exception")
                     t1 = time.time()
                     if isinstance(e, ColocateAdjustL1Exception):
                         hook.stub.adjust_l1_done()
@@ -282,6 +298,6 @@ if __name__ == '__main__':
     except SwitchL1Exception as e:
         print(e) # should not reach here
 
-    # print(torch.cuda.memory_summary())
+    print(torch.cuda.memory_summary())
 
     torch_col.ReleaseMempool()

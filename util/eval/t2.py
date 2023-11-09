@@ -10,7 +10,8 @@ def sigint_handle(system:System):
     sys.exit(0)
 
 
-global_seed = np.random.randint(2<<31)
+# global_seed = np.random.randint(2<<31)
+global_seed = 3876034152
 
 infer_model_comm_config = {
     'path' : 'resnet152-b4',
@@ -46,10 +47,10 @@ def SimpleAzure(system:System, subdir_tag:str, infer_only:bool, hybrid:bool, loc
 
 
 def BenchmarkAzure(system:System, subdir_tag:str, infer_only:bool, hybrid:bool, local_seed=None):
-    system.infer_model_config = {'resnet152[20]' : infer_model_comm_config}
-    workload = Workload(duration=90, concurrency=64, client_log="client-log", workload_log="workload-log",
-        infer=True, infer_model=["resnet152-azure[20]"], 
-        trace_id=1, peak_request=100, period=144, period_duration=0.1,
+    system.infer_model_config = {'resnet152[10]' : infer_model_comm_config}
+    workload = Workload(duration=90, concurrency=32, client_log="client-log", workload_log="workload-log",
+        infer=True, infer_model=["resnet152-azure[10]"], 
+        trace_id=1, peak_request=20, period=144, period_duration=0.1,
         train_model=["resnet"], num_epoch=15, batch_size=60,
         seed=local_seed if local_seed is not None else global_seed
     )
@@ -73,10 +74,10 @@ def BenchmarkAzure(system:System, subdir_tag:str, infer_only:bool, hybrid:bool, 
 system = System(
     mode=System.ServerMode.Normal, 
     use_sta=False, 
-    cuda_memory_pool_gb="13.5", 
+    cuda_memory_pool_gb="12.0", 
     profile_log="server-profile", 
     server_log="server-log",
-    mps=True
+    mps=False
 )
 signal.signal(signal.SIGINT, lambda sig, frame: sigint_handle(system))
 
@@ -88,18 +89,18 @@ signal.signal(signal.SIGINT, lambda sig, frame: sigint_handle(system))
 # os.environ["TORCH_UNIFIED_MEMORY"] = "0"
 
 # SimpleAzure(system, 'normal', True, True)
-BenchmarkAzure(system, 'normal',True, True)
+BenchmarkAzure(system, 'normal',True, False)
 
 
-system.mode = System.ServerMode.ColocateL2
+# system.mode = System.ServerMode.ColocateL2
 # infer_model_comm_config['num-worker'] = '0'
 # SimpleAzure(system, 'strawman', True, True)
-BenchmarkAzure(system, 'strawman', True, True)
+# BenchmarkAzure(system, 'strawman', True, True)
 
-system.use_sta = True
+# system.use_sta = True
 # SimpleAzure(system, 'op1-sta', False, True)
-BenchmarkAzure(system, 'op1-sta', False, True)
+# BenchmarkAzure(system, 'op1-sta', True, False)
 
 system.mode = System.ServerMode.ColocateL1
 # SimpleAzure(system, 'op2-kill-adjust', False, True)
-BenchmarkAzure(system, 'op2-kill-adjust', False, True)
+# BenchmarkAzure(system, 'op2-kill-adjust', False, True)

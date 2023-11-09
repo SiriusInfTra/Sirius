@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <iostream>
 
 #include "cuda_allocator.h"
@@ -181,6 +182,8 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPoolImpl::MakeSharedPtr(CUDAMemPo
   stat_->at(static_cast<size_t>(mtype)).fetch_add(eh->nbytes, std::memory_order_relaxed);
   auto *entry = new PoolEntry{
       reinterpret_cast<std::byte *>(mem_pool_base_ptr_) + eh->addr_offset, eh->nbytes, mtype};
+  CHECK_GE(static_cast<int64_t>(eh->addr_offset), 0);
+  CHECK_LT(static_cast<size_t>(eh->addr_offset) + eh->nbytes, this->config_.cuda_memory_size);
   auto free = [this, eh, mtype](PoolEntry *entry) {
     Free(eh, mtype);
     delete entry;

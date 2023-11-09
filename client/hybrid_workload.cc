@@ -97,7 +97,7 @@ int main(int argc, char** argv) {
         << ", scale_factor=" << app.scale_factor << ", scale_peek_request="  << app.scale_factor * max_req_real << ".";
     }
     LOG(INFO) << "Load azure workload, trace_id=" << app.trace_id << ", period=" << app.period << ", scale_factor=" << app.scale_factor;
-    app.duration = app.period_duration * app.period + 1;
+    app.duration = app.period_duration * app.period + 20;
     LOG(INFO) << "Duration is overwritten. duration=" << app.duration << "."; 
   }
 
