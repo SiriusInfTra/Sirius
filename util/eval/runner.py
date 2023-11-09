@@ -93,7 +93,7 @@ class System:
                 "sudo", "/opt/mps-control/launch-mps-daemon-private.sh"
                 "--device", os.environ['CUDA_VISIBLE_DEVICES'], "--mps-pipe", os.environ['CUDA_MPS_PIPE_DIRECTORY']
             ]))
-            self.mps_server = self.server = subprocess.Popen(
+            self.mps_server = subprocess.Popen(
                 ['sudo', '/opt/mps-control/launch-mps-daemon-private.sh',
                  '--device', os.environ['CUDA_VISIBLE_DEVICES'], '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']],
                 stderr=sys.stderr, stdout=sys.stdout, env=os.environ.copy())
