@@ -15,7 +15,10 @@ GPU_UUIDs = []
 pynvml.nvmlInit()
 for i in range(pynvml.nvmlDeviceGetCount()):
     handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-    GPU_UUIDs.append(pynvml.nvmlDeviceGetUUID(handle))
+    uuid_as_str = pynvml.nvmlDeviceGetUUID(handle)
+    if uuid_as_str is not str:
+        uuid_as_str = uuid_as_str.decode()
+    GPU_UUIDs.append(uuid_as_str)
 print(GPU_UUIDs)
 
 if 'CUDA_VISIBLE_DEVICES' in os.environ:
