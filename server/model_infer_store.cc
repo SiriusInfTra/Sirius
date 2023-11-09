@@ -366,6 +366,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier, pid_t waited_tr
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferSetInput, set_input_ms);
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferExec, infer_ms);
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferGetOutput, get_output_ms);
+    Profiler::Get()->RecordPerf(Profiler::PerfItem::InferRealBatchSize, jobs.size());
     for (auto& job : jobs) {
       job->RecordFinished();
       job->RecordProfile();
