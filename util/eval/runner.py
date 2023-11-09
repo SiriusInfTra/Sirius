@@ -96,7 +96,7 @@ class System:
             self.mps_server = subprocess.Popen(
                 ['sudo', '/opt/mps-control/launch-mps-daemon-private.sh',
                  '--device', os.environ['CUDA_VISIBLE_DEVICES'], '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']],
-                stderr=sys.stderr, stdout=sys.stdout, env=os.environ.copy())
+                stderr=subprocess.PIPE, stdout=subprocess.PIPE, env=os.environ.copy())
         else:
             cmd += ["--mps", "0"]
             self.mps_server = None
@@ -104,16 +104,14 @@ class System:
         self.cmd_trace.append(" ".join(cmd))
         print(" ".join(cmd))
 
-        time.sleep(10)
         with open(server_log, "w") as log_file:
-            env = os.environ.copy()
-            env["CUDA_VISIBLE_DEVICES"] = "0"
-            self.server = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=env)
+            self.server = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
 
         while True:
             with open(server_log, "r") as log_file:
                 if self.server.poll() is not None:
                     print(log_file.read())
+                    self.quit_mps()
                     raise RuntimeError("Server exited")
                 if "GRPCServer start" not in log_file.read():
                     time.sleep(0.5)
@@ -126,10 +124,7 @@ class System:
             self.server = None
         self.infer_model_config_path = None
         if self.mps_server is not None:
-            quit_mps = subprocess.run([
-                'sudo', '/opt/mps-control/quit-mps-daemon-private.sh', 
-                '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']], 
-                capture_output=True, env=os.environ.copy())
+            self.quit_mps()
             self.mps_server.wait()
             self.mps_server = None
         self.cmd_trace.append(" ".join([
@@ -140,6 +135,11 @@ class System:
             f.write("\n\n".join(self.cmd_trace))
         self.log_dir = None
 
+    def quit_mps(self):
+        quit_mps = subprocess.run([
+            'sudo', '/opt/mps-control/quit-mps-daemon-private.sh', 
+            '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']], 
+            capture_output=True, env=os.environ.copy())
 
 class Workload:
     def __init__(self, duration:int, concurrency:int, 
@@ -235,10 +235,10 @@ class Workload:
 
         client_log = pathlib.Path(server.log_dir) / self.client_log
         with open(client_log, "w") as log_file:
-            env = os.environ.copy()
-            env["CUDA_VISIBLE_DEVICES"] = "0"
-            completed = subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=env)
+            completed = subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
             if completed.returncode != 0:
                 raise Exception(f"Workload exited with code {completed.returncode}")
 
         
+print('CUDA_VISIBLE_DEVICES={}, CUDA_MPS_PIPE_DIRECTORY={}'.format(
+    os.environ['CUDA_VISIBLE_DEVICES'], os.environ['CUDA_MPS_PIPE_DIRECTORY']))
