@@ -41,7 +41,7 @@ class System:
         ColocateL2 = "colocate-l2"
 
     def __init__(self, mode:str, use_sta:bool, cuda_memory_pool_gb:str,
-                 profile_log:str, server_log:str, port:str= "8080",
+                 profile_log:str, server_log:str, port:str= "18080",
                  infer_model_config:Dict[str, Dict[str, str]]=None,
                  mps=True) -> None:
         self.mode = mode
