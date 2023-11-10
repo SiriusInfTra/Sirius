@@ -158,8 +158,9 @@ void InferWorker::RequestInferAzure(Workload &workload, const std::vector<double
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << std::this_thread::get_id() << ") " << model_ << " azure] "; 
   workload.ready_future_.wait();
-  LOG(INFO) << log_prefix.str() << "RequestInfer start, req_nums[0:3]={" << req_nums[0] << "," << req_nums[1] << "," << req_nums[2] << "},"
-    << " max_req_num=" << *std::max_element(req_nums.cbegin(), req_nums.cend());
+  LOG(INFO) << log_prefix.str() << "RequestInfer start, req_nums[0:3]={" 
+            << req_nums[0] << "," << req_nums[1] << "," << req_nums[2] << "},"
+            << " max_req_num=" << *std::max_element(req_nums.cbegin(), req_nums.cend());
 
   std::mt19937 gen(AppBase::seed);
   // std::poisson_distribution<> dist(req_per_10ms);
@@ -199,7 +200,7 @@ void InferWorker::RequestInferAzure(Workload &workload, const std::vector<double
     }
     CHECK_NE(i, concurrency_);
   }
-    LOG(INFO) << log_prefix.str() << "RequestInfer stop";
+  LOG(INFO) << log_prefix.str() << "RequestInfer stop";
 }
 
 void InferWorker::FetchInferResult(Workload &workload, 
