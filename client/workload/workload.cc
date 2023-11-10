@@ -576,7 +576,10 @@ void Workload::InferDynamic(const std::string &model,
   infer_workers_.push_back(std::move(worker));
 }
 
-void Workload::InferAzure(const std::string &model, unsigned model_num, const std::vector<std::vector<unsigned>> &trace_data, double scale_factor, double period_duration, size_t concurrency, uint32_t show_result) {
+void Workload::InferAzure(const std::string &model, unsigned model_num, 
+                          const std::vector<std::vector<unsigned>> &trace_data, 
+                          double scale_factor, double period_duration, 
+                          size_t concurrency, uint32_t show_result) {
   std::vector<double> req_nums(trace_data.front().size());
   for(size_t minute_id = 0; minute_id < req_nums.size(); ++minute_id) {
     unsigned counter = 0U;

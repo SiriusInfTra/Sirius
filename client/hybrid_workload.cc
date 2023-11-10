@@ -89,14 +89,19 @@ int main(int argc, char** argv) {
     } else if (app.peak_num_reqeust > 0) {
       std::vector<unsigned> sums(azure_data.front().size());
       for(size_t minute_id = 0; minute_id < sums.size(); ++minute_id) {
-        sums[minute_id] = std::accumulate(azure_data.cbegin(), azure_data.cend(), 0U, [minute_id](unsigned counter, auto &&vec) { return counter + vec[minute_id]; });
+        sums[minute_id] = std::accumulate(azure_data.cbegin(), azure_data.cend(), 0U, 
+            [minute_id](unsigned counter, auto &&vec) { return counter + vec[minute_id]; });
       }
       unsigned max_req_real = *std::max_element(sums.cbegin(), sums.cend());
       app.scale_factor = static_cast<double>(app.peak_num_reqeust) / static_cast<double>(max_req_real);
-      LOG(INFO) << "Calculate scale_factor based on peek_requst=" << app.peak_num_reqeust  << ", real_peek_request=" << max_req_real 
-        << ", scale_factor=" << app.scale_factor << ", scale_peek_request="  << app.scale_factor * max_req_real << ".";
+      LOG(INFO) << "Calculate scale_factor based on peek_requst=" << app.peak_num_reqeust  
+                << ", real_peek_request=" << max_req_real
+                << ", scale_factor=" << app.scale_factor 
+                << ", scale_peek_request=" << app.scale_factor * max_req_real << ".";
     }
-    LOG(INFO) << "Load azure workload, trace_id=" << app.trace_id << ", period=" << app.period << ", scale_factor=" << app.scale_factor;
+    LOG(INFO) << "Load azure workload, trace_id=" << app.trace_id 
+              << ", period=" << app.period 
+              << ", scale_factor=" << app.scale_factor;
     app.duration = app.period_duration * app.period + 20;
     LOG(INFO) << "Duration is overwritten. duration=" << app.duration << "."; 
   }
