@@ -181,8 +181,8 @@ void InferWorker::RequestInferAzure(Workload &workload, const std::vector<double
     auto total_sleep = std::chrono::seconds(1) * sleep_for;
     LOG(INFO) << "sleep_for=" << sleep_for << ", total_sleep=" << total_sleep.count() << ".";
     if (total_sleep > std::chrono::seconds(req_nums.size()) * period_duration) {
-          LOG(INFO) << "sleep to long, break.";
-          break;
+      LOG(INFO) << "sleep to long, break.";
+      break;
     }
     auto sleep_until = start + total_sleep;
     std::this_thread::sleep_until(sleep_until);
