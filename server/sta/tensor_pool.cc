@@ -98,7 +98,7 @@ bool STensor::ComputeContiguous() const {
 }
 
 size_t STensor::ComputeNumel() const {
-  auto numel = 1;
+  int64_t numel = 1;
   for (auto dim : Shape()) {
     numel *= dim;
   }
@@ -138,7 +138,8 @@ void TensorPool::Remove(uint64_t handle) {
   tensor_by_handle_.erase(handle);
 }
 
-STensor TensorPool::Tensor(uint64_t handle) const {
+STensor TensorPool::Tensor(uint64_t handle) {
+  std::unique_lock lock{mutex_};
   // auto tensor = tensor_by_handle_.at(handle);
   // return tensor_by_handle_.at(handle);
   auto it = tensor_by_handle_.find(handle);
@@ -146,7 +147,7 @@ STensor TensorPool::Tensor(uint64_t handle) const {
   return it->second;
 }
 
-const STensor TensorPool::CTensor(uint64_t handle) const {
+const STensor TensorPool::CTensor(uint64_t handle) {
   return Tensor(handle);
 }
 

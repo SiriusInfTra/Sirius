@@ -26,12 +26,14 @@ cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
         kResumeTrain,
         kColocateAdjustL1,
         kColocateAdjustL2,
+        kInferExit,
+
 
 cdef class PyCtrlMsgEntry:
     cdef CtrlMsgEntry _entry
     
-    def __cinit__(self, unsigned long long id, Event cmd):
-        self._entry = CtrlMsgEntry(id, int(cmd))
+    def __cinit__(self, unsigned long long id, Event cmd, int value):
+        self._entry = CtrlMsgEntry(id, int(cmd), value)
 
 
 cdef class PyMemoryQueue:

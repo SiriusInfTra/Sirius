@@ -30,6 +30,8 @@ uint64_t Empty(at::IntArrayRef size, DLDataType dtype, MemType mtype) {
   // LOG(INFO) << ss.str();
   if (entry == nullptr) {
     DLOG(WARNING) << "Tensor Method Empty: tensor without memory";
+  } else {
+    CHECK_GE(entry->nbytes, storage_nbytes);
   }
   return TensorPool::Get()->Insert(STensor(entry, size.vec(), dtype));
 }
@@ -54,6 +56,8 @@ uint64_t EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride,
   // LOG(INFO) << ss.str();
   if (entry == nullptr) {
     DLOG(WARNING) << "Tensor Method EmptyStrided: tensor without memory";
+  } else {
+    CHECK_GE(entry->nbytes, storage_nbytes);
   }
   return TensorPool::Get()->Insert(STensor(entry, size.vec(), stride.vec(), dtype, 0));
 }

@@ -65,7 +65,7 @@ int64_t ColTensorImpl::dim_custom() const {
 }
 
 int64_t ColTensorImpl::numel_custom() const {
-  auto numel = 1;
+  int64_t numel = 1;
   for (auto dim : sizes_custom()) {
     numel *= dim;
   }
@@ -131,9 +131,17 @@ void ColTensorImpl::UpdateStorage() {
     storage_.set_data_ptr_noswap(c10::DataPtr{
         mdata->addr, c10::Device{c10::DeviceType::CUDA, static_cast<c10::DeviceIndex>(tensor->device.device_id)}});
     storage_.set_nbytes(mdata->nbytes);
+  } else {
+    storage_.set_data_ptr_noswap(c10::DataPtr{
+        nullptr, c10::Device{c10::DeviceType::CUDA, static_cast<c10::DeviceIndex>(tensor->device.device_id)}});
+    storage_.set_nbytes(0);
   }
   storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
 
+  if (tensor.ComputeContiguous() && numel_custom() * (tensor->dtype.bits >> 3) > storage_.nbytes()) {
+    LOG(FATAL) << "numel: " << numel_custom() << " dtype: " << (tensor->dtype.bits >> 3) << " storage: " << storage_.nbytes()
+               << " size " << tensor.Shape() << " handle " << data_->handle << " mdata->nbytes " << mdata->nbytes;
+  }
   // if (mdata != nullptr)
   //   std::cout << "mdata: " << std::hex << mdata->addr << " " << mdata->size << " "
   //             << static_cast<void*>(static_cast<char*>(storage_.data()) + tensor->byte_offset) 
