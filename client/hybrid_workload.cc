@@ -20,7 +20,7 @@ struct App : public colserve::workload::AppBase {
     auto benchmark_group = app.add_option_group("benchmark");
     benchmark_group->add_flag("--benchmark", benchmark.enable, "enable benchmark");
     benchmark_group->add_option("--random-dynamic-poisson", 
-                                benchmark.random_dynamic_possion, "random dynamic poisson");
+                                benchmark.random_dynamic_poisson, "random dynamic poisson");
     // app.add_option("--benchmark-poisson", , "micro benchmark");
   }
 
@@ -32,7 +32,7 @@ struct App : public colserve::workload::AppBase {
   
   struct {
     bool enable{false};
-    double random_dynamic_possion;
+    double random_dynamic_poisson;
   } benchmark;
 };
 
@@ -78,7 +78,7 @@ void MicroBenchmark(const App &app, colserve::workload::Workload &workload,
   }
   std::mt19937 gen;
   gen.seed(app.seed);
-  std::uniform_real_distribution<> lambda_dist(0, app.benchmark.random_dynamic_possion);
+  std::uniform_real_distribution<> lambda_dist(0, app.benchmark.random_dynamic_poisson);
   std::uniform_int_distribution<> req_model_num_dist(0, infer_models.size());
   std::vector<double> total_lambda{0};
   std::map<std::string, std::vector<double>> model_lambdas;

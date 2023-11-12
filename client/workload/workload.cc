@@ -35,7 +35,7 @@ void InferWorker::RequestInferPoisson(Workload &workload, double request_per_sec
   log_prefix << "[InferWorker(" << std::hex << std::this_thread::get_id() << ") " << model_ << " POISSON] ";
 
   // 10ms as basic unit
-  // if server cannot serve requests required by possion dist, 
+  // if server cannot serve requests required by poisson dist, 
   // it will fallback to normal busy requesting
   double req_per_10ms = 1.0 * request_per_sec / 100;
   std::mt19937 gen(AppBase::seed);
@@ -191,19 +191,21 @@ void InferWorker::FetchInferResult(Workload &workload,
     records_.push_back({latency, request_status_[i].request_time_, response_time});
     if (show_result > 0) { // check outputs
       std::stringstream ss;
-      ss << "request " << i << " numel " << infer_results_[i].outputs(0).data().size()
+      size_t numel = infer_results_[i].outputs(0).data().size() / sizeof(float);
+      ss << "request " << i << " numel " << numel
          << " result[:" << show_result << "] : ";
-      for (size_t j = 0; j < infer_results_[i].outputs(0).data().size() && j < show_result; j++) {
+      for (size_t j = 0; j < numel && j < show_result; j++) {
         ss << reinterpret_cast<const float*>(infer_results_[i].outputs(0).data().data())[j] << " ";
       }
       ss << "\n";
       std::cout << ss.str();
     } else if (show_result < 0) {
       std::stringstream ss;
-      ss << "request " << i << " numel " << infer_results_[i].outputs(0).data().size()
+      size_t numel = infer_results_[i].outputs(0).data().size() / sizeof(float);
+      ss << "request " << i << " numel " << numel
          << " result[" << show_result << ":] : ";
-      size_t j = std::max(0L, static_cast<int64_t>(infer_results_[i].outputs(0).data().size()) + show_result);
-      for (; j < infer_results_[i].outputs(0).data().size(); j++) {
+      size_t j = std::max(0L, static_cast<int64_t>(numel) + show_result);
+      for (; j < numel; j++) {
         ss << reinterpret_cast<const float*>(infer_results_[i].outputs(0).data().data())[j] << " ";
       }
       ss << "\n";

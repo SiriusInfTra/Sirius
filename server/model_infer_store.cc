@@ -308,10 +308,10 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier, pid_t waited_tr
     // tvm::runtime::NDArray input;
 
     bool err = false;
-    size_t idx = 0;
 
     double set_input_ms;
     {
+      size_t idx = 0;
       auto begin = std::chrono::steady_clock::now();
       for (auto& input: input_info_) {
         auto& input_id = input.first;
@@ -336,8 +336,8 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier, pid_t waited_tr
     }
 
     double get_output_ms;
-    idx = 0;
     {
+      size_t idx = 0;
       auto begin = std::chrono::steady_clock::now();
       for (auto& output : output_info_) {
         for (auto& job : jobs)
@@ -459,6 +459,7 @@ bool Model::GetOutput(tvm::GraphExecutor &graph_executor,
 
   size_t offset = 0;
   size_t output_nbytes = ::tvm::runtime::GetDataSize(*output_host_buf) / output_host_buf->shape[0];
+  std::cout << "### output_nbytes " << output_nbytes << std::endl;
   for (auto& job : jobs) {
     auto data = job->GetInferData();
     data->SetOutputShape(idx, shape);
