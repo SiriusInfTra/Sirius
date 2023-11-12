@@ -152,7 +152,7 @@ class Workload {
   void InferDynamicPoisson(const std::string &model, size_t concurrency,
                            const std::vector<double> &change_time_points,
                            const std::vector<double> &lambdas,
-                           uint32_t show_result = 0);
+                           int64_t show_result = 0);
 
   void TrainResnet(size_t num_epoch, size_t batch_size);
 
