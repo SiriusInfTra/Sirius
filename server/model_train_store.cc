@@ -7,6 +7,7 @@
 
 #include "model_train_store.h"
 #include "controller.h"
+#include "profile.h"
 #include "config.h"
 
 
@@ -29,7 +30,7 @@ void ModelTrainStore::Init(const std::filesystem::path &train_store_path) {
   model_train_store_->thread_.reset(new std::thread([&]() {
     pthread_barrier_wait(&barrier);
     LOG(INFO) << "ModelTrainStore thread start";
-    while (true) {
+    while (Config::running) {
       model_train_store_->Train();
     }
   }));
@@ -41,7 +42,7 @@ void ModelTrainStore::Init(const std::filesystem::path &train_store_path) {
 bool ModelTrainStore::Shutdown() {
   if (model_train_store_->train_pid_ != -1) {
     CHECK_EQ(kill(model_train_store_->train_pid_, SIGKILL), 0);
-    CHECK_EQ(waitpid(model_train_store_->train_pid_, NULL, 0), 0);
+    waitpid(model_train_store_->train_pid_, NULL, 0);
   }
   return true;
 }
@@ -87,7 +88,7 @@ bool ModelTrainStore::Train() {
     args_str.push_back("colocate-l2");
   }
 
-  while (true) {
+  while (Config::running) {
     if (LaunchTrain(job, args_str)) {
       break;
     }
@@ -129,10 +130,11 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
     close(from_child_pipe[0]);
     dup2(from_child_pipe[1], STDOUT_FILENO);
 
-    if (Config::use_shared_tensor) {
+    if (Config::use_shared_tensor_train) {
       CHECK_NE(setenv("USE_SHARED_TENSOR", "1", 1), -1);
       CHECK_NE(setenv("SHARED_TENSOR_HAS_SERVER", "1", 1), -1);
       CHECK_NE(setenv("SHARED_TENSOR_POOL_GB", std::to_string(Config::cuda_memory_pool_gb).c_str(), 1), -1);
+      // CHECK_NE(setenv("CUDA_LAUNCH_BLOCKING", "1", 1), -1);
     } else {
       CHECK_NE(setenv("USE_SHARED_TENSOR", "0", 1), -1);
     }

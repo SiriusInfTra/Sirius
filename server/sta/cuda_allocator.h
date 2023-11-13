@@ -68,6 +68,8 @@ public:
     return stat_->at(static_cast<size_t>(MemType::kTrain));
   }
 
+  bool CheckAddr(void *addr);
+
   friend class CUDAMemPool;
 private:
   using Addr2EntryType = std::pair<std::ptrdiff_t, bip::managed_shared_memory::handle_t>;
@@ -143,6 +145,10 @@ class CUDAMemPool {
   std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes, MemType mtype);
   std::shared_ptr<PoolEntry> Resize(std::shared_ptr<PoolEntry> entry, std::size_t nbytes);
   void CopyFromTo(std::shared_ptr<PoolEntry> src, std::shared_ptr<PoolEntry> dst);
+
+  inline bool CheckAddr(void *addr) {
+    return impl_->CheckAddr(addr);
+  }
 
  private:
   static std::unique_ptr<CUDAMemPool> cuda_mem_pool_;

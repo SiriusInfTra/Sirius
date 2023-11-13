@@ -138,10 +138,16 @@ void ColTensorImpl::UpdateStorage() {
   }
   storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
 
-  if (tensor.ComputeContiguous() && numel_custom() * (tensor->dtype.bits >> 3) > storage_.nbytes()) {
-    LOG(FATAL) << "numel: " << numel_custom() << " dtype: " << (tensor->dtype.bits >> 3) << " storage: " << storage_.nbytes()
-               << " size " << tensor.Shape() << " handle " << data_->handle << " mdata->nbytes " << mdata->nbytes;
+  if (storage_.data() != nullptr) {
+    CHECK(sta::CUDAMemPool::Get()->CheckAddr(storage_.data()));
+    CHECK(sta::CUDAMemPool::Get()->CheckAddr(static_cast<char*>(storage_.data()) + storage_.nbytes()));
   }
+
+  DCHECK(tensor.ComputeContiguous() && numel_custom() * (tensor->dtype.bits >> 3) > storage_.nbytes())
+    << "numel: " << numel_custom() << " dtype: " << (tensor->dtype.bits >> 3) << " storage: " << storage_.nbytes()
+    << " size " << tensor.Shape() << " handle " << data_->handle << " mdata->nbytes " << mdata->nbytes;
+       
+  // }
   // if (mdata != nullptr)
   //   std::cout << "mdata: " << std::hex << mdata->addr << " " << mdata->size << " "
   //             << static_cast<void*>(static_cast<char*>(storage_.data()) + tensor->byte_offset) 

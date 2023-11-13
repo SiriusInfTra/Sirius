@@ -223,10 +223,10 @@ CUDAMemPoolImpl::CUDAMemPoolImpl(CUDAMemPoolImpl::MemPoolConfig config, bool for
     size2entry_->insert(std::pair{entry->nbytes, handle});
     addr2entry_->insert(std::pair{0, handle});
 
-    LOG(INFO) << "[mempool] init master.";
+    LOG(INFO) << "[mempool] init master, base_ptr = " << std::hex << mem_pool_base_ptr_ << ".";
   } else {
     CUDA_CALL(cudaIpcOpenMemHandle(&mem_pool_base_ptr_, *cuda_mem_handle_, cudaIpcMemLazyEnablePeerAccess));
-    LOG(INFO) << "[mempool] init slave.";
+    LOG(INFO) << "[mempool] init slave, base_ptr = " << std::hex << mem_pool_base_ptr_ << ".";
   }
 }
 
@@ -361,6 +361,16 @@ void CUDAMemPoolImpl::CopyFromTo(void *dst_dev_ptr, void *src_dev_ptr, size_t nb
   CUDA_CALL(cudaStreamSynchronize(cuda_memcpy_stream_));
 }
 
+bool CUDAMemPoolImpl::CheckAddr(void *addr) {
+  bool ok = reinterpret_cast<size_t>(addr) >= reinterpret_cast<size_t>(mem_pool_base_ptr_) 
+      && reinterpret_cast<size_t>(addr) <= reinterpret_cast<size_t>(static_cast<char*>(mem_pool_base_ptr_) + config_.cuda_memory_size);
+  if (!ok) {
+    LOG(WARNING) << "MemoryPool CheckAddr " << addr << " failed"
+                 << " memory range [" << mem_pool_base_ptr_ << ", " 
+                 << static_cast<void*>(static_cast<char*>(mem_pool_base_ptr_) + config_.cuda_memory_size) << "]";
+  }
+  return ok;
+}
 
 }
 }

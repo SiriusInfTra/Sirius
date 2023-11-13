@@ -36,6 +36,10 @@ void init_cli_options() {
       "check mps, default is 1");
   app.add_option("--use-sta", colserve::Config::use_shared_tensor, 
       "use shared tensor allocator, default is 1");
+  app.add_option("--use-sta-infer", colserve::Config::use_shared_tensor_infer, 
+      "use shared tensor allocator in infer, default is 1");
+  app.add_option("--use-sta-train", colserve::Config::use_shared_tensor_train,
+      "use shared tensor allocator in train, default is 1");
   app.add_option("--cuda-memory-pool-gb", colserve::Config::cuda_memory_pool_gb,
       "cuda memory pool size in GB, default is 12");
   app.add_option("-p,--port", port,
@@ -65,6 +69,10 @@ void init_config() {
   } else {
     LOG(FATAL) << "unknown serve mode: " << mode;
   }
+  colserve::Config::use_shared_tensor_infer = 
+      colserve::Config::use_shared_tensor_infer && colserve::Config::use_shared_tensor;
+  colserve::Config::use_shared_tensor_train =
+      colserve::Config::use_shared_tensor_train && colserve::Config::use_shared_tensor;
 }
 
 void Shutdown(int sig) {

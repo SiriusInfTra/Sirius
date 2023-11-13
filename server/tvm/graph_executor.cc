@@ -114,7 +114,7 @@ const DLTensor* GraphExecutor::GetInput(int index) const {
   CHECK(initialized_);
   CHECK_LT(static_cast<size_t>(index), factory_.input_nodes_.size());
   uint32_t eid = entry_id(factory_.input_nodes_[index], 0);
-  if (Config::use_shared_tensor) {
+  if (Config::use_shared_tensor_infer) {
     auto input_view_tensor = sta::TensorPool::Get()->Tensor(data_entry_[eid]);
     return input_view_tensor.operator->();
   } else {
@@ -135,7 +135,7 @@ const DLTensor* GraphExecutor::GetOutput(int index) const {
   CHECK(initialized_);
   CHECK_LE(static_cast<size_t>(index), factory_.outputs_.size());
   uint32_t eid = entry_id(factory_.outputs_[index]);
-  if (Config::use_shared_tensor) {
+  if (Config::use_shared_tensor_infer) {
     auto output_view_tensor = sta::TensorPool::Get()->Tensor(data_entry_[eid]);
     return output_view_tensor.operator->();
   } else {
@@ -158,6 +158,7 @@ uint32_t GraphExecutor::GetInputIndex(const std::string &name) const {
     return it->second;
   } else {
     LOG(FATAL) << "cannot find " << name << " in input";
+    return -1;
   }
 } 
 
@@ -167,6 +168,7 @@ uint32_t GraphExecutor::GetOutputIndex(const std::string &name) const {
     return it->second;
   } else {
     LOG(FATAL) << "cannot find " << name << " in output";
+    return -1;
   }
 }
 
@@ -195,7 +197,7 @@ void GraphExecutor::ResetStorage() {
   for (auto &p : factory_.params_) {
     param_ready_[p.first] = false;
   }
-  if (Config::use_shared_tensor) {
+  if (Config::use_shared_tensor_infer) {
     for (auto &e : data_entry_) {
       auto tensor = sta::TensorPool::Get()->Tensor(e);
       tensor.DeallocToNull();
@@ -229,7 +231,7 @@ void GraphExecutor::ResetStorage() {
 void GraphExecutor::AllocStorage() {
   using namespace ::tvm::runtime;
 
-  if (Config::use_shared_tensor) {
+  if (Config::use_shared_tensor_infer) {
     for (auto &s : storage_pool_) {
       auto tensor = sta::TensorPool::Get()->Tensor(s);
       tensor.AllocForNull(sta::MemType::kInfer, false);
@@ -243,6 +245,7 @@ void GraphExecutor::AllocStorage() {
       total_nbytes += (GetDataSize(*s.operator->()) + align - 1) & (~(align - 1));
     }
     blob_mem_ = sta::CUDAMemPool::RawAlloc(total_nbytes, sta::MemType::kInfer);
+    // blob_mem_ = sta::CUDAMemPool::Get()->Alloc(total_nbytes, sta::MemType::kInfer);
     for (auto &s : raw_storage_pool_) {
       size_t nbytes = (GetDataSize(*s.operator->()) + align - 1) & (~(align - 1));
       auto mdata = std::shared_ptr<sta::CUDAMemPool::PoolEntry>(
@@ -278,7 +281,7 @@ void GraphExecutor::LoadParams(bool pipeline) {
     auto sid = factory_.attrs_.storage_id[p.first];
     if (!param_ready_[p.first]) {
       sta::STensor storage_tensor;
-      if (Config::use_shared_tensor) {
+      if (Config::use_shared_tensor_infer) {
         storage_tensor = sta::TensorPool::Get()->Tensor(storage_pool_[sid]);
       } else {
         storage_tensor = raw_storage_pool_[sid];
@@ -313,7 +316,7 @@ void GraphExecutor::ReSetupDataEntry() {
     // data_entry_[i].get_mutable()->dl_tensor.data =
     //     storage_pool_[sid].get_mutable()->dl_tensor.data;
     // CHECK_NE(data_entry_[i]->data, nullptr);
-    if (Config::use_shared_tensor) {
+    if (Config::use_shared_tensor_infer) {
       auto storage_tensor = sta::TensorPool::Get()->Tensor(storage_pool_[sid]);
       auto data_entry_view_tensor = sta::TensorPool::Get()->Tensor(data_entry_[i]);
       data_entry_view_tensor.AssignMDataForNull(storage_tensor.MData());
@@ -350,7 +353,7 @@ void GraphExecutor::SetupStorage(bool alloc) {
     }
     CHECK(dev.device_type == kDLCUDA && dev.device_id == 0);
     sta::STensor last_tensor;
-    if (Config::use_shared_tensor) {
+    if (Config::use_shared_tensor_infer) {
       if (!alloc) {
         // storage_pool_.push_back(TVMArray::Null(shape, pit.dtype, dev, mem_scope));
         storage_pool_.push_back(sta::Null(shape, pit.dtype));
@@ -389,7 +392,7 @@ void GraphExecutor::SetupStorage(bool alloc) {
     // data_entry_[i] = storage_pool_[storage_id].CreateView(factory_.attrs_.shape[i], vtype[i]);
     // const DLTensor* tmp = data_entry_[i].operator->();
     sta::STensor data_entry_view_ts;
-    if (Config::use_shared_tensor) {
+    if (Config::use_shared_tensor_infer) {
       data_entry_[i] = sta::ViewShapeDtype(storage_pool_[storage_id], factory_.attrs_.shape[i], vtype[i]);
       data_entry_view_ts = sta::TensorPool::Get()->CTensor(data_entry_[i]);
     } else {
@@ -452,7 +455,7 @@ void GraphExecutor::SetupOpExecs() {
       uint32_t eid = entry_id(e);
       // args.push_back(const_cast<DLTensor*>(data_entry_[eid].operator->()));
       sta::STensor data_entry_view_tensor;
-      if (Config::use_shared_tensor) {
+      if (Config::use_shared_tensor_infer) {
         data_entry_view_tensor = sta::TensorPool::Get()->Tensor(data_entry_[eid]);
       } else {
         data_entry_view_tensor = raw_data_entry_[eid];
@@ -467,7 +470,7 @@ void GraphExecutor::SetupOpExecs() {
       uint32_t eid = entry_id(nid, index);
       // args.push_back(const_cast<DLTensor*>(data_entry_[eid].operator->()));
       sta::STensor data_entry_view_tensor;
-      if (Config::use_shared_tensor) {
+      if (Config::use_shared_tensor_infer) {
         data_entry_view_tensor = sta::TensorPool::Get()->Tensor(data_entry_[eid]);
       } else {
         data_entry_view_tensor = raw_data_entry_[eid];

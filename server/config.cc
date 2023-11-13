@@ -9,6 +9,8 @@ bool Config::check_mps = true;
 std::atomic<bool> Config::running = true;
 
 bool Config::use_shared_tensor = true;
+bool Config::use_shared_tensor_infer = true;
+bool Config::use_shared_tensor_train = true;
 
 double Config::cuda_memory_pool_gb = 12;
 

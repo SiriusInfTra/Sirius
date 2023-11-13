@@ -113,7 +113,7 @@ void ModelInferStore::Init(const std::filesystem::path &infer_store_path) {
       }
       model_infer_store_->models_[model_name] = 
           std::make_unique<Model>(model_name, model_path, model_params,
-                                  device, batch_size,
+                                  device, batch_size, 
                                   std::stoi(model.second["num-worker"]),
                                   std::stoi(model.second["max-worker"]));
     }
