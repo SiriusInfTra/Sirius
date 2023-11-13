@@ -158,8 +158,9 @@ void InferWorker::RequestInferAzure(Workload &workload, const std::vector<double
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << std::this_thread::get_id() << ") " << model_ << " azure] "; 
   workload.ready_future_.wait();
-  LOG(INFO) << log_prefix.str() << "RequestInfer start, req_nums[0:3]={" << req_nums[0] << "," << req_nums[1] << "," << req_nums[2] << "},"
-    << " max_req_num=" << *std::max_element(req_nums.cbegin(), req_nums.cend());
+  LOG(INFO) << log_prefix.str() << "RequestInfer start, req_nums[0:3]={" 
+            << req_nums[0] << "," << req_nums[1] << "," << req_nums[2] << "},"
+            << " max_req_num=" << *std::max_element(req_nums.cbegin(), req_nums.cend());
 
   std::mt19937 gen(AppBase::seed);
   // std::poisson_distribution<> dist(req_per_10ms);
@@ -180,8 +181,8 @@ void InferWorker::RequestInferAzure(Workload &workload, const std::vector<double
     auto total_sleep = std::chrono::seconds(1) * sleep_for;
     LOG(INFO) << "sleep_for=" << sleep_for << ", total_sleep=" << total_sleep.count() << ".";
     if (total_sleep > std::chrono::seconds(req_nums.size()) * period_duration) {
-          LOG(INFO) << "sleep to long, break.";
-          break;
+      LOG(INFO) << "sleep to long, break.";
+      break;
     }
     auto sleep_until = start + total_sleep;
     std::this_thread::sleep_until(sleep_until);
@@ -199,7 +200,7 @@ void InferWorker::RequestInferAzure(Workload &workload, const std::vector<double
     }
     CHECK_NE(i, concurrency_);
   }
-    LOG(INFO) << log_prefix.str() << "RequestInfer stop";
+  LOG(INFO) << log_prefix.str() << "RequestInfer stop";
 }
 
 void InferWorker::FetchInferResult(Workload &workload, 
@@ -576,7 +577,10 @@ void Workload::InferDynamic(const std::string &model,
   infer_workers_.push_back(std::move(worker));
 }
 
-void Workload::InferAzure(const std::string &model, unsigned model_num, const std::vector<std::vector<unsigned>> &trace_data, double scale_factor, double period_duration, size_t concurrency, uint32_t show_result) {
+void Workload::InferAzure(const std::string &model, unsigned model_num, 
+                          const std::vector<std::vector<unsigned>> &trace_data, 
+                          double scale_factor, double period_duration, 
+                          size_t concurrency, uint32_t show_result) {
   std::vector<double> req_nums(trace_data.front().size());
   for(size_t minute_id = 0; minute_id < req_nums.size(); ++minute_id) {
     unsigned counter = 0U;
