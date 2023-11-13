@@ -1,4 +1,6 @@
+# cython: c_string_type=unicode, c_string_encoding=utf8
 from .torch_col cimport *
+from libcpp.string cimport string
 
 
 def cuda_memory_pool_infer_usage():
@@ -9,6 +11,9 @@ def cuda_memory_pool_train_usage():
 
 cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
     cpdef void ReleaseMempool()
+    cpdef void DumpMempoolFreeList(string filename);
+    cpdef void DumpMempoolBlockList(string filename);
+
 
 
 cdef extern from "<csrc/control_stub.h>" namespace "torch_col":

@@ -31,6 +31,8 @@ enum class Event {
 };
 
 void ReleaseMempool();
+void DumpMempoolFreeList(std::string filename);
+void DumpMempoolBlockList(std::string filename);
 
 class SwitchStub {
  public:

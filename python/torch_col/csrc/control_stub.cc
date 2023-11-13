@@ -2,6 +2,7 @@
 #include <sta/cuda_allocator.h>
 
 #include "control_stub.h"
+#include "sta/mempool_sampler.h"
 
 namespace torch_col {
 
@@ -140,5 +141,13 @@ double ColocateStub::PassedTimeFromSetCmd() {
 
 void ReleaseMempool() {
   colserve::sta::CUDAMemPool::ReleaseMempool();
+}
+
+
+void DumpMempoolFreeList(std::string filename) {
+  colserve::sta::DumpMempoolFreeList(filename);
+}
+void DumpMempoolBlockList(std::string filename) {
+    colserve::sta::DumpMempoolBlockList(filename);
 }
 } // namespace torch_col

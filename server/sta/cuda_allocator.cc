@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <exception>
 #include <iostream>
 
 #include "cuda_allocator.h"
@@ -36,24 +37,27 @@ size_t CUDAMemPool::TrainMemUsage() {
   return cuda_mem_pool_->impl_->TrainMemUsage();
 }
 
-void CUDAMemPool::Init(std::size_t nbytes, bool master) {
+void CUDAMemPool::Init(std::size_t nbytes, bool master, bool no_cuda) {
   // LOG(INFO) << "[CUDA Memory Pool] initilized with size " << size / 1024 / 1024 << " Mb";
-  cuda_mem_pool_ = std::make_unique<CUDAMemPool>(nbytes, master);
+  cuda_mem_pool_ = std::make_unique<CUDAMemPool>(nbytes, master, no_cuda);
 }
 
 void CUDAMemPool::ReleaseMempool() {
   cuda_mem_pool_.reset();
 }
 
-CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool master) {
-//    remove("/dev/shm/gpu_colocation_mempool");
-  CUDAMemPoolImpl::MemPoolConfig config{
+CUDAMemPoolImpl::MemPoolConfig mempool_config_template{
       .cuda_device = 0,
-      .cuda_memory_size = nbytes,
+      .cuda_memory_size = 0,
       .shared_memory_name = "gpu_colocation_mempool",
       .shared_memory_size = 1024 * 1024 * 1024, /* 1G */
-  };
-  impl_ = new CUDAMemPoolImpl{config, master};
+};
+
+CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool master, bool no_cuda) {
+//    remove("/dev/shm/gpu_colocation_mempool");
+  auto config = mempool_config_template;
+  config.cuda_memory_size = nbytes;
+  impl_ = new CUDAMemPoolImpl{config, master, no_cuda};
 }
 
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(std::size_t nbytes, MemType mtype) {
@@ -163,10 +167,12 @@ bool CUDAMemPoolImpl::CheckMemPool() {
     if (auto *prev = GetEntry(entry->prev); prev != empty_) {
       CHECK_LE(prev->addr_offset, addr);
       CHECK_EQ(prev->addr_offset + prev->nbytes, addr);
+      CHECK_EQ(GetEntry(addr2entry_->find(prev->addr_offset)->second), prev);
     }
     if (auto *next = GetEntry(entry->next); next != empty_) {
       CHECK_GE(next->addr_offset, addr);
       CHECK_EQ(next->addr_offset, addr + entry->nbytes);
+      CHECK_EQ(GetEntry(addr2entry_->find(next->addr_offset)->second), next);
     }
   }
   for (auto &&p: *size2entry_) {
@@ -183,7 +189,13 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPoolImpl::MakeSharedPtr(CUDAMemPo
   auto *entry = new PoolEntry{
       reinterpret_cast<std::byte *>(mem_pool_base_ptr_) + eh->addr_offset, eh->nbytes, mtype};
   CHECK_GE(static_cast<int64_t>(eh->addr_offset), 0);
-  CHECK_LT(static_cast<size_t>(eh->addr_offset) + eh->nbytes, this->config_.cuda_memory_size);
+  CHECK_LE(static_cast<size_t>(eh->addr_offset) + eh->nbytes, this->config_.cuda_memory_size);
+  // if (GetEntry(eh->next) != empty_) {
+  //   CHECK_EQ(static_cast<size_t>(eh->addr_offset) + eh->nbytes, static_cast<size_t>(GetEntry(eh->next)->addr_offset));
+  // }
+  // if (GetEntry(eh->prev) != empty_) {
+  //       CHECK_EQ(static_cast<size_t>(eh->addr_offset), static_cast<size_t>(GetEntry(eh->prev)->addr_offset) + GetEntry(eh->prev)->nbytes);
+  // }
   auto free = [this, eh, mtype](PoolEntry *entry) {
     Free(eh, mtype);
     delete entry;
@@ -191,7 +203,7 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPoolImpl::MakeSharedPtr(CUDAMemPo
   return {entry, free};
 }
 
-CUDAMemPoolImpl::CUDAMemPoolImpl(CUDAMemPoolImpl::MemPoolConfig config, bool force_master) : config_(
+CUDAMemPoolImpl::CUDAMemPoolImpl(CUDAMemPoolImpl::MemPoolConfig config, bool force_master, bool no_cuda) : config_(
     std::move(config)), mem_pool_base_ptr_(nullptr) {
   config_.shared_memory_name = config_.shared_memory_name + "_" + std::getenv("USER");
   if (force_master) {
@@ -206,6 +218,7 @@ CUDAMemPoolImpl::CUDAMemPoolImpl(CUDAMemPoolImpl::MemPoolConfig config, bool for
     ref_count_ = segment_.find_or_construct<RefCount>("RefCount")(0);
     empty_ = segment_.find_or_construct<PoolEntryImpl>("EmptyPoolEntryImpl")();
     cuda_mem_handle_ = segment_.find_or_construct<cudaIpcMemHandle_t>("CudaMemHandle")();
+    // stat_ = new StatMap;
     stat_ = segment_.find_or_construct<StatMap>("StatMap")();
   };
   segment_.atomic_func(atomic_init);
@@ -217,6 +230,7 @@ CUDAMemPoolImpl::CUDAMemPoolImpl(CUDAMemPoolImpl::MemPoolConfig config, bool for
     auto *entry = reinterpret_cast<PoolEntryImpl *>(segment_.allocate(sizeof(PoolEntryImpl)));
     entry->nbytes = config_.cuda_memory_size;
     entry->allocate = false;
+    entry->mtype = MemType::kFree;
     entry->prev = GetHandle(empty_);
     entry->next = GetHandle(empty_);
     CUDA_CALL(cudaSetDevice(config_.cuda_device));
@@ -227,7 +241,7 @@ CUDAMemPoolImpl::CUDAMemPoolImpl(CUDAMemPoolImpl::MemPoolConfig config, bool for
     addr2entry_->insert(std::pair{0, handle});
 
     LOG(INFO) << "[mempool] init master.";
-  } else {
+  } else if (!no_cuda) {
     CUDA_CALL(cudaIpcOpenMemHandle(&mem_pool_base_ptr_, *cuda_mem_handle_, cudaIpcMemLazyEnablePeerAccess));
     LOG(INFO) << "[mempool] init slave.";
   }
@@ -264,28 +278,29 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPoolImpl::Alloc(std::size_t nbyte
   nbytes = (nbytes + 1023) / 1024 * 1024; // simple align to 1024B
   auto iter = size2entry_->lower_bound(nbytes);
   if (iter == size2entry_->cend()) {
-    iter = size2entry_->lower_bound(nbytes);
-  }
-  if (iter == size2entry_->cend()) {
     DumpSummary();
     LOG(FATAL) << "request size " << nbytes << " out of free gpu memory";
   }
   auto entry = GetEntry(iter->second);
   if (nbytes == iter->first) {
     CHECK_EQ(entry->allocate, false);
+    CHECK(entry->mtype ==  MemType::kFree);
     entry->allocate = true;
+    entry->mtype = mtype;
     size2entry_->erase(iter);
     return MakeSharedPtr(entry, mtype);
   }
-
+  CHECK_GT(entry->nbytes, nbytes);
   size_t nbytes_rest = entry->nbytes - nbytes;
   entry->nbytes = nbytes;
   entry->allocate = true;
+  entry->mtype = mtype;
   size2entry_->erase(iter);
 
   auto *split = reinterpret_cast<PoolEntryImpl *>(segment_.allocate(sizeof(PoolEntryImpl)));
   split->nbytes = nbytes_rest;
   split->allocate = false;
+  split->mtype = MemType::kFree;
   split->addr_offset = entry->addr_offset + static_cast<std::ptrdiff_t>(nbytes);
   ConnectPoolEntryHandle(split, GetEntry(entry->next));
   ConnectPoolEntryHandle(entry, split);
@@ -339,6 +354,7 @@ void CUDAMemPoolImpl::Free(CUDAMemPoolImpl::PoolEntryImpl *entry, MemType mtype)
     segment_.deallocate(entry);
   } else { /* add */
     entry->allocate = false;
+    entry->mtype = MemType::kFree;
     size2entry_->insert(std::pair{entry->nbytes, GetHandle(entry)});
   }
 }
@@ -359,7 +375,7 @@ void CUDAMemPoolImpl::DumpSummary() {
 }
 
 void CUDAMemPoolImpl::CopyFromTo(void *dst_dev_ptr, void *src_dev_ptr, size_t nbytes) {
-  CUDA_CALL(cudaSetDevice(0));
+  CUDA_CALL(cudaSetDevice(config_.cuda_device));
   CUDA_CALL(cudaMemcpyAsync(dst_dev_ptr, src_dev_ptr, nbytes, cudaMemcpyDefault, cuda_memcpy_stream_));
   CUDA_CALL(cudaStreamSynchronize(cuda_memcpy_stream_));
 }
