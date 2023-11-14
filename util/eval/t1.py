@@ -6,7 +6,10 @@ import signal
 def sigint_handle(system:System):
     if system.mps_server != None:
         system.mps_server.kill()
-    subprocess.run(['sudo', '/opt/mps-control/quit-mps-daemon.sh'])
+    subprocess.run([
+        'sudo', '/opt/mps-control/quit-mps-daemon-private.sh', 
+        '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']], 
+        capture_output=True, env=os.environ.copy())
     sys.exit(0)
 
 

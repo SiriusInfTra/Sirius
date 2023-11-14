@@ -26,6 +26,8 @@ class Config {
   static std::atomic<bool> running;
   
   static bool use_shared_tensor;
+  static bool use_shared_tensor_infer;
+  static bool use_shared_tensor_train;
 
   static double cuda_memory_pool_gb;
 

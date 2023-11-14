@@ -42,7 +42,7 @@ void InferWorker::RequestInferPoisson(Workload &workload, double request_per_sec
   log_prefix << "[InferWorker(" << std::hex << std::this_thread::get_id() << ") " << model_ << " POISSON] ";
 
   // 10ms as basic unit
-  // if server cannot serve requests required by possion dist, 
+  // if server cannot serve requests required by poisson dist, 
   // it will fallback to normal busy requesting
   double req_per_10ms = 1.0 * request_per_sec / 100;
   std::mt19937 gen(AppBase::seed);
@@ -205,7 +205,7 @@ void InferWorker::RequestInferAzure(Workload &workload, const std::vector<double
 
 void InferWorker::FetchInferResult(Workload &workload, 
                                    std::function<double_ms_t(size_t)> interval_fn, 
-                                   uint32_t show_result) {
+                                   int64_t show_result) {
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << std::this_thread::get_id() << ") " << model_ << "] ";
 
@@ -246,8 +246,21 @@ void InferWorker::FetchInferResult(Workload &workload,
     records_.push_back({latency, request_status_[i].request_time_, response_time});
     if (show_result > 0) { // check outputs
       std::stringstream ss;
-      ss << "request " << i << " result: ";
-      for (size_t j = 0; j < infer_results_[i].outputs(0).data().size() && j < show_result; j++) {
+      size_t numel = infer_results_[i].outputs(0).data().size() / sizeof(float);
+      ss << "request " << i << " numel " << numel
+         << " result[:" << show_result << "] : ";
+      for (size_t j = 0; j < numel && j < show_result; j++) {
+        ss << reinterpret_cast<const float*>(infer_results_[i].outputs(0).data().data())[j] << " ";
+      }
+      ss << "\n";
+      std::cout << ss.str();
+    } else if (show_result < 0) {
+      std::stringstream ss;
+      size_t numel = infer_results_[i].outputs(0).data().size() / sizeof(float);
+      ss << "request " << i << " numel " << numel
+         << " result[" << show_result << ":] : ";
+      size_t j = std::max(0L, static_cast<int64_t>(numel) + show_result);
+      for (; j < numel; j++) {
         ss << reinterpret_cast<const float*>(infer_results_[i].outputs(0).data().data())[j] << " ";
       }
       ss << "\n";
@@ -441,18 +454,18 @@ std::function<void(std::vector<InferRequest>&)> Workload::SetMnistRequestFn(cons
 }
 
 // void Workload::InferMnist(size_t concurrency, std::function<double_ms_t(size_t)> interval_fn, 
-//                           uint32_t show_result) {
+//                           int64_t show_result) {
 //   Infer("mnist", concurrency, SetMnistRequestFn(), interval_fn, show_result);
 // }
 
 // void Workload::InferMnistPoisson(size_t concurrency, double request_per_sec,
-//                                  uint32_t show_result) {
+//                                  int64_t show_result) {
 //   InferPoisson("mnist", concurrency, SetMnistRequestFn(), request_per_sec, show_result);
 // }
 
 // void Workload::InferMnistDynamic(const std::vector<double> &change_time_points,
 //                                  const std::vector<size_t> &concurrencys,
-//                                  uint32_t show_result) {
+//                                  int64_t show_result) {
 //   InferDynamic("mnist", change_time_points, concurrencys, SetMnistRequestFn(), show_result);
 // } 
 
@@ -481,12 +494,12 @@ std::function<void(std::vector<InferRequest>&)> Workload::SetResnetRequestFn(con
 }
 
 // void Workload::InferResnet(const std::string &model, size_t concurrency, std::function<double_ms_t(size_t)> interval_fn,
-//                            uint32_t show_result) {
+//                            int64_t show_result) {
 //   Infer("resnet152", concurrency, SetResnetRequestFn(model), interval_fn, show_result);
 // }
 
 // void Workload::InferResnetPoisson(size_t concurrency, double request_per_sec,
-//                                   uint32_t show_result) {
+//                                   int64_t show_result) {
 //   InferPoisson("resnet152", concurrency, SetResnetRequestFn("resnet152"), request_per_sec, show_result);
 // }
 
@@ -494,21 +507,21 @@ std::function<void(std::vector<InferRequest>&)> Workload::SetResnetRequestFn(con
 //     size_t concurrency,
 //     const std::vector<double> &change_time_points,
 //     const std::vector<double> &lambdas,
-//     uint32_t show_result) {
+//     int64_t show_result) {
 //   InferDynamicPoisson("resnet152", concurrency, change_time_points, lambdas,
 //       SetResnetRequestFn("resnet152"), show_result);
 // } 
 
 // void Workload::InferResnetDynamic(const std::vector<double> &change_time_points,
 //                                   const std::vector<size_t> &concurrencys,
-//                                   uint32_t show_result) {
+//                                   int64_t show_result) {
 //   InferDynamic("resnet152", change_time_points, concurrencys, SetResnetRequestFn("resnet152"), show_result);
 // }
 
 void Workload::Infer(const std::string &model, size_t concurrency, 
                     //  std::function<void(std::vector<InferRequest>&)> set_request_fn,
                      std::function<double_ms_t(size_t)> interval_fn,
-                     uint32_t show_result) {
+                     int64_t show_result) {
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);
@@ -524,7 +537,7 @@ void Workload::Infer(const std::string &model, size_t concurrency,
 void Workload::InferPoisson(const std::string &model, size_t concurrency,
                             // std::function<void(std::vector<InferRequest>&)> set_request_fn,
                             double request_per_sec,
-                            uint32_t show_result) {
+                            int64_t show_result) {
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);
@@ -543,7 +556,7 @@ void Workload::InferDynamicPoisson(
     const std::vector<double> &change_time_points,
     const std::vector<double> &lambdas,
     // std::function<void(std::vector<InferRequest>&)> set_request_fn,
-    uint32_t show_result) {
+    int64_t show_result) {
   CHECK_EQ(change_time_points.size() + 1, lambdas.size()) << model;
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
@@ -561,7 +574,7 @@ void Workload::InferDynamic(const std::string &model,
                             const std::vector<double> &change_time_points,
                             const std::vector<size_t> &concurrencys,
                             // std::function<void(std::vector<InferRequest>&)> set_request_fn,
-                            uint32_t show_result) {
+                            int64_t show_result) {
   CHECK_EQ(change_time_points.size() + 1, concurrencys.size()) << model;
   auto set_request_fn = GetSetRequestFn(model);
   auto max_concurrency = *std::max_element(concurrencys.begin(), concurrencys.end());
@@ -580,7 +593,7 @@ void Workload::InferDynamic(const std::string &model,
 void Workload::InferAzure(const std::string &model, unsigned model_num, 
                           const std::vector<std::vector<unsigned>> &trace_data, 
                           double scale_factor, double period_duration, 
-                          size_t concurrency, uint32_t show_result) {
+                          size_t concurrency, int64_t show_result) {
   std::vector<double> req_nums(trace_data.front().size());
   for(size_t minute_id = 0; minute_id < req_nums.size(); ++minute_id) {
     unsigned counter = 0U;

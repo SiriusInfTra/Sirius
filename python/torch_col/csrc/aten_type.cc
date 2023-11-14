@@ -128,6 +128,12 @@ at::Tensor nonzero(const at::Tensor & self) {
   return nonzero_out_cuda(self, out);
 }
 
+at::Tensor & set_source_Storage_storage_offset(
+  at::Tensor & self, at::Storage source, 
+  int64_t storage_offset, at::IntArrayRef size, at::IntArrayRef stride) {
+  LOG(FATAL) << "set tensor with a storage is unsupported op";
+}
+
 // cudnn
 at::Tensor cudnn_convolution(
     const at::Tensor & self, const at::Tensor & weight, 
@@ -214,6 +220,8 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("convolution_backward", TORCH_FN(convolution_backward));
 
   m.impl("nonzero", TORCH_FN(nonzero));
+
+  m.impl("set_.source_Storage_storage_offset", TORCH_FN(set_source_Storage_storage_offset));
 
   // cudnn
   m.impl("cudnn_convolution", TORCH_FN(cudnn_convolution));

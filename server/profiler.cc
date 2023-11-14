@@ -62,6 +62,8 @@ std::ostream& operator<<(std::ostream &os, Profiler::PerfItem item) {
     LOG_ITEM(Profiler::PerfItem, TrainAdjust)
     LOG_ITEM(Profiler::PerfItem, InferAllocStorage)
     LOG_ITEM(Profiler::PerfItem, InferLoadParam)
+
+    LOG_ITEM(Profiler::PerfItem, InferRealBatchSize)
   default:
     return os;
   }
@@ -115,7 +117,9 @@ Profiler::Profiler(const std::string &profile_log_path)
       // dev_id = std::stoi(m.str());
       gpu_uuid = m.str();
     } else {
-      LOG(FATAL) << "please use UUID in CUDA_VISIBLE_DEVICES, get UUID by nvidia-smi -L";
+      LOG(FATAL) << "please use UUID in CUDA_VISIBLE_DEVICES, "
+                 << "found $CUDA_VISIBLE_DEVICES="<< visiable_device << ", "
+                 << "get UUID by nvidia-smi -L";
     }
   }
 

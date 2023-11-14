@@ -122,8 +122,8 @@ class TensorPool {
   uint64_t Insert(STensor tensor);
   void Remove(uint64_t handle);
 
-  STensor Tensor(uint64_t handle) const;
-  const STensor CTensor(uint64_t handle) const;
+  STensor Tensor(uint64_t handle);
+  const STensor CTensor(uint64_t handle);
   
  private:
   static std::unique_ptr<TensorPool> tensor_pool_;

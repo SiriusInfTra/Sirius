@@ -64,6 +64,8 @@ class Profiler {
     TrainAdjust,
     InferAllocStorage,
     InferLoadParam,
+
+    InferRealBatchSize,
   };
 
 

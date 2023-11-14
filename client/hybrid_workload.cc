@@ -34,7 +34,7 @@ struct App : public colserve::workload::AppBase {
     auto benchmark_group = app.add_option_group("benchmark");
     benchmark_group->add_flag("--benchmark", benchmark.enable, "enable benchmark");
     benchmark_group->add_option("--random-dynamic-poisson", 
-                                benchmark.random_dynamic_possion, "random dynamic poisson");
+                                benchmark.random_dynamic_poisson, "random dynamic poisson");
     // app.add_option("--benchmark-poisson", , "micro benchmark");
   }
 
@@ -53,26 +53,100 @@ struct App : public colserve::workload::AppBase {
   
   struct {
     bool enable{false};
-    double random_dynamic_possion;
+    double random_dynamic_poisson;
   } benchmark;
 };
 
-std::vector<std::pair<std::string, std::string>> ParseModelName(const std::string &model) {
+struct InferModel {
+  std::string model_name;
+  std::string type;
+  std::string id;
+
+  operator std::string() const {
+    if (id.empty())
+      return model_name;
+    else
+      return model_name + "-"+ id;
+  }
+};
+
+std::vector<InferModel> ParseModelName(const std::string &model) {
   std::regex r{"([a-zA-Z0-9]+)(-([a-zA-Z0-9]+))?(\\[([0-9]+)\\])?"};
   std::smatch match;
   CHECK(std::regex_match(model, match, r));
   std::cout.flush();
   CHECK(match.size() == 6);
   if (match[5].str().empty()) {
-    return {{match[1].str(), match[3].str()}};
+    return {InferModel{ .model_name = match[1].str(), .type = match[3].str()}};
   } else {
-    std::vector<std::pair<std::string, std::string>> ret{{match[1].str(), match[3].str()}};
+    std::vector<InferModel> ret{InferModel{ .model_name = match[1].str(), .type = match[3].str()}};
     for (int i = 1; i < std::stoi(match[5].str()); i++) {
-      ret.emplace_back(match[1].str()+"-"+std::to_string(i), match[3].str());
+      ret.push_back(InferModel{
+        .model_name = match[1].str(),
+        .type = match[3].str(),
+        .id = std::to_string(i)
+      });
     }
     return ret;
   }
 }
+
+
+void MicroBenchmark(const App &app, colserve::workload::Workload &workload, 
+                    const std::vector<InferModel> &infer_models) {
+  std::vector<std::string> models;
+  for (auto &m : infer_models) { 
+    models.push_back(static_cast<std::string>(m)); 
+  }
+  std::mt19937 gen;
+  gen.seed(app.seed);
+  std::uniform_real_distribution<> lambda_dist(0, app.benchmark.random_dynamic_poisson);
+  std::uniform_int_distribution<> req_model_num_dist(0, infer_models.size());
+  std::vector<double> total_lambda{0};
+  std::map<std::string, std::vector<double>> model_lambdas;
+  auto change_time_points = app.change_time_points.at("benchmark");
+  for (size_t i = 0; i < change_time_points.size(); i++) {
+    total_lambda.push_back(lambda_dist(gen));
+  }
+  
+  for (size_t i = 0; i <= change_time_points.size(); i++) {
+    int req_model_num = req_model_num_dist(gen);
+    std::vector<double> cur_lambda;
+    std::uniform_real_distribution<> dist(0, 1);
+    for (int j = 0; j < req_model_num; j++) {
+      cur_lambda.push_back(dist(gen));
+    }
+    auto acc = std::accumulate(cur_lambda.begin(), cur_lambda.end(), 0.0);
+    std::for_each(cur_lambda.begin(), cur_lambda.end(), [s=acc,i, &total_lambda](double &x) {
+      if (s == 0) x = 0; else x /= s;
+      x *= total_lambda[i];
+    });
+    std::shuffle(models.begin(), models.end(), gen);
+    for (size_t j = 0; j < models.size(); j++) {
+      if (j < req_model_num) {
+        model_lambdas[models[j]].push_back(cur_lambda[j]);
+      } else {
+        model_lambdas[models[j]].push_back(0);
+      }
+    }
+  }
+  std::cerr << "Benchmarh Random Dynamic Lambdas: ";
+  for (size_t i = 0; i < total_lambda.size(); i++) {
+    if (i == 0) std::cerr << std::fixed << std::setprecision(1) << total_lambda[i] << "\t";
+    else std::cerr << total_lambda[i] << "(" << change_time_points[i-1] << ")\t";
+  }
+  std::cerr << std::endl;
+  for (size_t i = 0; i < models.size(); i++) {
+    std::cerr << "  " << std::setw(15) << models[i] << " lambdas: ";
+    for (auto l : model_lambdas[models[i]]) {
+      std::cerr << std::fixed << std::setprecision(1) << std::setw(4) << l << " ";
+    }
+    std::cerr << std::endl;
+    workload.InferDynamicPoisson(models[i], app.concurrency, change_time_points, model_lambdas[models[i]]);
+  }
+}
+
+
 
 int main(int argc, char** argv) {
   App app;
@@ -113,12 +187,13 @@ int main(int argc, char** argv) {
   );
   CHECK(workload.Hello());
 
-  std::vector<std::pair<std::string, std::string>> infer_models;
+  std::vector<InferModel> infer_models;
   for (auto &m : app.infer_models) {
-    for (auto &model : ParseModelName(m)) {
-      infer_models.push_back(model);
-    }
+    auto models = ParseModelName(m);
+    infer_models.insert(infer_models.end(), models.begin(), models.end());
   }
+
+
 
 
   if (app.seed == static_cast<uint64_t>(-1)) {
@@ -131,86 +206,34 @@ int main(int argc, char** argv) {
 
   if (app.enable_infer) {
     if (app.benchmark.enable) {
-      std::vector<std::string> models;
-      for (auto &m : infer_models) { 
-        models.push_back(m.first); 
-      }
-      std::mt19937 gen;
-      gen.seed(app.seed);
-      std::uniform_real_distribution<> lambda_dist(0, app.benchmark.random_dynamic_possion);
-      std::uniform_int_distribution<> req_model_num_dist(0, infer_models.size());
-      std::vector<double> total_lambda{0};
-      std::map<std::string, std::vector<double>> model_lambdas;
-      CHECK(app.change_time_points.count("benchmark"));
-      auto change_time_points = app.change_time_points["benchmark"];
-      for (size_t i = 0; i < change_time_points.size(); i++) {
-        total_lambda.push_back(lambda_dist(gen));
-      }
-      
-      for (size_t i = 0; i <= change_time_points.size(); i++) {
-        int req_model_num = req_model_num_dist(gen);
-        std::vector<double> cur_lambda;
-        std::uniform_real_distribution<> dist(0, 1);
-        for (int j = 0; j < req_model_num; j++) {
-          cur_lambda.push_back(dist(gen));
-        }
-        auto acc = std::accumulate(cur_lambda.begin(), cur_lambda.end(), 0.0);
-        std::for_each(cur_lambda.begin(), cur_lambda.end(), [s=acc,i, &total_lambda](double &x) {
-          if (s == 0) x = 0; else x /= s;
-          x *= total_lambda[i];
-        });
-        std::shuffle(models.begin(), models.end(), gen);
-        for (size_t j = 0; j < models.size(); j++) {
-          if (j < req_model_num) {
-            model_lambdas[models[j]].push_back(cur_lambda[j]);
-          } else {
-            model_lambdas[models[j]].push_back(0);
-          }
-        }
-      }
-      std::cerr << "Benchmarh Random Dynamic Lambdas: ";
-      for (size_t i = 0; i < total_lambda.size(); i++) {
-        if (i == 0) std::cerr << std::fixed << std::setprecision(1) << total_lambda[i] << "\t";
-        else std::cerr << total_lambda[i] << "(" << change_time_points[i-1] << ")\t";
-      }
-      std::cerr << std::endl;
-      for (size_t i = 0; i < models.size(); i++) {
-        std::cerr << "  " << std::setw(15) << models[i] << " lambdas: ";
-        for (auto l : model_lambdas[models[i]]) {
-          std::cerr << std::fixed << std::setprecision(1) << std::setw(4) << l << " ";
-        }
-        std::cerr << std::endl;
-        workload.InferDynamicPoisson(models[i], app.concurrency, change_time_points, model_lambdas[models[i]]);
-      }
-
+      MicroBenchmark(app, workload, infer_models);
     } else {
-      
       for (auto &m : infer_models) {
-        auto [model, type] = m;
-        if (type.empty()) {
-          if (app.interval_ms.count(model)) 
-            workload.Infer(model, app.concurrency,
-                           [&](size_t){return colserve::workload::double_ms_t(app.interval_ms[model]);},
+        auto model_str = static_cast<std::string>(m);
+        if (m.type.empty()) {
+          if (app.interval_ms.count(m.model_name)) 
+            workload.Infer(model_str, app.concurrency,
+                           [&](size_t){return colserve::workload::double_ms_t(app.interval_ms[model_str]);},
                            app.show_result);
           else
-            workload.Infer(model, app.concurrency, nullptr, app.show_result);
-        } else if (type == "p") {
-          CHECK(app.poisson.count(model));
-          workload.InferPoisson(model, app.concurrency, app.poisson[model], app.show_result);
-        } else if (type == "d") {
-          CHECK(app.change_time_points.count(model));
-          CHECK(app.dynamic_concurrencys.count(model));
-          workload.InferDynamic(model, app.change_time_points[model], app.dynamic_concurrencys[model], app.show_result);
-        } else if (type == "dp") {
-          CHECK(app.change_time_points.count(model));
-          CHECK(app.dynamic_poissons.count(model));
-          workload.InferDynamicPoisson(model, app.concurrency, app.change_time_points[model], app.dynamic_poissons[model], app.show_result);
-        } else if (type == "azure") {
+            workload.Infer(model_str, app.concurrency, nullptr, app.show_result);
+        } else if (m.type  == "p") {
+          CHECK(app.poisson.count(model_str));
+          workload.InferPoisson(model_str, app.concurrency, app.poisson[model_str], app.show_result);
+        } else if (m.type  == "d") {
+          CHECK(app.change_time_points.count(model_str));
+          CHECK(app.dynamic_concurrencys.count(model_str));
+          workload.InferDynamic(model_str, app.change_time_points[model_str], app.dynamic_concurrencys[model_str], app.show_result);
+        } else if (m.type  == "dp") {
+          CHECK(app.change_time_points.count(model_str));
+          CHECK(app.dynamic_poissons.count(model_str));
+          workload.InferDynamicPoisson(model_str, app.concurrency, app.change_time_points[model_str], app.dynamic_poissons[model_str], app.show_result);
+        } else if (m.type  == "azure") {
           static unsigned azure_model_num = std::count_if(infer_models.cbegin(), infer_models.cend(), 
-                [](auto &&m) { auto [model, type] = m; return type == "azure"; });
-          workload.InferAzure(model, azure_model_num, azure_data, app.scale_factor, app.period_duration, app.concurrency, app.show_result);
+                [](const auto &m) { return m.type == "azure"; });
+          workload.InferAzure(model_str, azure_model_num, azure_data, app.scale_factor, app.period_duration, app.concurrency, app.show_result);
         } else {
-          LOG(FATAL) << "unknown workload " << model << " type " << type ;
+          LOG(FATAL) << "unknown workload " << model_str << " type " << m.type ;
         }
       }
       // if (app.infer_models.count("mnist")) {
