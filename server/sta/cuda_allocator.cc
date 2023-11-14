@@ -41,7 +41,7 @@ void CUDAMemPool::Init(std::size_t nbytes, bool master) {
 }
 
 void CUDAMemPool::ReleaseMempool() {
-  cuda_mem_pool_.reset();
+  cuda_mem_pool_->ReleaseMempool();
 }
 
 CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool master) {
@@ -62,6 +62,7 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(std::size_t nbytes, M
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Resize(
     std::shared_ptr<PoolEntry> entry, std::size_t nbytes) {
   // TODO: handle reallocate
+  CHECK_NE(entry, nullptr);
   auto ptr = impl_->Alloc(nbytes, entry->mtype);
   CopyFromTo(entry, ptr);
   return ptr;
@@ -181,6 +182,9 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPoolImpl::MakeSharedPtr(CUDAMemPo
   stat_->at(static_cast<size_t>(mtype)).fetch_add(eh->nbytes, std::memory_order_relaxed);
   auto *entry = new PoolEntry{
       reinterpret_cast<std::byte *>(mem_pool_base_ptr_) + eh->addr_offset, eh->nbytes, mtype};
+  CHECK_NE(mem_pool_base_ptr_, nullptr);
+  CHECK_GE(static_cast<int64_t>(eh->addr_offset), 0);
+  CHECK_LE(static_cast<size_t>(eh->addr_offset) + eh->nbytes, this->config_.cuda_memory_size);
   auto free = [this, eh, mtype](PoolEntry *entry) {
     Free(eh, mtype);
     delete entry;
@@ -230,32 +234,50 @@ CUDAMemPoolImpl::CUDAMemPoolImpl(CUDAMemPoolImpl::MemPoolConfig config, bool for
   }
 }
 
-CUDAMemPoolImpl::~CUDAMemPoolImpl() {
-  CUDA_CALL(cudaSetDevice(config_.cuda_device));
-  CUDA_CALL(cudaStreamDestroy(cuda_memcpy_stream_));
+void CUDAMemPoolImpl::WaitSlaveExit() {
   if (master_) {
-    RefCount refCount;
     auto getRefCount = [&] {
       bip::scoped_lock locker(*mutex_);
       return *ref_count_;
     };
-    while ((refCount = getRefCount()) > 1) {
-      LOG(INFO) << "[mempool] master wait slave shutdown, ref_count = " << refCount << ".";
+    RefCount ref_count;
+    while ((ref_count = getRefCount()) > 1) {
+      LOG(INFO) << "[mempool] master wait slave shutdown, ref_count = " << ref_count << ".";
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
-    CUDA_CALL(cudaFree(mem_pool_base_ptr_));
+  }
+}
+
+CUDAMemPoolImpl::~CUDAMemPoolImpl() {
+  if (master_) {
+    WaitSlaveExit();
     bip::shared_memory_object::remove(config_.shared_memory_name.c_str());
     LOG(INFO) << "[mempool] free master.";
   } else {
     bip::scoped_lock locker(*mutex_);
     --(*ref_count_);
-    CUDA_CALL(cudaIpcCloseMemHandle(mem_pool_base_ptr_));
     LOG(INFO) << "[mempool] free slave.";
   }
 }
 
+void CUDAMemPoolImpl::ReleaseMempool() {
+  CUDA_CALL(cudaSetDevice(config_.cuda_device));
+  CUDA_CALL(cudaStreamDestroy(cuda_memcpy_stream_));
+  if (master_) {
+    WaitSlaveExit();
+    CUDA_CALL(cudaFree(mem_pool_base_ptr_));
+    LOG(INFO) << "[mempool] master release cuda resource.";
+  } else {
+    CUDA_CALL(cudaIpcCloseMemHandle(mem_pool_base_ptr_));
+    LOG(INFO) << "[mempool] slave release cuda resource.";
+  }
+  mem_pool_base_ptr_ = nullptr;
+}
+
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPoolImpl::Alloc(std::size_t nbytes, MemType mtype) {
-  if (nbytes == 0) { return {nullptr}; }
+  if (nbytes == 0) { 
+    return std::shared_ptr<CUDAMemPool::PoolEntry>(new PoolEntry{nullptr, 0, mtype});
+  }
   bip::scoped_lock locker(*mutex_);
   DCHECK(CheckMemPool());
   nbytes = (nbytes + 1023) / 1024 * 1024; // simple align to 1024B

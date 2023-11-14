@@ -78,9 +78,7 @@ class STensor : public std::shared_ptr<TensorContainer> {
   inline int64_t StorageOffset() const {
     return get()->tensor_.byte_offset / (get()->tensor_.dtype.bits >> 3);
   }
-  bool IsNull() const {
-    return get()->is_null_;
-  }
+  bool IsNull() const;
 
   bool ComputeContiguous() const;
   size_t ComputeNumel() const;
