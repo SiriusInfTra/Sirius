@@ -1,5 +1,9 @@
 .vscode
 build/
+/cmake-*
+/.cache
+/log
+/.idea
 
 *.gz
 *.tar
