@@ -15,6 +15,7 @@
   } while (0)
 
 
+
 namespace colserve {
 namespace sta {
 
@@ -248,8 +249,12 @@ CUDAMemPoolImpl::CUDAMemPoolImpl(CUDAMemPoolImpl::MemPoolConfig config, bool for
 }
 
 CUDAMemPoolImpl::~CUDAMemPoolImpl() {
-  CUDA_CALL(cudaSetDevice(config_.cuda_device));
-  CUDA_CALL(cudaStreamDestroy(cuda_memcpy_stream_));
+  auto error = cudaSetDevice(config_.cuda_device);
+  if (error != cudaSuccess) {
+    LOG(WARNING) << "[mempool] fail to select device when shutting down, maybe cuda driver already shutted down: " << cudaGetErrorString(error) << ".";
+  } else {
+    CUDA_CALL(cudaStreamDestroy(cuda_memcpy_stream_));
+  }
   if (master_) {
     RefCount refCount;
     auto getRefCount = [&] {
@@ -260,13 +265,17 @@ CUDAMemPoolImpl::~CUDAMemPoolImpl() {
       LOG(INFO) << "[mempool] master wait slave shutdown, ref_count = " << refCount << ".";
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
-    CUDA_CALL(cudaFree(mem_pool_base_ptr_));
+    if (error == cudaSuccess) {
+      CUDA_CALL(cudaFree(mem_pool_base_ptr_));
+    }
     bip::shared_memory_object::remove(config_.shared_memory_name.c_str());
     LOG(INFO) << "[mempool] free master.";
   } else {
     bip::scoped_lock locker(*mutex_);
     --(*ref_count_);
-    CUDA_CALL(cudaIpcCloseMemHandle(mem_pool_base_ptr_));
+    if (error == cudaSuccess) {
+      CUDA_CALL(cudaIpcCloseMemHandle(mem_pool_base_ptr_));
+    }
     LOG(INFO) << "[mempool] free slave.";
   }
 }
