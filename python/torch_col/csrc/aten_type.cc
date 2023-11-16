@@ -10,6 +10,7 @@
 #include <sta/init.h>
 #include <sta/tensor_pool.h>
 #include <sta/tensor_methods.h>
+#include <sta/shape_helper.h>
 #include "tensor_impl.h"
 #include "dlpack_convert.h"
 #include "convolution.h"
@@ -26,13 +27,13 @@ using namespace colserve;
 
 inline ColTensorImpl* GetColTensorImpl(const at::Tensor& tensor) {
   auto impl = dynamic_cast<ColTensorImpl*>(tensor.unsafeGetTensorImpl());
-  CHECK(impl) << "input tensor is not a ColTensor " << tensor.toString();
+  CHECK(impl) << "input tensor is not a ColTensor!!!: " << tensor.toString();
   return impl;
 }
 
 void cuda_fallback(const c10::OperatorHandle &op, torch::jit::Stack *stack) {
   auto schema = op.schema();
-  DLOG(INFO) << "redispatching " << schema << " to CUDA" << std::endl;
+  std::cout << "redispatching " << schema << " to CUDA!" << std::endl;
   op.redispatchBoxed(c10::DispatchKeySet(c10::DispatchKey::CUDA), stack);
 }
 
@@ -134,6 +135,27 @@ at::Tensor & set_source_Storage_storage_offset(
   LOG(FATAL) << "set tensor with a storage is unsupported op";
 }
 
+at::Tensor & set_source_Tensor(at::Tensor & self, const at::Tensor & source) {
+  auto self_impl = GetColTensorImpl(self);
+  auto source_impl = GetColTensorImpl(source);
+  if (self_impl == source_impl) {
+    return self;
+  }
+  auto self_tensor = self_impl->Tensor();
+  auto source_tensor = source_impl->Tensor();
+  sta::CheckMemoryBound(self_tensor.Shape(), self_tensor.Stride(), self_tensor->dtype, source_tensor.StorageOffset(), source_tensor.MData());
+  auto stride = source_tensor.Stride();
+  at::OptionalIntArrayRef stride_opt = stride.data() != nullptr ?
+                                          at::OptionalIntArrayRef(stride) : c10::nullopt;
+  std::cout << "stride:" << stride << std::endl;
+  auto size = source_tensor.Shape();
+  self_tensor.SetByteOffset(source_tensor->byte_offset);
+  self_tensor.Resize(size, c10::nullopt);
+
+  return self;
+}
+
+
 // cudnn
 at::Tensor cudnn_convolution(
     const at::Tensor & self, const at::Tensor & weight, 
@@ -222,6 +244,7 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("nonzero", TORCH_FN(nonzero));
 
   m.impl("set_.source_Storage_storage_offset", TORCH_FN(set_source_Storage_storage_offset));
+  m.impl("set_.source_Tensor", TORCH_FN(set_source_Tensor));
 
   // cudnn
   m.impl("cudnn_convolution", TORCH_FN(cudnn_convolution));
