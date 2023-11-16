@@ -158,15 +158,7 @@ uint64_t AsStrided(uint64_t handle, at::IntArrayRef size,
 void STensor::Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride) {
   // std::cout << "resize tensor " << size << std::endl;
   CHECK(!IsNull());
-  bool same_size = size.size() == get()->tensor_.ndim;
-  if (same_size) {
-    for (size_t i = 0; i < size.size(); i++) {
-      if (size[i] != get()->tensor_.shape[i]) {
-        same_size = false;
-        break;
-      }
-    }
-  }
+  bool same_size = (Shape() == size) && (!stride.has_value() || Shape() == stride.value());
   if (same_size) {
     return;
   }
