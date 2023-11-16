@@ -33,7 +33,6 @@ inline ColTensorImpl* GetColTensorImpl(const at::Tensor& tensor) {
 
 void cuda_fallback(const c10::OperatorHandle &op, torch::jit::Stack *stack) {
   auto schema = op.schema();
-  std::cout << "redispatching " << schema << " to CUDA!" << std::endl;
   op.redispatchBoxed(c10::DispatchKeySet(c10::DispatchKey::CUDA), stack);
 }
 
@@ -127,10 +126,6 @@ at::Tensor nonzero(const at::Tensor & self) {
   at::Tensor out = MakeColTensorEmpty({0}, self.options().dtype(at::kLong));
   // return at::native::nonzero_out_cuda(self, out);
   return nonzero_out_cuda(self, out);
-}
-
-at::Tensor & set_source_Tensor(at::Tensor & self, const at::Tensor & source) {
-  LOG(FATAL) << "set tensor is not implement yet";
 }
 
 at::Tensor & set_source_Storage_storage_offset(
