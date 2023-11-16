@@ -34,7 +34,10 @@ uint64_t Empty(at::IntArrayRef size, DLDataType dtype, MemType mtype) {
   } else {
     CHECK_GE(entry->nbytes, storage_nbytes);
   }
-  return TensorPool::Get()->Insert(STensor(entry, size.vec(), dtype));
+  auto handle = TensorPool::Get()->Insert(STensor(entry, size.vec(), dtype));
+  DLOG(INFO) << "sta::Empty (handle " << handle << ")"
+             << " size " << size << " dtype " << dtype;
+  return handle;
 }
 
 STensor RawEmpty(at::IntArrayRef size, DLDataType dtype, MemType mtype) {
@@ -61,7 +64,10 @@ uint64_t EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride,
   } else {
     CHECK_GE(entry->nbytes, storage_nbytes);
   }
-  return TensorPool::Get()->Insert(STensor(entry, size.vec(), stride.vec(), dtype, 0));
+  auto handle = TensorPool::Get()->Insert(STensor(entry, size.vec(), stride.vec(), dtype, 0));
+  DLOG(INFO) << "sta::EmptyStrided (handle " << handle << ")"
+             << " size " << size << " stride " << stride << " dtype " << dtype;
+  return handle;
 }
 
 uint64_t ViewDtype(uint64_t handle, DLDataType dtype) {
@@ -132,13 +138,20 @@ STensor RawViewShapeDtype(STensor tensor, at::IntArrayRef size, DLDataType dtype
 
 uint64_t AsStrided(uint64_t handle, at::IntArrayRef size,
                    at::IntArrayRef stride, c10::optional<int64_t> storage_offset) {
-  // DLOG(INFO) << "Astrided " << size << " " << stride << " " <<  storage_offset.value_or(0) << std::endl;
   auto tensor = TensorPool::Get()->Tensor(handle);
+  DLOG(INFO) << "sta::AsStrided (handle " << handle << ")"
+             << " size " << size << " stride " << stride 
+             << " storage_offset " <<  storage_offset.value_or(tensor.StorageOffset());
   if (!tensor.IsNull()) {
-    CheckMemoryBound(size, stride, tensor->dtype, storage_offset.value_or(0), tensor.MData());
-    return TensorPool::Get()->Insert(STensor(tensor.MData(), size.vec(), stride.vec(), tensor->dtype, storage_offset.value_or(0)));
+    CheckMemoryBound(size, stride, tensor->dtype, 
+        storage_offset.value_or(tensor.StorageOffset()), tensor.MData());
+    return TensorPool::Get()->Insert(STensor(
+        tensor.MData(), size.vec(), stride.vec(), tensor->dtype, 
+        storage_offset.value_or(tensor.StorageOffset())));
   } else {
-    return TensorPool::Get()->Insert(STensor(size.vec(), stride.vec(), tensor->dtype, storage_offset.value_or(0)));
+    return TensorPool::Get()->Insert(
+        STensor(size.vec(), stride.vec(), tensor->dtype, 
+        storage_offset.value_or(tensor.StorageOffset())));
   }
 }
 

@@ -129,6 +129,10 @@ at::Tensor nonzero(const at::Tensor & self) {
   return nonzero_out_cuda(self, out);
 }
 
+at::Tensor & set_source_Tensor(at::Tensor & self, const at::Tensor & source) {
+  LOG(FATAL) << "set tensor is not implement yet";
+}
+
 at::Tensor & set_source_Storage_storage_offset(
   at::Tensor & self, at::Storage source, 
   int64_t storage_offset, at::IntArrayRef size, at::IntArrayRef stride) {
