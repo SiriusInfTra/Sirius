@@ -55,6 +55,8 @@ public:
 
   ~CUDAMemPoolImpl();
 
+  void ReleaseMempool();
+  
   std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes, MemType mtype);
 
   std::shared_ptr<PoolEntry> Resize(std::shared_ptr<PoolEntry> entry, std::size_t nbytes);
@@ -112,16 +114,13 @@ private:
   StatMap *stat_;
 
   bool master_;
-  void *mem_pool_base_ptr_{};
+  void *mem_pool_base_ptr_{nullptr};
 
   inline PoolEntryImpl *GetEntry(EntryHandle handle);
-
   inline bip::managed_shared_memory::handle_t GetHandle(PoolEntryImpl *entry);
 
   inline void UpdateFreeEntrySize(Size2Entry::iterator iter, PoolEntryImpl *entry, size_t newSize);
-
   inline void UpdateEntryAddr(const Addr2Entry::iterator &iter, std::ptrdiff_t newAddr);
-
   inline void ConnectPoolEntryHandle(PoolEntryImpl *eh1, PoolEntryImpl *eh2);
 
   inline bool CheckMemPool();
@@ -130,6 +129,7 @@ private:
 
   void Free(PoolEntryImpl *entry, MemType mtype);
 
+  void WaitSlaveExit();
 };
 
 

@@ -76,6 +76,11 @@ void TensorContainer::SetTensor(TensorContainer::memory_data_t mdata,
   };
 }
 
+bool STensor::IsNull() const {
+  CHECK_EQ(get()->is_null_, get()->mdata_ == nullptr);
+  return get()->is_null_;
+}
+
 bool STensor::ComputeContiguous() const {
   bool is_contiguous = true;
   if (ComputeNumel() == 0)

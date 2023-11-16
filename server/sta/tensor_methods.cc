@@ -20,6 +20,7 @@ STensor RawNull(at::IntArrayRef size, DLDataType dtype) {
 uint64_t Empty(at::IntArrayRef size, DLDataType dtype, MemType mtype) {
   auto storage_nbytes = ComputeStorageNbytes(size, dtype);
   auto entry = CUDAMemPool::Get()->Alloc(storage_nbytes, mtype);
+  CHECK_NE(entry, nullptr);
   // std::stringstream ss;
   // ss << "Create empty size " << size << " nbytes " << storage_nbytes;
   // if (entry) {
@@ -28,7 +29,7 @@ uint64_t Empty(at::IntArrayRef size, DLDataType dtype, MemType mtype) {
   //   ss << " nullptr";
   // }
   // LOG(INFO) << ss.str();
-  if (entry == nullptr) {
+  if (entry->addr == nullptr && entry->nbytes == 0) {
     DLOG(WARNING) << "Tensor Method Empty: tensor without memory";
   } else {
     CHECK_GE(entry->nbytes, storage_nbytes);
@@ -46,6 +47,7 @@ uint64_t EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride,
                       DLDataType dtype, MemType mtype) {
   auto storage_nbytes = ComputeStorageNbytes(size, stride, dtype);
   auto entry = CUDAMemPool::Get()->Alloc(storage_nbytes, mtype);
+  CHECK_NE(entry, nullptr);
   // std::stringstream ss;
   // ss << "Create empty_strided size " << size << " stride " << stride << " nbytes " << storage_nbytes;
   // if (entry) {
@@ -54,7 +56,7 @@ uint64_t EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride,
   //   ss << " nullptr";
   // }
   // LOG(INFO) << ss.str();
-  if (entry == nullptr) {
+  if (entry->addr == nullptr && entry->nbytes == 0) {
     DLOG(WARNING) << "Tensor Method EmptyStrided: tensor without memory";
   } else {
     CHECK_GE(entry->nbytes, storage_nbytes);
@@ -66,6 +68,7 @@ uint64_t ViewDtype(uint64_t handle, DLDataType dtype) {
   auto tensor = TensorPool::Get()->Tensor(handle);
   int64_t self_elem_size = tensor->dtype.bits >> 3;
   int64_t new_elem_size = dtype.bits >> 3;
+  CHECK(!tensor.IsNull());
   if (self_elem_size == new_elem_size) {
     return TensorPool::Get()->Insert(STensor(tensor.MData(), tensor.ShapeVec(), tensor.StrideVec(), dtype, tensor.StorageOffset()));
   } else if (tensor->ndim == 0) {
@@ -141,6 +144,7 @@ uint64_t AsStrided(uint64_t handle, at::IntArrayRef size,
 
 void STensor::Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride) {
   // std::cout << "resize tensor " << size << std::endl;
+  CHECK(!IsNull());
   bool same_size = size.size() == get()->tensor_.ndim;
   if (same_size) {
     for (size_t i = 0; i < size.size(); i++) {
@@ -166,7 +170,7 @@ void STensor::Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride) {
   std::stringstream ss;
   // ss << "Resize storage_nbytes: " << storage_nbytes;
   TensorContainer::memory_data_t mdata = MData();
-  if (mdata == nullptr || mdata->nbytes < storage_nbytes) {
+  if (mdata->addr == nullptr || mdata->nbytes < storage_nbytes) {
     auto new_mdata = CUDAMemPool::Get()->Resize(mdata, storage_nbytes);
     // CUDAMemPool::Get()->CopyFromTo(mdata, new_mdata);
     mdata = new_mdata;
