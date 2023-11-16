@@ -143,7 +143,7 @@ void ColTensorImpl::UpdateStorage() {
     CHECK(sta::CUDAMemPool::Get()->CheckAddr(static_cast<char*>(storage_.data()) + storage_.nbytes()));
   }
 
-  DCHECK(tensor.ComputeContiguous() && numel_custom() * (tensor->dtype.bits >> 3) > storage_.nbytes())
+  DCHECK(!tensor.ComputeContiguous() || numel_custom() * (tensor->dtype.bits >> 3) <= storage_.nbytes())
     << "numel: " << numel_custom() << " dtype: " << (tensor->dtype.bits >> 3) << " storage: " << storage_.nbytes()
     << " size " << tensor.Shape() << " handle " << data_->handle << " mdata->nbytes " << mdata->nbytes;
        
