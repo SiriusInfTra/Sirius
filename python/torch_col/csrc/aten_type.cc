@@ -155,8 +155,10 @@ at::Tensor & set_source_Tensor(at::Tensor & self, const at::Tensor & source) {
   std::cout << "stride:" << stride << std::endl;
   auto size = source_tensor.Shape();
   self_tensor.SetByteOffset(source_tensor->byte_offset);
-  self_tensor.Resize(size, c10::nullopt);
-
+  self_tensor.Resize(size, stride_opt);
+  // self.resize_(self_tensor.Shape());
+  // self.resize_(size, stride.data() != nullptr ? stride.data() : self.strides());
+  self_impl->set_sizes_and_strides(self_tensor.Shape(),  self_tensor.Stride());
   return self;
 }
 
