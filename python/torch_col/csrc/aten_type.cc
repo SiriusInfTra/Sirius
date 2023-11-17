@@ -10,6 +10,7 @@
 #include <sta/init.h>
 #include <sta/tensor_pool.h>
 #include <sta/tensor_methods.h>
+#include <sta/shape_helper.h>
 #include "tensor_impl.h"
 #include "dlpack_convert.h"
 #include "convolution.h"
@@ -145,14 +146,30 @@ at::Tensor nonzero(const at::Tensor & self) {
   return nonzero_out_cuda(self, out);
 }
 
-at::Tensor & set_source_Tensor(at::Tensor & self, const at::Tensor & source) {
-  LOG(FATAL) << "set tensor is not implement yet";
-}
-
 at::Tensor & set_source_Storage_storage_offset(
   at::Tensor & self, at::Storage source, 
   int64_t storage_offset, at::IntArrayRef size, at::IntArrayRef stride) {
   LOG(FATAL) << "set tensor with a storage is unsupported op";
+}
+
+at::Tensor & set_source_Tensor(at::Tensor & self, const at::Tensor & source) {
+  auto self_impl = GetColTensorImpl(self);
+  auto source_impl = GetColTensorImpl(source);
+  if (self_impl == source_impl) {
+    return self;
+  }
+  auto self_tensor = self_impl->Tensor();
+  auto source_tensor = source_impl->Tensor();
+  sta::CheckMemoryBound(self_tensor.Shape(), self_tensor.Stride(), 
+      self_tensor->dtype, source_tensor.StorageOffset(), source_tensor.MData());
+  auto stride = source_tensor.Stride();
+  at::OptionalIntArrayRef stride_opt = stride.data() != nullptr ?
+                                          at::OptionalIntArrayRef(stride) : c10::nullopt;
+  auto size = source_tensor.Shape();
+  self_tensor.SetByteOffset(source_tensor->byte_offset);
+  self_tensor.Resize(size, stride_opt);
+  self_impl->UpdateAll();
+  return self;
 }
 
 // cudnn
