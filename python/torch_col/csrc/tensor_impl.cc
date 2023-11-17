@@ -25,6 +25,7 @@ ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data)
       c10::DataPtr{mdata ? mdata->addr : nullptr, 
       c10::Device{c10::DeviceType::CUDA, static_cast<c10::DeviceIndex>(tensor->device.device_id)}}};
   storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
+  set_sizes_and_strides(tensor.Shape(), tensor.Stride());
 }
 
 ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data,
@@ -39,6 +40,7 @@ ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data,
   set_sizes_strides_policy(SizesStridesPolicy::CustomSizes);
   storage_ = storage;
   storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
+  set_sizes_and_strides(tensor.Shape(), tensor.Stride());
 }
 
 sta::STensor ColTensorImpl::Tensor() const {

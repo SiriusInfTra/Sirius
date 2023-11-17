@@ -1,7 +1,7 @@
 import os
 os.environ['USE_SHARED_TENSOR'] = "1"
 os.environ['SHARED_TENSOR_POOL_GB'] = "12"
-os.environ['SHARED_TENSOR_HAS_SERVER'] = "0"
+os.environ['SHARED_TENSOR_HAS_SERVER'] = "1"
 os.environ['GLOG_logtostderr'] = "1"
 
 import torch
@@ -56,7 +56,6 @@ def TestBwdFactory(model:nn.Module, input_shape:List, criterion, target):
     input_data_cpu.requires_grad = True
     input_data_cuda.requires_grad = True
 
-    print(input_data_cuda.requires_grad)
     criterion_cuda = criterion.cuda()
     target_cuda = target.cuda()
 
@@ -69,6 +68,7 @@ def TestBwdFactory(model:nn.Module, input_shape:List, criterion, target):
     grad_cpu = input_data_cpu.grad
 
     def test_bwd_fn():
+        input_data_cuda.grad = None
         model_data_in_memory.seek(0)
         model_cuda = torch.load(model_data_in_memory, map_location='cpu').cuda().eval()
         output_data_cuda = model_cuda(input_data_cuda)
@@ -90,6 +90,13 @@ test_mnist_bwd_fn = TestBwdFactory(model=Mnist(), input_shape=(1, 1, 28, 28),
     criterion=nn.NLLLoss(), target=torch.tensor([1]))
 print(test_mnist_bwd_fn())
 
-test_resnet18_bwd_fn = TestBwdFactory(model=resnet18(), input_shape=(1, 3, 224, 224),
-    criterion=nn.NLLLoss(), target=torch.tensor([1]))
+test_resnet18_bwd_fn = TestBwdFactory(model=resnet18(), input_shape=(32, 3, 224, 224),
+    criterion=nn.NLLLoss(), target=torch.tensor(list(range(32))))
 print(test_resnet18_bwd_fn())
+
+for i in range(100):
+    assert test_mnist_fwd_fn() < 1e-3
+    assert test_resnet18_fwd_fn() < 1e-2
+
+    assert test_mnist_bwd_fn() < 1e-2
+    assert test_resnet18_bwd_fn() < 1e-2

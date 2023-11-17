@@ -82,10 +82,12 @@ at::Tensor _reshape_alias(const at::Tensor& self, at::IntArrayRef size, at::IntA
 
 const at::Tensor& resize_(const at::Tensor& self, at::IntArrayRef size, c10::optional<at::MemoryFormat> memory_format) {
   auto impl = GetColTensorImpl(self);
-  impl->Tensor().Resize(size, c10::nullopt);
+  auto tensor = impl->Tensor();
+  tensor.Resize(size, c10::nullopt);
   // LOG(INFO) << "resize_ " << "self " << impl  << " -> " << self.unsafeGetTensorImpl() << " "
   //           << size << " new ts " << self.sizes() << " " << self.numel() << " "
   //           << self.data_ptr();
+  impl->set_sizes_and_strides(tensor.Shape(), tensor.Stride());
   return self;
 }
 
