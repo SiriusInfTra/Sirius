@@ -35,6 +35,7 @@ inline ColTensorImpl* GetColTensorImpl(const at::Tensor& tensor) {
 
 void cuda_fallback(const c10::OperatorHandle &op, torch::jit::Stack *stack) {
   auto schema = op.schema();
+  // std::cout << "redispatch to: " << op.operator_name() << std::endl;
   op.redispatchBoxed(c10::DispatchKeySet(c10::DispatchKey::CUDA), stack);
 }
 
@@ -264,6 +265,10 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("cudnn_convolution_transpose", TORCH_FN(cudnn_convolution_transpose));
   m.impl("cudnn_convolution_relu", TORCH_FN(cudnn_convolution_relu));
   m.impl("cudnn_convolution_add_relu", TORCH_FN(cudnn_convolution_add_relu));
+
+  // avoid use default kernel (e.g., CompositeExplicitAutograd and CompositeImplicitAutograd)
+  m.impl("native_layer_norm", torch::CppFunction::makeFromBoxedFunction<
+      &cuda_fallback>());
 }
 
 TORCH_LIBRARY_IMPL(_, PrivateUse1, m) {
