@@ -78,6 +78,18 @@ class STensor : public std::shared_ptr<TensorContainer> {
   inline int64_t StorageOffset() const {
     return get()->tensor_.byte_offset / (get()->tensor_.dtype.bits >> 3);
   }
+
+  inline void SetByteOffset(int64_t byte_offset) {
+    auto & tensor = get()->tensor_;
+    tensor.byte_offset = byte_offset;
+  }
+  
+
+  inline void SetStorageOffset(int64_t storage_offset) {
+    auto & tensor = get()->tensor_;
+    tensor.byte_offset = storage_offset * (tensor.dtype.bits >> 3);
+  }
+
   bool IsNull() const;
 
   bool ComputeContiguous() const;
