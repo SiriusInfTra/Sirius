@@ -27,7 +27,9 @@ using namespace colserve;
 
 inline ColTensorImpl* GetColTensorImpl(const at::Tensor& tensor) {
   auto impl = dynamic_cast<ColTensorImpl*>(tensor.unsafeGetTensorImpl());
-  CHECK(impl) << "input tensor is not a ColTensor!!!: " << tensor.toString();
+  CHECK(impl) << "input tensor is not a ColTensor, got *impl " << tensor.unsafeGetTensorImpl() 
+              << " data_ptr " << tensor.data_ptr() << " " << tensor.toString()
+              << " , device " << tensor.device() << " " << tensor.key_set();
   return impl;
 }
 
@@ -81,12 +83,14 @@ at::Tensor _reshape_alias(const at::Tensor& self, at::IntArrayRef size, at::IntA
 const at::Tensor& resize_(const at::Tensor& self, at::IntArrayRef size, c10::optional<at::MemoryFormat> memory_format) {
   auto impl = GetColTensorImpl(self);
   impl->Tensor().Resize(size, c10::nullopt);
-  // std::cout << "resize_ " << size << " new ts " << self.sizes() << " " << self.numel() << " "
-  //           << self.data_ptr() << std::endl;
+  // LOG(INFO) << "resize_ " << "self " << impl  << " -> " << self.unsafeGetTensorImpl() << " "
+  //           << size << " new ts " << self.sizes() << " " << self.numel() << " "
+  //           << self.data_ptr();
   return self;
 }
 
 at::Tensor view(const at::Tensor& self, at::IntArrayRef size) {
+  // DLOG(INFO) << "view " << size << " " << self.sizes() << " " << self.numel();
   auto impl = GetColTensorImpl(self);
   at::DimVector inferred_size = at::infer_size_dv(size, self.numel());
   auto stride = at::detail::computeStride(self.sizes(),
@@ -229,21 +233,27 @@ TORCH_LIBRARY_IMPL(aten, CUDA, m) {
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
+  // RegisterCUDA
   m.impl("as_strided", TORCH_FN(as_strided));
   m.impl("_reshape_alias", TORCH_FN(_reshape_alias));
   m.impl("resize_", TORCH_FN(resize_));
   m.impl("view", TORCH_FN(view));
-  m.impl("view.dtype", TORCH_FN(view_dtype));
-  m.impl("alias", TORCH_FN(alias));
-
-  // m.impl("convolution_overrideable", convolution);
-  m.impl("_convolution", TORCH_FN(_convolution));
-  m.impl("convolution_backward", TORCH_FN(convolution_backward));
-
-  m.impl("nonzero", TORCH_FN(nonzero));
 
   m.impl("set_.source_Storage_storage_offset", TORCH_FN(set_source_Storage_storage_offset));
   m.impl("set_.source_Tensor", TORCH_FN(set_source_Tensor));
+
+  m.impl("nonzero", TORCH_FN(nonzero));
+
+  // RegisterCompositeExplicitAutograd
+  m.impl("_unsafe_view", TORCH_FN(view));
+  m.impl("view.dtype", TORCH_FN(view_dtype));
+  m.impl("alias", TORCH_FN(alias));
+
+
+  // convolution
+  // m.impl("convolution_overrideable", convolution);
+  m.impl("_convolution", TORCH_FN(_convolution));
+  m.impl("convolution_backward", TORCH_FN(convolution_backward));
 
   // cudnn
   m.impl("cudnn_convolution", TORCH_FN(cudnn_convolution));
