@@ -267,8 +267,18 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("cudnn_convolution_add_relu", TORCH_FN(cudnn_convolution_add_relu));
 
   // avoid use default kernel (e.g., CompositeExplicitAutograd and CompositeImplicitAutograd)
+  m.impl("addr", torch::CppFunction::makeFromBoxedFunction<
+      &cuda_fallback>());
+  m.impl("addr.out", torch::CppFunction::makeFromBoxedFunction<
+      &cuda_fallback>());
+  m.impl("native_group_norm", torch::CppFunction::makeFromBoxedFunction<
+      &cuda_fallback>());
   m.impl("native_layer_norm", torch::CppFunction::makeFromBoxedFunction<
       &cuda_fallback>());
+  m.impl("is_pinned", torch::CppFunction::makeFromBoxedFunction<
+      &cuda_fallback>());
+  m.impl("mish_backward", torch::CppFunction::makeFromBoxedFunction<
+      &cuda_fallback>());  
 }
 
 TORCH_LIBRARY_IMPL(_, PrivateUse1, m) {
