@@ -245,27 +245,27 @@ CUDAMemPoolImpl::CUDAMemPoolImpl(CUDAMemPoolImpl::MemPoolConfig config, bool for
 }
 
 void CUDAMemPoolImpl::WaitSlaveExit() {
+  auto getRefCount = [&] {
+    bip::scoped_lock locker(*mutex_);
+    return *ref_count_;
+  };
+  RefCount ref_count;
+  while ((ref_count = getRefCount()) > 1) {
+    LOG(INFO) << "[mempool] master wait slave shutdown, ref_count = " << ref_count << ".";
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  }
+
+
+}
+
 CUDAMemPoolImpl::~CUDAMemPoolImpl() {
   auto error = cudaSetDevice(config_.cuda_device);
   if (error != cudaSuccess) {
     LOG(WARNING) << "[mempool] fail to select device when shutting down, maybe cuda driver already shutted down: " << cudaGetErrorString(error) << ".";
-  } else {
+  }
+  if (error == cudaSuccess) {
     CUDA_CALL(cudaStreamDestroy(cuda_memcpy_stream_));
   }
-  if (master_) {
-    auto getRefCount = [&] {
-      bip::scoped_lock locker(*mutex_);
-      return *ref_count_;
-    };
-    RefCount ref_count;
-    while ((ref_count = getRefCount()) > 1) {
-      LOG(INFO) << "[mempool] master wait slave shutdown, ref_count = " << ref_count << ".";
-      std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    }
-  }
-}
-
-CUDAMemPoolImpl::~CUDAMemPoolImpl() {
   if (master_) {
     WaitSlaveExit();
     if (error == cudaSuccess) {
@@ -284,16 +284,16 @@ CUDAMemPoolImpl::~CUDAMemPoolImpl() {
 }
 
 void CUDAMemPoolImpl::ReleaseMempool() {
-  CUDA_CALL(cudaSetDevice(config_.cuda_device));
-  CUDA_CALL(cudaStreamDestroy(cuda_memcpy_stream_));
-  if (master_) {
-    WaitSlaveExit();
-    CUDA_CALL(cudaFree(mem_pool_base_ptr_));
-    LOG(INFO) << "[mempool] master release cuda resource.";
-  } else {
-    CUDA_CALL(cudaIpcCloseMemHandle(mem_pool_base_ptr_));
-    LOG(INFO) << "[mempool] slave release cuda resource.";
-  }
+  // CUDA_CALL(cudaSetDevice(config_.cuda_device));
+  // CUDA_CALL(cudaStreamDestroy(cuda_memcpy_stream_));
+  // if (master_) {
+  //   WaitSlaveExit();
+  //   CUDA_CALL(cudaFree(mem_pool_base_ptr_));
+  //   LOG(INFO) << "[mempool] master release cuda resource.";
+  // } else {
+  //   CUDA_CALL(cudaIpcCloseMemHandle(mem_pool_base_ptr_));
+  //   LOG(INFO) << "[mempool] slave release cuda resource.";
+  // }
   mem_pool_base_ptr_ = nullptr;
 }
 
