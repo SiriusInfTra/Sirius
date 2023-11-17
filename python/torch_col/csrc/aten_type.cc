@@ -74,6 +74,16 @@ at::Tensor as_strided(
   return MakeColTensorAlias(handle, self);
 }
 
+const at::Tensor & as_strided_(
+    const at::Tensor & self, at::IntArrayRef size, at::IntArrayRef stride, 
+    c10::optional<int64_t> storage_offset) {
+  auto impl = GetColTensorImpl(self);
+  sta::AsStrided_(impl->Handle(), size, stride, storage_offset);
+  const_cast<ColTensorImpl*>(impl)->UpdateSize();
+  return self;
+}
+    
+
 at::Tensor _reshape_alias(const at::Tensor& self, at::IntArrayRef size, at::IntArrayRef stride) {
   auto impl = GetColTensorImpl(self);
   return MakeColTensorAlias(sta::AsStrided(
@@ -87,7 +97,8 @@ const at::Tensor& resize_(const at::Tensor& self, at::IntArrayRef size, c10::opt
   // LOG(INFO) << "resize_ " << "self " << impl  << " -> " << self.unsafeGetTensorImpl() << " "
   //           << size << " new ts " << self.sizes() << " " << self.numel() << " "
   //           << self.data_ptr();
-  impl->set_sizes_and_strides(tensor.Shape(), tensor.Stride());
+  // impl->set_sizes_and_strides(tensor.Shape(), tensor.Stride());
+  const_cast<ColTensorImpl*>(impl)->UpdateSize();
   return self;
 }
 
@@ -233,6 +244,7 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("_unsafe_view", TORCH_FN(view));
   m.impl("view.dtype", TORCH_FN(view_dtype));
   m.impl("alias", TORCH_FN(alias));
+  m.impl("as_strided_", TORCH_FN(as_strided_));
 
 
   // convolution

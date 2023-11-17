@@ -155,6 +155,23 @@ uint64_t AsStrided(uint64_t handle, at::IntArrayRef size,
   }
 }
 
+void AsStrided_(uint64_t handle, at::IntArrayRef size,
+                    at::IntArrayRef stride, c10::optional<int64_t> storage_offset) {
+  auto tensor = TensorPool::Get()->Tensor(handle);
+  DLOG(INFO) << "sta::AsStrided_ (handle " << handle << ")"
+             << " size " << size << " stride " << stride 
+             << " storage_offset " <<  storage_offset.value_or(tensor.StorageOffset());
+  if (!tensor.IsNull()) {
+    CheckMemoryBound(size, stride, tensor->dtype, 
+        storage_offset.value_or(tensor.StorageOffset()), tensor.MData());
+    tensor.get()->SetTensor(tensor.MData(), size.vec(), stride.vec(), tensor->dtype, 
+        storage_offset.value_or(tensor.StorageOffset()));
+  } else {
+    tensor.get()->SetTensor(nullptr, size.vec(), stride.vec(), tensor->dtype, 
+        storage_offset.value_or(tensor.StorageOffset()));
+  }
+}
+
 void STensor::Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride) {
   // std::cout << "resize tensor " << size << std::endl;
   CHECK(!IsNull());

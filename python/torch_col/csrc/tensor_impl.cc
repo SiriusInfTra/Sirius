@@ -25,7 +25,9 @@ ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data)
       c10::DataPtr{mdata ? mdata->addr : nullptr, 
       c10::Device{c10::DeviceType::CUDA, static_cast<c10::DeviceIndex>(tensor->device.device_id)}}};
   storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
-  set_sizes_and_strides(tensor.Shape(), tensor.Stride());
+  // set_sizes_and_strides(tensor.Shape(), tensor.Stride());
+  is_contiguous_ = tensor.ComputeContiguous();
+  UpdateSize();
 }
 
 ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data,
@@ -40,7 +42,9 @@ ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data,
   set_sizes_strides_policy(SizesStridesPolicy::CustomSizes);
   storage_ = storage;
   storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
-  set_sizes_and_strides(tensor.Shape(), tensor.Stride());
+  is_contiguous_ = tensor.ComputeContiguous();
+  // set_sizes_and_strides(tensor.Shape(), tensor.Stride());
+  UpdateSize();
 }
 
 sta::STensor ColTensorImpl::Tensor() const {
@@ -52,30 +56,39 @@ const sta::STensor ColTensorImpl::CTensor() const {
 }
 
 at::IntArrayRef ColTensorImpl::sizes_custom() const {
-  auto tensor = sta::TensorPool::Get()->Tensor(data_->handle);
-  return at::IntArrayRef(tensor->shape, tensor->ndim);
+  // auto tensor = sta::TensorPool::Get()->Tensor(data_->handle);
+  // return at::IntArrayRef(tensor->shape, tensor->ndim);
+  const_cast<ColTensorImpl*>(this)->UpdateSize();
+  return sizes_default();
 }
 
 at::IntArrayRef ColTensorImpl::strides_custom() const {
-  auto tensor = colserve::sta::TensorPool::Get()->Tensor(data_->handle);
-  return at::IntArrayRef(tensor->strides, tensor->ndim);
+  // auto tensor = colserve::sta::TensorPool::Get()->Tensor(data_->handle);
+  // return at::IntArrayRef(tensor->strides, tensor->ndim);
+  const_cast<ColTensorImpl*>(this)->UpdateSize();
+  return strides_default();
 }
 
 int64_t ColTensorImpl::dim_custom() const {
-  auto tensor = colserve::sta::TensorPool::Get()->Tensor(data_->handle);
-  return tensor->ndim;
+  // auto tensor = colserve::sta::TensorPool::Get()->Tensor(data_->handle);
+  // return tensor->ndim;
+  const_cast<ColTensorImpl*>(this)->UpdateSize();
+  return dim_default();
 }
 
 int64_t ColTensorImpl::numel_custom() const {
-  int64_t numel = 1;
-  for (auto dim : sizes_custom()) {
-    numel *= dim;
-  }
-  return numel;
+  // int64_t numel = 1;
+  // for (auto dim : sizes_custom()) {
+  //   numel *= dim;
+  // }
+  // return numel;
+  const_cast<ColTensorImpl*>(this)->UpdateSize();
+  return numel_default();
 }
 
 bool ColTensorImpl::is_contiguous_custom(at::MemoryFormat memory_format) const {
-  return Tensor().ComputeContiguous();
+  const_cast<ColTensorImpl*>(this)->is_contiguous_ = Tensor().ComputeContiguous();
+  return is_contiguous_;
 }
 
 bool ColTensorImpl::has_storage() const {
@@ -89,8 +102,10 @@ const at::Storage& ColTensorImpl::storage() const {
 }
 
 int64_t ColTensorImpl::storage_offset() const {
-  auto tensor = Tensor();
-  return tensor.StorageOffset();
+  // auto tensor = Tensor();
+  // return tensor.StorageOffset();
+  const_cast<ColTensorImpl*>(this)->UpdateStorage();
+  return storage_offset_;
 }
 
 c10::intrusive_ptr<c10::TensorImpl> ColTensorImpl::shallow_copy_and_detach(
@@ -145,6 +160,7 @@ void ColTensorImpl::UpdateStorage() {
     CHECK(sta::CUDAMemPool::Get()->CheckAddr(static_cast<char*>(storage_.data()) + storage_.nbytes()));
   }
 
+  is_contiguous_ = tensor.ComputeContiguous();
   DCHECK(!tensor.ComputeContiguous() || numel_custom() * (tensor->dtype.bits >> 3) <= storage_.nbytes())
     << "numel: " << numel_custom() << " dtype: " << (tensor->dtype.bits >> 3) << " storage: " << storage_.nbytes()
     << " size " << tensor.Shape() << " handle " << data_->handle << " mdata->nbytes " << mdata->nbytes;
@@ -154,6 +170,17 @@ void ColTensorImpl::UpdateStorage() {
   //   std::cout << "mdata: " << std::hex << mdata->addr << " " << mdata->size << " "
   //             << static_cast<void*>(static_cast<char*>(storage_.data()) + tensor->byte_offset) 
   //             << std::endl;
+}
+
+void ColTensorImpl::UpdateSize() {
+  auto tensor = sta::TensorPool::Get()->Tensor(data_->handle);
+  set_sizes_and_strides(tensor.Shape(), tensor.Stride());
+  numel_ = tensor.ComputeNumel();
+}
+
+void ColTensorImpl::UpdateAll() {
+  UpdateStorage();
+  UpdateSize();
 }
 
 at::Tensor MakeColTensorEmpty(at::IntArrayRef size, const at::TensorOptions &options) {

@@ -45,10 +45,13 @@ class ColTensorImpl : public c10::TensorImpl {
       c10::VariableVersion&& version_counter,
       bool allow_tensor_metadata_change) const override;
   
+  // update aten::TensorImpl properties with ColTensor
+  void UpdateStorage();
+  void UpdateSize();
+  void UpdateAll();
+
  private:
   static caffe2::TypeMeta GetTypeMeta(const std::shared_ptr<Data> &data);
-  
-  void UpdateStorage();
 
   template <typename VariableVersion>
   c10::intrusive_ptr<c10::TensorImpl> shallow_copy_and_detach_core_custom(
