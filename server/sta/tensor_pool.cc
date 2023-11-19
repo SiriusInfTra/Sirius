@@ -19,24 +19,29 @@ TensorPool* TensorPool::Get() {
 }
 
 
-TensorContainer::TensorContainer() : tensor_{0}, mdata_{0} {}
+TensorContainer::TensorContainer() : tensor_{0}, mdata_{0}, stensor_version_{0} {}
 
-TensorContainer::TensorContainer(std::vector<int64_t> shape, DLDataType dltype) : is_null_{true} {
+TensorContainer::TensorContainer(std::vector<int64_t> shape, DLDataType dltype) 
+    : is_null_{true}, stensor_version_{0} {
   SetTensor(nullptr, std::move(shape), dltype, 0);
 }
 
-TensorContainer::TensorContainer(std::vector<int64_t> shape, std::vector<int64_t> stride, 
-                                 DLDataType dtype, size_t storage_offset) : is_null_{true} {
+TensorContainer::TensorContainer(
+    std::vector<int64_t> shape, std::vector<int64_t> stride, 
+    DLDataType dtype, size_t storage_offset) 
+    : is_null_{true}, stensor_version_{0} {
   SetTensor(nullptr, std::move(shape), std::move(stride), dtype, storage_offset);
 }
 
-TensorContainer::TensorContainer(memory_data_t mdata, std::vector<int64_t> shape, DLDataType dtype) {
+TensorContainer::TensorContainer(memory_data_t mdata, std::vector<int64_t> shape, DLDataType dtype)
+    : stensor_version_{0} {
   SetTensor(mdata, std::move(shape), dtype, 0);
 }
 
 TensorContainer::TensorContainer(
     memory_data_t mdata, std::vector<int64_t> shape, std::vector<int64_t> stride,
-    DLDataType dtype, size_t storage_offset) {
+    DLDataType dtype, size_t storage_offset)
+    : stensor_version_{0} {
   SetTensor(mdata, std::move(shape), std::move(stride), dtype, storage_offset);
 }
 

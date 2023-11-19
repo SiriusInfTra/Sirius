@@ -26,8 +26,8 @@ ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data)
       c10::Device{c10::DeviceType::CUDA, static_cast<c10::DeviceIndex>(tensor->device.device_id)}}};
   storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
   // set_sizes_and_strides(tensor.Shape(), tensor.Stride());
-  is_contiguous_ = tensor.ComputeContiguous();
   UpdateSize();
+  UpdateVersion();
 }
 
 ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data,
@@ -42,9 +42,10 @@ ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data,
   set_sizes_strides_policy(SizesStridesPolicy::CustomSizes);
   storage_ = storage;
   storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
-  is_contiguous_ = tensor.ComputeContiguous();
   // set_sizes_and_strides(tensor.Shape(), tensor.Stride());
+  // UpdateSize();
   UpdateSize();
+  UpdateVersion();
 }
 
 sta::STensor ColTensorImpl::Tensor() const {
@@ -58,21 +59,21 @@ const sta::STensor ColTensorImpl::CTensor() const {
 at::IntArrayRef ColTensorImpl::sizes_custom() const {
   // auto tensor = sta::TensorPool::Get()->Tensor(data_->handle);
   // return at::IntArrayRef(tensor->shape, tensor->ndim);
-  const_cast<ColTensorImpl*>(this)->UpdateSize();
+  const_cast<ColTensorImpl*>(this)->UpdateAll();
   return sizes_default();
 }
 
 at::IntArrayRef ColTensorImpl::strides_custom() const {
   // auto tensor = colserve::sta::TensorPool::Get()->Tensor(data_->handle);
   // return at::IntArrayRef(tensor->strides, tensor->ndim);
-  const_cast<ColTensorImpl*>(this)->UpdateSize();
+  const_cast<ColTensorImpl*>(this)->UpdateAll();
   return strides_default();
 }
 
 int64_t ColTensorImpl::dim_custom() const {
   // auto tensor = colserve::sta::TensorPool::Get()->Tensor(data_->handle);
   // return tensor->ndim;
-  const_cast<ColTensorImpl*>(this)->UpdateSize();
+  const_cast<ColTensorImpl*>(this)->UpdateAll();
   return dim_default();
 }
 
@@ -82,29 +83,30 @@ int64_t ColTensorImpl::numel_custom() const {
   //   numel *= dim;
   // }
   // return numel;
-  const_cast<ColTensorImpl*>(this)->UpdateSize();
+  const_cast<ColTensorImpl*>(this)->UpdateAll();
   return numel_default();
 }
 
 bool ColTensorImpl::is_contiguous_custom(at::MemoryFormat memory_format) const {
-  const_cast<ColTensorImpl*>(this)->is_contiguous_ = Tensor().ComputeContiguous();
+  // const_cast<ColTensorImpl*>(this)->is_contiguous_ = Tensor().ComputeContiguous();
+  const_cast<ColTensorImpl*>(this)->UpdateAll();
   return is_contiguous_;
 }
 
 bool ColTensorImpl::has_storage() const {
-  const_cast<ColTensorImpl*>(this)->UpdateStorage();
+  const_cast<ColTensorImpl*>(this)->UpdateAll();
   return storage_;
 }
 
 const at::Storage& ColTensorImpl::storage() const {
-  const_cast<ColTensorImpl*>(this)->UpdateStorage();
+  const_cast<ColTensorImpl*>(this)->UpdateAll();
   return storage_;
 }
 
 int64_t ColTensorImpl::storage_offset() const {
   // auto tensor = Tensor();
   // return tensor.StorageOffset();
-  const_cast<ColTensorImpl*>(this)->UpdateStorage();
+  const_cast<ColTensorImpl*>(this)->UpdateAll();
   return storage_offset_;
 }
 
@@ -160,11 +162,10 @@ void ColTensorImpl::UpdateStorage() {
     CHECK(sta::CUDAMemPool::Get()->CheckAddr(static_cast<char*>(storage_.data()) + storage_.nbytes()));
   }
 
-  is_contiguous_ = tensor.ComputeContiguous();
   DCHECK(!tensor.ComputeContiguous() || numel_custom() * (tensor->dtype.bits >> 3) <= storage_.nbytes())
     << "numel: " << numel_custom() << " dtype: " << (tensor->dtype.bits >> 3) << " storage: " << storage_.nbytes()
     << " size " << tensor.Shape() << " handle " << data_->handle << " mdata->nbytes " << mdata->nbytes;
-       
+
   // }
   // if (mdata != nullptr)
   //   std::cout << "mdata: " << std::hex << mdata->addr << " " << mdata->size << " "
@@ -174,13 +175,51 @@ void ColTensorImpl::UpdateStorage() {
 
 void ColTensorImpl::UpdateSize() {
   auto tensor = sta::TensorPool::Get()->Tensor(data_->handle);
-  set_sizes_and_strides(tensor.Shape(), tensor.Stride());
+  // set_sizes_and_strides(tensor.Shape(), tensor.Stride());
+
+  const auto new_dim = tensor->ndim;
+  
+  auto new_size = tensor.Shape();
+  auto new_stride = tensor.Stride();
+
+  sizes_and_strides_.set_sizes(new_size);
+
+  if (new_dim > 0) {
+    for (size_t dim = new_dim - 1;; dim--) {
+      if (new_stride[dim] >= 0) {
+        sizes_and_strides_.stride_at_unchecked(dim) = new_stride[dim];
+      } else {
+        LOG(FATAL) << "STensor does not have strides"; 
+        // // XXX: This behavior is surprising and may need to be removed to
+        // // support negative strides. Some pytorch functions rely on it:
+        // // for example, torch.cat (run TestTorch.test_cat_empty).
+        // if (dim == new_dim - 1) {
+        //   sizes_and_strides_.stride_at_unchecked(dim) = 1;
+        // } else {
+        //   // Keep stride monotonically increasing to match NumPy.
+        //   sizes_and_strides_.stride_at_unchecked(dim) =
+        //       std::max<int64_t>(
+        //           sizes_and_strides_.size_at_unchecked(dim + 1), 1) *
+        //       sizes_and_strides_.stride_at_unchecked(dim + 1);
+        // }
+      }
+      if (dim == 0)
+        break;
+    }
+  }
+
   numel_ = tensor.ComputeNumel();
+  is_contiguous_ = tensor.ComputeContiguous();
+  // refresh_numel();
+  // refresh_contiguous();
 }
 
 void ColTensorImpl::UpdateAll() {
-  UpdateStorage();
-  UpdateSize();
+  if (!IsUpdated()) {
+    UpdateStorage();
+    UpdateSize();
+    UpdateVersion();
+  }
 }
 
 at::Tensor MakeColTensorEmpty(at::IntArrayRef size, const at::TensorOptions &options) {

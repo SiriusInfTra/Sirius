@@ -46,9 +46,13 @@ class ColTensorImpl : public c10::TensorImpl {
       bool allow_tensor_metadata_change) const override;
   
   // update aten::TensorImpl properties with ColTensor
-  void UpdateStorage();
-  void UpdateSize();
   void UpdateAll();
+
+  inline bool IsUpdated() {
+    auto tensor = colserve::sta::TensorPool::Get()->CTensor(data_->handle);
+    return tensor_tag_ == static_cast<void*>(tensor.get()) &&
+        stensor_version_ == tensor.Version();
+  }
 
  private:
   static caffe2::TypeMeta GetTypeMeta(const std::shared_ptr<Data> &data);
@@ -58,7 +62,18 @@ class ColTensorImpl : public c10::TensorImpl {
       VariableVersion&& version_counter,
       bool allow_tensor_metadata_change) const;
 
+  inline void UpdateVersion() {
+    auto tensor = colserve::sta::TensorPool::Get()->CTensor(data_->handle);
+    tensor_tag_ = static_cast<void*>(tensor.get());
+    stensor_version_ = tensor.Version();
+  }
+
+  void UpdateStorage();
+  void UpdateSize();
+
   std::shared_ptr<Data> data_;
+  void* tensor_tag_;
+  size_t stensor_version_;
 };
 
 
