@@ -7,7 +7,7 @@
 
 #include "model_train_store.h"
 #include "controller.h"
-#include "profile.h"
+#include "profiler.h"
 #include "config.h"
 
 
