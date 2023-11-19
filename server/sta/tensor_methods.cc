@@ -71,14 +71,14 @@ uint64_t EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride,
 }
 
 uint64_t ViewDtype(uint64_t handle, DLDataType dtype) {
-  auto tensor = TensorPool::Get()->Tensor(handle);
+  auto tensor = TensorPool::Get()->CTensor(handle);
   int64_t self_elem_size = tensor->dtype.bits >> 3;
   int64_t new_elem_size = dtype.bits >> 3;
   CHECK(!tensor.IsNull());
   if (self_elem_size == new_elem_size) {
     return TensorPool::Get()->Insert(STensor(tensor.MData(), tensor.ShapeVec(), tensor.StrideVec(), dtype, tensor.StorageOffset()));
   } else if (tensor->ndim == 0) {
-    CHECK(false) << "tensor " << handle << " 0 dim to view " << tensor->dtype << " to " << dtype;
+    LOG(FATAL) << "tensor " << handle << " 0 dim to view " << tensor->dtype << " to " << dtype;
   } else if (self_elem_size > new_elem_size) {
     // Downsizing element size
     int64_t size_ratio = self_elem_size / new_elem_size;
@@ -106,7 +106,7 @@ uint64_t ViewDtype(uint64_t handle, DLDataType dtype) {
 }
 
 uint64_t ViewShapeDtype(uint64_t handle, at::IntArrayRef size, DLDataType dtype) {
-  auto tensor = TensorPool::Get()->Tensor(handle);
+  auto tensor = TensorPool::Get()->CTensor(handle);
   // auto new_stride = ComputeStrides(size);
   // int64_t new_elem_size = dtype.bits >> 3;
   // auto bytes_offset = tensor->byte_offset;
@@ -122,7 +122,7 @@ uint64_t ViewShapeDtype(uint64_t handle, at::IntArrayRef size, DLDataType dtype)
   return TensorPool::Get()->Insert(view_tensor);
 }
 
-STensor RawViewShapeDtype(STensor tensor, at::IntArrayRef size, DLDataType dtype) {
+STensor RawViewShapeDtype(const STensor tensor, at::IntArrayRef size, DLDataType dtype) {
   auto new_stride = ComputeStrides(size);
   int64_t new_elem_size = dtype.bits >> 3;
   auto bytes_offset = tensor->byte_offset;
@@ -138,7 +138,7 @@ STensor RawViewShapeDtype(STensor tensor, at::IntArrayRef size, DLDataType dtype
 
 uint64_t AsStrided(uint64_t handle, at::IntArrayRef size,
                    at::IntArrayRef stride, c10::optional<int64_t> storage_offset) {
-  auto tensor = TensorPool::Get()->Tensor(handle);
+  auto tensor = TensorPool::Get()->CTensor(handle);
   DLOG(INFO) << "sta::AsStrided (handle " << handle << ")"
              << " size " << size << " stride " << stride 
              << " storage_offset " <<  storage_offset.value_or(tensor.StorageOffset());
@@ -170,6 +170,7 @@ void AsStrided_(uint64_t handle, at::IntArrayRef size,
     tensor.get()->SetTensor(nullptr, size.vec(), stride.vec(), tensor->dtype, 
         storage_offset.value_or(tensor.StorageOffset()));
   }
+  tensor.UpdateVersion();
 }
 
 void STensor::Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride) {
@@ -189,7 +190,7 @@ void STensor::Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride) {
         + get()->tensor_.byte_offset;
   }
 
-  std::stringstream ss;
+  // std::stringstream ss;
   // ss << "Resize storage_nbytes: " << storage_nbytes;
   TensorContainer::memory_data_t mdata = MData();
   if (mdata->addr == nullptr || mdata->nbytes < storage_nbytes) {
@@ -209,6 +210,7 @@ void STensor::Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride) {
   } else {
     get()->SetTensor(mdata, size.vec(), get()->tensor_.dtype, std::nullopt);
   }
+  this->UpdateVersion();
 }
 
 void STensor::AllocForNull(MemType mtype, bool raw_alloc) {
@@ -227,6 +229,7 @@ void STensor::AllocForNull(MemType mtype, bool raw_alloc) {
   get()->mdata_ = mdata;
   get()->tensor_.data = mdata->addr;
   get()->is_null_ = false;
+  this->UpdateVersion();
 }
 
 void STensor::AssignMDataForNull(TensorContainer::memory_data_t mdata, bool check_memory_bound) {
@@ -238,6 +241,7 @@ void STensor::AssignMDataForNull(TensorContainer::memory_data_t mdata, bool chec
   get()->mdata_ = mdata;
   get()->tensor_.data = mdata->addr;
   get()->is_null_ = false;
+  this->UpdateVersion();
 }
 
 void STensor::DeallocToNull() {
@@ -245,6 +249,7 @@ void STensor::DeallocToNull() {
   get()->tensor_.data = 0;
   get()->mdata_ = nullptr;
   get()->is_null_ = true;
+  this->UpdateVersion();
 }
 
 }

@@ -80,7 +80,7 @@ const at::Tensor & as_strided_(
     c10::optional<int64_t> storage_offset) {
   auto impl = GetColTensorImpl(self);
   sta::AsStrided_(impl->Handle(), size, stride, storage_offset);
-  const_cast<ColTensorImpl*>(impl)->UpdateSize();
+  const_cast<ColTensorImpl*>(impl)->UpdateAll();
   return self;
 }
     
@@ -99,7 +99,7 @@ const at::Tensor& resize_(const at::Tensor& self, at::IntArrayRef size, c10::opt
   //           << size << " new ts " << self.sizes() << " " << self.numel() << " "
   //           << self.data_ptr();
   // impl->set_sizes_and_strides(tensor.Shape(), tensor.Stride());
-  const_cast<ColTensorImpl*>(impl)->UpdateSize();
+  const_cast<ColTensorImpl*>(impl)->UpdateAll();
   return self;
 }
 
