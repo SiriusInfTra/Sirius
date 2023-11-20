@@ -48,6 +48,8 @@ class TensorContainer {
   
   DLTensor tensor_;
   memory_data_t mdata_;
+
+  size_t stensor_version_{0};
 };
 
 class STensor : public std::shared_ptr<TensorContainer> {
@@ -60,7 +62,7 @@ class STensor : public std::shared_ptr<TensorContainer> {
   STensor(Args&&... args) : 
       std::shared_ptr<TensorContainer>(std::make_shared<TensorContainer>(std::forward<Args>(args)...)) {}
 
-  TensorContainer::memory_data_t MData() {
+  TensorContainer::memory_data_t MData() const {
     return get()->mdata_;
   }
   std::vector<int64_t> ShapeVec() const {
@@ -78,18 +80,19 @@ class STensor : public std::shared_ptr<TensorContainer> {
   inline int64_t StorageOffset() const {
     return get()->tensor_.byte_offset / (get()->tensor_.dtype.bits >> 3);
   }
-
+ 
   inline void SetByteOffset(int64_t byte_offset) {
     auto & tensor = get()->tensor_;
     tensor.byte_offset = byte_offset;
+    UpdateVersion();
   }
-  
-
+ 
   inline void SetStorageOffset(int64_t storage_offset) {
     auto & tensor = get()->tensor_;
     tensor.byte_offset = storage_offset * (tensor.dtype.bits >> 3);
+    UpdateVersion();
   }
-
+ 
   bool IsNull() const;
 
   bool ComputeContiguous() const;
@@ -99,6 +102,13 @@ class STensor : public std::shared_ptr<TensorContainer> {
   void AllocForNull(MemType mtype, bool raw_alloc);
   void AssignMDataForNull(TensorContainer::memory_data_t mdata, bool check_memory_bound = false);
   void DeallocToNull();
+
+  inline size_t Version() const {
+    return get()->stensor_version_;
+  }
+  inline void UpdateVersion() {
+    get()->stensor_version_++;
+  }
 
   DLTensor* MutableDLTensor() {
     return &get()->tensor_;

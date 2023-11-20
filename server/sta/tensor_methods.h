@@ -36,6 +36,9 @@ uint64_t AsStrided(uint64_t handle, at::IntArrayRef size,
                    at::IntArrayRef stride, 
                    c10::optional<int64_t> storage_offset);
 
+void AsStrided_(uint64_t handle, at::IntArrayRef size,
+                at::IntArrayRef stride, 
+                c10::optional<int64_t> storage_offset);
 
 }
 }
