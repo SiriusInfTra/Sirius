@@ -15,3 +15,5 @@ RUN wget https://cmake.org/files/v3.27/cmake-3.27.8-linux-x86_64.sh && \
 
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
+
+RUN apt install -y libpng-dev libjpeg-dev

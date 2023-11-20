@@ -28,6 +28,7 @@ ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data)
   // set_sizes_and_strides(tensor.Shape(), tensor.Stride());
   UpdateSize();
   UpdateVersion();
+  refresh_contiguous();
 }
 
 ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data,
@@ -42,10 +43,11 @@ ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data,
   set_sizes_strides_policy(SizesStridesPolicy::CustomSizes);
   storage_ = storage;
   storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
-  // set_sizes_and_strides(tensor.Shape(), tensor.Stride());
   // UpdateSize();
   UpdateSize();
   UpdateVersion();
+  refresh_contiguous();
+  // set_sizes_and_strides(tensor.Shape(), tensor.Stride());
 }
 
 sta::STensor ColTensorImpl::Tensor() const {
@@ -162,9 +164,10 @@ void ColTensorImpl::UpdateStorage() {
     CHECK(sta::CUDAMemPool::Get()->CheckAddr(static_cast<char*>(storage_.data()) + storage_.nbytes()));
   }
 
-  DCHECK(!tensor.ComputeContiguous() || numel_custom() * (tensor->dtype.bits >> 3) <= storage_.nbytes())
-    << "numel: " << numel_custom() << " dtype: " << (tensor->dtype.bits >> 3) << " storage: " << storage_.nbytes()
-    << " size " << tensor.Shape() << " handle " << data_->handle << " mdata->nbytes " << mdata->nbytes;
+  DCHECK(!tensor.ComputeContiguous() || tensor.ComputeNumel() * (tensor->dtype.bits >> 3) <= storage_.nbytes())
+    << "numel: " << tensor.ComputeNumel() << " dtype: " << (tensor->dtype.bits >> 3) 
+    << " storage: " << storage_.nbytes() << " size " << tensor.Shape() 
+    << " handle " << data_->handle << " mdata->nbytes " << mdata->nbytes;
 
   // }
   // if (mdata != nullptr)
@@ -189,7 +192,8 @@ void ColTensorImpl::UpdateSize() {
       if (new_stride[dim] >= 0) {
         sizes_and_strides_.stride_at_unchecked(dim) = new_stride[dim];
       } else {
-        LOG(FATAL) << "STensor does not have strides"; 
+        LOG(FATAL) << "STensor got negtive stride, " << new_stride[dim] 
+                   << " at dim " << dim;
         // // XXX: This behavior is surprising and may need to be removed to
         // // support negative strides. Some pytorch functions rely on it:
         // // for example, torch.cat (run TestTorch.test_cat_empty).
@@ -208,10 +212,8 @@ void ColTensorImpl::UpdateSize() {
     }
   }
 
+  // is_contiguous_ = tensor.ComputeContiguous();
   numel_ = tensor.ComputeNumel();
-  is_contiguous_ = tensor.ComputeContiguous();
-  // refresh_numel();
-  // refresh_contiguous();
 }
 
 void ColTensorImpl::UpdateAll() {
@@ -219,6 +221,7 @@ void ColTensorImpl::UpdateAll() {
     UpdateStorage();
     UpdateSize();
     UpdateVersion();
+    refresh_contiguous();
   }
 }
 
