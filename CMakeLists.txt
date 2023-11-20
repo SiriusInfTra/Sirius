@@ -33,9 +33,7 @@ set(FETCHCONTENT_QUIET OFF)
 
 FetchContent_Declare(
   gRPC
-  GIT_REPOSITORY https://github.com/grpc/grpc
-  GIT_TAG        v1.56.2  # e.g v1.28.0
-  GIT_PROGRESS TRUE
+  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/grpc
 )
 # FetchContent_MakeAvailable(gRPC)
 
@@ -52,9 +50,7 @@ endif()
 
 FetchContent_Declare(
   glog
-  GIT_REPOSITORY https://github.com/google/glog
-  GIT_TAG        v0.6.0
-  GIT_PROGRESS TRUE
+  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/glog
 )
 # FetchContent_MakeAvailable(glog)
 FetchContent_GetProperties(glog)
@@ -68,12 +64,9 @@ endif()
 
 FetchContent_Declare(
   CLI11
-  GIT_REPOSITORY https://github.com/CLIUtils/CLI11
-  GIT_TAG        v2.3.2
-  GIT_PROGRESS TRUE
+  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/cli11
 )
 FetchContent_MakeAvailable(CLI11)
-
 
 
 find_package(Torch REQUIRED)

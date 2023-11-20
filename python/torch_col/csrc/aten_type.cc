@@ -43,7 +43,8 @@ at::Tensor empty(
     at::IntArrayRef size, c10::optional<at::ScalarType> dtype,
     c10::optional<at::Layout> layout, c10::optional<at::Device> device, 
     c10::optional<bool> pin_memory, c10::optional<at::MemoryFormat> memory_format) {
-  CHECK(!device.has_value() || device.value().is_cuda());
+  CHECK(!device.has_value() || device.value().is_cuda())
+    << "empty only support cuda device, got " << device.value();
   auto scalar_type = at::dtype_or_default(dtype);
   auto dlpack_dtype = getDLDataType(scalar_type);
   // auto handle = sta::TensorPool::Get()->Empty(size_vec, dlpack_dtype);

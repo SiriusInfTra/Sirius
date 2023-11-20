@@ -1,0 +1,16 @@
+[submodule "third_party/grpc"]
+	path = third_party/grpc
+	url = https://github.com/grpc/grpc
+	branch = c0d1c39 # v1.56.2
+[submodule "third_party/glog"]
+	path = third_party/glog
+	url = https://github.com/google/glog
+	branch = b33e3ba # v0.6.0
+[submodule "third_party/cli11"]
+	path = third_party/cli11
+	url = https://github.com/CLIUtils/CLI11
+	branch = 291c587 # v2.3.2
+[submodule "third_party/cudnn_frontend"]
+	path = third_party/cudnn_frontend
+	url = https://github.com/NVIDIA/cudnn-frontend
+	branch = 43709ab # v0.6.2
