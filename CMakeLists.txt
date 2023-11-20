@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.20)
 project(colserve LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -33,9 +33,7 @@ set(FETCHCONTENT_QUIET OFF)
 
 FetchContent_Declare(
   gRPC
-  GIT_REPOSITORY https://github.com/grpc/grpc
-  GIT_TAG        v1.56.2  # e.g v1.28.0
-  GIT_PROGRESS TRUE
+  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/grpc
 )
 # FetchContent_MakeAvailable(gRPC)
 
@@ -52,9 +50,7 @@ endif()
 
 FetchContent_Declare(
   glog
-  GIT_REPOSITORY https://github.com/google/glog
-  GIT_TAG        v0.6.0
-  GIT_PROGRESS TRUE
+  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/glog
 )
 # FetchContent_MakeAvailable(glog)
 FetchContent_GetProperties(glog)
@@ -68,12 +64,9 @@ endif()
 
 FetchContent_Declare(
   CLI11
-  GIT_REPOSITORY https://github.com/CLIUtils/CLI11
-  GIT_TAG        v2.3.2
-  GIT_PROGRESS TRUE
+  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/cli11
 )
 FetchContent_MakeAvailable(CLI11)
-
 
 
 find_package(Torch REQUIRED)
@@ -82,9 +75,9 @@ if((DEFINED CONDA_PREFIX) AND (EXISTS ${CONDA_PREFIX}/include/cudnn.h))
   set(CUDNN_INCLUDE_DIR ${CONDA_PREFIX}/include)
   set(CUDNN_LIBRARY ${CONDA_PREFIX}/lib/libcudnn.so)
   message(STATUS "Found cudnn in ${CONDA_PREFIX}")
-elseif(EXISTS /usr/local/cuda-11/include/cudnn.h)
-  set(CUDNN_INCLUDE_DIR /usr/local/cuda-11/include)
-  set(CUDNN_LIBRARY /usr/local/cuda-11/lib64libcudnn.so)
+elseif(EXISTS /usr/local/cuda/include/cudnn.h)
+  set(CUDNN_INCLUDE_DIR /usr/local/cuda/include)
+  set(CUDNN_LIBRARY /usr/local/cuda/lib64/libcudnn.so)
   message(STATUS "Found cudnn in /usr/lcoal/cuda")
 elseif(EXISTS /usr/include/cudnn.h)
   set(CUDNN_INCLUDE_DIR /usr/include)

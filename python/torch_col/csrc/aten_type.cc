@@ -43,7 +43,9 @@ at::Tensor empty(
     at::IntArrayRef size, c10::optional<at::ScalarType> dtype,
     c10::optional<at::Layout> layout, c10::optional<at::Device> device, 
     c10::optional<bool> pin_memory, c10::optional<at::MemoryFormat> memory_format) {
-  CHECK(!device.has_value() || device.value().is_cuda());
+  CHECK(!device.has_value() 
+    || (device.value().is_cuda() || device.value().type() == at::DeviceType::PrivateUse1))
+    << "empty only support cuda device, got " << device.value();
   auto scalar_type = at::dtype_or_default(dtype);
   auto dlpack_dtype = getDLDataType(scalar_type);
   // auto handle = sta::TensorPool::Get()->Empty(size_vec, dlpack_dtype);
@@ -149,6 +151,7 @@ at::Tensor nonzero(const at::Tensor & self) {
 at::Tensor & set_source_Storage_storage_offset(
   at::Tensor & self, at::Storage source, 
   int64_t storage_offset, at::IntArrayRef size, at::IntArrayRef stride) {
+  // TORCH_CHECK(false, "set tensor with a storage is unsupported op");
   LOG(FATAL) << "set tensor with a storage is unsupported op";
 }
 

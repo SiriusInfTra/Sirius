@@ -202,7 +202,11 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPoolImpl::MakeSharedPtr(CUDAMemPo
 
 CUDAMemPoolImpl::CUDAMemPoolImpl(CUDAMemPoolImpl::MemPoolConfig config, bool force_master, bool no_cuda) : config_(
     std::move(config)), mem_pool_base_ptr_(nullptr) {
-  config_.shared_memory_name = config_.shared_memory_name + "_" + std::getenv("USER");
+  if (std::getenv("USER") != nullptr) {
+    config_.shared_memory_name = config_.shared_memory_name + "_" + std::getenv("USER");
+  } else {
+    config_.shared_memory_name = config_.shared_memory_name + "_" + std::to_string(getuid());
+  }
   if (force_master) {
     bip::shared_memory_object::remove(config_.shared_memory_name.c_str());
   }

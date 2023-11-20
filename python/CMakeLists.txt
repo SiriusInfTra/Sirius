@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.20)
 
 project(torch_col LANGUAGES CXX CUDA)
 
@@ -7,11 +7,10 @@ set(CMAKE_CXX_STANDARD 17)
 
 find_package(Python REQUIRED COMPONENTS Development)
 
+set(cudnn_frontend_SOURCE_DIR ${CMAKE_SOURCE_DIR}/third_party/cudnn_frontend)
 FetchContent_Declare(
   cudnn_frontend
-  GIT_REPOSITORY https://github.com/NVIDIA/cudnn-frontend.git
-  GIT_TAG        v0.6.2  # e.g v1.28.0
-  GIT_PROGRESS TRUE
+  SOURCE_DIR    ${cudnn_frontend_SOURCE_DIR}
 )
 # FetchContent_MakeAvailable(cudnn_frontend)
 
@@ -69,9 +68,15 @@ add_custom_target(
   DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/torch_col.egg-info
 )
 
+if (NOT DEFINED CONDA_PREFIX)
+  set(PYTHON_EXECUTABLE /usr/bin/python)
+else()
+  set(PYTHON_EXECUTABLE ${CONDA_PREFIX}/bin/python)
+endif()
+
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/torch_col.egg-info
-  COMMAND BUILD_DIR=${CMAKE_BINARY_DIR} ${CONDA_PREFIX}/bin/python
+  COMMAND BUILD_DIR=${CMAKE_BINARY_DIR} ${PYTHON_EXECUTABLE}
   ARGS setup.py build_ext install
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS 
