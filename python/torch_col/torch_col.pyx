@@ -11,8 +11,8 @@ def cuda_memory_pool_train_usage():
 
 cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
     cpdef void ReleaseMempool()
-    cpdef void DumpMempoolFreeList(string filename);
-    cpdef void DumpMempoolBlockList(string filename);
+    cpdef void DumpMempoolFreeList(string filename)
+    cpdef void DumpMempoolBlockList(string filename)
 
 
 
