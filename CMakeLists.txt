@@ -44,7 +44,7 @@ if (NOT grpc_POPULATED)
   set(ABSL_ENABLE_INSTALL ON)
   set(BUILD_TYPE_OLD ${CMAKE_BUILD_TYPE})
   set(CMAKE_BUILD_TYPE "Release" CACHE INTERNAL "build type" FORCE)
-  add_subdirectory(${grpc_SOURCE_DIR} ${grpc_BINARY_DIR})
+  add_subdirectory(${grpc_SOURCE_DIR} ${grpc_BINARY_DIR} EXCLUDE_FROM_ALL)
   set(CMAKE_BUILD_TYPE ${BUILD_TYPE_OLD} CACHE INTERNAL "build type" FORCE)
 endif()
 
