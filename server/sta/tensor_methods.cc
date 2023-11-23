@@ -17,7 +17,7 @@ STensor RawNull(at::IntArrayRef size, DLDataType dtype) {
   return STensor(size.vec(), dtype);
 }
 
-uint64_t Empty(at::IntArrayRef size, DLDataType dtype, MemType mtype) {
+uint64_t Empty(at::IntArrayRef size, at::MemoryFormat memory_format, DLDataType dtype, MemType mtype) {
   auto storage_nbytes = ComputeStorageNbytes(size, dtype);
   auto entry = CUDAMemPool::Get()->Alloc(storage_nbytes, mtype);
   CHECK_NE(entry, nullptr);
@@ -33,8 +33,9 @@ uint64_t Empty(at::IntArrayRef size, DLDataType dtype, MemType mtype) {
     DLOG(WARNING) << "Tensor Method Empty: tensor without memory";
   } else {
     CHECK_GE(entry->nbytes, storage_nbytes);
-  }
-  auto handle = TensorPool::Get()->Insert(STensor(entry, size.vec(), dtype));
+  };
+  auto handle = TensorPool::Get()->Insert(STensor(entry, size.vec(), memory_format, dtype));
+  
   DLOG(INFO) << "sta::Empty (handle " << handle << ")"
              << " size " << size << " dtype " << dtype;
   return handle;

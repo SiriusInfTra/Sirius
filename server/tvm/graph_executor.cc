@@ -1,5 +1,6 @@
 #include <numeric>
 #include <thread>
+#include <c10/core/MemoryFormat.h>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 
@@ -359,7 +360,7 @@ void GraphExecutor::SetupStorage(bool alloc) {
         storage_pool_.push_back(sta::Null(shape, pit.dtype));
       } else {
         // storage_pool_.push_back(TVMArray::Empty(shape, pit.dtype, dev, mem_scope));
-        storage_pool_.push_back(sta::Empty(shape, pit.dtype, sta::MemType::kInfer));
+        storage_pool_.push_back(sta::Empty(shape, at::MemoryFormat::Contiguous, pit.dtype, sta::MemType::kInfer));
       }
       last_tensor = sta::TensorPool::Get()->CTensor(storage_pool_.back());
     } else {

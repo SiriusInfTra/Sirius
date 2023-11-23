@@ -3,6 +3,7 @@
 
 // #include <dlpack/dlpack.h>
 #include <ATen/TensorUtils.h>
+#include <ATen/core/jit_type.h>
 #include "undef_log.h"
 
 #include <iostream>
@@ -19,7 +20,7 @@ uint64_t Null(at::IntArrayRef size, DLDataType dtype);
 
 STensor RawNull(at::IntArrayRef size, DLDataType dtype);
 
-uint64_t Empty(at::IntArrayRef size, DLDataType dtype, MemType mtype);
+uint64_t Empty(at::IntArrayRef size, at::MemoryFormat memory_format, DLDataType dtype, MemType mtype);
 
 STensor RawEmpty(at::IntArrayRef size, DLDataType dtype, MemType mtype);
 
