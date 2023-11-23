@@ -14,7 +14,7 @@ std::string ReadInput(const std::string &data_path) {
 
 AppBase::AppBase(const std::string &name) : app{name} {
   app.add_flag("--infer,!--no-infer", enable_infer, "enable infer workload");
-  app.add_option("--infer-model", infer_models, "models of infer workload");
+  app.add_option("--infer-trace", infer_trace, "models of infer workload");
   app.add_flag("--train,!--no-train", enable_train, "enable train workload");
   app.add_option("--train-model", train_models, "models of train workload");
   app.add_option("-d,--duration", duration, "duration of workload");

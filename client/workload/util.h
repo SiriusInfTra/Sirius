@@ -19,7 +19,8 @@ class AppBase {
   CLI::App app;
   std::string port;
   bool enable_train{true}, enable_infer{true};
-  std::set<std::string> infer_models, train_models;
+  std::string infer_trace;
+  std::set<std::string> train_models;
   int duration{10}, concurrency{10};
   int num_epoch{1}, batch_size{1};
 

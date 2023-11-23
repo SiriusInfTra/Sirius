@@ -2,6 +2,7 @@
 #define COLSYS_WORKLOAD_H_
 
 #include <iostream>
+#include <random>
 #include <unordered_map>
 #include <vector>
 #include <memory>
@@ -47,6 +48,17 @@ class InferWorker {
     rpc_status_.resize(concurrency_);
     set_request_fn(requests_);
   }
+
+  struct PoisParm {
+    double start_sec;
+    double lambda;
+  };
+
+  std::vector<double> GetPoissonData(Workload& workload,
+                                     const std::vector<PoisParm>& parms);
+
+  void RequestInfer0(Workload& workload,
+                    const std::vector<double>& start_points);
 
   void RequestInfer(Workload &workload);
   void RequestInferPoisson(Workload &workload, double request_per_sec);
@@ -131,27 +143,10 @@ class Workload {
     }
   }
 
-  // void InferMnist(size_t concurrency, std::function<double_ms_t(size_t)> interval_fn, 
-  //                 int64_t show_result = 0);
-  // void InferMnistPoisson(size_t concurrency, double request_per_sec, 
-  //                        int64_t show_result = 0);
-  // void InferMnistDynamic(const std::vector<double> &change_time_points, 
-  //                        const std::vector<size_t> &concurrencys, 
-  //                        int64_t show_result = 0);
-  // void InferResnet(const std::string &model, size_t concurrency, std::function<double_ms_t(size_t)> interval_fn, 
-  //                  int64_t show_result = 0);
-  // void InferResnetPoisson(size_t concurrency, double request_per_sec, 
-  //                         int64_t show_result = 0);
-  // void InferResnetDynamicPoisson(size_t concurrency,
-  //                                const std::vector<double> &change,
-  //                                const std::vector<double> &lambdas,
-  //                                int64_t show_result = 0);
-  // void InferResnetDynamic(const std::vector<double> &change_time_points,
-  //                         const std::vector<size_t> &concurrencys,
-  //                         int64_t show_result = 0);
-
   void Infer(const std::string &model, size_t concurrency, std::function<double_ms_t(size_t)> interval_fn, int64_t show_result = 0);
   void InferPoisson(const std::string &model, size_t concurrency, double lambda, int64_t show_result = 0);
+  void Infer0(const std::string &model, size_t concurrency, const std::vector<double> &start_points,
+                            int64_t show_result = 0);
   void InferDynamic(const std::string &model, 
                     const std::vector<double> &change_time_points,
                     const std::vector<size_t> &concurrencys,
@@ -175,26 +170,6 @@ class Workload {
   std::function<void(std::vector<InferRequest>&)> GetSetRequestFn(const std::string& model);
   std::function<void(std::vector<InferRequest>&)> SetMnistRequestFn(const std::string &model = "mnist");
   std::function<void(std::vector<InferRequest>&)> SetResnetRequestFn(const std::string &model);
-
-  // void Infer(const std::string &model, size_t concurrency, 
-  //            std::function<void(std::vector<InferRequest>&)> set_request_fn,
-  //            std::function<double_ms_t(size_t)> interval_fn,
-  //            int64_t show_result);
-  // void InferPoisson(const std::string &model, size_t concurrency,
-  //                   std::function<void(std::vector<InferRequest>&)> set_request_fn,
-  //                   double request_per_sec,
-  //                   int64_t show_result);
-  // void InferDynamicPoisson(const std::string &model,
-  //                          size_t concurrency,
-  //                          const std::vector<double> &change_time_points,
-  //                          const std::vector<double> &lambdas,
-  //                          std::function<void(std::vector<InferRequest>&)> set_request_fn,
-  //                          int64_t show_result);
-  // void InferDynamic(const std::string &mode,
-  //                   const std::vector<double> &change_time_points,
-  //                   const std::vector<size_t> &concurrencys,
-  //                   std::function<void(std::vector<InferRequest>&)> set_request_fn,
-                    // int64_t show_result);
 
   std::atomic<bool> running_{false};
   std::promise<void> ready_promise_;
