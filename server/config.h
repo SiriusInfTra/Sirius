@@ -33,6 +33,8 @@ class Config {
 
   static bool infer_raw_blob_alloc;
 
+  static bool capture_train_log;
+
   static std::string profile_log_path;
 
   static std::string infer_model_config_path;

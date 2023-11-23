@@ -50,6 +50,8 @@ void init_cli_options() {
       "infer model config path, default is config in models store");
   app.add_option("--profile-log", colserve::Config::profile_log_path, 
       "profile log path, default is server-profile");
+  app.add_option("--capture-train-log", colserve::Config::capture_train_log, 
+      "capture train log, default is 1");
 }
 
 void init_config() {

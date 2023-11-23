@@ -44,7 +44,7 @@ void CUDAMemPool::Init(std::size_t nbytes, bool master, bool no_cuda) {
 }
 
 void CUDAMemPool::ReleaseMempool() {
-  cuda_mem_pool_->ReleaseMempool();
+  cuda_mem_pool_->impl_->ReleaseMempool();
 }
 
 CUDAMemPoolImpl::MemPoolConfig mempool_config_template{

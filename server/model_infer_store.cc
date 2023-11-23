@@ -459,7 +459,6 @@ bool Model::GetOutput(tvm::GraphExecutor &graph_executor,
 
   size_t offset = 0;
   size_t output_nbytes = ::tvm::runtime::GetDataSize(*output_host_buf) / output_host_buf->shape[0];
-  std::cout << "### output_nbytes " << output_nbytes << std::endl;
   for (auto& job : jobs) {
     auto data = job->GetInferData();
     data->SetOutputShape(idx, shape);
