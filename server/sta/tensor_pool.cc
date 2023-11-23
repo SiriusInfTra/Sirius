@@ -38,6 +38,24 @@ TensorContainer::TensorContainer(memory_data_t mdata, std::vector<int64_t> shape
   SetTensor(mdata, std::move(shape), dtype, 0);
 }
 
+TensorContainer::TensorContainer(memory_data_t mdata, std::vector<int64_t> shape, at::MemoryFormat memory_format, 
+                  DLDataType dtype) {
+  switch (memory_format) {
+    case c10::MemoryFormat::Contiguous:
+      SetTensor(mdata, std::move(shape), dtype, 0);
+      break;
+    case c10::MemoryFormat::ChannelsLast:
+      SetTensor(mdata, std::move(shape), c10::get_channels_last_strides_2d(shape), dtype, 0);
+      break;
+    case c10::MemoryFormat::ChannelsLast3d:
+      SetTensor(mdata, std::move(shape), c10::get_channels_last_strides_2d(shape), dtype, 0);
+    default:
+      LOG(FATAL) << "unknown memory_format: " << memory_format << ".";
+      break;
+  }
+}
+
+
 TensorContainer::TensorContainer(
     memory_data_t mdata, std::vector<int64_t> shape, std::vector<int64_t> stride,
     DLDataType dtype, size_t storage_offset)

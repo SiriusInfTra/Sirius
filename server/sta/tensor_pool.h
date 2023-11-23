@@ -7,6 +7,7 @@
 #include <vector>
 #include <optional>
 #include <ATen/Tensor.h>
+#include <c10/core/MemoryFormat.h>
 
 
 #include "dlpack.h"
@@ -28,8 +29,10 @@ class TensorContainer {
   TensorContainer(std::vector<int64_t> shape, DLDataType dtype);
   TensorContainer(std::vector<int64_t> shape, std::vector<int64_t> stride, 
                   DLDataType dtype, size_t storage_offset);
-  
+                  
   TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, DLDataType dtype);
+  TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, at::MemoryFormat memory_format, 
+                  DLDataType dtype);
   TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, std::vector<int64_t> stride, 
                   DLDataType dtype, size_t storage_offset);
   virtual ~TensorContainer();
