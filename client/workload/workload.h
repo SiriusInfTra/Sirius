@@ -49,26 +49,8 @@ class InferWorker {
     set_request_fn(requests_);
   }
 
-  struct PoisParm {
-    double start_sec;
-    double lambda;
-  };
-
-  std::vector<double> GetPoissonData(Workload& workload,
-                                     const std::vector<PoisParm>& parms);
-
-  void RequestInfer0(Workload& workload,
-                    const std::vector<double>& start_points);
-
-  void RequestInfer(Workload &workload);
-  void RequestInferPoisson(Workload &workload, double request_per_sec);
-  void RequestInferDynamicPoisson(Workload &workload,
-                                  std::vector<double> change_time_points,
-                                  std::vector<double> concurrency);
-  void RequestInferDynamic(Workload &workload, 
-                           std::vector<double> change_time_points,
-                           std::vector<size_t> concurrency);
-  void RequestInferAzure(Workload &workload, const std::vector<double> &req_nums, double period_duration);
+  void RequestInfer(Workload& workload,
+                    const std::vector<double>& start_points, double delay_before_infer);
   void FetchInferResult(Workload &workload, 
                         std::function<double_ms_t(size_t)> interval_fn, 
                         int64_t show_result);
@@ -143,22 +125,8 @@ class Workload {
     }
   }
 
-  void Infer(const std::string &model, size_t concurrency, std::function<double_ms_t(size_t)> interval_fn, int64_t show_result = 0);
-  void InferPoisson(const std::string &model, size_t concurrency, double lambda, int64_t show_result = 0);
-  void Infer0(const std::string &model, size_t concurrency, const std::vector<double> &start_points,
+  void Infer(const std::string &model, size_t concurrency, const std::vector<double> &start_points, double delay_before_infer,
                             int64_t show_result = 0);
-  void InferDynamic(const std::string &model, 
-                    const std::vector<double> &change_time_points,
-                    const std::vector<size_t> &concurrencys,
-                    int64_t show_result = 0);
-  void InferDynamicPoisson(const std::string &model, size_t concurrency,
-                           const std::vector<double> &change_time_points,
-                           const std::vector<double> &lambdas,
-                           int64_t show_result = 0);
-  void InferAzure(const std::string &model, unsigned model_num, 
-                          const std::vector<std::vector<unsigned>> &trace_data, 
-                          double scale_factor, double period_duration, 
-                          size_t concurrency, int64_t show_result);
   void TrainResnet(size_t num_epoch, size_t batch_size);
 
 

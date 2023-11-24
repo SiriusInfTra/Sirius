@@ -16,10 +16,9 @@
 #include "workload/workload.h"
 
 struct App : public colserve::workload::AppBase {
-  double wait_train{10.0};
 
   App(): colserve::workload::AppBase() {
-    app.add_option("--wait-train", train_models, "delay before start infer.");
+    app.add_option("--delay-before-infer", delay_before_infer, "delay before start infer.");
   }
 };
 
@@ -43,13 +42,13 @@ struct TraceCFG {
 };
 
 
-TraceCFG LoadTraceCFG(const std::string &trace_path, double wait_train) {
+TraceCFG LoadTraceCFG(const std::string &trace_path) {
   std::ifstream handle;
   handle.open(trace_path);
   CHECK(handle.is_open());
   std::string line;
   std::getline(handle, line);
-  CHECK_EQ(line, "# model_id, model_name");
+  CHECK_EQ(line, "# model_id,model_name");
   TraceCFG trace_cfg;
   do {
     std::getline(handle, line);
@@ -59,13 +58,13 @@ TraceCFG LoadTraceCFG(const std::string &trace_path, double wait_train) {
     std::getline(iss, model_name, ',');
     trace_cfg.models[model_id] = InferModel{model_name, model_id};
   } while(line[0] != '#');
-  CHECK_EQ(line, "# start_point, model_id");
+  CHECK_EQ(line, "# start_point,model_id");
   while(std::getline(handle, line)) {
     std::istringstream iss{line};
     std::string model_id, start_point;
     std::getline(iss, start_point, ',');
     std::getline(iss, model_id, ',');
-    trace_cfg.start_points.emplace_back(std::stod(start_point) + wait_train, model_id);
+    trace_cfg.start_points.emplace_back(std::stod(start_point), model_id);
     CHECK(trace_cfg.models.find(model_id) != trace_cfg.models.cend());
   }
   return trace_cfg;
@@ -99,8 +98,8 @@ int main(int argc, char** argv) {
   TraceCFG trace_cfg;
   double min_duration = -std::numeric_limits<double>::infinity();
   if (app.enable_infer) {
-    trace_cfg = LoadTraceCFG(app.infer_trace, app.wait_train);
-    min_duration = trace_cfg.start_points.back().first + 3;
+    trace_cfg = LoadTraceCFG(app.infer_trace);
+    min_duration = trace_cfg.start_points.back().first + app.delay_before_infer  +3;
   }
   
   if (app.duration < min_duration) {
@@ -120,7 +119,7 @@ int main(int argc, char** argv) {
     auto groups = GroupByModel(trace_cfg);
     for(auto &&[model_id, start_points] : groups) {
       auto &model = trace_cfg.models[model_id];
-      workload.Infer0(model.model_name, app.concurrency, start_points, app.show_result);
+      workload.Infer(model.model_name, app.concurrency, start_points, app.delay_before_infer, app.show_result);
     }
   }
   

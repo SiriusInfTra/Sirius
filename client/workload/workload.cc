@@ -14,10 +14,12 @@
 namespace colserve {
 namespace workload {
 
-void InferWorker::RequestInfer0(Workload& workload, const std::vector<double>& start_points) {
+void InferWorker::RequestInfer(Workload& workload, const std::vector<double>& start_points, double delay_before_infer) {
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << std::this_thread::get_id() << ") " << model_ << " azure] "; 
   workload.ready_future_.wait();
+  std::this_thread::sleep_for(delay_before_infer * std::chrono::seconds(1));
+  LOG(INFO) << log_prefix.str() << "Delay " << delay_before_infer << " sec.";
   {
     size_t debug_num = std::min(start_points.size(), 5UL);
     std::stringstream debug_stream;
@@ -31,11 +33,12 @@ void InferWorker::RequestInfer0(Workload& workload, const std::vector<double>& s
     debug_stream << "}.";
     LOG(INFO) << debug_stream.str();
   }
+
   std::mt19937 gen(AppBase::seed);
   auto start_sys_clock = std::chrono::steady_clock::now();
   auto duration_after_start = std::chrono::duration<double>::zero();
   for(auto start_point : start_points) {
-    auto sleep_until_sys_clock = start_sys_clock + start_point * std::chrono::seconds();
+    auto sleep_until_sys_clock = start_sys_clock + start_point * std::chrono::seconds(1);
     DLOG(INFO) << log_prefix.str() << "sleep until " << std::chrono::duration_cast<std::chrono::milliseconds>(sleep_until_sys_clock - start_sys_clock).count() << "ms."; 
     std::this_thread::sleep_until(sleep_until_sys_clock);
     size_t i = 0;
@@ -335,13 +338,13 @@ std::function<void(std::vector<InferRequest>&)> Workload::SetResnetRequestFn(con
 }
 
 
-void Workload::Infer0(const std::string &model, size_t concurrency, const std::vector<double> &start_points,
+void Workload::Infer(const std::string &model, size_t concurrency, const std::vector<double> &start_points, double delay_before_infer,
                             int64_t show_result) {
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);
   threads_.push_back(std::make_unique<std::thread>(
-      &InferWorker::RequestInfer0, worker.get(), std::ref(*this), start_points));
+      &InferWorker::RequestInfer, worker.get(), std::ref(*this), start_points, delay_before_infer));
   threads_.push_back(std::make_unique<std::thread>(
       &InferWorker::FetchInferResult, worker.get(), std::ref(*this),
       nullptr, show_result));
@@ -371,26 +374,5 @@ void Workload::Report(int verbose, std::ostream &os) {
   }
 }
 
-std::vector<double> InferWorker::GetPoissonData(
-    Workload& workload, const std::vector<PoisParm>& parms) {
-  std::vector<double> start_points;
-  auto iter = parms.cbegin();
-  std::mt19937 gen(AppBase::seed);
-  std::exponential_distribution<> dist(1.0);
-  double next_duration_norm = dist(gen);
-  while (iter->lambda >= 0) {
-    double next_duration = next_duration_norm / iter->lambda;
-    if (next_duration <= (iter + 1)->start_sec) {  /* happen this internel */
-      auto last_time = start_points.empty() ? 20.0 /* wait train start */
-                                            : start_points.back();
-      start_points.push_back(last_time + next_duration);
-      next_duration_norm = dist(gen);
-    } else {
-      next_duration_norm -= iter->lambda;
-      ++iter;
-    }
-  }
-  return start_points;
-}
 }  // namespace workload
 }
