@@ -44,7 +44,7 @@ if (NOT grpc_POPULATED)
   set(ABSL_ENABLE_INSTALL ON)
   set(BUILD_TYPE_OLD ${CMAKE_BUILD_TYPE})
   set(CMAKE_BUILD_TYPE "Release" CACHE INTERNAL "build type" FORCE)
-  add_subdirectory(${grpc_SOURCE_DIR} ${grpc_BINARY_DIR})
+  add_subdirectory(${grpc_SOURCE_DIR} ${grpc_BINARY_DIR} EXCLUDE_FROM_ALL)
   set(CMAKE_BUILD_TYPE ${BUILD_TYPE_OLD} CACHE INTERNAL "build type" FORCE)
 endif()
 
@@ -126,6 +126,7 @@ add_library(sta SHARED
   server/sta/shape_helper.cc
   server/sta/dtype_helper.cc
   server/sta/init.cc
+  server/sta/mempool_sampler.cc
 )
 # target_include_directories(sta INTERFACE ${TVM_HOME}/3rdparty/dlpack/include)
 target_include_directories(sta PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/server/)
@@ -164,6 +165,11 @@ target_link_libraries(${PROJECT_NAME}
   CUDA::nvml CUDA::cudart CUDA::cuda_driver
   sta
 )
+
+if (DEFINED USE_NVML_V3)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE USE_NVML_V3=${USE_NVML_V3})
+  message(STATUS "${PROJECT_NAME} not use nvml v3 api")
+endif()
 
 add_executable(client client/client.cc)
 target_link_libraries(client grpc++ proto glog::glog CLI11::CLI11)

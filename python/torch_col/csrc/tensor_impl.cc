@@ -1,3 +1,4 @@
+#include <c10/core/MemoryFormat.h>
 #include <sta/tensor_methods.h>
 
 #include "tensor_impl.h"
@@ -92,7 +93,7 @@ int64_t ColTensorImpl::numel_custom() const {
 bool ColTensorImpl::is_contiguous_custom(at::MemoryFormat memory_format) const {
   // const_cast<ColTensorImpl*>(this)->is_contiguous_ = Tensor().ComputeContiguous();
   const_cast<ColTensorImpl*>(this)->UpdateAll();
-  return is_contiguous_;
+  return is_contiguous_default(memory_format);
 }
 
 bool ColTensorImpl::has_storage() const {
@@ -231,13 +232,13 @@ at::Tensor MakeColTensorEmpty(at::IntArrayRef size, const at::TensorOptions &opt
   auto scalar_type = at::dtype_or_default(options.dtype_opt());
   auto dlpack_dtype = getDLDataType(scalar_type);
   // auto handle = sta::TensorPool::Get()->Empty(size_vec, dlpack_dtype);
-  auto handle = colserve::sta::Empty(size, dlpack_dtype, sta::MemType::kTrain);
+  auto handle = colserve::sta::Empty(size, at::MemoryFormat::Contiguous, dlpack_dtype, sta::MemType::kTrain);
   return MakeColTensor(handle);
 }
 
 at::Tensor MakeColTensorEmpty(at::IntArrayRef size, at::ScalarType scalar_type) {
   auto dlpack_dtype = getDLDataType(scalar_type);
-  auto handle = colserve::sta::Empty(size, dlpack_dtype, sta::MemType::kTrain);
+  auto handle = colserve::sta::Empty(size, at::MemoryFormat::Contiguous, dlpack_dtype, sta::MemType::kTrain);
   return MakeColTensor(handle);
 
 }

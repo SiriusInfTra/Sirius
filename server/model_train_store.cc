@@ -127,8 +127,10 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
   if (pid == 0) {
     close(to_child_pipe[1]);
     dup2(to_child_pipe[0], STDIN_FILENO);
-    close(from_child_pipe[0]);
-    dup2(from_child_pipe[1], STDOUT_FILENO);
+    if (Config::capture_train_log) {
+      close(from_child_pipe[0]);
+      dup2(from_child_pipe[1], STDOUT_FILENO);
+    }
 
     if (Config::use_shared_tensor_train) {
       CHECK_NE(setenv("USE_SHARED_TENSOR", "1", 1), -1);
@@ -143,23 +145,25 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
     CHECK_GE(err, 0) << "[ModelTrainStore]: spawn train worker fail, errno " << err;
   } else {
     close(to_child_pipe[0]);
-    close(from_child_pipe[1]);
+    if (Config::capture_train_log) {
+      close(from_child_pipe[1]);
+    }
     // train_running_ = true;
     // Controller::Get()->TrainStart();
     LOG(INFO) << "ModelTrainStore: " << "Train " << job << " ( "
               << ss.str() << "), pid " << pid;
   }
 
-  std::array<char, 1024> buf;
-  auto fp = fdopen(from_child_pipe[0], "r");
-
-  while (fgets(buf.data(), buf.size(), fp)) {
-    LOG(INFO) << "[PyTorch backend] Train: " << buf.data();
+  if (Config::capture_train_log) {
+    std::array<char, 1024> buf;
+    auto fp = fdopen(from_child_pipe[0], "r");
+    while (fgets(buf.data(), buf.size(), fp)) {
+      LOG(INFO) << "[PyTorch backend] Train: " << buf.data();
+    }
+    fclose(fp);
+    close(from_child_pipe[0]);
   }
-
-  fclose(fp);
   close(to_child_pipe[1]);
-  close(from_child_pipe[0]);
 
   int status;
   waitpid(pid, &status, 0);

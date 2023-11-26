@@ -132,11 +132,17 @@ Profiler::Profiler(const std::string &profile_log_path)
   // CHECK MPS
   if (colserve::Config::check_mps) {
     uint32_t info_cnt = 0;
+#if !defined(USE_NVML_V3) || USE_NVML_V3 != 0
     auto nvml_err = nvmlDeviceGetMPSComputeRunningProcesses_v3(device, &info_cnt, NULL);
     if (nvml_err == NVML_SUCCESS && info_cnt == 0) {
       LOG(FATAL) << "MPS is not enabled, please start MPS server by nvidia-cuda-mps-control";
     }
+#endif
   }
+
+#if defined(USE_NVML_V3) && USE_NVML_V3 == 0
+  LOG(WARNING) << "USE_NVML_V3 is set to 0, profiler will not record memory info, mps server will not be checked";
+#endif
 
   thread_.reset(new std::thread([this, device]() {
     while (!this->start_profile_) {
@@ -152,9 +158,9 @@ Profiler::Profiler(const std::string &profile_log_path)
 
       if (!Config::use_shared_tensor) {
         uint32_t info_cnt = max_info_cnt;
+#if !defined(USE_NVML_V3) || USE_NVML_V3 != 0
         NVML_CALL(nvmlDeviceGetComputeRunningProcesses_v3(device, &info_cnt, infos));
-        // CHECK(info_cnt <= 2);
-        
+        CHECK(info_cnt <= 2);
         for (uint32_t i = 0; i < info_cnt; i++) {
           if (infos[i].pid == pid) {
             infer_mem = infos[i].usedGpuMemory;
@@ -162,6 +168,10 @@ Profiler::Profiler(const std::string &profile_log_path)
             train_mem = infos[i].usedGpuMemory;
           }
         }
+#else
+        infer_mem = 0;
+        train_mem = 0;
+#endif
         size_t free, total;
         CUDA_CALL(cudaMemGetInfo(&free, &total));
         total_mem = total - free;

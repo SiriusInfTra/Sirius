@@ -16,6 +16,8 @@ double Config::cuda_memory_pool_gb = 12;
 
 bool Config::infer_raw_blob_alloc = true;
 
+bool Config::capture_train_log = true;
+
 std::string Config::profile_log_path = "server-profile";
 
 std::string Config::infer_model_config_path = "config";
