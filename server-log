@@ -1,0 +1,111 @@
+I20231117 18:28:39.209167 1315369 cuda_allocator.cc:231] [mempool] init master, base_ptr = 0x7f1146000000.
+I20231117 18:28:39.209337 1315369 tensor_pool.cc:13] initlize TensorPool
+I20231117 18:28:39.223615 1315369 model_infer_store.cc:48] ModelInferStore start initializing
+I20231117 18:28:39.223767 1315369 model_infer_store.cc:93] [ModelInferStore] Read from config file: [resnet152[20]] batch-size=4 device=cuda max-worker=1 num-worker=0 path=resnet152-b4 
+I20231117 18:28:39.759148 1315369 model_infer_store.cc:230] Model Input: resnet152 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:39.759214 1315369 model_infer_store.cc:242] Model Output: resnet152 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:39.760862 1315369 graph_executor.cc:427] [GraphExecutor] resnet152 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:39.939085 1315369 model_infer_store.cc:230] Model Input: resnet152-1 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:39.939152 1315369 model_infer_store.cc:242] Model Output: resnet152-1 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:39.940845 1315369 graph_executor.cc:427] [GraphExecutor] resnet152-1 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:40.114377 1315369 model_infer_store.cc:230] Model Input: resnet152-2 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:40.114449 1315369 model_infer_store.cc:242] Model Output: resnet152-2 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:40.116159 1315369 graph_executor.cc:427] [GraphExecutor] resnet152-2 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:40.293179 1315369 model_infer_store.cc:230] Model Input: resnet152-3 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:40.293243 1315369 model_infer_store.cc:242] Model Output: resnet152-3 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:40.294875 1315369 graph_executor.cc:427] [GraphExecutor] resnet152-3 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:40.494781 1315369 model_infer_store.cc:230] Model Input: resnet152-4 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:40.494863 1315369 model_infer_store.cc:242] Model Output: resnet152-4 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:40.497090 1315369 graph_executor.cc:427] [GraphExecutor] resnet152-4 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:40.679147 1315369 model_infer_store.cc:230] Model Input: resnet152-5 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:40.679212 1315369 model_infer_store.cc:242] Model Output: resnet152-5 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:40.680825 1315369 graph_executor.cc:427] [GraphExecutor] resnet152-5 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:40.857976 1315369 model_infer_store.cc:230] Model Input: resnet152-6 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:40.858042 1315369 model_infer_store.cc:242] Model Output: resnet152-6 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:40.859966 1315369 graph_executor.cc:427] [GraphExecutor] resnet152-6 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:41.033311 1315369 model_infer_store.cc:230] Model Input: resnet152-7 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:41.033385 1315369 model_infer_store.cc:242] Model Output: resnet152-7 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:41.035024 1315369 graph_executor.cc:427] [GraphExecutor] resnet152-7 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:41.208833 1315369 model_infer_store.cc:230] Model Input: resnet152-8 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:41.208896 1315369 model_infer_store.cc:242] Model Output: resnet152-8 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:41.210531 1315369 graph_executor.cc:427] [GraphExecutor] resnet152-8 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:41.387384 1315369 model_infer_store.cc:230] Model Input: resnet152-9 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:41.387454 1315369 model_infer_store.cc:242] Model Output: resnet152-9 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:41.389089 1315369 graph_executor.cc:427] [GraphExecutor] resnet152-9 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:41.563122 1315369 model_infer_store.cc:230] Model Input: resnet152-10 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:41.563191 1315369 model_infer_store.cc:242] Model Output: resnet152-10 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:41.564797 1315369 graph_executor.cc:427] [GraphExecutor] resnet152-10 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:41.794193 1315369 model_infer_store.cc:230] Model Input: resnet152-11 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:41.794263 1315369 model_infer_store.cc:242] Model Output: resnet152-11 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:41.795897 1315369 graph_executor.cc:427] [GraphExecutor] resnet152-11 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:41.988255 1315369 model_infer_store.cc:230] Model Input: resnet152-12 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:41.988323 1315369 model_infer_store.cc:242] Model Output: resnet152-12 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:41.990531 1315369 graph_executor.cc:427] [GraphExecutor] resnet152-12 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:42.163550 1315369 model_infer_store.cc:230] Model Input: resnet152-13 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:42.163615 1315369 model_infer_store.cc:242] Model Output: resnet152-13 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:42.165253 1315369 graph_executor.cc:427] [GraphExecutor] resnet152-13 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:42.347396 1315369 model_infer_store.cc:230] Model Input: resnet152-14 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:42.347463 1315369 model_infer_store.cc:242] Model Output: resnet152-14 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:42.349154 1315369 graph_executor.cc:427] [GraphExecutor] resnet152-14 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:42.528695 1315369 model_infer_store.cc:230] Model Input: resnet152-15 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:42.528761 1315369 model_infer_store.cc:242] Model Output: resnet152-15 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:42.530382 1315369 graph_executor.cc:427] [GraphExecutor] resnet152-15 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:42.703315 1315369 model_infer_store.cc:230] Model Input: resnet152-16 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:42.703382 1315369 model_infer_store.cc:242] Model Output: resnet152-16 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:42.704998 1315369 graph_executor.cc:427] [GraphExecutor] resnet152-16 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:42.876921 1315369 model_infer_store.cc:230] Model Input: resnet152-17 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:42.876987 1315369 model_infer_store.cc:242] Model Output: resnet152-17 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:42.878610 1315369 graph_executor.cc:427] [GraphExecutor] resnet152-17 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:43.051221 1315369 model_infer_store.cc:230] Model Input: resnet152-18 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:43.051287 1315369 model_infer_store.cc:242] Model Output: resnet152-18 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:43.052917 1315369 graph_executor.cc:427] [GraphExecutor] resnet152-18 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:43.230650 1315369 model_infer_store.cc:230] Model Input: resnet152-19 input shape [ 4 3 224 224 ] dtype float32
+I20231117 18:28:43.230724 1315369 model_infer_store.cc:242] Model Output: resnet152-19 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231117 18:28:43.232362 1315369 graph_executor.cc:427] [GraphExecutor] resnet152-19 params 229.329 Mb intermediate 39.8278 Mb
+I20231117 18:28:43.232972 1315369 model_infer_store.cc:120] ModelInferStore: Add resnet152[20]:cuda, batch-size=4
+I20231117 18:28:43.233186 1315369 model_infer_store.cc:124] ModelInferStore initialized
+I20231117 18:28:43.233291 1315369 model_train_store.cc:24] ModelTrainStore: Add eval_bs_adj
+I20231117 18:28:43.233309 1315369 model_train_store.cc:24] ModelTrainStore: Add resnet152
+I20231117 18:28:43.233484 1315369 model_train_store.cc:39] ModelTrainStore initialized
+I20231117 18:28:43.233489 1315579 model_train_store.cc:32] ModelTrainStore thread start
+I20231117 18:28:43.237138 1315369 grpc_server.cc:70] CommonHandler start
+I20231117 18:28:43.237296 1315369 grpc_server.cc:113] InferHandler start
+I20231117 18:28:43.237476 1315369 grpc_server.cc:215] TrainHandler start
+I20231117 18:28:43.237493 1315369 grpc_server.cc:33] GRPCServer start at 0.0.0.0:9090
+I20231117 18:28:44.230043 1315600 grcp_server.h:95] Process CommonData [GetServerStatus, Id 0]
+I20231117 18:28:48.021540 1315602 grpc_server.cc:228] Process TrainData [resnet152, Id 0]
+I20231117 18:28:48.033747 1315579 model_train_store.cc:121] fork train
+I20231117 18:28:48.075484 1315579 model_train_store.cc:149] ModelTrainStore: Train TrainJob [resnet152, 0] ( python train/resnet152.py --num-epoch 15 --batch-size 60 --mode colocate-l2 ), pid 1315729
+I20231117 18:28:49.117430 1315729 aten_type.cc:290] ColTensor Initialized
+I20231117 18:28:51.945876 1315729 cuda_allocator.cc:234] [mempool] init slave, base_ptr = 0x7f4544000000.
+I20231117 18:28:51.945962 1315729 tensor_pool.cc:13] initlize TensorPool
+[W OperatorEntry.cpp:127] Warning: Overriding a previously registered kernel for the same operator and the same dispatch key
+  operator: aten::empty.memory_format(int[] size, *, int? dtype=None, int? layout=None, Device? device=None, bool? pin_memory=None, int? memory_format=None) -> (Tensor)
+    registered at /disk2/wjl/pytorch/.build_relwithdebinfo/aten/src/ATen/RegisterSchema.cpp:6
+  dispatch key: CUDA
+  previous kernel: registered at /disk2/wjl/pytorch/.build_relwithdebinfo/aten/src/ATen/RegisterBackendSelect.cpp:726
+       new kernel: registered at /home/wjl/gpu-col/python/torch_col/csrc/aten_type.cc:247 (function registerKernel)
+[W OperatorEntry.cpp:127] Warning: Overriding a previously registered kernel for the same operator and the same dispatch key
+  operator: aten::empty_strided(int[] size, int[] stride, *, int? dtype=None, int? layout=None, Device? device=None, bool? pin_memory=None) -> (Tensor)
+    registered at /disk2/wjl/pytorch/.build_relwithdebinfo/aten/src/ATen/RegisterSchema.cpp:6
+  dispatch key: CUDA
+  previous kernel: registered at /disk2/wjl/pytorch/.build_relwithdebinfo/aten/src/ATen/RegisterBackendSelect.cpp:726
+       new kernel: registered at /home/wjl/gpu-col/python/torch_col/csrc/aten_type.cc:247 (function registerKernel)
+I20231117 18:28:51.958338 1315483 controller.cc:113] [Controller] MonitorTrain: train status Controller::TrainStatus::kIdle -> Controller::TrainStatus::kRunning
+I20231117 18:28:52.227716 1315799 control_stub.cc:71] [ColocateStub] Adjust batch size, target 57
+I20231117 18:28:52.272666 1315799 control_stub.cc:71] [ColocateStub] Adjust batch size, target 54
+I20231117 18:28:53.037513 1315483 controller.cc:113] [Controller] MonitorTrain: train status Controller::TrainStatus::kRunning -> Controller::TrainStatus::kIdle
+I20231117 18:28:53.056967 1315579 profiler.cc:258] [Profiler] write prfile info to server-profile
+F20231117 18:28:53.057071 1315579 model_train_store.cc:177] [ModelTrainStore]: TrainJob [resnet152, 0] failed, signal is Segmentation fault
+*** Check failure stack trace: ***
+    @     0x7f157db6f773  google::LogMessage::Fail()
+    @     0x7f157db72f76  google::LogMessage::SendToLog()
+    @     0x7f157db6f1f9  google::LogMessage::Flush()
+    @     0x7f157db7085f  google::LogMessageFatal::~LogMessageFatal()
+    @     0x560f178c35ea  colserve::ModelTrainStore::LaunchTrain()
+    @     0x560f178c4f75  colserve::ModelTrainStore::Train()
+    @     0x560f178c67e4  _ZNSt6thread11_State_implINS_8_InvokerISt5tupleIJZN8colserve15ModelTrainStore4InitERKNSt10filesystem7__cxx114pathEEUlvE_EEEEE6_M_runEv
+    @     0x7f155b9a9e79  execute_native_thread_routine
+    @     0x7f15739fb609  start_thread
+    @     0x7f155b699133  clone
+    @              (nil)  (unknown)

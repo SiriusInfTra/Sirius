@@ -174,6 +174,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
 
     model.train()
     for epoch in range(num_epoch):
+        print(f"!!!!!!!!!!!Now epoch={epoch}.")
         begin = time.time()
         batch_cnt = 0
         killed_batch = 0

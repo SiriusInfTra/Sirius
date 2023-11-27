@@ -32,6 +32,7 @@ ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data)
   refresh_contiguous();
 }
 
+
 ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data,
                              const at::Storage &storage)
     : c10::TensorImpl(c10::DispatchKeySet{c10::DispatchKey::PrivateUse1,
