@@ -8,7 +8,6 @@
 #include <atomic>
 #include <array>
 #include <iostream>
-#include <cstddef>
 #include <thread>
 #include <chrono>
 
@@ -29,10 +28,13 @@ namespace sta {
 namespace bip = boost::interprocess;
 
 enum class MemType {
+  kFree,
   kInfer,
   kTrain,
   kMemTypeNum,
 };
+
+
 
 class CUDAMemPool;
 class CUDAMemPoolImpl {
@@ -49,7 +51,7 @@ public:
     MemType mtype;
   };
 
-  explicit CUDAMemPoolImpl(MemPoolConfig config, bool force_master);
+  CUDAMemPoolImpl(MemPoolConfig config, bool force_master, bool no_cuda=false);
 
   ~CUDAMemPoolImpl();
 
@@ -73,6 +75,7 @@ public:
   bool CheckAddr(void *addr);
 
   friend class CUDAMemPool;
+  friend class MempoolSampler;
 private:
   using Addr2EntryType = std::pair<std::ptrdiff_t, bip::managed_shared_memory::handle_t>;
   using Addr2EntryAllocator = bip::allocator<Addr2EntryType, bip::managed_shared_memory::segment_manager>;
@@ -94,6 +97,7 @@ private:
     std::size_t nbytes;
     EntryHandle prev;
     EntryHandle next;
+    MemType mtype;
     bool allocate;
   };
 
@@ -132,7 +136,7 @@ private:
 class CUDAMemPool {
  public:
   using PoolEntry = CUDAMemPoolImpl::PoolEntry;
-  static void Init(std::size_t nbytes, bool master);
+  static void Init(std::size_t nbytes, bool master, bool no_cuda=false);
   static CUDAMemPool* Get();
   static size_t InferMemUsage();
   static size_t TrainMemUsage();
@@ -140,7 +144,7 @@ class CUDAMemPool {
 
   static std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes, MemType mtype);
 
-  CUDAMemPool(std::size_t nbytes, bool master);
+  CUDAMemPool(std::size_t nbytes, bool master, bool no_cuda=false);
   ~CUDAMemPool();
   std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes, MemType mtype);
   std::shared_ptr<PoolEntry> Resize(std::shared_ptr<PoolEntry> entry, std::size_t nbytes);
@@ -155,6 +159,8 @@ class CUDAMemPool {
   CUDAMemPoolImpl *impl_;
 };
 
+
+  extern CUDAMemPoolImpl::MemPoolConfig mempool_config_template;
 
 
 }

@@ -174,6 +174,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
 
     model.train()
     for epoch in range(num_epoch):
+        print(f"!!!!!!!!!!!Now epoch={epoch}.")
         begin = time.time()
         batch_cnt = 0
         killed_batch = 0
@@ -182,6 +183,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
         killed_time = 0
         finished_time = 0
         wait_bs_valid_sec = 0 # add infer may cause batch size <= 0
+        print(f"before Batch")
         for i, (images, targets) in enumerate(train_loader):
             # print(f"Batch {i}, batch size {len(images)} {train_dataset.batch_size}")
             images:torch.Tensor = images.to('cuda:0', non_blocking=True)

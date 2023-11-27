@@ -1,0 +1,151 @@
+I20231111 19:15:02.956691 1173295 cuda_allocator.cc:229] [mempool] init master.
+I20231111 19:15:02.956843 1173295 tensor_pool.cc:13] initlize TensorPool
+I20231111 19:15:02.971220 1173295 model_infer_store.cc:48] ModelInferStore start initializing
+I20231111 19:15:02.971355 1173295 model_infer_store.cc:93] [ModelInferStore] Read from config file: [resnet152[10]] batch-size=4 device=cuda max-worker=1 num-worker=0 path=resnet152-b4 
+I20231111 19:15:03.539384 1173295 model_infer_store.cc:230] Model Input: resnet152 input shape [ 4 3 224 224 ] dtype float32
+I20231111 19:15:03.539453 1173295 model_infer_store.cc:242] Model Output: resnet152 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231111 19:15:03.541100 1173295 graph_executor.cc:424] [GraphExecutor] resnet152 params 229.329 Mb intermediate 39.8278 Mb
+I20231111 19:15:03.713624 1173295 model_infer_store.cc:230] Model Input: resnet152-1 input shape [ 4 3 224 224 ] dtype float32
+I20231111 19:15:03.713689 1173295 model_infer_store.cc:242] Model Output: resnet152-1 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231111 19:15:03.718345 1173295 graph_executor.cc:424] [GraphExecutor] resnet152-1 params 229.329 Mb intermediate 39.8278 Mb
+I20231111 19:15:03.958343 1173295 model_infer_store.cc:230] Model Input: resnet152-2 input shape [ 4 3 224 224 ] dtype float32
+I20231111 19:15:03.958412 1173295 model_infer_store.cc:242] Model Output: resnet152-2 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231111 19:15:03.960124 1173295 graph_executor.cc:424] [GraphExecutor] resnet152-2 params 229.329 Mb intermediate 39.8278 Mb
+I20231111 19:15:04.133790 1173295 model_infer_store.cc:230] Model Input: resnet152-3 input shape [ 4 3 224 224 ] dtype float32
+I20231111 19:15:04.133847 1173295 model_infer_store.cc:242] Model Output: resnet152-3 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231111 19:15:04.135485 1173295 graph_executor.cc:424] [GraphExecutor] resnet152-3 params 229.329 Mb intermediate 39.8278 Mb
+I20231111 19:15:04.318624 1173295 model_infer_store.cc:230] Model Input: resnet152-4 input shape [ 4 3 224 224 ] dtype float32
+I20231111 19:15:04.318691 1173295 model_infer_store.cc:242] Model Output: resnet152-4 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231111 19:15:04.320390 1173295 graph_executor.cc:424] [GraphExecutor] resnet152-4 params 229.329 Mb intermediate 39.8278 Mb
+I20231111 19:15:04.496968 1173295 model_infer_store.cc:230] Model Input: resnet152-5 input shape [ 4 3 224 224 ] dtype float32
+I20231111 19:15:04.497030 1173295 model_infer_store.cc:242] Model Output: resnet152-5 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231111 19:15:04.498672 1173295 graph_executor.cc:424] [GraphExecutor] resnet152-5 params 229.329 Mb intermediate 39.8278 Mb
+I20231111 19:15:04.673116 1173295 model_infer_store.cc:230] Model Input: resnet152-6 input shape [ 4 3 224 224 ] dtype float32
+I20231111 19:15:04.673183 1173295 model_infer_store.cc:242] Model Output: resnet152-6 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231111 19:15:04.675403 1173295 graph_executor.cc:424] [GraphExecutor] resnet152-6 params 229.329 Mb intermediate 39.8278 Mb
+I20231111 19:15:04.849453 1173295 model_infer_store.cc:230] Model Input: resnet152-7 input shape [ 4 3 224 224 ] dtype float32
+I20231111 19:15:04.849519 1173295 model_infer_store.cc:242] Model Output: resnet152-7 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231111 19:15:04.851182 1173295 graph_executor.cc:424] [GraphExecutor] resnet152-7 params 229.329 Mb intermediate 39.8278 Mb
+I20231111 19:15:05.024600 1173295 model_infer_store.cc:230] Model Input: resnet152-8 input shape [ 4 3 224 224 ] dtype float32
+I20231111 19:15:05.024663 1173295 model_infer_store.cc:242] Model Output: resnet152-8 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231111 19:15:05.026278 1173295 graph_executor.cc:424] [GraphExecutor] resnet152-8 params 229.329 Mb intermediate 39.8278 Mb
+I20231111 19:15:05.198637 1173295 model_infer_store.cc:230] Model Input: resnet152-9 input shape [ 4 3 224 224 ] dtype float32
+I20231111 19:15:05.198706 1173295 model_infer_store.cc:242] Model Output: resnet152-9 tvmgen_default_fused_nn_dense_add shape [ 4 1000 ] dtype float32
+I20231111 19:15:05.200330 1173295 graph_executor.cc:424] [GraphExecutor] resnet152-9 params 229.329 Mb intermediate 39.8278 Mb
+I20231111 19:15:05.200919 1173295 model_infer_store.cc:120] ModelInferStore: Add resnet152[10]:cuda, batch-size=4
+I20231111 19:15:05.201135 1173295 model_infer_store.cc:124] ModelInferStore initialized
+I20231111 19:15:05.201233 1173295 model_train_store.cc:23] ModelTrainStore: Add eval_bs_adj
+I20231111 19:15:05.201251 1173295 model_train_store.cc:23] ModelTrainStore: Add resnet152
+I20231111 19:15:05.201433 1173295 model_train_store.cc:38] ModelTrainStore initialized
+I20231111 19:15:05.201437 1173506 model_train_store.cc:31] ModelTrainStore thread start
+I20231111 19:15:05.205152 1173295 grpc_server.cc:70] CommonHandler start
+I20231111 19:15:05.205314 1173295 grpc_server.cc:113] InferHandler start
+I20231111 19:15:05.205475 1173295 grpc_server.cc:215] TrainHandler start
+I20231111 19:15:05.205492 1173295 grpc_server.cc:33] GRPCServer start at 0.0.0.0:9090
+I20231111 19:15:17.594123 1173527 grcp_server.h:95] Process CommonData [GetServerStatus, Id 0]
+I20231111 19:15:19.483390 1173529 grpc_server.cc:228] Process TrainData [resnet152, Id 0]
+I20231111 19:15:19.495018 1173506 model_train_store.cc:120] fork train
+I20231111 19:15:19.520773 1173506 model_train_store.cc:147] ModelTrainStore: Train TrainJob [resnet152, 0] ( python train/resnet152.py --num-epoch 15 --batch-size 60 --mode colocate-l2 ), pid 1174237
+I20231111 19:15:20.460717 1174237 aten_type.cc:232] ColTensor Initialized
+I20231111 19:15:21.888443 1174237 cuda_allocator.cc:232] [mempool] init slave.
+I20231111 19:15:21.888523 1174237 tensor_pool.cc:13] initlize TensorPool
+[W OperatorEntry.cpp:127] Warning: Overriding a previously registered kernel for the same operator and the same dispatch key
+  operator: aten::empty.memory_format(int[] size, *, int? dtype=None, int? layout=None, Device? device=None, bool? pin_memory=None, int? memory_format=None) -> (Tensor)
+    registered at /home/wjl/pytorch/build/aten/src/ATen/RegisterSchema.cpp:6
+  dispatch key: CUDA
+  previous kernel: registered at /home/wjl/pytorch/build/aten/src/ATen/RegisterBackendSelect.cpp:726
+       new kernel: registered at /home/wjl/gpu-col/python/torch_col/csrc/aten_type.cc:199 (function registerKernel)
+[W OperatorEntry.cpp:127] Warning: Overriding a previously registered kernel for the same operator and the same dispatch key
+  operator: aten::empty_strided(int[] size, int[] stride, *, int? dtype=None, int? layout=None, Device? device=None, bool? pin_memory=None) -> (Tensor)
+    registered at /home/wjl/pytorch/build/aten/src/ATen/RegisterSchema.cpp:6
+  dispatch key: CUDA
+  previous kernel: registered at /home/wjl/pytorch/build/aten/src/ATen/RegisterBackendSelect.cpp:726
+       new kernel: registered at /home/wjl/gpu-col/python/torch_col/csrc/aten_type.cc:199 (function registerKernel)
+I20231111 19:15:21.900846 1173409 controller.cc:113] [Controller] MonitorTrain: train status Controller::TrainStatus::kIdle -> Controller::TrainStatus::kRunning
+I20231111 19:15:22.772594 1173506 model_train_store.cc:155] [PyTorch backend] Train: resnet152 training, batch-size=60, num-epoch=15
+I20231111 19:15:22.772703 1173506 model_train_store.cc:155] [PyTorch backend] Train: Train params memory usage: 170.48M
+I20231111 19:15:22.772732 1173506 model_train_store.cc:155] [PyTorch backend] Train: Train after init memory pool usage: 170.48M
+I20231111 19:15:22.772756 1173506 model_train_store.cc:155] [PyTorch backend] Train: train in colocate-l2 mode
+I20231111 19:15:22.772778 1173506 model_train_store.cc:155] [PyTorch backend] Train: !!!!!!!!!!!Now epoch=0.
+I20231111 19:15:22.772801 1173506 model_train_store.cc:155] [PyTorch backend] Train: iterator before
+I20231111 19:15:22.772823 1173506 model_train_store.cc:155] [PyTorch backend] Train: iterator end
+I20231111 19:15:22.772846 1173506 model_train_store.cc:155] [PyTorch backend] Train: before Batch
+I20231111 19:15:22.904893 1174356 control_stub.cc:71] [ColocateStub] Adjust batch size, target 57
+I20231111 19:15:23.176440 1174356 control_stub.cc:71] [ColocateStub] Adjust batch size, target 54
+I20231111 19:15:24.204788 1174356 control_stub.cc:71] [ColocateStub] Adjust batch size, target 51
+I20231111 19:15:25.206441 1174237 control_stub.cc:124] [ColocateStub] Adjust L2 done
+I20231111 19:15:25.206480 1173409 controller.cc:113] [Controller] MonitorTrain: train status Controller::TrainStatus::kRunning -> Controller::TrainStatus::kRunning
+python 217
+batch 0 adjust : bs 57 -> 51 | 2095.2ms | 0.3ms | mem pool 544.9M
+I20231111 19:15:25.206491 1173484 model_infer_store.cc:498] [Inference]: Wait adjust train batch size before add infer 2301.69 ms
+I20231111 19:15:25.206523 1173446 model_infer_store.cc:498] [Inference]: Wait adjust train batch size before add infer 1001.72 ms
+I20231111 19:15:25.206496 1173432 model_infer_store.cc:498] [Inference]: Wait adjust train batch size before add infer 2030.08 ms
+I20231111 19:15:25.207095 1174684 model_infer_store.cc:248] Model resnet152-1 inference thread start
+I20231111 19:15:25.207161 1174685 model_infer_store.cc:248] Model resnet152-2 inference thread start
+I20231111 19:15:25.207185 1174686 model_infer_store.cc:248] Model resnet152-5 inference thread start
+I20231111 19:15:25.316561 1173484 model_infer_store.cc:515] [Model] resnet152-5 increase worker 0
+I20231111 19:15:25.332158 1173432 model_infer_store.cc:515] [Model] resnet152-1 increase worker 0
+I20231111 19:15:25.357676 1173446 model_infer_store.cc:515] [Model] resnet152-2 increase worker 0
+I20231111 19:15:25.483584 1174684 model_infer_store.cc:364] [Inference]: resnet152-1 (rank 0) set_input_ms=15.92 infer_ms=125.35 get_output_ms=0.08 total_infer_ms=141.35
+I20231111 19:15:25.484361 1174686 model_infer_store.cc:364] [Inference]: resnet152-5 (rank 0) set_input_ms=31.26 infer_ms=126.41 get_output_ms=0.05 total_infer_ms=157.72
+I20231111 19:15:25.484512 1174685 model_infer_store.cc:364] [Inference]: resnet152-2 (rank 0) set_input_ms=0.52 infer_ms=116.19 get_output_ms=0.06 total_infer_ms=116.77
+F20231111 19:15:25.748432 1174237 cuda_allocator.cc:186] Check failed: static_cast<size_t>(eh->addr_offset) + eh->nbytes < this->config_.cuda_memory_size (8589934592 vs. 8589934592) 
+*** Check failure stack trace: ***
+    @     0x7fa80fa45773  google::LogMessage::Fail()
+    @     0x7fa80fa48f76  google::LogMessage::SendToLog()
+    @     0x7fa80fa451f9  google::LogMessage::Flush()
+    @     0x7fa80fa4685f  google::LogMessageFatal::~LogMessageFatal()
+    @     0x7fa80fa83109  colserve::sta::CUDAMemPoolImpl::MakeSharedPtr()
+    @     0x7fa80fa83836  colserve::sta::CUDAMemPoolImpl::Alloc()
+    @     0x7fa80fa83b25  colserve::sta::CUDAMemPool::Alloc()
+    @     0x7fa80faa00c4  colserve::sta::Empty()
+    @     0x7fa80f8e2ab1  torch_col::(anonymous namespace)::empty()
+    @     0x7fa80f8e2bed  c10::impl::wrap_kernel_functor_unboxed_<>::call()
+    @     0x7fa84323fe67  at::_ops::empty_memory_format::redispatch()
+    @     0x7fa843511463  c10::impl::wrap_kernel_functor_unboxed_<>::call()
+    @     0x7fa8432836aa  at::_ops::empty_memory_format::call()
+    @     0x7fa84c1ac9d4  at::empty()
+    @     0x7fa83a1a0e34  at::native::batch_norm_cuda()
+    @     0x7fa83afae7e8  at::(anonymous namespace)::(anonymous namespace)::wrapper__native_batch_norm()
+    @     0x7fa83b08b432  c10::impl::make_boxed_from_unboxed_functor<>::call()
+    @     0x7fa80f8e07d7  torch_col::(anonymous namespace)::cuda_fallback()
+    @     0x7fa8431065a4  at::_ops::native_batch_norm::redispatch()
+    @     0x7fa84480c474  torch::autograd::VariableType::(anonymous namespace)::native_batch_norm()
+    @     0x7fa84480d00d  c10::impl::wrap_kernel_functor_unboxed_<>::call()
+    @     0x7fa843149970  at::_ops::native_batch_norm::call()
+    @     0x7fa842aa4ad1  at::native::_batch_norm_impl_index()
+    @     0x7fa8437f2541  c10::impl::wrap_kernel_functor_unboxed_<>::call()
+    @     0x7fa842fcd2d5  at::_ops::_batch_norm_impl_index::call()
+    @     0x7fa842aa281b  at::native::batch_norm()
+    @     0x7fa8437f24d1  c10::impl::wrap_kernel_functor_unboxed_<>::call()
+    @     0x7fa843265ecd  at::_ops::batch_norm::call()
+    @     0x7fa84bf731aa  torch::autograd::THPVariable_batch_norm()
+    @           0x4fc697  cfunction_call
+    @           0x4f614b  _PyObject_MakeTpCall.localalias
+    @           0x4f2376  _PyEval_EvalFrameDefault
+I20231111 19:15:26.269824 1174686 model_infer_store.cc:364] [Inference]: resnet152-5 (rank 0) set_input_ms=0.70 infer_ms=40.46 get_output_ms=0.04 total_infer_ms=41.20
+I20231111 19:15:26.298784 1174685 model_infer_store.cc:364] [Inference]: resnet152-2 (rank 0) set_input_ms=0.69 infer_ms=43.92 get_output_ms=0.03 total_infer_ms=44.65
+I20231111 19:15:26.321525 1174684 model_infer_store.cc:364] [Inference]: resnet152-1 (rank 0) set_input_ms=0.66 infer_ms=40.16 get_output_ms=0.04 total_infer_ms=40.87
+I20231111 19:15:26.484659 1174686 model_infer_store.cc:364] [Inference]: resnet152-5 (rank 0) set_input_ms=0.51 infer_ms=39.96 get_output_ms=0.03 total_infer_ms=40.50
+I20231111 19:15:26.513370 1174685 model_infer_store.cc:364] [Inference]: resnet152-2 (rank 0) set_input_ms=0.48 infer_ms=42.30 get_output_ms=0.03 total_infer_ms=42.82
+I20231111 19:15:26.539925 1174684 model_infer_store.cc:364] [Inference]: resnet152-1 (rank 0) set_input_ms=0.48 infer_ms=40.68 get_output_ms=0.03 total_infer_ms=41.20
+I20231111 19:15:29.487226 1174686 model_infer_store.cc:387] [Inference] worker 0 exit
+I20231111 19:15:29.506886 1173484 model_infer_store.cc:481] [Model] resnet152-5 decrease worker 0
+I20231111 19:15:29.515822 1174685 model_infer_store.cc:387] [Inference] worker 0 exit
+I20231111 19:15:29.534212 1173446 model_infer_store.cc:481] [Model] resnet152-2 decrease worker 0
+I20231111 19:15:29.542387 1174684 model_infer_store.cc:387] [Inference] worker 0 exit
+I20231111 19:15:29.561036 1173432 model_infer_store.cc:481] [Model] resnet152-1 decrease worker 0
+F20231111 19:15:30.878858 1173506 model_train_store.cc:174] [ModelTrainStore]: TrainJob [resnet152, 0] failed, signal is Aborted
+*** Check failure stack trace: ***
+I20231111 19:15:30.878859 1173409 controller.cc:113] [Controller] MonitorTrain: train status Controller::TrainStatus::kRunning -> Controller::TrainStatus::kIdle
+    @     0x7f2427aa9773  google::LogMessage::Fail()
+    @     0x7f2427aacf76  google::LogMessage::SendToLog()
+    @     0x7f2427aa91f9  google::LogMessage::Flush()
+    @     0x7f2427aaa85f  google::LogMessageFatal::~LogMessageFatal()
+    @     0x557ed925354d  colserve::ModelTrainStore::LaunchTrain()
+    @     0x557ed9254ed5  colserve::ModelTrainStore::Train()
+    @     0x557ed9256731  _ZNSt6thread11_State_implINS_8_InvokerISt5tupleIJZN8colserve15ModelTrainStore4InitERKNSt10filesystem7__cxx114pathEEUlvE_EEEEE6_M_runEv
+    @     0x7f24140fae79  execute_native_thread_routine
+    @     0x7f241d6dd609  start_thread
+    @     0x7f2413dea133  clone
+    @              (nil)  (unknown)

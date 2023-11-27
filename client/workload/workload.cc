@@ -1,151 +1,66 @@
+#include <algorithm>
+#include <chrono>
+#include <numeric>
 #include <random>
+#include <ratio>
+#include <sstream>
+#include <thread>
+#include <utility>
 
+#include "glog/logging.h"
 #include "workload.h"
 
 
 namespace colserve {
 namespace workload {
 
-void InferWorker::RequestInfer(Workload &workload) {
+void InferWorker::RequestInfer(Workload& workload, const std::vector<double>& start_points, double delay_before_infer) {
   std::stringstream log_prefix;
-  log_prefix << "[InferWorker(" << std::hex << std::this_thread::get_id() << ") " << model_ << "] ";
-
+  log_prefix << "[InferWorker(" << std::hex << std::this_thread::get_id() << ") " << model_ << " azure] "; 
   workload.ready_future_.wait();
-  LOG(INFO) << log_prefix.str() << "RequestInfer start";
+  std::this_thread::sleep_for(delay_before_infer * std::chrono::seconds(1));
+  LOG(INFO) << log_prefix.str() << "Delay " << delay_before_infer << " sec.";
+  {
+    size_t debug_num = std::min(start_points.size(), 5UL);
+    std::stringstream debug_stream;
+    debug_stream << log_prefix.str() << "RequestInfer start, " << "len(req_nums)=" << start_points.size() << ", req_nums[0:" << debug_num << "]={";
+    for (size_t k=0; k<debug_num; ++k) {
+      debug_stream << start_points[k];
+      if (k != debug_num - 1) {
+        debug_stream << ",";
+      }
+    }
+    debug_stream << "}.";
+    LOG(INFO) << debug_stream.str();
+  }
+
+  std::mt19937 gen(AppBase::seed);
+  auto start_sys_clock = std::chrono::steady_clock::now();
+  auto duration_after_start = std::chrono::duration<double>::zero();
+  for(auto start_point : start_points) {
+    auto sleep_until_sys_clock = start_sys_clock + start_point * std::chrono::seconds(1);
+    DLOG(INFO) << log_prefix.str() << "sleep until " << std::chrono::duration_cast<std::chrono::milliseconds>(sleep_until_sys_clock - start_sys_clock).count() << "ms."; 
+    std::this_thread::sleep_until(sleep_until_sys_clock);
+    size_t i = 0;
+    CHECK(workload.running_) << log_prefix.str() << "Workload client is not running while request(start_point=" << start_point << "s) did not sent.";
+    for (; i < concurrency_; i++) {
+      CHECK_NE(request_status_[i].status_, InferReqStatus::kDone);
+      if (request_status_[i].status_ == InferReqStatus::kReady) {
+        request_status_[i].status_ = InferReqStatus::kWait;
+        request_status_[i].request_time_ = std::chrono::steady_clock::now();
+        contexts_[i] = std::make_unique<grpc::ClientContext>();
+        rpcs_[i] = workload.stub_->AsyncInference(contexts_[i].get(), requests_[i], &cq_);
+        rpcs_[i]->Finish(&infer_results_[i], &rpc_status_[i], (void*)i);
+        break;
+      }
+    }
+    CHECK_NE(i, concurrency_) << log_prefix.str() << "Unable to find free REQUEST_STATUS, so distribution may be violated.";
+  }
   while(workload.running_) {
-    for (size_t i = 0; i < concurrency_; i++) {
-      if (request_status_[i].status_ == InferReqStatus::kDone 
-          && std::chrono::steady_clock::now() <= request_status_[i].ready_time_) {
-        request_status_[i].status_ = InferReqStatus::kReady;
-      }
-      if (request_status_[i].status_ == InferReqStatus::kReady) {
-        request_status_[i].status_ = InferReqStatus::kWait;
-        request_status_[i].request_time_ = std::chrono::steady_clock::now();
-        contexts_[i] = std::make_unique<grpc::ClientContext>();
-        rpcs_[i] = workload.stub_->AsyncInference(contexts_[i].get(), requests_[i], &cq_);
-        rpcs_[i]->Finish(&infer_results_[i], &rpc_status_[i], (void*)i);
-      }
-    }
+    LOG(INFO) << log_prefix.str() << "Workload client is still running, wait 500ms.";
+    std::this_thread::sleep_for(500 * std::chrono::milliseconds());
   }
   LOG(INFO) << log_prefix.str() << "RequestInfer stop";
-}
-
-void InferWorker::RequestInferPoisson(Workload &workload, double request_per_sec) {
-  std::stringstream log_prefix;
-  log_prefix << "[InferWorker(" << std::hex << std::this_thread::get_id() << ") " << model_ << " POISSON] ";
-
-  // 10ms as basic unit
-  // if server cannot serve requests required by poisson dist, 
-  // it will fallback to normal busy requesting
-  double req_per_10ms = 1.0 * request_per_sec / 100;
-  std::mt19937 gen(AppBase::seed);
-  std::poisson_distribution<> dist(req_per_10ms);
-
-  workload.ready_future_.wait();
-  LOG(INFO) << log_prefix.str() << "RequestInfer start";
-  while (workload.running_) {
-    auto begin = std::chrono::steady_clock::now();
-    auto num_req = dist(gen);
-    for (size_t i = 0; i < concurrency_ && num_req > 0; i++) {
-      CHECK_NE(request_status_[i].status_, InferReqStatus::kDone);
-      if (request_status_[i].status_ == InferReqStatus::kReady) {
-        request_status_[i].status_ = InferReqStatus::kWait;
-        request_status_[i].request_time_ = std::chrono::steady_clock::now();
-        contexts_[i] = std::make_unique<grpc::ClientContext>();
-        rpcs_[i] = workload.stub_->AsyncInference(contexts_[i].get(), requests_[i], &cq_);
-        rpcs_[i]->Finish(&infer_results_[i], &rpc_status_[i], (void*)i);
-        num_req--;
-      }
-    }
-    auto end = std::chrono::steady_clock::now();
-    auto duration = end - begin;
-    if (duration < std::chrono::milliseconds(10)) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(10) - duration);
-    }
-  }
-}
-
-void InferWorker::RequestInferDynamicPoisson(
-    Workload &workload,
-    std::vector<double> change_time_points,
-    std::vector<double> lambdas) {
-  std::stringstream log_prefix;
-  log_prefix << "[InferWorker(" << std::hex << std::this_thread::get_id() << ") " << model_ << " DYNAMIC POISSON] ";
-  workload.ready_future_.wait();
-  LOG(INFO) << log_prefix.str() << "RequestInfer start";
-
-  std::mt19937 gen(AppBase::seed);
-
-  auto begin = std::chrono::steady_clock::now();\
-  size_t idx = 0;
-  size_t req_per_10ms = lambdas[idx] / 100;
-  std::poisson_distribution<> dist(req_per_10ms);
-  while (workload.running_) {
-    auto b = std::chrono::steady_clock::now();
-    auto d = std::chrono::duration<double>(b-begin).count();
-    if (idx < change_time_points.size()) {
-      if (d >= change_time_points[idx]) {
-        LOG(INFO) << log_prefix.str() << "change poisson lamda " << lambdas[idx] << " -> " << lambdas[idx+1];
-        dist = std::poisson_distribution<>(lambdas[++idx] / 100);
-      }
-    }
-    auto num_req = dist(gen);
-    for (size_t i = 0; i < concurrency_ && num_req > 0; i++) {
-      CHECK_NE(request_status_[i].status_, InferReqStatus::kDone);
-      if (request_status_[i].status_ == InferReqStatus::kReady) {
-        request_status_[i].status_ = InferReqStatus::kWait;
-        request_status_[i].request_time_ = std::chrono::steady_clock::now();
-        contexts_[i] = std::make_unique<grpc::ClientContext>();
-        rpcs_[i] = workload.stub_->AsyncInference(contexts_[i].get(), requests_[i], &cq_);
-        rpcs_[i]->Finish(&infer_results_[i], &rpc_status_[i], (void*)i);
-        num_req--;
-      }
-    }
-    auto e = std::chrono::steady_clock::now();
-    auto duration = e - b;
-    if (duration < std::chrono::milliseconds(10)) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(10) - duration);
-    }
-  }
-
-}
-
-void InferWorker::RequestInferDynamic(Workload &workload,
-                                      std::vector<double> change_time_points,
-                                      std::vector<size_t> concurrencys) {
-  std::stringstream log_prefix;
-  log_prefix << "[InferWorker(" << std::hex << std::this_thread::get_id() << ") " << model_ << " DYNAMIC] "; 
-  workload.ready_future_.wait();
-  LOG(INFO) << log_prefix.str() << "RequestInfer start, max_concurrency " << concurrency_ << " init_concurrency " << concurrencys[0];
-
-  auto begin = std::chrono::steady_clock::now();
-  size_t idx = 0;
-  size_t concurrency = concurrencys[0];
-  while (workload.running_) {
-    auto t = std::chrono::steady_clock::now();
-    auto d = std::chrono::duration<double>(t-begin).count();
-    if (idx < change_time_points.size()) {
-      if (d >= change_time_points[idx]) {
-        LOG(INFO) << log_prefix.str() << "change concurrency " << concurrency << " -> " << concurrencys[idx+1];
-        concurrency = concurrencys[++idx];
-      }
-    }
-    for (size_t i = 0; i < concurrency; i++) {
-      if (request_status_[i].status_ == InferReqStatus::kDone 
-          && std::chrono::steady_clock::now() <= request_status_[i].ready_time_) {
-        request_status_[i].status_ = InferReqStatus::kReady;
-      }
-      if (request_status_[i].status_ == InferReqStatus::kReady) {
-        request_status_[i].status_ = InferReqStatus::kWait;
-        request_status_[i].request_time_ = std::chrono::steady_clock::now();
-        contexts_[i] = std::make_unique<grpc::ClientContext>();
-        rpcs_[i] = workload.stub_->AsyncInference(contexts_[i].get(), requests_[i], &cq_);
-        rpcs_[i]->Finish(&infer_results_[i], &rpc_status_[i], (void*)i);
-      }
-    }
-  }
-  LOG(INFO) << log_prefix.str() << "RequestInfer stop";
-
 }
 
 void InferWorker::FetchInferResult(Workload &workload, 
@@ -398,22 +313,6 @@ std::function<void(std::vector<InferRequest>&)> Workload::SetMnistRequestFn(cons
   return set_mnist_request_fn;
 }
 
-// void Workload::InferMnist(size_t concurrency, std::function<double_ms_t(size_t)> interval_fn, 
-//                           int64_t show_result) {
-//   Infer("mnist", concurrency, SetMnistRequestFn(), interval_fn, show_result);
-// }
-
-// void Workload::InferMnistPoisson(size_t concurrency, double request_per_sec,
-//                                  int64_t show_result) {
-//   InferPoisson("mnist", concurrency, SetMnistRequestFn(), request_per_sec, show_result);
-// }
-
-// void Workload::InferMnistDynamic(const std::vector<double> &change_time_points,
-//                                  const std::vector<size_t> &concurrencys,
-//                                  int64_t show_result) {
-//   InferDynamic("mnist", change_time_points, concurrencys, SetMnistRequestFn(), show_result);
-// } 
-
 
 std::function<void(std::vector<InferRequest>&)> Workload::SetResnetRequestFn(const std::string &model) {
   static std::vector<std::string> resnet_input_datas;
@@ -438,97 +337,14 @@ std::function<void(std::vector<InferRequest>&)> Workload::SetResnetRequestFn(con
   return set_resnet_request_fn;
 }
 
-// void Workload::InferResnet(const std::string &model, size_t concurrency, std::function<double_ms_t(size_t)> interval_fn,
-//                            int64_t show_result) {
-//   Infer("resnet152", concurrency, SetResnetRequestFn(model), interval_fn, show_result);
-// }
 
-// void Workload::InferResnetPoisson(size_t concurrency, double request_per_sec,
-//                                   int64_t show_result) {
-//   InferPoisson("resnet152", concurrency, SetResnetRequestFn("resnet152"), request_per_sec, show_result);
-// }
-
-// void Workload::InferResnetDynamicPoisson(
-//     size_t concurrency,
-//     const std::vector<double> &change_time_points,
-//     const std::vector<double> &lambdas,
-//     int64_t show_result) {
-//   InferDynamicPoisson("resnet152", concurrency, change_time_points, lambdas,
-//       SetResnetRequestFn("resnet152"), show_result);
-// } 
-
-// void Workload::InferResnetDynamic(const std::vector<double> &change_time_points,
-//                                   const std::vector<size_t> &concurrencys,
-//                                   int64_t show_result) {
-//   InferDynamic("resnet152", change_time_points, concurrencys, SetResnetRequestFn("resnet152"), show_result);
-// }
-
-void Workload::Infer(const std::string &model, size_t concurrency, 
-                    //  std::function<void(std::vector<InferRequest>&)> set_request_fn,
-                     std::function<double_ms_t(size_t)> interval_fn,
-                     int64_t show_result) {
-  auto set_request_fn = GetSetRequestFn(model);
-  auto worker = std::make_unique<InferWorker>(
-      model, concurrency, set_request_fn, *this);
-  threads_.push_back(std::make_unique<std::thread>(
-      &InferWorker::RequestInfer, worker.get(), std::ref(*this)));
-  threads_.push_back(std::make_unique<std::thread>(
-      &InferWorker::FetchInferResult, worker.get(), std::ref(*this),
-      interval_fn, show_result));
-  infer_workers_.push_back(std::move(worker));
-}
-
-
-void Workload::InferPoisson(const std::string &model, size_t concurrency,
-                            // std::function<void(std::vector<InferRequest>&)> set_request_fn,
-                            double request_per_sec,
+void Workload::Infer(const std::string &model, size_t concurrency, const std::vector<double> &start_points, double delay_before_infer,
                             int64_t show_result) {
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);
   threads_.push_back(std::make_unique<std::thread>(
-      &InferWorker::RequestInferPoisson, worker.get(), std::ref(*this), 
-      request_per_sec));
-  threads_.push_back(std::make_unique<std::thread>(
-      &InferWorker::FetchInferResult, worker.get(), std::ref(*this),
-      nullptr, show_result));
-  infer_workers_.push_back(std::move(worker));
-}
-
-void Workload::InferDynamicPoisson(
-    const std::string &model,
-    size_t concurrency,
-    const std::vector<double> &change_time_points,
-    const std::vector<double> &lambdas,
-    // std::function<void(std::vector<InferRequest>&)> set_request_fn,
-    int64_t show_result) {
-  CHECK_EQ(change_time_points.size() + 1, lambdas.size()) << model;
-  auto set_request_fn = GetSetRequestFn(model);
-  auto worker = std::make_unique<InferWorker>(
-    model, concurrency, set_request_fn, *this);
-  threads_.push_back(std::make_unique<std::thread>(
-      &InferWorker::RequestInferDynamicPoisson,  worker.get(), std::ref(*this),
-      change_time_points, lambdas));
-  threads_.push_back(std::make_unique<std::thread>(
-      &InferWorker::FetchInferResult, worker.get(), std::ref(*this),
-      nullptr, show_result));
-  infer_workers_.push_back(std::move(worker));
-}
-
-void Workload::InferDynamic(const std::string &model,
-                            const std::vector<double> &change_time_points,
-                            const std::vector<size_t> &concurrencys,
-                            // std::function<void(std::vector<InferRequest>&)> set_request_fn,
-                            int64_t show_result) {
-  CHECK_EQ(change_time_points.size() + 1, concurrencys.size()) << model;
-  auto set_request_fn = GetSetRequestFn(model);
-  auto max_concurrency = *std::max_element(concurrencys.begin(), concurrencys.end());
-  auto worker = std::make_unique<InferWorker>(
-    model, max_concurrency, set_request_fn, *this);
-  // LOG(INFO) << concurrencys[0];
-  threads_.push_back(std::make_unique<std::thread>(
-      &InferWorker::RequestInferDynamic, worker.get(), std::ref(*this),
-      change_time_points, concurrencys));
+      &InferWorker::RequestInfer, worker.get(), std::ref(*this), start_points, delay_before_infer));
   threads_.push_back(std::make_unique<std::thread>(
       &InferWorker::FetchInferResult, worker.get(), std::ref(*this),
       nullptr, show_result));
@@ -558,5 +374,5 @@ void Workload::Report(int verbose, std::ostream &os) {
   }
 }
 
-} 
+}  // namespace workload
 }
