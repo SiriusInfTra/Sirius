@@ -174,7 +174,7 @@ add_executable(client client/client.cc)
 target_link_libraries(client grpc++ proto glog::glog CLI11::CLI11)
 
 add_executable(hybrid_workload 
-  client/hybrid_workload.cc
+  client/workload_launcher.cc
   client/workload/workload.cc
   client/workload/util.cc
 )
