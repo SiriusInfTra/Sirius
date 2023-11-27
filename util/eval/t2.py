@@ -1,5 +1,5 @@
 import os, sys
-from runner import *
+from hybrid_workload import *
 import numpy as np
 import signal
 
@@ -48,22 +48,26 @@ def SimpleAzure(system:System, subdir_tag:str, infer_only:bool, hybrid:bool, loc
 
 def BenchmarkAzure(system:System, subdir_tag:str, infer_only:bool, hybrid:bool, local_seed=None):
     system.infer_model_config = {'resnet152[10]' : infer_model_comm_config}
-    workload = Workload(duration=90, concurrency=64, client_log="client-log", workload_log="workload-log",
-        infer=True, infer_model=["resnet152-azure[10]"], 
-        trace_id=1, peak_request=100, period=144, period_duration=0.1,
-        train_model=["resnet"], num_epoch=15, batch_size=60,
-        seed=local_seed if local_seed is not None else global_seed
+    workload = HyperWorkload(concurrency=64, client_log="client-log", workload_log="workload-log", trace_cfg="trace-cfg", seed=10087)
+    workload.infer_workloads.append(
+        AzureInferWorkload(
+            'workload_data/azurefunctions-dataset2019/invocations_per_function_md.anon.d01.csv',
+            max_request_sec=100, interval_sec=1, period_num=100, func_num=100, seed=10087,
+            model_list=[
+                InferModel(0, 'resnet152'),
+                InferModel(1, 'resnet152-1'),
+            ]
+        )
     )
     if infer_only:
-        workload.train = False
-        workload.benchmark = False
+        workload.train_workload = None
+        
         system.launch('benchmark-azure', f'infer-only-{subdir_tag}')
         workload.launch(system)
         system.stop()
 
     if hybrid:
-        workload.train = True
-        workload.benchmark = False
+        workload.train_workload = TrainWorkload('resnet', 15, 60)
         system.launch('benchmark-azure', f'hybrid-{subdir_tag}')
         workload.launch(system)
         system.stop()
@@ -99,7 +103,7 @@ infer_model_comm_config['num-worker'] = '0'
 
 system.use_sta = True
 # SimpleAzure(system, 'op1-sta', False, True)
-BenchmarkAzure(system, 'op1-sta', True, False)
+BenchmarkAzure(system, 'op1-sta', False, True)
 
 system.mode = System.ServerMode.ColocateL1
 # SimpleAzure(system, 'op2-kill-adjust', False, True)
