@@ -182,6 +182,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
         killed_time = 0
         finished_time = 0
         wait_bs_valid_sec = 0 # add infer may cause batch size <= 0
+        finished_imgs = 0
         for i, (images, targets) in enumerate(train_loader):
             # print(f"Batch {i}, batch size {len(images)} {train_dataset.batch_size}")
             images:torch.Tensor = images.to('cuda:0', non_blocking=True)
@@ -205,6 +206,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                 finished_batch += 1
                 total_finished_batch += 1
                 batch_cnt += 1
+                finished_imgs += len(images)
             except (ColocateAdjustL1Exception, SwitchL1Exception) as e:
                 killed_batch += 1
                 total_killed_batch += 1
@@ -249,10 +251,10 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
         batch_info = f'batch cnt {batch_cnt} avg {1e3*(end-begin)/batch_cnt:.1f}ms'
         if mode == 'task-switch-l1' or mode == 'colocate-l1':
             batch_info += f' | try {tried_batch} kill {killed_batch}, {killed_time*1e3:.1f}ms finish {finished_batch}, {finished_time*1e3:.1f}ms'
-        print('[{} epoch {}] {:.3f}s | {} | batch-size {} | micro-batch-size {} | {} | wait_bs_valid {:.3f}s'.format(
+        print('[{} epoch {}] {:.3f}s | {} | batch-size {} | micro-batch-size {} | {} | thpt {:.2f} | wait_bs_valid {:.3f}s'.format(
                 model.__class__.__name__, epoch, end - begin,
                 batch_info, batch_size, train_dataset.batch_size,
-                mem_info, wait_bs_valid_sec), flush=True)
+                mem_info, finished_imgs / (end - begin), wait_bs_valid_sec), flush=True)
     
 
     if mode == 'task-switch-l1' or mode == 'colocate-l1' or mode == 'colocate-l2':
@@ -299,5 +301,3 @@ if __name__ == '__main__':
         print(e) # should not reach here
 
     # print(torch.cuda.memory_summary(), file=sys.stderr)
-
-    torch_col.ReleaseMempool()

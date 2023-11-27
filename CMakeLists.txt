@@ -126,7 +126,6 @@ add_library(sta SHARED
   server/sta/shape_helper.cc
   server/sta/dtype_helper.cc
   server/sta/init.cc
-  server/sta/mempool_sampler.cc
 )
 # target_include_directories(sta INTERFACE ${TVM_HOME}/3rdparty/dlpack/include)
 target_include_directories(sta PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/server/)

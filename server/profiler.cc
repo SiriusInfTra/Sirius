@@ -160,7 +160,7 @@ Profiler::Profiler(const std::string &profile_log_path)
         uint32_t info_cnt = max_info_cnt;
 #if !defined(USE_NVML_V3) || USE_NVML_V3 != 0
         NVML_CALL(nvmlDeviceGetComputeRunningProcesses_v3(device, &info_cnt, infos));
-        CHECK(info_cnt <= 2);
+        // CHECK(info_cnt <= 2) << "found " << infos[0].pid << " " << infos[1].pid << " " << infos[2].pid << " ...";
         for (uint32_t i = 0; i < info_cnt; i++) {
           if (infos[i].pid == pid) {
             infer_mem = infos[i].usedGpuMemory;
