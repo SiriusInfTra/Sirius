@@ -212,13 +212,9 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                 total_killed_batch += 1
                 # killed_time += time.time() - micro_batch_begin
                 t0 = time.time()
-                print("synchronize")
                 torch.cuda.synchronize()
-                print("old_gpu_mem")
                 old_gpu_mem = gpu_mem()
-                print("empty_cache")
                 torch.cuda.empty_cache()
-                print("ColocateAdjustL1Exception")
                 t1 = time.time()
                 if isinstance(e, ColocateAdjustL1Exception):
                     hook.stub.adjust_l1_done()
@@ -304,6 +300,6 @@ if __name__ == '__main__':
     except SwitchL1Exception as e:
         print(e) # should not reach here
 
-    print(torch.cuda.memory_summary(), file=sys.stderr)
+    # print(torch.cuda.memory_summary(), file=sys.stderr)
 
     torch_col.ReleaseMempool()
