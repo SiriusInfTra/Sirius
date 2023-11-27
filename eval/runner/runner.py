@@ -20,7 +20,9 @@ class System:
         ColocateL2 = "colocate-l2"
 
     def __init__(self, mode:str, use_sta:bool, cuda_memory_pool_gb:str,
-                 profile_log:str="profile-log", server_log:str="server-log", port:str= "18080",
+                 profile_log:str = "profile-log", 
+                 server_log:str = "server-log", 
+                 port:str = "18080",
                  infer_model_config:Dict[str, Dict[str, str]]=None,
                  mps=True) -> None:
         self.mode = mode
@@ -126,9 +128,14 @@ class System:
 
 
 class HyperWorkload:
-    def __init__(self, workload_log: str, client_log: str, trace_cfg: str, 
-                 concurrency: int, duration: Optional[int | float] = None, 
-                 seed: Optional[int] = None, delay_before_infer: float = 0) -> None:
+    def __init__(self, 
+                 concurrency:int, 
+                 duration: Optional[int | float] = None, 
+                 workload_log:str = "workload-log", 
+                 client_log:str = "client-log", 
+                 trace_cfg:str = "trace-cfg",
+                 seed: Optional[int] = None, 
+                 delay_before_infer: float = 0) -> None:
         self.infer_workloads: List[InferWorkloadBase] = []
         self.train_workload: NoneType | TrainWorkload = None
         self.duration = duration
