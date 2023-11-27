@@ -69,7 +69,7 @@ class System:
     def next_time_stamp(self):
         self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
 
-    def launch(self, name, subdir = None):
+    def launch(self, name: str, subdir: Optional[str] = None, trace_file: Optional[os.PathLike[str]] = None):
         if subdir is None:
             self.log_dir = pathlib.Path("log") / f'{name}-{self.time_stamp}'
         else:
@@ -174,7 +174,10 @@ class HyperWorkload:
         ]
         if self.duration is not None:
             cmd += ["-d", str(self.duration)]
-        if len(self.infer_workloads) > 0:
+        
+        if trace_cfg is not None:
+            cmd += ["--infer-trace", str(trace_cfg)]
+        elif len(self.infer_workloads) > 0:
             model_list: list[InferModel] = []
             trace_list: list[TraceRecord] = []
             for infer_workload in self.infer_workloads:
