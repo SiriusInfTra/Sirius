@@ -15,6 +15,7 @@ models/*/
 .pkl_memoize_py3/
 
 *.so
+*.out
 
 *.egg-info/
 python/torch_col/torch_col.cpp
