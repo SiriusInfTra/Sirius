@@ -8,21 +8,24 @@ import numpy as np
 from numpy.random import RandomState, MT19937, SeedSequence
 
 
-@dataclass
 class InferModel:
-    model_id: int
-    model_name: str
+    model_cnt = 0
+
+    def __init__(self, model_name: str) -> None:
+        self.model_id = InferModel.model_cnt
+        self.model_name = model_name
+        InferModel.model_cnt += 1
 
     def __hash__(self) -> int:
         return self.model_id
     
     @classmethod
-    def get_model_list(model_name:str, num:int):
-        if num < 1:
-            raise Exception("num must be greater than 0")
-        ret = [InferModel(0, model_name)]
-        for i in range(1, num):
-            ret.append(InferModel(i, f"{model_name}-{i}"))
+    def get_model_list(model_name:str, num_model:int):
+        if num_model < 1:
+            raise Exception("num_model must be greater than 0")
+        ret = [InferModel(model_name)]
+        for i in range(1, num_model):
+            ret.append(InferModel(f"{model_name}-{i}"))
         return ret
 
 
@@ -185,10 +188,10 @@ class PoissonInferWorkload(RandomInferWorkload):
 
     def get_trace(self) -> list[TraceRecord]:
         trace_record: list[TraceRecord] = []
-        for infer_model, poisson_parm in self.poisson_params:
-            assert poisson_parm.time_point == 0
-            poisson_params = [poisson_parm, PoissonParam(self.duration, 0)]
-            trace_record.append(PoissonInferWorkload.poisson_func_freq(
+        for infer_model, poisson_param in self.poisson_params:
+            assert poisson_param.time_point == 0
+            poisson_params = [poisson_param, PoissonParam(self.duration, 0)]
+            trace_record.extend(PoissonInferWorkload.poisson_func_freq(
                 poisson_params, infer_model, self.rs))
         return trace_record
 

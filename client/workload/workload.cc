@@ -57,7 +57,7 @@ void InferWorker::RequestInfer(Workload& workload, const std::vector<double>& st
     CHECK_NE(i, concurrency_) << log_prefix.str() << "Unable to find free REQUEST_STATUS, so distribution may be violated.";
   }
   while(workload.running_) {
-    LOG(INFO) << log_prefix.str() << "Workload client is still running, wait 500ms.";
+    DLOG(INFO) << log_prefix.str() << "Workload client is still running, wait 500ms.";
     std::this_thread::sleep_for(500 * std::chrono::milliseconds());
   }
   LOG(INFO) << log_prefix.str() << "RequestInfer stop";

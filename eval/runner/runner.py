@@ -10,7 +10,7 @@ import subprocess
 from typing import List, Dict, Optional
 from types import NoneType
 
-from workload import InferWorkloadBase, TrainWorkload, InferTraceDumper
+from .workload import InferWorkloadBase, TrainWorkload, InferTraceDumper
 
 
 class System:
@@ -19,7 +19,8 @@ class System:
         ColocateL1 = "colocate-l1"
         ColocateL2 = "colocate-l2"
 
-    def __init__(self, mode:str, use_sta:bool, cuda_memory_pool_gb:str,
+    def __init__(self, mode:str, use_sta:bool, 
+                 cuda_memory_pool_gb:str=None,
                  profile_log:str = "profile-log", 
                  server_log:str = "server-log", 
                  port:str = "18080",
@@ -44,11 +45,17 @@ class System:
     def next_time_stamp(self):
         self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
 
-    def launch(self, name: str, subdir: Optional[str] = None, trace_cfg: Optional[os.PathLike[str]] = None):
+    def launch(self, name: str, subdir: Optional[str] = None, time_stamp:bool=True):
         if subdir is None:
-            self.log_dir = pathlib.Path("log") / f'{name}-{self.time_stamp}'
+            if time_stamp:
+                self.log_dir = pathlib.Path("log") / f'{name}-{self.time_stamp}'
+            else:
+                self.log_dir = pathlib.Path("log") / f'{name}'
         else:
-            self.log_dir = pathlib.Path("log") / f'{name}-{self.time_stamp}' / subdir
+            if time_stamp:
+                self.log_dir = pathlib.Path("log") / f'{name}-{self.time_stamp}' / subdir
+            else:
+                self.log_dir = pathlib.Path("log") / f'{name}' / subdir
         pathlib.Path(self.log_dir).mkdir(parents=True, exist_ok=True)
         server_log = f"{self.log_dir}/{self.server_log}.log"
         profile_log = f"{self.log_dir}/{self.profile_log}.log"
@@ -59,9 +66,10 @@ class System:
             "-p", self.port, 
             "--mode", self.mode, 
             "--use-sta", "1" if self.use_sta else "0", 
-            "--cuda-memory-pool-gb", self.cuda_memory_pool_gb, 
             "--profile-log", profile_log
         ]
+        if self.cuda_memory_pool_gb is not None:
+            cmd += ["--cuda-memory-pool-gb", self.cuda_memory_pool_gb]
         if self.infer_model_config is not None:
             self.infer_model_config_path = f'{(self.log_dir / "infer-model-config").absolute()}'
             with open(self.infer_model_config_path, "w") as f:
@@ -183,10 +191,14 @@ class HyperWorkload:
         server.cmd_trace.append(" ".join(cmd))
         print(" ".join(cmd))
 
-        client_log = pathlib.Path(server.log_dir) / self.client_log
-        with open(client_log, "w") as log_file:
-            completed = subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
-            if completed.returncode != 0:
-                raise Exception(f"Workload exited with code {completed.returncode}")
-
+        try:
+            client_log = pathlib.Path(server.log_dir) / self.client_log
+            with open(client_log, "w") as log_file:
+                completed = subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
+                if completed.returncode != 0:
+                    raise Exception(f"Workload exited with code {completed.returncode}")
+        except Exception as e:
+            print(f"Workload exited with exception")
+            server.stop()
+            raise e
 

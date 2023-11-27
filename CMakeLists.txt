@@ -173,12 +173,12 @@ endif()
 add_executable(client client/client.cc)
 target_link_libraries(client grpc++ proto glog::glog CLI11::CLI11)
 
-add_executable(hybrid_workload 
+add_executable(workload_launcher 
   client/workload_launcher.cc
   client/workload/workload.cc
   client/workload/util.cc
 )
-target_link_libraries(hybrid_workload grpc++ proto glog::glog CLI11::CLI11)
+target_link_libraries(workload_launcher grpc++ proto glog::glog CLI11::CLI11)
 
 
 add_subdirectory(python)
