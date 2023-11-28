@@ -29,7 +29,7 @@ print('CUDA_VISIBLE_DEVICES={}, CUDA_MPS_PIPE_DIRECTORY={}'.format(
     os.environ['CUDA_VISIBLE_DEVICES'], os.environ['CUDA_MPS_PIPE_DIRECTORY']))
 
 
-import config
+from .config import get_global_seed, set_global_seed
 from .runner import *
 from .workload import *
 

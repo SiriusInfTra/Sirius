@@ -11,7 +11,7 @@ from typing import List, Dict, Optional
 from types import NoneType
 
 from .workload import InferWorkloadBase, TrainWorkload, InferTraceDumper
-from config import get_global_seed
+from .config import get_global_seed
 
 class System:
     class ServerMode:
@@ -156,6 +156,9 @@ class HyperWorkload:
         else:
             self.seed = get_global_seed()
         self.delay_before_infer = delay_before_infer
+
+    def set_infer_workloads(self, *infer_workloads: InferWorkloadBase):
+        self.infer_workloads = list(infer_workloads)
     
     def launch(self, server: System, trace_cfg: Optional[PathLike] = None):
         assert server.server is not None

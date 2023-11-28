@@ -7,7 +7,7 @@ from types import NoneType
 import numpy as np
 from numpy.random import RandomState, MT19937, SeedSequence
 
-from config import get_global_seed
+from .config import get_global_seed
 
 class InferModel:
     model_cnt = 0
@@ -21,7 +21,11 @@ class InferModel:
         return self.model_id
     
     @classmethod
-    def get_model_list(model_name:str, num_model:int):
+    def reset_model_cnt(cls):
+        InferModel.model_cnt = 0
+
+    @classmethod
+    def get_model_list(cls, model_name:str, num_model:int):
         if num_model < 1:
             raise Exception("num_model must be greater than 0")
         ret = [InferModel(model_name)]
