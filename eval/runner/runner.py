@@ -11,7 +11,7 @@ from typing import List, Dict, Optional
 from types import NoneType
 
 from .workload import InferWorkloadBase, TrainWorkload, InferTraceDumper
-
+from config import get_global_seed
 
 class System:
     class ServerMode:
@@ -151,7 +151,10 @@ class HyperWorkload:
         self.client_log = client_log
         self.trace_cfg = trace_cfg
         self.concurrency = concurrency
-        self.seed = seed
+        if seed is not None:
+            self.seed = seed
+        else:
+            self.seed = get_global_seed()
         self.delay_before_infer = delay_before_infer
     
     def launch(self, server: System, trace_cfg: Optional[PathLike] = None):
@@ -181,8 +184,8 @@ class HyperWorkload:
         else:
             cmd += ["--no-train"]
 
-        if self.seed is not None:
-            cmd += ["--seed", str(self.seed)]
+        assert self.seed is not None
+        cmd += ["--seed", str(self.seed)]
 
         workload_log = pathlib.Path(server.log_dir) / self.workload_log
         cmd += ['--log', str(workload_log)]

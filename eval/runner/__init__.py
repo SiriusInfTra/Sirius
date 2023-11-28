@@ -28,9 +28,8 @@ if 'https_proxy' in os.environ:
 print('CUDA_VISIBLE_DEVICES={}, CUDA_MPS_PIPE_DIRECTORY={}'.format(
     os.environ['CUDA_VISIBLE_DEVICES'], os.environ['CUDA_MPS_PIPE_DIRECTORY']))
 
-import numpy as np
-_global_seed = np.random.randint(2<<31)
 
+import config
 from .runner import *
 from .workload import *
 

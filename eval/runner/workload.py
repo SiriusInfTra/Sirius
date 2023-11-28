@@ -7,6 +7,7 @@ from types import NoneType
 import numpy as np
 from numpy.random import RandomState, MT19937, SeedSequence
 
+from config import get_global_seed
 
 class InferModel:
     model_cnt = 0
@@ -61,7 +62,7 @@ class RandomInferWorkload(InferWorkloadBase):
     def __init__(self, seed: Optional[int] = None) -> None:
         super().__init__()
         if seed is None:
-            self.rs = RandomState()
+            self.rs = RandomState(MT19937(SeedSequence(get_global_seed())))
         else:
             self.rs = RandomState(MT19937(SeedSequence(seed)))
 
