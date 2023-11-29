@@ -11,7 +11,7 @@ from typing import List, Dict, Optional
 from types import NoneType
 from dataclasses import dataclass
 
-from .workload import InferWorkloadBase, TrainWorkload, InferTraceDumper
+from .workload import InferWorkloadBase, TrainWorkload, InferTraceDumper, InferModel
 from .config import get_global_seed
 
 
@@ -183,7 +183,10 @@ class HyperWorkload:
                  trace_cfg:str = "trace-cfg",
                  seed: Optional[int] = None, 
                  delay_before_infer: float = 0) -> None:
+        self.enable_infer = True
+        self.enable_train = True
         self.infer_workloads: List[InferWorkloadBase] = []
+        self.infer_models: List[InferModel] = []
         self.train_workload: NoneType | TrainWorkload = None
         self.duration = duration
         self.workload_log = workload_log
@@ -202,27 +205,51 @@ class HyperWorkload:
     def set_train_workload(self, train_workload: TrainWorkload | NoneType):
         self.train_workload = train_workload
 
-    def launch(self, server: System, trace_cfg: Optional[PathLike] = None):
-        assert server.server is not None
+    def disable_infer(self):
+        self.enable_infer = False
+
+    def disable_train(self):
+        self.enable_train = False
+
+    def launch_workload(self, server: System, trace_cfg: Optional[PathLike] = None):
+        infer_trace_args = []
+        if trace_cfg is not None:
+            infer_trace_args += ["--infer-trace", str(trace_cfg)]
+        elif len(self.infer_workloads) > 0:
+            trace_cfg = pathlib.Path(server.log_dir) / self.trace_cfg
+            InferTraceDumper(self.infer_workloads, trace_cfg).dump()
+            infer_trace_args += ["--infer-trace", str(trace_cfg)]
+
+        self._launch(self, server, "workload_launcher", infer_trace_args)
+
+    def launch_busy_loop(self, server: System, infer_models: List[InferModel] = None):
+        if infer_models is None:
+            infer_models = self.infer_models
+        infer_model_args = []
+        if len(infer_models) > 0:
+            infer_model_args += ["--infer-model"]
+            for model in infer_models:
+                infer_model_args += [model.model_name]
+
+        self._launch(server, "busy_loop_launcher", infer_model_args)
+        
+    def _launch(self, server: System, launcher: str, custom_args: List[str] = []):
+        assert server is not None
         cmd = [
-            "./build/workload_launcher",
+            f"./build/{launcher}",
             "-p", server.port,
             "-c", str(self.concurrency),
             "--delay-before-infer", str(self.delay_before_infer)
         ]
         if self.duration is not None:
             cmd += ["-d", str(self.duration)]
-        
-        if trace_cfg is not None:
-            cmd += ["--infer-trace", str(trace_cfg)]
-        elif len(self.infer_workloads) > 0:
-            trace_cfg = pathlib.Path(server.log_dir) / self.trace_cfg
-            InferTraceDumper(self.infer_workloads, trace_cfg).dump()
-            cmd += ["--infer-trace", str(trace_cfg)]
+
+        if self.enable_infer:
+            cmd += ["--infer"]
         else:
             cmd += ["--no-infer"]
 
-        if self.train_workload is not None:
+        if self.enable_train and self.train_workload is not None:
             cmd += ["--train"]
             for key, value in self.train_workload._asdict().items():
                 cmd += ['--' + key.replace('_', '-'), str(value)]
@@ -235,6 +262,8 @@ class HyperWorkload:
         workload_log = pathlib.Path(server.log_dir) / self.workload_log
         cmd += ['--log', str(workload_log)]
         cmd += ['-v', '1']
+
+        cmd += custom_args
 
         server.cmd_trace.append(" ".join(cmd))
         print(" ".join(cmd))
@@ -249,4 +278,3 @@ class HyperWorkload:
             print(f"Workload exited with exception")
             server.stop()
             raise e
-

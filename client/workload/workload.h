@@ -55,8 +55,11 @@ class InferWorker {
     }
   }
 
-  void RequestInfer(Workload& workload,
-                    const std::vector<double>& start_points, double delay_before_infer);
+  void RequestInferBusyLoop(Workload &workload,
+                            double delay_before_infer);
+  void RequestInferTrace(Workload& workload,
+                         const std::vector<double>& start_points,
+                         double delay_before_infer);
   void FetchInferResult(Workload &workload, 
                         std::function<double_ms_t(size_t)> interval_fn, 
                         int64_t show_result);
@@ -148,8 +151,14 @@ class Workload {
     }
   }
 
-  void Infer(const std::string &model, size_t concurrency, const std::vector<double> &start_points, double delay_before_infer,
-                            int64_t show_result = 0);
+  void InferBusyLoop(const std::string &model, size_t concurrency, 
+                     std::function<double_ms_t(size_t)> interval_fn,
+                     double delay_before_infer, 
+                     int64_t show_result = 0);
+  void InferTrace(const std::string &model, size_t concurrency, 
+                  const std::vector<double> &start_points, 
+                  double delay_before_infer,
+                  int64_t show_result = 0);
   void TrainResnet(size_t num_epoch, size_t batch_size);
 
 

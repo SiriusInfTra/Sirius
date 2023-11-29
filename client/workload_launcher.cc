@@ -15,26 +15,15 @@
 #include "workload/util.h"
 #include "workload/workload.h"
 
+using namespace colserve::workload;
+
 struct App : public colserve::workload::AppBase {
-
   App(): colserve::workload::AppBase() {
-    app.add_option("--delay-before-infer", delay_before_infer, "delay before start infer.");
+    app.add_option("--infer-trace", infer_trace, "models of infer workload");
   }
+
+  std::string infer_trace;
 };
-
-struct InferModel {
-  std::string model_name;
-  // std::string type;
-  std::string id;
-
-  operator std::string() const {
-    if (id.empty())
-      return model_name;
-    else
-      return model_name + "-"+ id;
-  }
-};
-
 
 struct TraceCFG {
   std::unordered_map<std::string, InferModel> models;
@@ -97,7 +86,7 @@ int main(int argc, char** argv) {
 
   TraceCFG trace_cfg;
   double min_duration = -std::numeric_limits<double>::infinity();
-  if (app.enable_infer) {
+  if (app.enable_infer && !app.infer_trace.empty()) {
     trace_cfg = LoadTraceCFG(app.infer_trace);
     min_duration = trace_cfg.start_points.back().first + app.delay_before_infer  +3;
   }
@@ -115,11 +104,11 @@ int main(int argc, char** argv) {
   CHECK(workload.Hello());
 
 
-  if (app.enable_infer) {
+  if (app.enable_infer && !app.infer_trace.empty()) {
     auto groups = GroupByModel(trace_cfg);
     for(auto &&[model_id, start_points] : groups) {
       auto &model = trace_cfg.models[model_id];
-      workload.Infer(model.model_name, app.concurrency, start_points, app.delay_before_infer, app.show_result);
+      workload.InferTrace(model.model_name, app.concurrency, start_points, app.delay_before_infer, app.show_result);
     }
   }
   

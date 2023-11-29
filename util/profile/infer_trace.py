@@ -6,15 +6,17 @@ import matplotlib.pyplot as plt
 import argparse
 
 app = argparse.ArgumentParser("infer trace")
-app.add_argument('-l', type=str, required=True)
-app.add_argument('-o', type=str, required=False, default=None)
-app.add_argument('-g', action='store_true')
+app.add_argument('-l', '--log', type=str, required=True, )
+app.add_argument('-o', '--outdir', type=str, required=False, default=None)
+app.add_argument('-g', '--group-model', action='store_true')
+app.add_argument('--drop-first', type=int, default=0)
+app.add_argument('-v', '--verbose', action='store_true')
 args = app.parse_args()
 
-
-log = args.l
-outdir = args.o
-group = args.g
+log = args.log
+outdir = args.outdir
+group = args.group_model
+drop_first = args.drop_first
 infers = []
 
 if outdir is not None:
@@ -22,26 +24,32 @@ if outdir is not None:
         pathlib.Path(outdir).mkdir()
 
 with open(log, "r") as F:
-    cur_model = None
     while line := F.readline():
-        if not cur_model:
-          if m := re.search(r"\[InferWorker TRACE (([0-9a-zA-Z]+)(-\d+)?)\]", line):
+        if m := re.search(r"\[InferWorker TRACE (([0-9a-zA-Z]+)(-\d+)?)\]", line):
             if not group:
                 cur_model = m.group(1)
             else:
                 cur_model = m.group(2)
-        else:
-            if m := re.search(r"([0-9]+\.[0-9]+), ([0-9]+\.[0-9]+), ([0-9]+\.[0-9]+)", line):
-                infers.append((
-                   cur_model, 
-                   float(m.group(1)), 
-                   float(m.group(2)), 
-                   float(m.group(3))
-                ))
-            else:
-                cur_model = None
+            
+            drop_cnt = 0
+            while line := F.readline():
+                if m := re.search(r"([0-9]+\.[0-9]+), ([0-9]+\.[0-9]+), ([0-9]+\.[0-9]+)", line):
+                    if drop_cnt < drop_first:
+                        drop_cnt += 1
+                        continue
+                    infers.append((
+                        cur_model, 
+                        float(m.group(1)), 
+                        float(m.group(2)), 
+                        float(m.group(3))
+                    ))
+                else:
+                    break
 
 infers = pd.DataFrame(infers, columns=["model", "request_time", "response_time", "latency"])
+
+if args.verbose:
+    print(infers)
 
 for model in set(infers["model"]):
     model_infers = infers[infers["model"] == model]
@@ -56,7 +64,7 @@ for model in set(infers["model"]):
         resp_ltc = sorted(resp_ltc, key=lambda x: x[0])
         reqeust_time, latency = zip(*resp_ltc)
 
-    axs[0].hist(reqeust_time, range(0, int(max(response_time)) // 1000 * 1000, 100))
+    axs[0].hist(reqeust_time, range(0, int(max(response_time)) // 1000 * 1000, 1000))
     axs[0].set_title(f"{model} request time hist")
     axs[1].plot(reqeust_time, latency)
     axs[1].set_title(f"{model} latency")
@@ -70,8 +78,10 @@ for model in set(infers["model"]):
         print(f"save {model}.svg")
     
     print('''{}:
-    p99: {} | p95: {} | p90: {}
+    cnt: {:7} | max: {:7} | min: {:7}
+    p99: {:7} | p95: {:7} | p90: {:7}
 '''.format(model,
+           len(sorted_latecy), max(sorted_latecy), min(sorted_latecy),
            sorted_latecy[int(len(sorted_latecy) * 0.99)],
            sorted_latecy[int(len(sorted_latecy) * 0.95)],
            sorted_latecy[int(len(sorted_latecy) * 0.90)]))

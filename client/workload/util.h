@@ -12,6 +12,19 @@ namespace workload {
 
 std::string ReadInput(const std::string &data_path);
 
+struct InferModel {
+  std::string model_name;
+  // std::string type;
+  std::string id;
+
+  operator std::string() const {
+    if (id.empty())
+      return model_name;
+    else
+      return model_name + "-"+ id;
+  }
+};
+
 class AppBase {
  public:
   AppBase(const std::string &name = "ColServe Workload");
@@ -19,7 +32,6 @@ class AppBase {
   CLI::App app;
   std::string port;
   bool enable_train{true}, enable_infer{true};
-  std::string infer_trace;
   std::set<std::string> train_models;
   double delay_before_infer;
   int duration{10}, concurrency{10};

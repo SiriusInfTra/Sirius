@@ -180,5 +180,13 @@ add_executable(workload_launcher
 )
 target_link_libraries(workload_launcher grpc++ proto glog::glog CLI11::CLI11)
 
+add_executable(busy_loop_launcher 
+  client/busy_loop_launcher.cc
+  client/workload/workload.cc
+  client/workload/util.cc
+)
+target_link_libraries(busy_loop_launcher grpc++ proto glog::glog CLI11::CLI11)
+
+
 
 add_subdirectory(python)
