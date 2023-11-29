@@ -241,7 +241,8 @@ class InferTraceDumper:
                                                         key=lambda model: model.model_id)
             # check trace and update trace
             for index, model in enumerate(model_list_local):
-                assert index == model.model_id, f"model {model} index {index} not match at {infer_workload}"
+                # TODO support discontinuous sequence of model id
+                assert len(self.infer_workloads) == 0 or index == model.model_id, f"model {model} index {index} not match at {infer_workload}"
                 model.model_id += len(trace_list)
             trace_list.extend(trace_list_local)
             model_list.extend(model_list_local)
