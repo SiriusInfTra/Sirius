@@ -6,6 +6,7 @@
 #include <sstream>
 #include <thread>
 #include <utility>
+#include <mutex>
 
 #include "glog/logging.h"
 #include "workload.h"
@@ -13,6 +14,22 @@
 
 namespace colserve {
 namespace workload {
+namespace {
+double ComputeThpt(const std::vector<Record> &records) {
+  auto first_resp_time = std::min_element(records.begin(), records.end(), [](const Record &a, const Record &b) {
+    return a.response_time_ < b.response_time_;
+  })->response_time_;
+  auto last_request_time = std::max_element(records.begin(), records.end(), [](const Record &a, const Record &b) {
+    return a.request_time_ < b.request_time_;
+  })->request_time_;
+  auto thpt_req_cnt = std::accumulate(records.begin(), records.end(), 0, 
+      [first_resp_time, last_request_time] (int acc, const Record &record) {
+        return acc + (record.response_time_ >= first_resp_time && record.response_time_ <= last_request_time);
+      });
+  auto thpt_duration = std::chrono::duration<double>(last_request_time - first_resp_time).count();
+  return 1.0 * thpt_req_cnt / thpt_duration;
+}
+}
 
 void InferWorker::RequestInfer(Workload& workload, const std::vector<double>& start_points, double delay_before_infer) {
   std::stringstream log_prefix;
@@ -41,20 +58,44 @@ void InferWorker::RequestInfer(Workload& workload, const std::vector<double>& st
     auto sleep_until_sys_clock = start_sys_clock + start_point * std::chrono::seconds(1);
     DLOG(INFO) << log_prefix.str() << "sleep until " << std::chrono::duration_cast<std::chrono::milliseconds>(sleep_until_sys_clock - start_sys_clock).count() << "ms."; 
     std::this_thread::sleep_until(sleep_until_sys_clock);
-    size_t i = 0;
     CHECK(workload.running_) << log_prefix.str() << "Workload client is not running while request(start_point=" << start_point << "s) did not sent.";
-    for (; i < concurrency_; i++) {
-      CHECK_NE(request_status_[i].status_, InferReqStatus::kDone);
-      if (request_status_[i].status_ == InferReqStatus::kReady) {
-        request_status_[i].status_ = InferReqStatus::kWait;
-        request_status_[i].request_time_ = std::chrono::steady_clock::now();
-        contexts_[i] = std::make_unique<grpc::ClientContext>();
-        rpcs_[i] = workload.stub_->AsyncInference(contexts_[i].get(), requests_[i], &cq_);
-        rpcs_[i]->Finish(&infer_results_[i], &rpc_status_[i], (void*)i);
-        break;
+    size_t slot;
+    {
+      std::unique_lock status_lock{slot_status_mutex_};
+      if (status_slots_id_[InferReqStatus::kReady].empty()) {
+        std::unique_lock slot_lock{slot_mutex_};
+        slot = slots_.size();
+        slots_.emplace_back();
+        set_request_fn_(slots_.back().request_);
+        status_slots_id_[InferReqStatus::kWait].insert(slot);
+      } else {
+        auto it = status_slots_id_[InferReqStatus::kReady].begin();
+        slot = *it;
+        status_slots_id_[InferReqStatus::kReady].erase(it);
+        status_slots_id_[InferReqStatus::kWait].insert(slot);
       }
     }
-    CHECK_NE(i, concurrency_) << log_prefix.str() << "Unable to find free REQUEST_STATUS, so distribution may be violated.";
+    {
+      std::shared_lock slot_lock{slot_mutex_};
+      CHECK_EQ(slots_[slot].req_status_.status_, InferReqStatus::kReady);
+      slots_[slot].req_status_.status_ = InferReqStatus::kWait;
+      slots_[slot].req_status_.request_time_ = std::chrono::steady_clock::now();
+      slots_[slot].rpc_context_ = std::make_unique<grpc::ClientContext>();
+      slots_[slot].rpc_ = workload.stub_->AsyncInference(slots_[slot].rpc_context_.get(), slots_[slot].request_, &cq_);
+      slots_[slot].rpc_->Finish(&slots_[slot].result_, &slots_[slot].rpc_status_, (void*)slot);
+    }
+    // for (; i < concurrency_; i++) {
+    //   CHECK_NE(request_status_[i].status_, InferReqStatus::kDone);
+    //   if (request_status_[i].status_ == InferReqStatus::kReady) {
+    //     request_status_[i].status_ = InferReqStatus::kWait;
+    //     request_status_[i].request_time_ = std::chrono::steady_clock::now();
+    //     contexts_[i] = std::make_unique<grpc::ClientContext>();
+    //     rpcs_[i] = workload.stub_->AsyncInference(contexts_[i].get(), requests_[i], &cq_);
+    //     rpcs_[i]->Finish(&infer_results_[i], &rpc_status_[i], (void*)i);
+    //     break;
+    //   }
+    // }
+    // CHECK_NE(i, concurrency_) << log_prefix.str() << "Unable to find free REQUEST_STATUS, so distribution may be violated.";
   }
   while(workload.running_) {
     DLOG(INFO) << log_prefix.str() << "Workload client is still running, wait 500ms.";
@@ -87,52 +128,67 @@ void InferWorker::FetchInferResult(Workload &workload,
       } else { // TIMEOUT
         if (workload.running_) 
           continue;
-        running = false;
-        for (auto& rs : request_status_) {
-          if (rs.status_ == InferReqStatus::kWait) {
-            running = true; break;
-          }
+        {
+          std::unique_lock status_lock{slot_status_mutex_};
+          running = !status_slots_id_[InferReqStatus::kWait].empty();
         }
         if (!running) break;
       }
     }
     if (!running) break;
   
-    size_t i = (size_t)tag;
-    CHECK(rpc_status_[i].ok());
+    size_t slot = (size_t)tag;
+    // CHECK(rpc_status_[i].ok());
+    CHECK(slots_[slot].rpc_status_.ok());
+    {
+      std::unique_lock status_lock{slot_status_mutex_};
+      CHECK(status_slots_id_[InferReqStatus::kWait].count(slot));
+    }
     auto response_time = std::chrono::steady_clock::now();
     // latency_.push_back(std::chrono::duration<double, std::milli>(end - request_status_[i].request_time_).count());
-    auto latency = std::chrono::duration<double, std::milli>(response_time - request_status_[i].request_time_).count();
-    records_.push_back({latency, request_status_[i].request_time_, response_time});
-    if (show_result > 0) { // check outputs
-      std::stringstream ss;
-      size_t numel = infer_results_[i].outputs(0).data().size() / sizeof(float);
-      ss << "request " << i << " numel " << numel
-         << " result[:" << show_result << "] : ";
-      for (size_t j = 0; j < numel && j < show_result; j++) {
-        ss << reinterpret_cast<const float*>(infer_results_[i].outputs(0).data().data())[j] << " ";
+
+    {
+      std::shared_lock slot_lock{slot_mutex_};
+      auto latency = std::chrono::duration<double, std::milli>(response_time - slots_[slot].req_status_.request_time_).count();
+      records_.push_back({latency, slots_[slot].req_status_.request_time_, response_time});
+      if (show_result > 0) { // check outputs
+        std::stringstream ss;
+        size_t numel = slots_[slot].result_.outputs(0).data().size() / sizeof(float);
+        ss << "request " << slot << " numel " << numel
+          << " result[:" << show_result << "] : ";
+        for (size_t j = 0; j < numel && j < show_result; j++) {
+          ss << reinterpret_cast<const float*>(slots_[slot].result_.outputs(0).data().data())[j] << " ";
+        }
+        ss << "\n";
+        std::cout << ss.str();
+      } else if (show_result < 0) {
+        std::stringstream ss;
+        size_t numel = slots_[slot].result_.outputs(0).data().size() / sizeof(float);
+        ss << "request " << slot << " numel " << numel
+          << " result[" << show_result << ":] : ";
+        size_t j = std::max(0L, static_cast<int64_t>(numel) + show_result);
+        for (; j < numel; j++) {
+          ss << reinterpret_cast<const float*>(slots_[slot].result_.outputs(0).data().data())[j] << " ";
+        }
+        ss << "\n";
+        std::cout << ss.str();
       }
-      ss << "\n";
-      std::cout << ss.str();
-    } else if (show_result < 0) {
-      std::stringstream ss;
-      size_t numel = infer_results_[i].outputs(0).data().size() / sizeof(float);
-      ss << "request " << i << " numel " << numel
-         << " result[" << show_result << ":] : ";
-      size_t j = std::max(0L, static_cast<int64_t>(numel) + show_result);
-      for (; j < numel; j++) {
-        ss << reinterpret_cast<const float*>(infer_results_[i].outputs(0).data().data())[j] << " ";
-      }
-      ss << "\n";
-      std::cout << ss.str();
     }
-    if (interval_fn == nullptr) {
-      request_status_[i].ready_time_ = std::chrono::steady_clock::now();
-      request_status_[i].status_ = InferReqStatus::kReady;
-    } else {
-      request_status_[i].ready_time_ = std::chrono::steady_clock::now() + 
-          std::chrono::duration_cast<time_point_t::duration>(interval_fn(i));
-      request_status_[i].status_ = InferReqStatus::kDone;
+    {
+      std::unique_lock status_lock{slot_status_mutex_};
+      std::shared_lock slot_lock{slot_mutex_};
+      if (interval_fn == nullptr) {
+        slots_[slot].req_status_.ready_time_ = std::chrono::steady_clock::now();
+        slots_[slot].req_status_.status_ = InferReqStatus::kReady;
+        status_slots_id_[InferReqStatus::kWait].erase(slot);
+        status_slots_id_[InferReqStatus::kReady].insert(slot);
+      } else {
+        slots_[slot].req_status_.ready_time_ = std::chrono::steady_clock::now() + 
+            std::chrono::duration_cast<time_point_t::duration>(interval_fn(slot));
+        slots_[slot].req_status_.status_ = InferReqStatus::kDone;
+        status_slots_id_[InferReqStatus::kWait].erase(slot);
+        status_slots_id_[InferReqStatus::kDone].insert(slot);
+      }
     }
   }
   LOG(INFO) << log_prefix.str() << "FetchInferResult stop";
@@ -157,10 +213,11 @@ void InferWorker::Report(Workload &workload, int verbose, std::ostream &os) {
       [] (double acc, const Record &record) {
         return acc + record.latency_;
       }) / records_.size();
+  
   table.push_back({"cnt: " + std::to_string(records_.size()), 
                     "ltc.avg: " + f64_to_string(ltc_avg),
                     "ltc.max: " + f64_to_string(records_.back().latency_),
-                    "thpt: " + f64_to_string(1.0 * records_.size() / workload.duration_.count()) + "r/s"});
+                    "thpt: " + f64_to_string(ComputeThpt(records_)) + "r/s"});
   for (int i = 99; i > 0;) {
     std::vector<std::string> row;
     for (int j = 0; j < 4 && i > 0; j++) {
@@ -281,7 +338,7 @@ bool Workload::Hello() {
   }
 }
 
-std::function<void(std::vector<InferRequest>&)> Workload::GetSetRequestFn(const std::string &model) {
+std::function<void(InferRequest&)> Workload::GetSetRequestFn(const std::string &model) {
   if (model.find("mnist") != std::string::npos) {
     return SetMnistRequestFn(model);
   } else if (model.find("resnet") != std::string::npos) {
@@ -291,30 +348,30 @@ std::function<void(std::vector<InferRequest>&)> Workload::GetSetRequestFn(const 
   }
 }
 
-std::function<void(std::vector<InferRequest>&)> Workload::SetMnistRequestFn(const std::string &model) {
+std::function<void(InferRequest&)> Workload::SetMnistRequestFn(const std::string &model) {
   static std::vector<std::string> mnist_input_datas;
   if (mnist_input_datas.empty()) {
     for (size_t i = 0; i < 10; i++) {
       mnist_input_datas.push_back(ReadInput("data/mnist/input-" + std::to_string(i) + ".bin"));
     }
   }
-  auto set_mnist_request_fn = [&](std::vector<InferRequest> &requests) {
-    for (size_t i = 0; i < requests.size(); i++) {
-      requests[i].set_model(model);
-      requests[i].add_inputs();
-      requests[i].mutable_inputs(0)->set_dtype("float32");
-      requests[i].mutable_inputs(0)->add_shape(1);
-      requests[i].mutable_inputs(0)->add_shape(1);
-      requests[i].mutable_inputs(0)->add_shape(28);
-      requests[i].mutable_inputs(0)->add_shape(28);
-      requests[i].mutable_inputs(0)->set_data(mnist_input_datas[i % 10]);
-    }
+  auto set_mnist_request_fn = [&](InferRequest &request) {
+    static uint32_t i = 0;
+    request.set_model(model);
+    request.add_inputs();
+    request.mutable_inputs(0)->set_dtype("float32");
+    request.mutable_inputs(0)->add_shape(1);
+    request.mutable_inputs(0)->add_shape(1);
+    request.mutable_inputs(0)->add_shape(28);
+    request.mutable_inputs(0)->add_shape(28);
+    request.mutable_inputs(0)->set_data(mnist_input_datas[i % 10]);
+    i++;
   };
   return set_mnist_request_fn;
 }
 
 
-std::function<void(std::vector<InferRequest>&)> Workload::SetResnetRequestFn(const std::string &model) {
+std::function<void(InferRequest&)> Workload::SetResnetRequestFn(const std::string &model) {
   static std::vector<std::string> resnet_input_datas;
   if (resnet_input_datas.empty()) {
     for (size_t i = 0; i < 1; i++) {
@@ -322,17 +379,17 @@ std::function<void(std::vector<InferRequest>&)> Workload::SetResnetRequestFn(con
     }
   }
 
-  auto set_resnet_request_fn = [&](std::vector<InferRequest> &requests) {
-    for (size_t i = 0; i < requests.size(); i++) {
-      requests[i].set_model(model);
-      requests[i].add_inputs();
-      requests[i].mutable_inputs(0)->set_dtype("float32");
-      requests[i].mutable_inputs(0)->add_shape(1);
-      requests[i].mutable_inputs(0)->add_shape(3);
-      requests[i].mutable_inputs(0)->add_shape(224);
-      requests[i].mutable_inputs(0)->add_shape(224);
-      requests[i].mutable_inputs(0)->set_data(resnet_input_datas[0]);
-    }  
+  auto set_resnet_request_fn = [&](InferRequest &request) {
+    static uint32_t i = 0;
+    request.set_model(model);
+    request.add_inputs();
+    request.mutable_inputs(0)->set_dtype("float32");
+    request.mutable_inputs(0)->add_shape(1);
+    request.mutable_inputs(0)->add_shape(3);
+    request.mutable_inputs(0)->add_shape(224);
+    request.mutable_inputs(0)->add_shape(224);
+    request.mutable_inputs(0)->set_data(resnet_input_datas[0]);
+    i++;
   };
   return set_resnet_request_fn;
 }
@@ -366,12 +423,49 @@ void Workload::TrainResnet(size_t num_epoch, size_t batch_size) {
 }
 
 void Workload::Report(int verbose, std::ostream &os) {
+  InferOverallReport(os);
   for (auto &worker : infer_workers_) {
     worker->Report(*this, verbose, os);
   }
   for (auto &worker : train_workers_) {
     worker->Report(*this, verbose, os);
   }
+}
+
+void Workload::InferOverallReport(std::ostream &os) {
+  std::vector<Record> all_records;
+  for (auto &worker : infer_workers_) {
+    all_records.insert(all_records.end(), worker->GetRecord().begin(), worker->GetRecord().end());
+  }
+  if (all_records.empty()) {
+    os << "[Workload TRACE OVERALL] no inference record" << std::endl;
+    return;
+  }
+  auto ltc_avg = std::accumulate(all_records.begin(), all_records.end(), 0.0, 
+      [](double acc, const Record &record) {
+        return acc + record.latency_;
+      }) / all_records.size();
+
+  std::sort(all_records.begin(), all_records.end(), [](const Record &a, const Record &b) {
+    return a.latency_ < b.latency_;
+  });
+
+  auto ltc_min = all_records.front().latency_;
+  auto ltc_max = all_records.back().latency_;
+
+  os << "[Infer Overall]\n"
+     << "cnt " << all_records.size() 
+     << std::fixed << std::setprecision(1)
+     << " ltc_avg " << ltc_avg << " ltc min " << ltc_min 
+     << " ltc max " << ltc_max << " thpt " << ComputeThpt(all_records) << "\n"
+     << "p99 " << all_records[all_records.size() * 99 / 100].latency_ << " "
+     << "p95 " << all_records[all_records.size() * 95 / 100].latency_ << " "
+     << "p90 " << all_records[all_records.size() * 90 / 100].latency_ << " "
+     << "p80 " << all_records[all_records.size() * 80 / 100].latency_ << " "
+     << "p70 " << all_records[all_records.size() * 70 / 100].latency_ << " "
+     << "p60 " << all_records[all_records.size() * 60 / 100].latency_ << " "
+     << "p50 " << all_records[all_records.size() * 50 / 100].latency_ << "\n"
+     << std::endl;
 }
 
 }  // namespace workload

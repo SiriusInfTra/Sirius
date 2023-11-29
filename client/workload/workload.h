@@ -16,6 +16,12 @@
 #include <grpcpp/grpcpp.h>
 #include <glog/logging.h>
 #include <CLI/CLI.hpp>
+#include <queue>
+#include <list>
+#include <mutex>
+#include <shared_mutex>
+#include <memory>
+#include <unordered_set>
 
 #include "util.h"
 #include "colserve.grpc.pb.h"
@@ -37,16 +43,16 @@ class Workload;
 class InferWorker {
  public:
   InferWorker(const std::string &model, size_t concurrency, 
-              std::function<void(std::vector<InferRequest>&)> set_request_fn,
+              std::function<void(InferRequest&)> set_request_fn,
               Workload &workload)
-      : model_(model), concurrency_(concurrency){
-    requests_.resize(concurrency_);
-    infer_results_.resize(concurrency_);
-    contexts_.resize(concurrency_);
-    rpcs_.resize(concurrency_);
-    request_status_.resize(concurrency_);
-    rpc_status_.resize(concurrency_);
-    set_request_fn(requests_);
+      : model_(model), concurrency_(concurrency), set_request_fn_(set_request_fn) {
+    for (size_t i = 0; i < concurrency; i++) {
+      slots_.emplace_back();
+      status_slots_id_[InferReqStatus::kReady].insert(i);
+    }
+    for (auto &slot : slots_) {
+      set_request_fn(slot.request_);
+    }
   }
 
   void RequestInfer(Workload& workload,
@@ -56,6 +62,10 @@ class InferWorker {
                         int64_t show_result);
   void Report(Workload &workload, int verbose, std::ostream &os);
 
+  const std::vector<Record> & GetRecord() const {
+    return records_;
+  }
+
 private:
   struct InferReqStatus {
     time_point_t request_time_;
@@ -63,22 +73,35 @@ private:
     enum {
       kReady, // ready to send next request
       kWait,  // wait for response
-      kDone   // before get ready for next request
+      kDone,  // before get ready for next request
+      kNumStatus
     } status_;
+  };
+
+  struct InferSlot {
+    InferRequest request_;
+    InferResult result_;
+    InferReqStatus req_status_;
+    grpc::Status rpc_status_;
+    std::unique_ptr<grpc::ClientContext> rpc_context_;
+    std::unique_ptr<grpc::ClientAsyncResponseReader<InferResult>> rpc_;
   };
 
   std::string model_;
   size_t concurrency_;
 
   grpc::CompletionQueue cq_;
-  std::vector<InferRequest> requests_;
-  std::vector<InferResult> infer_results_;
-  std::vector<std::unique_ptr<grpc::ClientContext>> contexts_;
-  std::vector<std::unique_ptr<grpc::ClientAsyncResponseReader<InferResult>>> rpcs_;
-  std::vector<InferReqStatus> request_status_;
-  std::vector<grpc::Status> rpc_status_;
+
+  std::mutex slot_status_mutex_;
+  std::shared_mutex slot_mutex_;
+  std::vector<InferSlot> slots_;
+  std::unordered_set<size_t> status_slots_id_[InferReqStatus::kNumStatus];
+
+  std::function<void(InferRequest&)> set_request_fn_;
+
   // std::vector<double> latency_;
   std::vector<Record> records_;
+
 };
 
 class TrainWorker {
@@ -135,9 +158,11 @@ class Workload {
   friend class InferWorker;
   friend class TrainWorker;
  private:
-  std::function<void(std::vector<InferRequest>&)> GetSetRequestFn(const std::string& model);
-  std::function<void(std::vector<InferRequest>&)> SetMnistRequestFn(const std::string &model = "mnist");
-  std::function<void(std::vector<InferRequest>&)> SetResnetRequestFn(const std::string &model);
+  std::function<void(InferRequest&)> GetSetRequestFn(const std::string& model);
+  std::function<void(InferRequest&)> SetMnistRequestFn(const std::string &model = "mnist");
+  std::function<void(InferRequest&)> SetResnetRequestFn(const std::string &model);
+
+  void InferOverallReport(std::ostream &os);
 
   std::atomic<bool> running_{false};
   std::promise<void> ready_promise_;

@@ -16,11 +16,11 @@ torch.onnx.export(resnet152, torch.rand(batch_size, 3, 224, 224),
                   input_names=["input"], output_names=["output"], export_params=True,
                   dynamic_axes={'input':[0], 'output':[0]})
 
+# tvmc compile --target "cuda" \
+#   --input-shape "input:[x,3,224,224]" --output resnet152.tar resnet152.onnx
 tvmc_model = tvmc.load(f"{tmp_dir}/resnet152.onnx", 
                        shape_dict={'input':[batch_size, 3, 224, 224]})
-# tvmc compile --target "cuda -libs=cudnn,cublas" \
-#   --input-shape "input:[x,3,224,224]" --output resnet152.tar resnet152.onnx
-tvmc.compile(tvmc_model=tvmc_model, target='cuda -libs=cudnn,cublas', package_path=f"{tmp_dir}/resnet152-tvm.tar")
+tvmc.compile(tvmc_model=tvmc_model, target='cuda', package_path=f"{tmp_dir}/resnet152-tvm.tar")
 
 
 model_store_path = f'{model_store}/resnet152-b{batch_size}' 

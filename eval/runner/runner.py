@@ -9,9 +9,11 @@ import pathlib
 import subprocess
 from typing import List, Dict, Optional
 from types import NoneType
+from dataclasses import dataclass
 
 from .workload import InferWorkloadBase, TrainWorkload, InferTraceDumper
 from .config import get_global_seed
+
 
 class System:
     class ServerMode:
@@ -19,13 +21,38 @@ class System:
         ColocateL1 = "colocate-l1"
         ColocateL2 = "colocate-l2"
 
+    @dataclass
+    class InferModelConfig:
+        model_name: str
+        path: str
+        batch_size: int
+        num_worker: int = 1
+        device: str = "cuda"
+        max_worker: int = 1
+
+        @classmethod
+        def Empty(cls):
+            return cls(None, None, None)
+
+        def __repr__(self) -> str:
+            if self.model_name is None:
+                return ""
+            return f'''{self.model_name}
+  path {self.path}
+  device {self.device}
+  batch-size {self.batch_size}
+  num-worker {self.num_worker}
+  max-worker {self.max_worker}
+'''
+
     def __init__(self, mode:str, use_sta:bool, 
                  cuda_memory_pool_gb:str=None,
                  profile_log:str = "profile-log", 
                  server_log:str = "server-log", 
                  port:str = "18080",
-                 infer_model_config:Dict[str, Dict[str, str]]=None,
-                 mps=True) -> None:
+                 infer_model_config:List[InferModelConfig] | InferModelConfig = None,
+                 mps=True,
+                 train_mps_thread_percent=None) -> None:
         self.mode = mode
         self.port = port
         self.use_sta = use_sta
@@ -36,16 +63,23 @@ class System:
         self.server:Optional[subprocess.Popen]= None
         self.log_dir:Optional[str] = None
         self.cmd_trace = []
-        self.infer_model_config = infer_model_config
+        if infer_model_config is not None:
+            if isinstance(infer_model_config, System.InferModelConfig):
+                infer_model_config = [infer_model_config]
+            self.infer_model_config = infer_model_config 
+        else:
+            self.infer_model_config = None
         self.infer_model_config_path = None
         self.mps = mps
         self.mps_server = None
+        self.train_mps_thread_percent = train_mps_thread_percent
         self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
     
     def next_time_stamp(self):
         self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
 
-    def launch(self, name: str, subdir: Optional[str] = None, time_stamp:bool=True):
+    def launch(self, name: str, subdir: Optional[str] = None, time_stamp:bool=True, 
+               infer_model_config: List[InferModelConfig] | InferModelConfig = None):
         if subdir is None:
             if time_stamp:
                 self.log_dir = pathlib.Path("log") / f'{name}-{self.time_stamp}'
@@ -70,18 +104,20 @@ class System:
         ]
         if self.cuda_memory_pool_gb is not None:
             cmd += ["--cuda-memory-pool-gb", self.cuda_memory_pool_gb]
+        if infer_model_config is not None:
+            if isinstance(infer_model_config, System.InferModelConfig):
+                infer_model_config = [infer_model_config]
+            self.infer_model_config = infer_model_config
         if self.infer_model_config is not None:
             self.infer_model_config_path = f'{(self.log_dir / "infer-model-config").absolute()}'
             with open(self.infer_model_config_path, "w") as f:
-                for m, c in self.infer_model_config.items():
-                    print(m, file=f)
-                    for k, v in c.items():
-                        print(f"  {k} {v}", file=f)
-                    print()
+                for config in self.infer_model_config:
+                    print(config, end="\n\n", file=f)
             cmd += ["--infer-model-config", self.infer_model_config_path]
 
         # first launch mps
         if self.mps:
+            cmd += ["--mps", "1"]
             self.cmd_trace.append(" ".join([
                 "sudo", "/opt/mps-control/launch-mps-daemon-private.sh"
                 "--device", os.environ['CUDA_VISIBLE_DEVICES'], "--mps-pipe", os.environ['CUDA_MPS_PIPE_DIRECTORY']
@@ -93,6 +129,9 @@ class System:
         else:
             cmd += ["--mps", "0"]
             self.mps_server = None
+
+        if self.train_mps_thread_percent is not None:
+            cmd += ["--train-mps-thread-percent", str(self.train_mps_thread_percent)]
 
         self.cmd_trace.append(" ".join(cmd))
         print(" ".join(cmd))
@@ -160,6 +199,9 @@ class HyperWorkload:
     def set_infer_workloads(self, *infer_workloads: InferWorkloadBase):
         self.infer_workloads = list(infer_workloads)
     
+    def set_train_workload(self, train_workload: TrainWorkload | NoneType):
+        self.train_workload = train_workload
+
     def launch(self, server: System, trace_cfg: Optional[PathLike] = None):
         assert server.server is not None
         cmd = [

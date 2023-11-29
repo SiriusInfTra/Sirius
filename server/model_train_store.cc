@@ -140,6 +140,11 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
     } else {
       CHECK_NE(setenv("USE_SHARED_TENSOR", "0", 1), -1);
     }
+    if (Config::train_mps_thread_percent >= 0 && Config::train_mps_thread_percent <= 100) {
+      CHECK_NE(setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", std::to_string(Config::train_mps_thread_percent).c_str(), 1), -1);
+      LOG(INFO) << "[ModelTrainStore]: set CUDA_MPS_ACTIVE_THREAD_PERCENTAGE to " << Config::train_mps_thread_percent;
+    }
+
     auto err = execvp("python", argv);
     perror("execvp");
     CHECK_GE(err, 0) << "[ModelTrainStore]: spawn train worker fail, errno " << err;

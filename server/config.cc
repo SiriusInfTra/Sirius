@@ -22,4 +22,6 @@ std::string Config::profile_log_path = "server-profile";
 
 std::string Config::infer_model_config_path = "config";
 
+int Config::train_mps_thread_percent = -1;
+
 }

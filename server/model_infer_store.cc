@@ -26,6 +26,7 @@ std::vector<std::string> ParseModelName(const std::string &model) {
   if (match[3].str().empty()) {
     return {match[1].str()};
   } else {
+    CHECK_GE(std::stoi(match[3].str()), 1);
     std::vector<std::string> ret{match[1].str()};
     for (int i = 1; i < std::stoi(match[3].str()); i++) {
       ret.push_back(match[1].str() + "-" + std::to_string(i));
@@ -66,7 +67,7 @@ void ModelInferStore::Init(const std::filesystem::path &infer_store_path) {
       if (line.empty()) continue;
       if (line[0] == '#') continue;
       std::istringstream iss(line);
-      if (line[0] != ' ') {
+      if (line[0] != ' ' && line[0] != '\n' && line[0] != '\t') {
         iss >> cur_model;
         models[cur_model] = {};
       } else {

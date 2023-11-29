@@ -39,6 +39,8 @@ class Config {
 
   static std::string infer_model_config_path;
 
+  static int train_mps_thread_percent;
+
   inline static bool IsSwitchMode() {
     return Config::serve_mode == ServeMode::kTaskSwitchL1
         || Config::serve_mode == ServeMode::kTaskSwitchL2
