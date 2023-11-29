@@ -36,7 +36,7 @@ inline ColTensorImpl* GetColTensorImpl(const at::Tensor& tensor) {
 
 void cuda_fallback(const c10::OperatorHandle &op, torch::jit::Stack *stack) {
   auto schema = op.schema();
-  // std::cout << "redispatch to: " << op.operator_name() << std::endl;
+  DLOG(INFO) << "redispatching " << schema << " to CUDA" << std::endl;
   op.redispatchBoxed(c10::DispatchKeySet(c10::DispatchKey::CUDA), stack);
 }
 

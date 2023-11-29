@@ -152,6 +152,7 @@ class System:
             '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']], 
             capture_output=True, env=os.environ.copy())
 
+
 class HyperWorkload:
 
     def __init__(self, workload_log: str, client_log: str, trace_cfg: str, concurrency: int, duration: Optional[int | float] = None,
@@ -217,7 +218,6 @@ class HyperWorkload:
                 raise Exception(f"Workload exited with code {completed.returncode}")
 
 
-
 class Workload(abc.ABC):
     @abc.abstractmethod
     def get_params() -> list[TraceRecord]:
@@ -229,6 +229,7 @@ class Workload(abc.ABC):
     def __exit__(self, type, value, trace):
         pass
 
+
 @dataclass
 class InferModel:
     model_id: int
@@ -237,18 +238,22 @@ class InferModel:
     def __hash__(self) -> int:
         return self.model_id
 
+
 class TraceRecord(NamedTuple):
     start_point: float
     model: InferModel
 
-class PoisParm(NamedTuple):
+
+class PoissonParam(NamedTuple):
     time_point: float | int
     request_per_sec: float | int
+
 
 class InferWorkloadBase(abc.ABC):
     @abc.abstractmethod
     def get_trace(self) -> list[TraceRecord]:
         pass
+
 
 class RandomInferWorkload(InferWorkloadBase):
     def __init__(self, seed: Optional[int] = None) -> None:
@@ -258,14 +263,17 @@ class RandomInferWorkload(InferWorkloadBase):
         else:
             self.rs = RandomState(MT19937(SeedSequence(seed)))
 
+
 class TrainWorkload(NamedTuple):
     train_model: str
     num_epoch: int
     batch_size: int
 
-class AzureInferWorkload(RandomInferWorkload):
 
-    def __init__(self, trace_cfg: os.PathLike[str], max_request_sec: float | int, interval_sec: float | int, period_num: int, func_num: int, model_list: list[InferModel], seed: Optional[int]) -> None:
+class AzureInferWorkload(RandomInferWorkload):
+    def __init__(self, trace_cfg: os.PathLike[str], max_request_sec: float | int, 
+                 interval_sec: float | int, period_num: int, func_num: int, 
+                 model_list: list[InferModel], seed: Optional[int]) -> None:
         super().__init__(seed)
         self.trace_cfg = trace_cfg
         self.max_request_sec = max_request_sec
@@ -273,7 +281,6 @@ class AzureInferWorkload(RandomInferWorkload):
         self.interval_sec = interval_sec
         self.period_num = period_num
         self.func_num = func_num
-
 
     def get_trace(self) -> list[TraceRecord]:
         func_freqs = AzureInferWorkload.read_trace_cfg(self.trace_cfg, self.period_num, self.func_num)
@@ -308,12 +315,17 @@ class AzureInferWorkload(RandomInferWorkload):
         return func_traces_normalized
     
     @classmethod
-    def poisson_func_freq(cls, func_model_freq: np.ndarray[np.float64], interval_sec: float | int, model: InferModel, rs: RandomState) -> list[TraceRecord]:
-        poisson_parms = [PoisParm(interval_sec * period_id, request_per_sec) for period_id, request_per_sec in enumerate(func_model_freq)] + [PoisParm(len(func_model_freq) * interval_sec, 0)]
+    def poisson_func_freq(cls, func_model_freq: np.ndarray[np.float64], 
+                          interval_sec: float | int, model: InferModel, 
+                          rs: RandomState) -> list[TraceRecord]:
+        poisson_parms = [PoissonParam(interval_sec * period_id, request_per_sec) 
+                         for period_id, request_per_sec in enumerate(func_model_freq)] + \
+                        [PoissonParam(len(func_model_freq) * interval_sec, 0)]
         return PoissonInferWorkload.poisson_func_freq(poisson_parms, model, rs)
     
     @classmethod
-    def convert_traces_record(cls, func_freqs: np.ndarray[np.float64], interval_sec: float | int, model_list: list[InferModel], rs: RandomState) -> np.ndarray[np.float64]:
+    def convert_traces_record(cls, func_freqs: np.ndarray[np.float64], interval_sec: float | int, 
+                              model_list: list[InferModel], rs: RandomState) -> np.ndarray[np.float64]:
         trace_list = []
         func_model_freqs = np.zeros((len(model_list), np.shape(func_freqs)[1]), np.float64)
         
@@ -328,8 +340,8 @@ class AzureInferWorkload(RandomInferWorkload):
 
         return trace_list
 
-class InferTraceDumper:
 
+class InferTraceDumper:
     def __init__(self, infer_workloads: list[InferWorkloadBase], trace_cfg: PathLike) -> None:
         self.infer_workloads = infer_workloads
         self.trace_cfg = trace_cfg
@@ -342,7 +354,8 @@ class InferTraceDumper:
             trace_list_local = infer_workload.get_trace()
             for trace in trace_list_local:
                 model_set_local.add(trace.model)
-            model_list_local: list[InferModel] = sorted(list(model_set_local), key=lambda model: model.model_id)
+            model_list_local: list[InferModel] = sorted(list(model_set_local), 
+                                                        key=lambda model: model.model_id)
             # check trace and update trace
             for index, model in enumerate(model_list_local):
                 assert index == model.model_id, f"model index not match at {infer_workload}."
@@ -360,15 +373,15 @@ class InferTraceDumper:
         
 
 class PoissonInferWorkload(RandomInferWorkload):
-
-    def __init__(self, poission_parms: list[tuple[InferModel, PoisParm]], duration: float | int, seed: Optional[int] = None) -> None:
+    def __init__(self, poission_parms: list[tuple[InferModel, PoissonParam]], 
+                 duration: float | int, seed: Optional[int] = None) -> None:
         super().__init__(seed)
         self.poission_parms = poission_parms
         self.duration = duration
 
-    
     @classmethod
-    def poisson_func_freq(cls, poission_parms: list[PoisParm], model: InferModel, rs: RandomState) -> list[TraceRecord]:
+    def poisson_func_freq(cls, poission_parms: list[PoissonParam], model: InferModel, 
+                          rs: RandomState) -> list[TraceRecord]:
         assert poission_parms[-1].request_per_sec == 0
         period_id = 0
         next_duration_norm = rs.exponential()
@@ -392,30 +405,26 @@ class PoissonInferWorkload(RandomInferWorkload):
                 period_id = period_id + 1
         return trace_list
 
-    
     def get_trace(self) -> list[TraceRecord]:
         trace_record: list[TraceRecord] = []
         for infer_model, poisson_parm in self.poission_parms:
             assert poisson_parm.time_point == 0
-            poisson_parms = [poisson_parm, PoisParm(self.duration, 0)]
+            poisson_parms = [poisson_parm, PoissonParam(self.duration, 0)]
             trace_record.append(PoissonInferWorkload.poisson_func_freq(poisson_parms, infer_model, self.rs))
         return trace_record
 
 
-
-
 class DynamicPoissonInferWorkload(RandomInferWorkload):
-
-    def __init__(self, possion_parms: list[tuple[InferModel, list[PoisParm]]], duration: int | float, seed: Optional[int] = None) -> None:
+    def __init__(self, possion_parms: list[tuple[InferModel, list[PoissonParam]]], 
+                 duration: int | float, seed: Optional[int] = None) -> None:
         super().__init__(seed)
         self.poisson_parms = possion_parms
         self.duration = duration
     
-    
     def get_trace(self) -> list[TraceRecord]:
         trace_record: list[TraceRecord] = []
         for infer_model, poisson_parms in self.poisson_parms:
-            poisson_parms = poisson_parms + [PoisParm(self.duration, 0)]
+            poisson_parms = poisson_parms + [PoissonParam(self.duration, 0)]
             trace_record.append(PoissonInferWorkload.poisson_func_freq(poisson_parms, infer_model, self.rs))
         return trace_record
 
