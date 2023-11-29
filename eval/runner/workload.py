@@ -20,6 +20,9 @@ class InferModel:
     def __hash__(self) -> int:
         return self.model_id
     
+    def __repr__(self) -> str:
+        return f"InferModel({self.model_id}, {self.model_name})"
+
     @classmethod
     def reset_model_cnt(cls):
         InferModel.model_cnt = 0
@@ -85,7 +88,7 @@ class AzureInferWorkload(RandomInferWorkload):
                  period_num: int, 
                  func_num: int, 
                  model_list: list[InferModel], 
-                 seed: Optional[int]) -> None:
+                 seed: Optional[int] = None) -> None:
         super().__init__(seed)
         self.trace_cfg = trace_cfg
         self.max_request_sec = max_request_sec
@@ -238,7 +241,7 @@ class InferTraceDumper:
                                                         key=lambda model: model.model_id)
             # check trace and update trace
             for index, model in enumerate(model_list_local):
-                assert index == model.model_id, f"model index not match at {infer_workload}."
+                assert index == model.model_id, f"model {model} index {index} not match at {infer_workload}"
                 model.model_id += len(trace_list)
             trace_list.extend(trace_list_local)
             model_list.extend(model_list_local)

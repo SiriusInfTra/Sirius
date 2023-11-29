@@ -45,14 +45,16 @@ class System:
   max-worker {self.max_worker}
 '''
 
-    def __init__(self, mode:str, use_sta:bool, 
-                 cuda_memory_pool_gb:str=None,
-                 profile_log:str = "profile-log", 
-                 server_log:str = "server-log", 
-                 port:str = "18080",
-                 infer_model_config:List[InferModelConfig] | InferModelConfig = None,
-                 mps=True,
-                 train_mps_thread_percent=None) -> None:
+    def __init__(self, mode: str, use_sta: bool, 
+                 cuda_memory_pool_gb: str=None,
+                 profile_log: str = "profile-log", 
+                 server_log: str = "server-log", 
+                 port: str = "18080",
+                 infer_model_config: List[InferModelConfig] | InferModelConfig = None,
+                 mps: bool = True,
+                 train_mps_thread_percent: Optional[int] = None,
+                 colocate_skip_malloc: bool = False,
+                 colocate_skip_loading: bool = False) -> None:
         self.mode = mode
         self.port = port
         self.use_sta = use_sta
@@ -72,9 +74,11 @@ class System:
         self.infer_model_config_path = None
         self.mps = mps
         self.mps_server = None
+        self.colocate_skip_malloc = colocate_skip_malloc
+        self.colocate_skip_loading = colocate_skip_loading
         self.train_mps_thread_percent = train_mps_thread_percent
         self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
-    
+
     def next_time_stamp(self):
         self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
 
@@ -132,6 +136,11 @@ class System:
 
         if self.train_mps_thread_percent is not None:
             cmd += ["--train-mps-thread-percent", str(self.train_mps_thread_percent)]
+
+        if self.colocate_skip_malloc:
+            cmd += ["--colocate-skip-malloc"]
+        if self.colocate_skip_loading:
+            cmd += ["--colocate-skip-loading"]
 
         self.cmd_trace.append(" ".join(cmd))
         print("\n---------------------------\n")

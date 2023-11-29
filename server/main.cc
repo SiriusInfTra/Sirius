@@ -54,6 +54,10 @@ void init_cli_options() {
       "capture train log, default is 1");
   app.add_option("--train-mps-thread-percent", colserve::Config::train_mps_thread_percent, 
       "train mps thread percent, default is None");
+  app.add_flag("--colocate-skip-malloc", colserve::Config::colocate_config.skip_malloc, 
+      "colocate skip malloc, default is false");
+  app.add_flag("--colocate-skip-loading", colserve::Config::colocate_config.skip_loading, 
+      "colocate skip loading, default is false");
 }
 
 void init_config() {
@@ -77,6 +81,14 @@ void init_config() {
       colserve::Config::use_shared_tensor_infer && colserve::Config::use_shared_tensor;
   colserve::Config::use_shared_tensor_train =
       colserve::Config::use_shared_tensor_train && colserve::Config::use_shared_tensor;
+
+  if (!cfg::IsColocateMode()) {
+    if (cfg::colocate_config.skip_malloc || cfg::colocate_config.skip_loading) {
+      LOG(WARNING) << "ignore colocate skip malloc and loading in non-colocating mode";
+    }
+    cfg::colocate_config.skip_malloc = false;
+    cfg::colocate_config.skip_loading = false;
+  }
 }
 
 void Shutdown(int sig) {

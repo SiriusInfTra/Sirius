@@ -4,6 +4,11 @@ namespace colserve {
 
 ServeMode Config::serve_mode = ServeMode::kNormal;
 
+ColocateConfig Config::colocate_config = {
+  .skip_malloc = false,
+  .skip_loading = false,
+};
+
 bool Config::check_mps = true;
 
 std::atomic<bool> Config::running = true;

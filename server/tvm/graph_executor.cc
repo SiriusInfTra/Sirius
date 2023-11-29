@@ -49,28 +49,40 @@ GraphExecutor::GraphExecutor(GraphExecutorFactory &factory)
 }
 
 void GraphExecutor::Init() {
-  if (!initialized_) {
-    // Profiler::Get()->RecordEvent(Profiler::EventItem::InferAllocStorageStart);
+  if (!initialized_) {   
     PROFILE_START(InferAllocStorage, 0);
-    AllocStorage();
+    if (!Config::colocate_config.skip_malloc)
+      AllocStorage();
     PROFILE_END(InferAllocStorage, 0);
-    // Profiler::Get()->RecordEvent(Profiler::EventItem::InferAllocStorageEnd);
     
-    ReSetupDataEntry();
+    if (!Config::colocate_config.skip_malloc)
+      ReSetupDataEntry();
 
-    // Profiler::Get()->RecordEvent(Profiler::EventItem::InferLoadParamStart);
     PROFILE_START(InferLoadParam, 0);
-    LoadParams(false);
+    if (!Config::colocate_config.skip_loading)
+      LoadParams(false);
     PROFILE_END(InferLoadParam, 0);
-    // Profiler::Get()->RecordEvent(Profiler::EventItem::InferLoadParamEnd);
     
     initialized_ = true;
   }
 }
 
+void GraphExecutor::FakeInit(bool malloc, bool load_param) {
+  CHECK(!initialized_) << "FakeInit should only be called once before Init";
+  if (malloc) {
+    AllocStorage();
+    ReSetupDataEntry();
+  }
+  if (load_param) {
+    LoadParams(false);
+  }
+}
+
 void GraphExecutor::DeInit() {
   CHECK(initialized_);
-  ResetStorage();
+  if (!Config::colocate_config.skip_malloc) {
+    ResetStorage();
+  }
   initialized_ = false;
 }
 

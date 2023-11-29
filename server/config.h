@@ -17,9 +17,16 @@ enum class ServeMode {
   kColocateL2,    // adjust batch at end of mini-batch
 };
 
+struct ColocateConfig {
+  bool skip_malloc;
+  bool skip_loading;
+};
+
 class Config {
  public:
   static ServeMode serve_mode;
+
+  static ColocateConfig colocate_config;
 
   static bool check_mps;
   

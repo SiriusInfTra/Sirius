@@ -25,6 +25,7 @@ class GraphExecutor {
  public:
   GraphExecutor(GraphExecutorFactory &factory);
   void Init();
+  void FakeInit(bool malloc, bool load_param); // used for simulating unlimted get gpu resource
   void DeInit();
   void Run();
   void PipelineRun();

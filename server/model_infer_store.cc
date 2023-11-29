@@ -191,6 +191,12 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
     worker_running_[i] = std::make_unique<std::atomic<bool>>(false);
   }
 
+  if (Config::colocate_config.skip_malloc || Config::colocate_config.skip_loading) {
+    for (size_t i = 0; i < max_num_worker_; i++) {
+      graph_executor_pool_[i].get()->FakeInit(Config::colocate_config.skip_malloc, Config::colocate_config.skip_loading);
+    }
+  }
+
   num_worker_ = 0;
   for (size_t i = 0; i < num_worker; i++) {
     pthread_barrier_t barrier;
@@ -495,7 +501,9 @@ void Model::MonitorJob() {
           if (!Controller::Get()->IsTrainIdle()) {
             infer_waited_train = ModelTrainStore::Get()->GetTrainPid();
             auto id = Controller::Get()->ColocateAdjust(3);
-            Controller::Get()->WaitColocateAdjustDone(id);
+            if (!Config::colocate_config.skip_malloc) {
+              Controller::Get()->WaitColocateAdjustDone(id);
+            }
             auto t1 = std::chrono::steady_clock::now();
             LOG(INFO) << "[Inference]: Wait adjust train batch size before add infer "
                       << std::chrono::duration<double, std::milli>(t1-t0).count() << " ms";
