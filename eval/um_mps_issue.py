@@ -34,7 +34,7 @@ def run(system: System, hyper_workload:HyperWorkload, num_model:int, req_per_sec
     hyper_workload.set_train_workload(train_workload=TrainWorkload('resnet', 10, 60))
     # hyper_workload.set_train_workload(None)
     infer_model_config = System.InferModelConfig(f"resnet152[{num_model}]", "resnet152", "1")
-    system.launch("um-mps-issue", f"{tag}-{num_model}", time_stamp=False, infer_model_config=infer_model_config)
+    system.launch("um-mps-issue", f"{tag}-{num_model}", time_stamp=True, infer_model_config=infer_model_config)
     hyper_workload.launch_busy_loop(system, InferModel.get_model_list("resnet152", num_model))
     system.stop()
     time.sleep(1)
@@ -43,17 +43,17 @@ def run(system: System, hyper_workload:HyperWorkload, num_model:int, req_per_sec
 system = System(mode=System.ServerMode.Normal, use_sta=False, mps=True, train_mps_thread_percent=40)
 workload = HyperWorkload(concurrency=1, duration=30, delay_before_infer=30)
 
-run(system, workload, 1, 4)
-# # run(system, workload, 2, 4)
-run(system, workload, 4, 4)
-# # run(system, workload, 8, 4)
-run(system, workload, 16, 4)
+run(system, workload, 1, 4, "ideal")
+run(system, workload, 2, 4, "ideal")
+run(system, workload, 4, 4, "ideal")
+run(system, workload, 8, 4, "ideal")
+run(system, workload, 16, 4, "ideal")
 
 os.environ["TORCH_UNIFIED_MEMORY"] = "1"
 os.environ["STA_RAW_ALLOC_UNIFIED_MEMORY"] = "1"
 with MemoryPressure(4975):
     run(system, workload, 1, 4, "mempres")
-    # run(system, workload, 2, 4, "mempres")
+    run(system, workload, 2, 4, "mempres")
     run(system, workload, 4, 4, "mempres")
-    # run(system, workload, 8, 4, "mempres")
+    run(system, workload, 8, 4, "mempres")
     run(system, workload, 16, 4, "mempres")

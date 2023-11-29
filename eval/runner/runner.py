@@ -134,6 +134,7 @@ class System:
             cmd += ["--train-mps-thread-percent", str(self.train_mps_thread_percent)]
 
         self.cmd_trace.append(" ".join(cmd))
+        print("\n---------------------------\n")
         print(" ".join(cmd))
 
         with open(server_log, "w") as log_file:
