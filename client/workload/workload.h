@@ -55,6 +55,7 @@ class InferWorker {
     }
   }
 
+
   void RequestInferBusyLoop(Workload &workload,
                             double delay_before_infer);
   void RequestInferTrace(Workload& workload,
@@ -133,7 +134,7 @@ struct AzureTrace {
 class Workload {
  public:
   Workload(std::shared_ptr<grpc::Channel> channel, std::chrono::seconds duration)
-      : stub_(ColServe::NewStub(channel)), duration_(duration) {
+      : stub_(ColServe::NewStub(channel)), duration_(duration), warmup_send_(0), warmup_recv_(0) {
     ready_future_ = std::shared_future<void>{ready_promise_.get_future()};
   };
 
@@ -149,6 +150,12 @@ class Workload {
       LOG(INFO) << "Worker Thread " << std::hex << thread->get_id() << " joined";
       thread->join();
     }
+
+  }
+
+  void SetUpInfer(size_t num_model) {
+    warmup_send_.Reset(num_model);
+    warmup_recv_.Reset(num_model);
   }
 
   void InferBusyLoop(const std::string &model, size_t concurrency, 
@@ -185,6 +192,9 @@ class Workload {
   std::unique_ptr<ColServe::Stub> stub_;
 
   std::unordered_map<std::string, AzureTrace> azure_model_index_;
+
+  CountDownLatch warmup_send_;
+  CountDownLatch warmup_recv_;
 };
 
 }

@@ -28,6 +28,8 @@ AppBase::AppBase(const std::string &name) : app{name} {
 
 
   app.add_option("--seed", seed, "random seed");
+
+  app.add_flag("--warm-up", warmup, "warm up infer model");
 }
 
 uint64_t AppBase::seed = static_cast<uint64_t>(-1);
@@ -68,6 +70,30 @@ std::vector<std::vector<unsigned>> load_azure(unsigned trace_id,
     result.emplace_back(std::move(size.second));
   }
   return result;
+}
+CountDownLatch::CountDownLatch(int count) : count_(count) {}
+
+
+void CountDownLatch::CountDownAndWait() {
+  std::unique_lock lock{mutex_};
+  if (--count_ == 0) {
+    condition_.notify_all();
+  }
+  condition_.wait(lock, [&] { return count_ == 0; });
+}
+
+
+void CountDownLatch::Reset(int count) {
+  std::unique_lock lock{mutex_};
+  count_ = count;
+  if (count_ == 0) {
+    condition_.notify_all();
+  }
+}
+
+void CountDownLatch::Wait() {
+  std::unique_lock lock{mutex_};
+  condition_.wait(lock, [&] { return count_ == 0; });
 }
 }  // namespace workload
 }
