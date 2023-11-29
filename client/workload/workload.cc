@@ -14,16 +14,46 @@
 namespace colserve {
 namespace workload {
 
-void InferWorker::RequestInfer(Workload& workload, const std::vector<double>& start_points, double delay_before_infer) {
+
+
+void InferWorker::RequestInfer(Workload& workload, const std::vector<double>& start_points, double delay_before_infer, int warm_up) {
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << std::this_thread::get_id() << ") " << model_ << " azure] "; 
   workload.ready_future_.wait();
+  LOG(INFO) << log_prefix.str() << "send " <<  warm_up <<" warmup infer request(s).";
+  while(warm_up > 0) {
+    for (size_t i = 0; i < concurrency_; i++) {
+      CHECK_NE(request_status_[i].status_, InferReqStatus::kDone);
+      if (request_status_[i].status_ == InferReqStatus::kReady) {
+        request_status_[i].status_ = InferReqStatus::kWait;
+        request_status_[i].request_time_ = std::chrono::steady_clock::now();
+        contexts_[i] = std::make_unique<grpc::ClientContext>();
+        rpcs_[i] = workload.stub_->AsyncInference(contexts_[i].get(), requests_[i], &cq_);
+        rpcs_[i]->Finish(&infer_results_[i], &rpc_status_[i], (void*)i);
+        warm_up--;
+        break;
+      }
+    }
+  }
+  workload.warmup_send_.CountDownAndWait();
+
+  LOG(INFO) << log_prefix.str() << "wait all warmup infer requests to finish.";
+  for (size_t i = 0; i < concurrency_; i++) {
+    CHECK_NE(request_status_[i].status_, InferReqStatus::kDone);
+    while(request_status_[i].status_ != InferReqStatus::kReady) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      LOG(INFO) << log_prefix.str() << "status " << request_status_[i].status_;
+    }
+  }
+  workload.warmup_recv_.CountDownAndWait();
+
+  LOG(INFO) << log_prefix.str() << "delay " << delay_before_infer << " sec.";
   std::this_thread::sleep_for(delay_before_infer * std::chrono::seconds(1));
-  LOG(INFO) << log_prefix.str() << "Delay " << delay_before_infer << " sec.";
+
   {
-    size_t debug_num = std::min(start_points.size(), 5UL);
+    size_t debug_num = std::min(start_points.size(), 10UL);
     std::stringstream debug_stream;
-    debug_stream << log_prefix.str() << "RequestInfer start, " << "len(req_nums)=" << start_points.size() << ", req_nums[0:" << debug_num << "]={";
+    debug_stream << log_prefix.str() << "RequestInfer start, " << "len(start_points)=" << start_points.size() << ", start_points[0:" << debug_num << "]={";
     for (size_t k=0; k<debug_num; ++k) {
       debug_stream << start_points[k];
       if (k != debug_num - 1) {
@@ -39,7 +69,8 @@ void InferWorker::RequestInfer(Workload& workload, const std::vector<double>& st
   auto duration_after_start = std::chrono::duration<double>::zero();
   for(auto start_point : start_points) {
     auto sleep_until_sys_clock = start_sys_clock + start_point * std::chrono::seconds(1);
-    DLOG(INFO) << log_prefix.str() << "sleep until " << std::chrono::duration_cast<std::chrono::milliseconds>(sleep_until_sys_clock - start_sys_clock).count() << "ms."; 
+    LOG(INFO) << log_prefix.str() << "sleep until " << std::chrono::duration_cast<std::chrono::milliseconds>(sleep_until_sys_clock - start_sys_clock).count() << "ms."; 
+    
     std::this_thread::sleep_until(sleep_until_sys_clock);
     size_t i = 0;
     CHECK(workload.running_) << log_prefix.str() << "Workload client is not running while request(start_point=" << start_point << "s) did not sent.";
@@ -211,8 +242,11 @@ void InferWorker::Report(Workload &workload, int verbose, std::ostream &os) {
 void TrainWorker::RequestTrain(Workload &workload) {
   std::stringstream log_prefix;
   log_prefix << "[TrainWorker(" << std::hex << std::this_thread::get_id() << ") " << model_ << "] ";
-
   workload.ready_future_.wait();
+
+  LOG(INFO) << log_prefix.str() << "wait for warmup infer requests.";
+  workload.warmup_recv_.Wait();
+
   LOG(INFO) << log_prefix.str() << "RequestTrain start";
   while (workload.running_) {
     auto begin = std::chrono::steady_clock::now();
@@ -339,12 +373,12 @@ std::function<void(std::vector<InferRequest>&)> Workload::SetResnetRequestFn(con
 
 
 void Workload::Infer(const std::string &model, size_t concurrency, const std::vector<double> &start_points, double delay_before_infer,
-                            int64_t show_result) {
+                            int warmup, int64_t show_result) {
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);
   threads_.push_back(std::make_unique<std::thread>(
-      &InferWorker::RequestInfer, worker.get(), std::ref(*this), start_points, delay_before_infer));
+      &InferWorker::RequestInfer, worker.get(), std::ref(*this), start_points, delay_before_infer, warmup));
   threads_.push_back(std::make_unique<std::thread>(
       &InferWorker::FetchInferResult, worker.get(), std::ref(*this),
       nullptr, show_result));

@@ -99,7 +99,7 @@ int main(int argc, char** argv) {
   double min_duration = -std::numeric_limits<double>::infinity();
   if (app.enable_infer) {
     trace_cfg = LoadTraceCFG(app.infer_trace);
-    min_duration = trace_cfg.start_points.back().first + app.delay_before_infer  +3;
+    min_duration = trace_cfg.start_points.back().first + app.delay_before_infer  + 3 + app.warmup /* for warmup*/;
   }
   
   if (app.duration < min_duration) {
@@ -117,9 +117,10 @@ int main(int argc, char** argv) {
 
   if (app.enable_infer) {
     auto groups = GroupByModel(trace_cfg);
+    workload.SetUpInfer(groups.size());
     for(auto &&[model_id, start_points] : groups) {
       auto &model = trace_cfg.models[model_id];
-      workload.Infer(model.model_name, app.concurrency, start_points, app.delay_before_infer, app.show_result);
+      workload.Infer(model.model_name, app.concurrency, start_points, app.delay_before_infer,  app.warmup, app.show_result);
     }
   }
   

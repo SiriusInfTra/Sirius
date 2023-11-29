@@ -39,7 +39,7 @@ class InferWorker {
   InferWorker(const std::string &model, size_t concurrency, 
               std::function<void(std::vector<InferRequest>&)> set_request_fn,
               Workload &workload)
-      : model_(model), concurrency_(concurrency){
+      : model_(model), concurrency_(concurrency) {
     requests_.resize(concurrency_);
     infer_results_.resize(concurrency_);
     contexts_.resize(concurrency_);
@@ -49,8 +49,9 @@ class InferWorker {
     set_request_fn(requests_);
   }
 
+
   void RequestInfer(Workload& workload,
-                    const std::vector<double>& start_points, double delay_before_infer);
+                    const std::vector<double>& start_points, double delay_before_infer, int warm_up);
   void FetchInferResult(Workload &workload, 
                         std::function<double_ms_t(size_t)> interval_fn, 
                         int64_t show_result);
@@ -79,6 +80,7 @@ private:
   std::vector<grpc::Status> rpc_status_;
   // std::vector<double> latency_;
   std::vector<Record> records_;
+
 };
 
 class TrainWorker {
@@ -107,7 +109,7 @@ struct AzureTrace {
 class Workload {
  public:
   Workload(std::shared_ptr<grpc::Channel> channel, std::chrono::seconds duration)
-      : stub_(ColServe::NewStub(channel)), duration_(duration) {
+      : stub_(ColServe::NewStub(channel)), duration_(duration), warmup_send_(0), warmup_recv_(0) {
     ready_future_ = std::shared_future<void>{ready_promise_.get_future()};
   };
 
@@ -123,9 +125,15 @@ class Workload {
       LOG(INFO) << "Worker Thread " << std::hex << thread->get_id() << " joined";
       thread->join();
     }
+
   }
 
-  void Infer(const std::string &model, size_t concurrency, const std::vector<double> &start_points, double delay_before_infer,
+  void SetUpInfer(size_t num_model) {
+    warmup_send_.Reset(num_model);
+    warmup_recv_.Reset(num_model);
+  }
+
+  void Infer(const std::string &model, size_t concurrency, const std::vector<double> &start_points, double delay_before_infer, int warmup,
                             int64_t show_result = 0);
   void TrainResnet(size_t num_epoch, size_t batch_size);
 
@@ -151,6 +159,9 @@ class Workload {
   std::unique_ptr<ColServe::Stub> stub_;
 
   std::unordered_map<std::string, AzureTrace> azure_model_index_;
+
+  CountDownLatch warmup_send_;
+  CountDownLatch warmup_recv_;
 };
 
 }

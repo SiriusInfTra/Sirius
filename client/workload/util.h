@@ -1,10 +1,12 @@
 #ifndef COLSYS_WORKLOAD_UTIL_H_
 #define COLSYS_WORKLOAD_UTIL_H_
 
+#include <condition_variable>
 #include <iostream>
 #include <fstream>
 #include <CLI/CLI.hpp>
 #include <limits>
+#include <mutex>
 #include <glog/logging.h>
 
 namespace colserve {
@@ -24,6 +26,7 @@ class AppBase {
   double delay_before_infer;
   int duration{10}, concurrency{10};
   int num_epoch{1}, batch_size{1};
+  int warmup{10};
 
   std::string log;
   int verbose{0};
@@ -34,8 +37,22 @@ class AppBase {
 
 std::vector<std::vector<unsigned>> load_azure(
     unsigned trace_id, unsigned period = std::numeric_limits<unsigned>::max());
+
+class CountDownLatch {
+public:
+  explicit CountDownLatch(int count);
+  void Reset(int count);
+  void CountDownAndWait();
+  void Wait();
+
+ private:
+  int count_;
+  std::mutex mutex_;
+  std::condition_variable condition_;
+};
 }
 }
+
 
 
 

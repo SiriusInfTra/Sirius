@@ -154,7 +154,8 @@ class System:
 
 class HyperWorkload:
 
-    def __init__(self, workload_log: str, client_log: str, trace_cfg: str, concurrency: int, duration: Optional[int | float] = None, seed: Optional[int] = None, delay_before_infer: float = 0) -> None:
+    def __init__(self, workload_log: str, client_log: str, trace_cfg: str, concurrency: int, duration: Optional[int | float] = None,
+                  seed: Optional[int] = None, delay_before_infer: float = 0, warmup: Optional[int] = None) -> None:
         self.infer_workloads: list[InferWorkloadBase] = []
         self.train_workload: NoneType | TrainWorkload = None
         self.duration = duration
@@ -164,6 +165,10 @@ class HyperWorkload:
         self.concurrency = concurrency
         self.seed = seed
         self.delay_before_infer = delay_before_infer
+        self.warmup = warmup
+
+    def dump_trace(self, trace_cfg: PathLike):
+        InferTraceDumper(self.infer_workloads, trace_cfg).dump()
     
     def launch(self, server: System, trace_cfg: Optional[PathLike] = None):
         assert server.server is not None
@@ -180,7 +185,7 @@ class HyperWorkload:
             cmd += ["--infer-trace", str(trace_cfg)]
         elif len(self.infer_workloads) > 0:
             trace_cfg = pathlib.Path(server.log_dir) / self.trace_cfg
-            InferTraceDumper(self.infer_workloads, trace_cfg).dump()
+            self.dump_trace(trace_cfg)
             cmd += ["--infer-trace", str(trace_cfg)]
         else:
             cmd += ["--no-infer"]
@@ -194,6 +199,9 @@ class HyperWorkload:
 
         if self.seed is not None:
             cmd += ["--seed", str(self.seed)]
+        
+        if self.warmup is not None:
+            cmd += ["--warmup", str(self.warmup)]
 
         workload_log = pathlib.Path(server.log_dir) / self.workload_log
         cmd += ['--log', str(workload_log)]
