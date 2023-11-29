@@ -15,6 +15,10 @@ using namespace std;
  }
 
 int main(int argc, char **argv) {
+    if (argc == 1) {
+        cout << "Usage: " << argv[0] << " <dev> <size in MB>" << endl;
+        exit(EXIT_FAILURE);
+    }
     int dev = std::stoi(argv[1]);
     size_t bytes = std::stoull(argv[2]) * 1024 * 1024;
     void* ptr_dev;
