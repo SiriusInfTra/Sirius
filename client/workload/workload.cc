@@ -31,7 +31,7 @@ double ComputeThpt(const std::vector<Record> &records) {
 }
 }
 
-void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_infer) {
+void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_infer, int warmup) {
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << this << ") " << model_ << " BUSY LOOP] ";
 
@@ -72,11 +72,11 @@ void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_i
   LOG(INFO) << log_prefix.str() << "RequestInfer stop";
 }
 
-void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double>& start_points, double delay_before_infer) {
+void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double>& start_points, double delay_before_infer, int warmup) {
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << this << ") " << model_ << " TRACE] "; 
   workload.ready_future_.wait();
-  LOG(INFO) << log_prefix.str() << "send " <<  warm_up <<" warmup infer request(s).";
+  LOG(INFO) << log_prefix.str() << "send " <<  warm_up << " warmup infer request(s).";
   while(warm_up > 0) {
     for (size_t i = 0; i < concurrency_; i++) {
       CHECK_NE(request_status_[i].status_, InferReqStatus::kDone);
@@ -470,7 +470,7 @@ std::function<void(InferRequest&)> Workload::SetResnetRequestFn(const std::strin
 
 void Workload::InferBusyLoop(const std::string &model, size_t concurrency, 
                              std::function<double_ms_t(size_t)> interval_fn,
-                             double delay_before_infer, 
+                             double delay_before_infer, int warmup,
                              int64_t show_result) {
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
@@ -484,7 +484,7 @@ void Workload::InferBusyLoop(const std::string &model, size_t concurrency,
 }
 
 void Workload::InferTrace(const std::string &model, size_t concurrency, const std::vector<double> &start_points, double delay_before_infer,
-                            int64_t show_result) {
+                            int warmup, int64_t show_result) {
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);
