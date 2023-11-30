@@ -230,7 +230,7 @@ class HyperWorkload:
             InferTraceDumper(self.infer_workloads, trace_cfg).dump()
             infer_trace_args += ["--infer-trace", str(trace_cfg)]
 
-        self._launch(self, server, "workload_launcher", infer_trace_args)
+        self._launch(server, "workload_launcher", infer_trace_args)
 
     def launch_busy_loop(self, server: System, infer_models: List[InferModel] = None):
         if infer_models is None:
