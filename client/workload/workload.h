@@ -1,8 +1,11 @@
 #ifndef COLSYS_WORKLOAD_H_
 #define COLSYS_WORKLOAD_H_
 
+#include <climits>
+#include <cstddef>
 #include <iostream>
 #include <random>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 #include <memory>
@@ -32,6 +35,25 @@ namespace workload {
 
 using time_point_t = std::chrono::time_point<std::chrono::steady_clock>;
 using double_ms_t = std::chrono::duration<double, std::milli>;
+const constexpr size_t WARMUP_SLOT_ID_MASK = 1UL << (CHAR_BIT * sizeof(size_t) - 1);
+
+static inline constexpr size_t MARK_WARMUP_TAG(size_t slot_id) {
+  return slot_id | WARMUP_SLOT_ID_MASK;
+}
+
+static inline constexpr size_t GET_SLOT_ID(size_t tag) {
+  return tag & (~WARMUP_SLOT_ID_MASK);
+}
+
+static inline constexpr bool IS_WARMUP_TAG(size_t slot_id) {
+  return slot_id & WARMUP_SLOT_ID_MASK;
+}
+
+static inline constexpr std::tuple<size_t, bool> PARSE_SLOT_ID(size_t tag) {
+  bool is_warmup = IS_WARMUP_TAG(tag);
+  size_t slot_id = MARK_WARMUP_TAG(tag);
+  return {slot_id, is_warmup};
+}
 
 struct Record {
   double latency_;
@@ -55,11 +77,12 @@ class InferWorker {
     }
   }
 
+
   void RequestInferBusyLoop(Workload &workload,
-                            double delay_before_infer);
-  void RequestInferTrace(Workload& workload,
+                            double delay_before_infer, int warmup);
+  void RequestInferTrace(Workload& workload, 
                          const std::vector<double>& start_points,
-                         double delay_before_infer);
+                         double delay_before_infer, int warmup);
   void FetchInferResult(Workload &workload, 
                         std::function<double_ms_t(size_t)> interval_fn, 
                         int64_t show_result);
@@ -133,7 +156,7 @@ struct AzureTrace {
 class Workload {
  public:
   Workload(std::shared_ptr<grpc::Channel> channel, std::chrono::seconds duration)
-      : stub_(ColServe::NewStub(channel)), duration_(duration) {
+      : stub_(ColServe::NewStub(channel)), duration_(duration), warmup_send_(0), warmup_recv_(0) {
     ready_future_ = std::shared_future<void>{ready_promise_.get_future()};
   };
 
@@ -149,15 +172,21 @@ class Workload {
       LOG(INFO) << "Worker Thread " << std::hex << thread->get_id() << " joined";
       thread->join();
     }
+
+  }
+
+  void SetUpInfer(size_t num_model) {
+    warmup_send_.Reset(num_model);
+    warmup_recv_.Reset(num_model);
   }
 
   void InferBusyLoop(const std::string &model, size_t concurrency, 
                      std::function<double_ms_t(size_t)> interval_fn,
-                     double delay_before_infer, 
+                     double delay_before_infer, int warmup,
                      int64_t show_result = 0);
   void InferTrace(const std::string &model, size_t concurrency, 
                   const std::vector<double> &start_points, 
-                  double delay_before_infer,
+                  double delay_before_infer, int warmup,
                   int64_t show_result = 0);
   void TrainResnet(size_t num_epoch, size_t batch_size);
 
@@ -185,6 +214,9 @@ class Workload {
   std::unique_ptr<ColServe::Stub> stub_;
 
   std::unordered_map<std::string, AzureTrace> azure_model_index_;
+
+  CountDownLatch warmup_send_;
+  CountDownLatch warmup_recv_;
 };
 
 }
