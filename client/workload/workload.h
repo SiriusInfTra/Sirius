@@ -143,6 +143,7 @@ class Workload {
   bool Hello();
 
   void Run() {
+    LOG(INFO) << "Workload start ...";
     ready_promise_.set_value();
     running_ = true;
     run_btime_ = std::chrono::steady_clock::now();
