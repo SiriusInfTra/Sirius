@@ -32,7 +32,21 @@ double ComputeThpt(const std::vector<Record> &records) {
 }
 }
 
-void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_infer, int warmup) {
+void Workload::WarmupModel(const std::string& model_name, int warmup) {
+  LOG(INFO) << "Start to send " <<  warmup << " warmup infer request(s) for " << model_name << ".";
+  auto set_request_fn = GetSetRequestFn(model_name);
+  for(decltype(warmup) k = 0; k < warmup; ++k) {
+    grpc::ClientContext context;
+    InferResult result;
+    InferRequest request;
+    set_request_fn(request);
+    grpc::Status status = stub_->Inference(&context, request, &result);
+    CHECK(status.ok());
+  }
+  DLOG(INFO) << "Complete sending " <<  warmup << " warmup infer request(s) for " << model_name << ".";
+}
+
+void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_infer) {
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << this << ") " << model_ << " BUSY LOOP] ";
 
@@ -72,22 +86,8 @@ void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_i
   }
   LOG(INFO) << log_prefix.str() << "RequestInfer stop";
 }
-void Workload::WarmupModel(const std::string& model_name, int warmup) {
 
-  LOG(INFO) << "Start to send " <<  warmup << " warmup infer request(s) for " << model_name << ".";
-  auto set_request_fn = GetSetRequestFn(model_name);
-  for(decltype(warmup) k = 0; k < warmup; ++k) {
-    grpc::ClientContext context;
-    InferResult result;
-    InferRequest request;
-    set_request_fn(request);
-    grpc::Status status = stub_->Inference(&context, request, &result);
-    CHECK(status.ok());
-  }
-  LOG(INFO) << "Complete sending " <<  warmup << " warmup infer request(s) for " << model_name << ".";
-}
-
-void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double>& start_points, double delay_before_infer, int warmup) {
+void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double>& start_points, double delay_before_infer) {
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << this << ") " << model_ << " TRACE] "; 
   workload.ready_future_.wait();
@@ -462,7 +462,7 @@ void Workload::InferBusyLoop(const std::string &model, size_t concurrency,
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);
   threads_.push_back(std::make_unique<std::thread>(
-      &InferWorker::RequestInferBusyLoop, worker.get(), std::ref(*this), delay_before_infer, warmup));
+      &InferWorker::RequestInferBusyLoop, worker.get(), std::ref(*this), delay_before_infer));
   threads_.push_back(std::make_unique<std::thread>(
       &InferWorker::FetchInferResult, worker.get(), std::ref(*this),
       interval_fn, show_result));
@@ -475,7 +475,7 @@ void Workload::InferTrace(const std::string &model, size_t concurrency, const st
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);
   threads_.push_back(std::make_unique<std::thread>(
-      &InferWorker::RequestInferTrace, worker.get(), std::ref(*this), start_points, delay_before_infer, warmup));
+      &InferWorker::RequestInferTrace, worker.get(), std::ref(*this), start_points, delay_before_infer));
   threads_.push_back(std::make_unique<std::thread>(
       &InferWorker::FetchInferResult, worker.get(), std::ref(*this),
       nullptr, show_result));

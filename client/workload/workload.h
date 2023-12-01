@@ -59,10 +59,10 @@ class InferWorker {
 
 
   void RequestInferBusyLoop(Workload &workload,
-                            double delay_before_infer, int warmup);
+                            double delay_before_infer);
   void RequestInferTrace(Workload& workload, 
                          const std::vector<double>& start_points,
-                         double delay_before_infer, int warmup);
+                         double delay_before_infer);
   void FetchInferResult(Workload &workload, 
                         std::function<double_ms_t(size_t)> interval_fn, 
                         int64_t show_result);
@@ -143,9 +143,6 @@ class Workload {
   bool Hello();
 
   void Run() {
-
-
-
     ready_promise_.set_value();
     running_ = true;
     run_btime_ = std::chrono::steady_clock::now();
@@ -155,7 +152,6 @@ class Workload {
       LOG(INFO) << "Worker Thread " << std::hex << thread->get_id() << " joined";
       thread->join();
     }
-
   }
 
 

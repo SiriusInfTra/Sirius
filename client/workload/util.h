@@ -38,7 +38,9 @@ class AppBase {
   double delay_before_infer;
   int duration{10}, concurrency{10};
   int num_epoch{1}, batch_size{1};
+
   int warmup{10};
+  double delay_after_warmup{0};
 
   std::string log;
   int verbose{0};
