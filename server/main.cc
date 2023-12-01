@@ -52,6 +52,8 @@ void init_cli_options() {
       "profile log path, default is server-profile");
   app.add_option("--capture-train-log", colserve::Config::capture_train_log, 
       "capture train log, default is 1");
+  app.add_flag("--infer-blob-alloc", colserve::Config::infer_raw_blob_alloc, 
+      "infer raw blob alloc, default is false");
   app.add_option("--train-mps-thread-percent", colserve::Config::train_mps_thread_percent, 
       "train mps thread percent, default is None");
   app.add_flag("--colocate-skip-malloc", colserve::Config::colocate_config.skip_malloc, 

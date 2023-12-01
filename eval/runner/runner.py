@@ -11,11 +11,13 @@ from typing import List, Dict, Optional
 from types import NoneType
 from dataclasses import dataclass
 
-from .workload import InferWorkloadBase, TrainWorkload, InferTraceDumper, InferModel
+from .workload import InferWorkloadBase, TrainWorkload, InferTraceDumper, InferModel, RandomInferWorkload
 from .config import get_global_seed
 
 
 class System:
+    _last_time_stamp = None
+
     class ServerMode:
         Normal = "normal"
         ColocateL1 = "colocate-l1"
@@ -52,9 +54,11 @@ class System:
                  port: str = "18080",
                  infer_model_config: List[InferModelConfig] | InferModelConfig = None,
                  mps: bool = True,
+                 infer_blob_alloc: bool = False,
                  train_mps_thread_percent: Optional[int] = None,
                  colocate_skip_malloc: bool = False,
-                 colocate_skip_loading: bool = False) -> None:
+                 colocate_skip_loading: bool = False,
+                 keep_last_time_stamp: bool = False) -> None:
         self.mode = mode
         self.port = port
         self.use_sta = use_sta
@@ -74,10 +78,15 @@ class System:
         self.infer_model_config_path = None
         self.mps = mps
         self.mps_server = None
+        self.infer_blob_alloc = infer_blob_alloc
+        self.train_mps_thread_percent = train_mps_thread_percent
         self.colocate_skip_malloc = colocate_skip_malloc
         self.colocate_skip_loading = colocate_skip_loading
-        self.train_mps_thread_percent = train_mps_thread_percent
-        self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
+        if System._last_time_stamp is None or not keep_last_time_stamp:
+            self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
+            System._last_time_stamp = self.time_stamp
+        else:
+            self.time_stamp = System._last_time_stamp
 
     def next_time_stamp(self):
         self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
@@ -133,6 +142,9 @@ class System:
         else:
             cmd += ["--mps", "0"]
             self.mps_server = None
+
+        if self.infer_blob_alloc:
+            cmd += ["--infer-blob-alloc"]
 
         if self.train_mps_thread_percent is not None:
             cmd += ["--train-mps-thread-percent", str(self.train_mps_thread_percent)]
@@ -226,6 +238,9 @@ class HyperWorkload:
         if trace_cfg is not None:
             infer_trace_args += ["--infer-trace", str(trace_cfg)]
         elif len(self.infer_workloads) > 0:
+            for workload in self.infer_workloads:
+                if isinstance(workload, RandomInferWorkload):
+                    workload.reset_random_state()
             trace_cfg = pathlib.Path(server.log_dir) / self.trace_cfg
             InferTraceDumper(self.infer_workloads, trace_cfg).dump()
             infer_trace_args += ["--infer-trace", str(trace_cfg)]

@@ -70,10 +70,12 @@ void GraphExecutor::Init() {
 void GraphExecutor::FakeInit(bool malloc, bool load_param) {
   CHECK(!initialized_) << "FakeInit should only be called once before Init";
   if (malloc) {
+    LOG(INFO) << "FakeInit malloc, skip malloc in Init";
     AllocStorage();
     ReSetupDataEntry();
   }
   if (load_param) {
+    LOG(INFO) << "FakeInit load_param, skip load_param in Init";
     LoadParams(false);
   }
 }

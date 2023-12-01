@@ -69,9 +69,14 @@ class RandomInferWorkload(InferWorkloadBase):
     def __init__(self, seed: Optional[int] = None) -> None:
         super().__init__()
         if seed is None:
-            self.rs = RandomState(MT19937(SeedSequence(get_global_seed())))
+            self.seed = get_global_seed()
+            self.rs = RandomState(MT19937(SeedSequence(self.seed)))
         else:
-            self.rs = RandomState(MT19937(SeedSequence(seed)))
+            self.seed = seed
+            self.rs = RandomState(MT19937(SeedSequence(self.seed)))
+
+    def reset_random_state(self):
+        self.rs = RandomState(MT19937(SeedSequence(self.seed)))
 
 
 class TrainWorkload(NamedTuple):
@@ -81,6 +86,8 @@ class TrainWorkload(NamedTuple):
 
 
 class AzureInferWorkload(RandomInferWorkload):
+    TRACE_D01 = "workload_data/azurefunctions-dataset2019/invocations_per_function_md.anon.d01.csv"
+
     def __init__(self, 
                  trace_cfg: os.PathLike[str], 
                  max_request_sec: float | int, 
@@ -96,6 +103,9 @@ class AzureInferWorkload(RandomInferWorkload):
         self.interval_sec = interval_sec
         self.period_num = period_num
         self.func_num = func_num
+
+        if period_num > 1440:
+            raise Exception("period_num must be less than 1440")
 
     def get_trace(self) -> list[TraceRecord]:
         func_freqs = AzureInferWorkload.read_trace_cfg(
@@ -217,9 +227,58 @@ class DynamicPoissonInferWorkload(RandomInferWorkload):
         trace_record: list[TraceRecord] = []
         for infer_model, poisson_params in self.poisson_params:
             poisson_params = poisson_params + [PoissonParam(self.duration, 0)]
-            trace_record.append(PoissonInferWorkload.poisson_func_freq(
+            trace_record.extend(PoissonInferWorkload.poisson_func_freq(
                 poisson_params, infer_model, self.rs))
         return trace_record
+
+
+class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
+    def __init__(self, 
+                 model_list: List[InferModel],
+                 max_request_sec: float | int,
+                 interval_sec: float | int,
+                 duration: Optional[float | int] = None,
+                 period_num: Optional[int] = None,
+                 seed: Optional[int] = None) -> None:
+        super().__init__(None, None, seed)
+        if duration is None and period_num is None:
+            raise Exception("duration, period_num and interval_sec cannot be all None")
+        if duration is not None and period_num is not None:
+            raise Exception("duration and period_num cannot be both specified")
+        if period_num is None:
+            period_num = int(duration / interval_sec)
+            self.duration = period_num * interval_sec
+        if duration is None:
+            self.duration = period_num * interval_sec
+        poisson_params = [[] for _ in range(len(model_list))]
+        num_model_to_requests = []
+        for i in range(period_num):
+            # first select a few models to send requests
+            num_model = self.rs.randint(1, len(model_list) + 1)
+            num_request = self.rs.uniform(0, max_request_sec)
+            num_model_to_requests.append(num_model)
+            model_req_list = self.rs.choice(np.arange(len(model_list)), num_model, replace=False)
+            model_num_req = self._split_request(num_request, num_model)
+            for model, num_req in zip(model_req_list, model_num_req):
+                poisson_params[model].append(PoissonParam(i * interval_sec, num_req))
+            for j in range(len(model_list)):
+                if j not in set(model_req_list):
+                    poisson_params[j].append(PoissonParam(i * interval_sec, 0))
+        print(poisson_params)
+        self.poisson_params = []
+        for i, poisson_param in enumerate(poisson_params):
+            self.poisson_params.append((model_list[i], poisson_param))
+
+        poisson_params_ndarray = np.array(poisson_params)[:, :, 1]
+        with np.printoptions(precision=1, suppress=True):
+            print('microbenmark total #request: \n', np.array(np.sum(poisson_params_ndarray, axis=0)))
+            print('microbenmark request #model : \n', np.array(num_model_to_requests))
+            # print(poisson_params_ndarray)
+
+    def _split_request(self, num_request, num_model):
+        alpha = np.ones(num_model)
+        faction = self.rs.dirichlet(alpha)
+        return num_request * faction
 
 
 class InferTraceDumper:
