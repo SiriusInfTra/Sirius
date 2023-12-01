@@ -29,71 +29,10 @@ AppBase::AppBase(const std::string &name) : app{name} {
 
   app.add_option("--seed", seed, "random seed");
 
-  app.add_flag("--warm-up", warmup, "warm up infer model");
+  app.add_option("--warmup", warmup, "warm up infer model");
 }
 
 uint64_t AppBase::seed = static_cast<uint64_t>(-1);
 
-std::vector<std::vector<unsigned>> load_azure(unsigned trace_id,
-                                              unsigned period) {
-  const char path_template[] =
-      "./workload_data/azurefunctions-dataset2019/"
-      "function_durations_percentiles.anon.d%02d.csv";
-  char ch[sizeof(path_template)];
-  std::string line;
-  std::vector<std::pair<unsigned, std::vector<unsigned>>> tmp;
-  std::vector<std::vector<unsigned>> result;
-  CHECK_GE(trace_id, 1);
-  CHECK_LE(trace_id, 14);
-  sprintf(ch, path_template, trace_id);
-  LOG(INFO) << "Open trace file: " << ch << ".";
-  std::ifstream f{ch};
-  CHECK(f.is_open());
-  std::getline(f, line);  // skip headers
-  while (std::getline(f, line)) {
-    std::istringstream ss{line};
-    std::string token;
-    std::vector<unsigned> sizes(std::min(1440U, period));
-    for (size_t k = 0; k < 4; ++k) {  // skip first 4 token
-      std::getline(ss, token, ',');
-    }
-    for (auto& i : sizes) {
-      std::getline(ss, token, ',');
-      i = std::stoi(token);
-    }
-    unsigned sum = std::accumulate(sizes.cbegin(), sizes.cend(), 0U);
-    tmp.emplace_back(sum, std::move(sizes));
-  }
-  std::sort(tmp.begin(), tmp.end(),
-            [](auto&& x, auto&& y) { return x.first < y.first; });
-  for (auto&& size : tmp) {
-    result.emplace_back(std::move(size.second));
-  }
-  return result;
-}
-CountDownLatch::CountDownLatch(int count) : count_(count) {}
-
-
-void CountDownLatch::CountDownAndWait() {
-  std::unique_lock lock{mutex_};
-  if (--count_ == 0) {
-    condition_.notify_all();
-  }
-  condition_.wait(lock, [&] { return count_ == 0; });
-}
-
-
-void CountDownLatch::Reset(int count) {
-  std::unique_lock lock{mutex_};
-  count_ = count;
-  if (count_ == 0) {
-    condition_.notify_all();
-  }
-}
-
-void CountDownLatch::Wait() {
-  std::unique_lock lock{mutex_};
-  condition_.wait(lock, [&] { return count_ == 0; });
-}
 }  // namespace workload
 }

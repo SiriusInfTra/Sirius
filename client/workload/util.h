@@ -47,21 +47,6 @@ class AppBase {
   static uint64_t seed;
 };
 
-std::vector<std::vector<unsigned>> load_azure(
-    unsigned trace_id, unsigned period = std::numeric_limits<unsigned>::max());
-
-class CountDownLatch {
-public:
-  explicit CountDownLatch(int count);
-  void Reset(int count);
-  void CountDownAndWait();
-  void Wait();
-
- private:
-  int count_;
-  std::mutex mutex_;
-  std::condition_variable condition_;
-};
 }
 }
 

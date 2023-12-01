@@ -35,26 +35,6 @@ namespace workload {
 
 using time_point_t = std::chrono::time_point<std::chrono::steady_clock>;
 using double_ms_t = std::chrono::duration<double, std::milli>;
-const constexpr size_t WARMUP_SLOT_ID_MASK = 1UL << (CHAR_BIT * sizeof(size_t) - 1);
-
-static inline constexpr size_t MARK_WARMUP_TAG(size_t slot_id) {
-  return slot_id | WARMUP_SLOT_ID_MASK;
-}
-
-static inline constexpr size_t GET_SLOT_ID(size_t tag) {
-  return tag & (~WARMUP_SLOT_ID_MASK);
-}
-
-static inline constexpr bool IS_WARMUP_TAG(size_t slot_id) {
-  return slot_id & WARMUP_SLOT_ID_MASK;
-}
-
-static inline constexpr std::tuple<size_t, bool> PARSE_SLOT_ID(size_t tag) {
-  bool is_warmup = IS_WARMUP_TAG(tag);
-  size_t slot_id = MARK_WARMUP_TAG(tag);
-  return {slot_id, is_warmup};
-}
-
 struct Record {
   double latency_;
   time_point_t request_time_;
@@ -156,13 +136,16 @@ struct AzureTrace {
 class Workload {
  public:
   Workload(std::shared_ptr<grpc::Channel> channel, std::chrono::seconds duration)
-      : stub_(ColServe::NewStub(channel)), duration_(duration), warmup_send_(0), warmup_recv_(0) {
+      : stub_(ColServe::NewStub(channel)), duration_(duration) {
     ready_future_ = std::shared_future<void>{ready_promise_.get_future()};
   };
 
   bool Hello();
 
   void Run() {
+
+
+
     ready_promise_.set_value();
     running_ = true;
     run_btime_ = std::chrono::steady_clock::now();
@@ -175,11 +158,8 @@ class Workload {
 
   }
 
-  void SetUpInfer(size_t num_model) {
-    warmup_send_.Reset(num_model);
-    warmup_recv_.Reset(num_model);
-  }
 
+  void WarmupModel(const std::string& model_name, int warmup);
   void InferBusyLoop(const std::string &model, size_t concurrency, 
                      std::function<double_ms_t(size_t)> interval_fn,
                      double delay_before_infer, int warmup,
@@ -215,8 +195,6 @@ class Workload {
 
   std::unordered_map<std::string, AzureTrace> azure_model_index_;
 
-  CountDownLatch warmup_send_;
-  CountDownLatch warmup_recv_;
 };
 
 }
