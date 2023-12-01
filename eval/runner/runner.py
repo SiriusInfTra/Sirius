@@ -60,12 +60,11 @@ class System:
                  colocate_skip_loading: bool = False,
                  keep_last_time_stamp: bool = False) -> None:
         self.mode = mode
-        self.port = port
         self.use_sta = use_sta
         self.cuda_memory_pool_gb = cuda_memory_pool_gb
         self.profile_log = profile_log
         self.server_log = server_log
-        self.port = port
+        self.port = str(int(port) + os.getpid() % 10)
         self.server:Optional[subprocess.Popen]= None
         self.log_dir:Optional[str] = None
         self.cmd_trace = []
@@ -132,7 +131,7 @@ class System:
         if self.mps:
             cmd += ["--mps", "1"]
             self.cmd_trace.append(" ".join([
-                "sudo", "/opt/mps-control/launch-mps-daemon-private.sh"
+                "sudo", "/opt/mps-control/launch-mps-daemon-private.sh",
                 "--device", os.environ['CUDA_VISIBLE_DEVICES'], "--mps-pipe", os.environ['CUDA_MPS_PIPE_DIRECTORY']
             ]))
             self.mps_server = subprocess.Popen(

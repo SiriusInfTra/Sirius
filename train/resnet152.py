@@ -120,6 +120,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
                         time.sleep(1e-3)
                         self.hook.try_reply_adjust_l1()
                         self.hook.try_reply_adjust_l2()
+                        batch_size = min(self.batch_size, self.size - self.iter_idx)
                 elif self.mode == 'task-switch-l1':
                     assert self.hook is not None
                     while self.hook.stub.cmd == torch_col.Event.kInterruptTrain:

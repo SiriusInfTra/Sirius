@@ -13,9 +13,9 @@ def run(system: System, workload: HyperWorkload, num_worker:int ,tag: str):
     system.stop()
     time.sleep(1)
 
-system = System(mode=System.ServerMode.ColocateL2, use_sta=False, mps=True, keep_last_time_stamp=True)
+system = System(mode=System.ServerMode.ColocateL2, use_sta=False, mps=True, keep_last_time_stamp=True, infer_blob_alloc=False)
 workload = HyperWorkload(concurrency=2048, duration=30, delay_before_infer=30)
-workload.set_train_workload(train_workload=TrainWorkload('resnet', 20, 60))
+workload.set_train_workload(train_workload=TrainWorkload('resnet', num_epoch=20, batch_size=56))
 # workload.set_infer_workloads(AzureInferWorkload(
 #     AzureInferWorkload.TRACE_D01,
 #     max_request_sec=100, interval_sec=120 / 720, period_num=720, func_num=16 * 1000,
@@ -23,13 +23,14 @@ workload.set_train_workload(train_workload=TrainWorkload('resnet', 20, 60))
 # ))
 workload.set_infer_workloads(MicrobenchmarkInferWorkload(
     model_list=InferModel.get_model_list("resnet152", 16),
-    max_request_sec=100, interval_sec=1, duration=60, 
+    max_request_sec=64, interval_sec=1, duration=60, 
 ))
 
 run(system, workload, 0, "strawman")
 
 system = System(mode=System.ServerMode.ColocateL2, use_sta=False, mps=True, 
-                colocate_skip_malloc=True, keep_last_time_stamp=True)
+                colocate_skip_malloc=True, 
+                keep_last_time_stamp=True)
 run(system, workload, 0, "no-memory-pressure")
 
 system = System(mode=System.ServerMode.ColocateL2, use_sta=False, mps=True, 
