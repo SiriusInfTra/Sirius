@@ -8,6 +8,7 @@
 #include <utility>
 #include <mutex>
 
+#include "colserve.pb.h"
 #include "glog/logging.h"
 #include "workload.h"
 
@@ -29,6 +30,20 @@ double ComputeThpt(const std::vector<Record> &records) {
   auto thpt_duration = std::chrono::duration<double>(last_request_time - first_resp_time).count();
   return 1.0 * thpt_req_cnt / thpt_duration;
 }
+}
+
+void Workload::WarmupModel(const std::string& model_name, int warmup) {
+  LOG(INFO) << "Start to send " <<  warmup << " warmup infer request(s) for " << model_name << ".";
+  auto set_request_fn = GetSetRequestFn(model_name);
+  for(decltype(warmup) k = 0; k < warmup; ++k) {
+    grpc::ClientContext context;
+    InferResult result;
+    InferRequest request;
+    set_request_fn(request);
+    grpc::Status status = stub_->Inference(&context, request, &result);
+    CHECK(status.ok());
+  }
+  DLOG(INFO) << "Complete sending " <<  warmup << " warmup infer request(s) for " << model_name << ".";
 }
 
 void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_infer) {
@@ -76,12 +91,14 @@ void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << this << ") " << model_ << " TRACE] "; 
   workload.ready_future_.wait();
+
+  LOG(INFO) << log_prefix.str() << "delay " << delay_before_infer << " sec.";
   std::this_thread::sleep_for(delay_before_infer * std::chrono::seconds(1));
-  LOG(INFO) << log_prefix.str() << "Delay " << delay_before_infer << " sec.";
+
   {
-    size_t debug_num = std::min(start_points.size(), 5UL);
+    size_t debug_num = std::min(start_points.size(), 10UL);
     std::stringstream debug_stream;
-    debug_stream << log_prefix.str() << "RequestInfer start, " << "len(req_nums)=" << start_points.size() << ", req_nums[0:" << debug_num << "]={";
+    debug_stream << log_prefix.str() << "RequestInfer start, " << "len(start_points)=" << start_points.size() << ", start_points[0:" << debug_num << "]={";
     for (size_t k=0; k<debug_num; ++k) {
       debug_stream << start_points[k];
       if (k != debug_num - 1) {
@@ -98,6 +115,7 @@ void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double
   for(auto start_point : start_points) {
     auto sleep_until_sys_clock = start_sys_clock + start_point * std::chrono::seconds(1);
     DLOG(INFO) << log_prefix.str() << "sleep until " << std::chrono::duration_cast<std::chrono::milliseconds>(sleep_until_sys_clock - start_sys_clock).count() << "ms."; 
+    
     std::this_thread::sleep_until(sleep_until_sys_clock);
     CHECK(workload.running_) << log_prefix.str() << "Workload client is not running while request(start_point=" << start_point << "s) did not sent.";
     size_t slot;
@@ -178,7 +196,7 @@ void InferWorker::FetchInferResult(Workload &workload,
     }
     if (!running) break;
   
-    size_t slot = (size_t)tag;
+    auto slot = reinterpret_cast<size_t>(tag);
     // CHECK(rpc_status_[i].ok());
     CHECK(slots_[slot].rpc_status_.ok());
     {
@@ -311,6 +329,7 @@ void TrainWorker::RequestTrain(Workload &workload) {
   log_prefix << "[TrainWorker(" << std::hex << this << ") " << model_ << "] ";
 
   workload.ready_future_.wait();
+
   LOG(INFO) << log_prefix.str() << "RequestTrain start";
   while (workload.running_) {
     auto begin = std::chrono::steady_clock::now();
@@ -437,7 +456,7 @@ std::function<void(InferRequest&)> Workload::SetResnetRequestFn(const std::strin
 
 void Workload::InferBusyLoop(const std::string &model, size_t concurrency, 
                              std::function<double_ms_t(size_t)> interval_fn,
-                             double delay_before_infer, 
+                             double delay_before_infer, int warmup,
                              int64_t show_result) {
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
@@ -451,7 +470,7 @@ void Workload::InferBusyLoop(const std::string &model, size_t concurrency,
 }
 
 void Workload::InferTrace(const std::string &model, size_t concurrency, const std::vector<double> &start_points, double delay_before_infer,
-                            int64_t show_result) {
+                            int warmup, int64_t show_result) {
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);
