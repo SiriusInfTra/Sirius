@@ -59,8 +59,9 @@ void GraphExecutor::Init() {
       ReSetupDataEntry();
 
     PROFILE_START(InferLoadParam, 0);
-    if (!Config::colocate_config.skip_loading)
-      LoadParams(false);
+    if (!Config::colocate_config.skip_loading) {
+      LoadParams(false, Config::colocate_config.skip_malloc);
+    }
     PROFILE_END(InferLoadParam, 0);
     
     initialized_ = true;
@@ -76,7 +77,7 @@ void GraphExecutor::FakeInit(bool malloc, bool load_param) {
   }
   if (load_param) {
     LOG(INFO) << "FakeInit load_param, skip load_param in Init";
-    LoadParams(false);
+    LoadParams(false, true);
   }
 }
 
@@ -291,7 +292,12 @@ void GraphExecutor::AllocStorage() {
   // }
 }
 
-void GraphExecutor::LoadParams(bool pipeline) {
+void GraphExecutor::LoadParams(bool pipeline, bool force) {
+  if (force) {
+    for (auto &p : factory_.params_)
+      param_ready_[p.first] = false;
+  }
+
   for (auto &p : factory_.params_) {
     auto sid = factory_.attrs_.storage_id[p.first];
     if (!param_ready_[p.first]) {

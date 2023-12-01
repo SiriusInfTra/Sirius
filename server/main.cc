@@ -91,6 +91,9 @@ void init_config() {
     cfg::colocate_config.skip_malloc = false;
     cfg::colocate_config.skip_loading = false;
   }
+  if (cfg::colocate_config.skip_loading && !cfg::colocate_config.skip_malloc) {
+    LOG(FATAL) << "skip loading must be used with skip malloc";
+  } 
 }
 
 void Shutdown(int sig) {

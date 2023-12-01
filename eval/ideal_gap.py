@@ -23,7 +23,7 @@ workload.set_train_workload(train_workload=TrainWorkload('resnet', num_epoch=20,
 # ))
 workload.set_infer_workloads(MicrobenchmarkInferWorkload(
     model_list=InferModel.get_model_list("resnet152", 16),
-    max_request_sec=64, interval_sec=1, duration=60, 
+    max_request_sec=100, interval_sec=1, duration=60, 
 ))
 
 run(system, workload, 0, "strawman")

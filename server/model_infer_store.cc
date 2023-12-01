@@ -307,7 +307,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier, pid_t waited_tr
                 << std::chrono::duration<double, std::milli>(t1-t0).count();
 
       future = std::async(std::launch::async, 
-          &tvm::GraphExecutor::LoadParams, graph_executor, true);
+          &tvm::GraphExecutor::LoadParams, graph_executor, true, false);
       task_switch_l3_cold_start = false;
       // LOG(INFO) << "pipeline load param async " << std::chrono::duration<double, std::milli>(t1 - t0).count() << " ms";
     }
