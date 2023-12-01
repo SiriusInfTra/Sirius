@@ -76,29 +76,47 @@ void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << this << ") " << model_ << " TRACE] "; 
   workload.ready_future_.wait();
-  LOG(INFO) << log_prefix.str() << "send " <<  warm_up << " warmup infer request(s).";
-  while(warm_up > 0) {
-    for (size_t i = 0; i < concurrency_; i++) {
-      CHECK_NE(request_status_[i].status_, InferReqStatus::kDone);
-      if (request_status_[i].status_ == InferReqStatus::kReady) {
-        request_status_[i].status_ = InferReqStatus::kWait;
-        request_status_[i].request_time_ = std::chrono::steady_clock::now();
-        contexts_[i] = std::make_unique<grpc::ClientContext>();
-        rpcs_[i] = workload.stub_->AsyncInference(contexts_[i].get(), requests_[i], &cq_);
-        rpcs_[i]->Finish(&infer_results_[i], &rpc_status_[i], (void*)i);
-        warm_up--;
-        break;
+  LOG(INFO) << log_prefix.str() << "send " <<  warmup << " warmup infer request(s).";
+  
+  while(--warmup >= 0) {
+    size_t slot;
+    {
+      std::unique_lock status_lock{slot_status_mutex_};
+      if (status_slots_id_[InferReqStatus::kReady].empty()) {
+        std::unique_lock slot_lock{slot_mutex_};
+        slot = slots_.size();
+        slots_.emplace_back();
+        set_request_fn_(slots_.back().request_);
+        status_slots_id_[InferReqStatus::kWait].insert(slot);
+      } else {
+        auto it = status_slots_id_[InferReqStatus::kReady].begin();
+        slot = *it;
+        status_slots_id_[InferReqStatus::kReady].erase(it);
+        status_slots_id_[InferReqStatus::kWait].insert(slot);
       }
+    }
+    {
+      std::shared_lock slot_lock{slot_mutex_};
+      CHECK_EQ(slots_[slot].req_status_.status_, InferReqStatus::kReady);
+      slots_[slot].req_status_.status_ = InferReqStatus::kWait;
+      slots_[slot].req_status_.request_time_ = std::chrono::steady_clock::now();
+      slots_[slot].rpc_context_ = std::make_unique<grpc::ClientContext>();
+      slots_[slot].rpc_ = workload.stub_->AsyncInference(slots_[slot].rpc_context_.get(), slots_[slot].request_, &cq_);
+      slots_[slot].rpc_->Finish(&slots_[slot].result_, &slots_[slot].rpc_status_, (void*)MARK_WARMUP_TAG(slot));
     }
   }
   workload.warmup_send_.CountDownAndWait();
 
   LOG(INFO) << log_prefix.str() << "wait all warmup infer requests to finish.";
-  for (size_t i = 0; i < concurrency_; i++) {
-    CHECK_NE(request_status_[i].status_, InferReqStatus::kDone);
-    while(request_status_[i].status_ != InferReqStatus::kReady) {
+  while (true) {
+    size_t num_working_warmup_request; 
+    {
+        std::unique_lock status_lock{slot_status_mutex_};
+        num_working_warmup_request = status_slots_id_[InferReqStatus::kWait].size();
+    }
+    if (num_working_warmup_request != 0) {
+      LOG(INFO) << log_prefix.str() << "wait " << num_working_warmup_request << " warmup request(s) to finished";
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      LOG(INFO) << log_prefix.str() << "status " << request_status_[i].status_;
     }
   }
   workload.warmup_recv_.CountDownAndWait();
@@ -207,7 +225,7 @@ void InferWorker::FetchInferResult(Workload &workload,
     }
     if (!running) break;
   
-    size_t slot = (size_t)tag;
+    auto [slot, is_warwmup] = PARSE_SLOT_ID(reinterpret_cast<size_t>(tag));
     // CHECK(rpc_status_[i].ok());
     CHECK(slots_[slot].rpc_status_.ok());
     {
@@ -220,7 +238,9 @@ void InferWorker::FetchInferResult(Workload &workload,
     {
       std::shared_lock slot_lock{slot_mutex_};
       auto latency = std::chrono::duration<double, std::milli>(response_time - slots_[slot].req_status_.request_time_).count();
-      records_.push_back({latency, slots_[slot].req_status_.request_time_, response_time});
+      if (!is_warwmup) {
+        records_.push_back({latency, slots_[slot].req_status_.request_time_, response_time});
+      }
       if (show_result > 0) { // check outputs
         std::stringstream ss;
         size_t numel = slots_[slot].result_.outputs(0).data().size() / sizeof(float);
@@ -476,7 +496,7 @@ void Workload::InferBusyLoop(const std::string &model, size_t concurrency,
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);
   threads_.push_back(std::make_unique<std::thread>(
-      &InferWorker::RequestInferBusyLoop, worker.get(), std::ref(*this), delay_before_infer));
+      &InferWorker::RequestInferBusyLoop, worker.get(), std::ref(*this), delay_before_infer, warmup));
   threads_.push_back(std::make_unique<std::thread>(
       &InferWorker::FetchInferResult, worker.get(), std::ref(*this),
       interval_fn, show_result));
@@ -489,7 +509,7 @@ void Workload::InferTrace(const std::string &model, size_t concurrency, const st
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);
   threads_.push_back(std::make_unique<std::thread>(
-      &InferWorker::RequestInferTrace, worker.get(), std::ref(*this), start_points, delay_before_infer));
+      &InferWorker::RequestInferTrace, worker.get(), std::ref(*this), start_points, delay_before_infer, warmup));
   threads_.push_back(std::make_unique<std::thread>(
       &InferWorker::FetchInferResult, worker.get(), std::ref(*this),
       nullptr, show_result));

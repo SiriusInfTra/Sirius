@@ -1,8 +1,11 @@
 #ifndef COLSYS_WORKLOAD_H_
 #define COLSYS_WORKLOAD_H_
 
+#include <climits>
+#include <cstddef>
 #include <iostream>
 #include <random>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 #include <memory>
@@ -32,6 +35,25 @@ namespace workload {
 
 using time_point_t = std::chrono::time_point<std::chrono::steady_clock>;
 using double_ms_t = std::chrono::duration<double, std::milli>;
+const constexpr size_t WARMUP_SLOT_ID_MASK = 1UL << (CHAR_BIT * sizeof(size_t) - 1);
+
+static inline constexpr size_t MARK_WARMUP_TAG(size_t slot_id) {
+  return slot_id | WARMUP_SLOT_ID_MASK;
+}
+
+static inline constexpr size_t GET_SLOT_ID(size_t tag) {
+  return tag & (~WARMUP_SLOT_ID_MASK);
+}
+
+static inline constexpr bool IS_WARMUP_TAG(size_t slot_id) {
+  return slot_id & WARMUP_SLOT_ID_MASK;
+}
+
+static inline constexpr std::tuple<size_t, bool> PARSE_SLOT_ID(size_t tag) {
+  bool is_warmup = IS_WARMUP_TAG(tag);
+  size_t slot_id = MARK_WARMUP_TAG(tag);
+  return {slot_id, is_warmup};
+}
 
 struct Record {
   double latency_;
