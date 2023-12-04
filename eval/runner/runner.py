@@ -22,6 +22,9 @@ class System:
         Normal = "normal"
         ColocateL1 = "colocate-l1"
         ColocateL2 = "colocate-l2"
+        TaskSwitchL1 = "task-switch-l1"
+        TaskSwitchL2 = "task-switch-l2"
+        TaskSwitchL3 = "task-switch-l3"
 
     @dataclass
     class InferModelConfig:
