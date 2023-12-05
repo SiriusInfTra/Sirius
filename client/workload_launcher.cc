@@ -88,7 +88,7 @@ int main(int argc, char** argv) {
   double min_duration = -std::numeric_limits<double>::infinity();
   if (app.enable_infer && !app.infer_trace.empty()) {
     trace_cfg = LoadTraceCFG(app.infer_trace);
-    min_duration = trace_cfg.start_points.back().first + app.delay_before_infer  +3;
+    min_duration = trace_cfg.start_points.back().first + app.delay_before_infer + 3;
   }
   
   if (app.duration < min_duration) {
@@ -108,7 +108,12 @@ int main(int argc, char** argv) {
     auto groups = GroupByModel(trace_cfg);
     for(auto &&[model_id, start_points] : groups) {
       auto &model = trace_cfg.models[model_id];
+      if (app.warmup > 0)
+        workload.WarmupModel(model.model_name, app.warmup);
       workload.InferTrace(model.model_name, app.concurrency, start_points, app.delay_before_infer, app.show_result);
+    }
+    if (app.warmup > 0 && app.delay_after_warmup > 0) {
+      std::this_thread::sleep_for(std::chrono::duration<double>(app.delay_after_warmup));
     }
   }
   
