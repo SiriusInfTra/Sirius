@@ -38,6 +38,16 @@ size_t CUDAMemPool::TrainMemUsage() {
   return cuda_mem_pool_->impl_->TrainMemUsage();
 }
 
+size_t CUDAMemPool::FreeMemUsage() {
+  CHECK(cuda_mem_pool_ != nullptr);
+  return cuda_mem_pool_->impl_->FreeMemUsage();
+}
+
+size_t CUDAMemPool::PoolNbytes() {
+  CHECK(cuda_mem_pool_ != nullptr);
+  return cuda_mem_pool_->impl_->config_.cuda_memory_size;
+}
+
 void CUDAMemPool::Init(std::size_t nbytes, bool master, bool no_cuda) {
   // LOG(INFO) << "[CUDA Memory Pool] initilized with size " << size / 1024 / 1024 << " Mb";
   cuda_mem_pool_ = std::make_unique<CUDAMemPool>(nbytes, master, no_cuda);
@@ -61,8 +71,14 @@ CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool master, bool no_cuda) {
   impl_ = new CUDAMemPoolImpl{config, master, no_cuda};
 }
 
-std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(std::size_t nbytes, MemType mtype) {
-  return impl_->Alloc(nbytes, mtype);
+std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(
+    std::size_t nbytes, MemType mtype, bool allow_nullptr) {
+  auto ret = impl_->Alloc(nbytes, mtype);
+  if (!allow_nullptr && ret == nullptr) {
+    impl_->DumpSummary();
+    LOG(FATAL) << "request size " << nbytes << " byte ( " << detail::ByteToMB(nbytes) << " mb )"  << " out of free gpu memory";
+  }
+  return ret;
 }
 
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Resize(
@@ -294,11 +310,11 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPoolImpl::Alloc(std::size_t nbyte
   }
   bip::scoped_lock locker(*mutex_);
   DCHECK(CheckMemPool());
-  nbytes = (nbytes + 1023) / 1024 * 1024; // simple align to 1024B
+  // nbytes = (nbytes + 1023) / 1024 * 1024; // simple align to 1024B
+  nbytes = detail::GetAlignedNbytes(nbytes);
   auto iter = size2entry_->lower_bound(nbytes);
   if (iter == size2entry_->cend()) {
-    DumpSummary();
-    LOG(FATAL) << "request size " << nbytes << " out of free gpu memory";
+    return nullptr;
   }
   auto entry = GetEntry(iter->second);
   if (nbytes == iter->first) {
@@ -381,16 +397,20 @@ void CUDAMemPoolImpl::Free(CUDAMemPoolImpl::PoolEntryImpl *entry, MemType mtype)
 void CUDAMemPoolImpl::DumpSummary() {
   LOG(INFO) << "---------- mempool summary ----------";
   LOG(INFO) << "free blocks: " << size2entry_->size();
-  LOG(INFO) << "free size: " << std::accumulate(size2entry_->cbegin(), size2entry_->cend(), 0L,
-                                                [](auto acc, auto &&pair) { return acc + pair.first; });
-  LOG(INFO) << "largest free block size: " << (--size2entry_->cend())->first;
+  auto free_nbytes = std::accumulate(size2entry_->cbegin(), size2entry_->cend(), 0L,
+                                         [](auto acc, auto &&pair) { return acc + pair.first; });
+  auto largest_free_block_nbytes = (--size2entry_->cend())->first;
+  auto total_nbytes = std::accumulate(addr2entry_->cbegin(), addr2entry_->cend(), 0L,
+                                      [&](auto acc, auto &&pair) { return acc + GetEntry(pair.second)->nbytes; });
+
+  LOG(INFO) << "free size: " << free_nbytes << " byte ( " << detail::ByteToMB(free_nbytes) << " mb )";
+  LOG(INFO) << "largest free block size: " << largest_free_block_nbytes << " byte (" << detail::ByteToMB(largest_free_block_nbytes) << " mb )";
   LOG(INFO) << "total blocks: " << addr2entry_->size();
-  LOG(INFO) << "total size: " << std::accumulate(addr2entry_->cbegin(), addr2entry_->cend(), 0L,
-                                                 [&](auto acc, auto &&pair) {
-                                                   return acc + GetEntry(pair.second)->nbytes;
-                                                 });
-  LOG(INFO) << "infer usage: " << InferMemUsage();
-  LOG(INFO) << "train usage: " << TrainMemUsage();
+  
+  LOG(INFO) << "total size: " << total_nbytes << " byte ( " << detail::ByteToMB(total_nbytes) << " mb )";
+  LOG(INFO) << "infer usage: " << InferMemUsage() << " byte ( " << detail::ByteToMB(InferMemUsage()) << " mb )";
+  LOG(INFO) << "train usage: " << TrainMemUsage() << " byte ( " << detail::ByteToMB(TrainMemUsage()) << " mb )";
+  google::FlushLogFiles(google::INFO);
 }
 
 void CUDAMemPoolImpl::CopyFromTo(void *dst_dev_ptr, void *src_dev_ptr, size_t nbytes) {

@@ -23,6 +23,8 @@ std::string mode = "normal";
 std::string port = "8080";
 int max_live_minute = 15;
 
+void* memory_pressure_ptr = nullptr;
+
 void init_cli_options() {
   app.add_option("-m,--mode", mode,
       "server mode, see detail in server/config.h, default is normal")
@@ -60,6 +62,12 @@ void init_cli_options() {
       "colocate skip malloc, default is false");
   app.add_flag("--colocate-skip-loading", colserve::Config::colocate_config.skip_loading, 
       "colocate skip loading, default is false");
+  app.add_option("--memory-pressure-mb", colserve::Config::memory_pressure_mb,
+      "memory pressure in MB, default is 0");
+  app.add_option("--ondemand-adjust", colserve::Config::ondemand_adjust,
+      "ondemand adjust batch size, default is 1");
+  app.add_option("--train-memory-over-predict-mb", colserve::Config::train_memory_over_predict_mb,
+      "train memory over predict in MB, default is 2560");
 }
 
 void init_config() {
@@ -130,11 +138,17 @@ int main(int argc, char *argv[]) {
   colserve::ModelTrainStore::Init("train");
   colserve::Profiler::Start();
 
+  if (colserve::Config::memory_pressure_mb > 0) {
+    size_t nbytes = static_cast<size_t>(colserve::Config::memory_pressure_mb * 1024 * 1024);
+    CUDA_CALL(cudaMalloc(&memory_pressure_ptr, nbytes));
+  }
+
   std::string server_address("0.0.0.0:" + port);
   colserve::network::GRPCServer server;
   server.Start(server_address);
 
   std::signal(SIGINT, Shutdown);
+  colserve::Config::system_initialized = true;
 
   server.Stop();
   LOG(INFO) << "server has shotdown";

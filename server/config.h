@@ -6,6 +6,22 @@
 
 namespace colserve {
 
+#define NVML_CALL(func) do{ \
+    auto error = func; \
+    if (error != NVML_SUCCESS) { \
+      LOG(FATAL) << #func << " " << nvmlErrorString(error); \
+      exit(EXIT_FAILURE); \
+    } \
+  } while(0);
+
+#define CUDA_CALL(func) do { \
+    auto error = func; \
+    if (error != cudaSuccess) { \
+    LOG(FATAL) << #func << " " << cudaGetErrorString(error); \
+      exit(EXIT_FAILURE); \
+    } \
+  } while (0);
+
 enum class ServeMode {
   kNormal,        // infer/train contention
 
@@ -36,6 +52,8 @@ class Config {
   static bool use_shared_tensor_infer;
   static bool use_shared_tensor_train;
 
+  static bool ondemand_adjust;
+
   static double cuda_memory_pool_gb;
 
   static bool infer_raw_blob_alloc;
@@ -47,6 +65,13 @@ class Config {
   static std::string infer_model_config_path;
 
   static int train_mps_thread_percent;
+
+  // to avoid memory fragment cause OOM
+  static double train_memory_over_predict_mb;
+
+  static double memory_pressure_mb;
+
+  static bool system_initialized;
 
   inline static bool IsSwitchMode() {
     return Config::serve_mode == ServeMode::kTaskSwitchL1

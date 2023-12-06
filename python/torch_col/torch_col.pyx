@@ -76,6 +76,9 @@ cdef class PySwitchStub:
     def stop(self):
         self._stub.Stop()
 
+    def report_batch_size(self, batch_size):
+        self._stub.ReportBatchSize(batch_size)
+
     @property
     def cmd(self):
         return self._stub.Cmd()
@@ -118,6 +121,9 @@ cdef class PyColocateStub:
 
     def train_end(self):
         self._stub.TrainEnd()
+
+    def report_batch_size(self, batch_size):
+        self._stub.ReportBatchSize(batch_size)
 
 
     def __dealloc__(self):

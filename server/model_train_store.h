@@ -29,6 +29,11 @@ class ModelTrainStore {
   bool AddJob(network::TrainHandler::TrainData* data);
   pid_t GetTrainPid() { return train_pid_; }
 
+  void SetCurBatchSize(int bs) { cur_batch_size_ = bs; }
+  int GetCurBatchSize() { return cur_batch_size_; }
+
+  double PredictMemUsageMB();
+
  private:
   static std::unique_ptr<ModelTrainStore> model_train_store_;
 
@@ -37,7 +42,10 @@ class ModelTrainStore {
   
   JobQueue job_queue_;
   std::unique_ptr<std::thread> thread_;
+
   pid_t train_pid_{-1};
+  int cur_batch_size_{-1};
+  std::string cur_model_name_;
 
   // model -> train code path
   std::unordered_map<std::string, std::filesystem::path> train_handles_;

@@ -37,6 +37,7 @@ std::vector<std::string> ParseModelName(const std::string &model) {
 }
 
 std::unique_ptr<ModelInferStore> ModelInferStore::model_infer_store_;
+std::atomic<size_t> ModelInferStore::model_rank = 0;
 
 ModelInferStore* ModelInferStore::Get() {
   if (model_infer_store_ == nullptr) {
@@ -120,6 +121,7 @@ void ModelInferStore::Init(const std::filesystem::path &infer_store_path) {
     }
     LOG(INFO) << "ModelInferStore: "<< "Add " << model.first << ":" << model.second["device"]
               << ", batch-size=" << model.second["batch-size"];
+    model_rank++;
   }
 
   LOG(INFO) << "ModelInferStore initialized";
@@ -157,6 +159,8 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
 
   if (!params.has_value()) {
     graph_executor_factory_ = std::make_unique<tvm::GraphExecutorFactory>(
+      ModelInferStore::model_rank.fetch_add(1, std::memory_order_relaxed),
+      this,
       name,
       (model_path / "mod.json").c_str(),
       rmod,
@@ -165,6 +169,8 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
     );
   } else {
     graph_executor_factory_ = std::make_unique<tvm::GraphExecutorFactory>(
+      ModelInferStore::model_rank.fetch_add(1, std::memory_order_relaxed),
+      this,
       name,
       (model_path / "mod.json").c_str(),
       rmod,
@@ -186,9 +192,11 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
   // max_num_worker_ = 5;
   infer_workers_.resize(max_num_worker_);
   worker_running_.resize(max_num_worker_);
+  waited_trains_.resize(max_num_worker_);
   for (size_t i = 0; i < max_num_worker_; i++) {
-    graph_executor_pool_.push_back(graph_executor_factory_->CreateGraphExecutor());
+    graph_executor_pool_.push_back(graph_executor_factory_->CreateGraphExecutor(i));
     worker_running_[i] = std::make_unique<std::atomic<bool>>(false);
+    waited_trains_[i] = static_cast<pid_t>(-1);
   }
 
   if (Config::colocate_config.skip_malloc || Config::colocate_config.skip_loading) {
@@ -203,7 +211,7 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
     pthread_barrier_init(&barrier, nullptr, 2);
     *worker_running_[i] = true;
     // infer_workers_.push_back(std::make_unique<std::thread>(&Model::Inference, this, &barrier));
-    infer_workers_[i].reset(new std::thread{&Model::Inference, this, i, &barrier, -1});
+    infer_workers_[i].reset(new std::thread{&Model::Inference, this, i, &barrier});
     pthread_barrier_wait(&barrier);
   }
 
@@ -251,7 +259,7 @@ void Model::InitMetaInfo() {
   }
 }
 
-bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier, pid_t waited_train) {
+bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
   LOG(INFO) << "Model " << name_ << " inference thread start";
   // auto graph_executor = graph_executor_factory_->CreateGraphExecutor();
   auto graph_executor = graph_executor_pool_[rank].get();
@@ -392,14 +400,19 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier, pid_t waited_tr
     }
   }
 
-  LOG(INFO) << "[Inference] worker " << rank << " exit";
+  std::stringstream exit_log_ss;
+  exit_log_ss << "[Inference] model " << graph_executor_factory_->GetModelRank() << " worker " << rank << " exit";
   Profiler::Get()->RecordEvent(Profiler::EventItem::InferExit);
   graph_executor->DeInit();
   if (Config::IsColocateMode()) {
     Controller::Get()->InferExit(
-      (waited_train != -1 && waited_train == ModelTrainStore::Get()->GetTrainPid()) ? 3 : 0);
+      (waited_trains_[rank] != -1 && waited_trains_[rank] == ModelTrainStore::Get()->GetTrainPid()) ? 3 : 0);
+    exit_log_ss << ", waited train " << waited_trains_[rank] << ", current train pid " << ModelTrainStore::Get()->GetTrainPid();
   }
   *worker_running_[rank] = false;
+  waited_trains_[rank] = static_cast<pid_t>(-1);
+
+  LOG(INFO) << exit_log_ss.str();
   return true;
 }
 
@@ -497,29 +510,32 @@ void Model::MonitorJob() {
       for (size_t i = 0; i < max_num_worker_; i++) {
         if (infer_workers_[i] == nullptr) {
           auto t0 = std::chrono::steady_clock::now();
-          pid_t infer_waited_train;
-          if (!Controller::Get()->IsTrainIdle()) {
-            infer_waited_train = ModelTrainStore::Get()->GetTrainPid();
-            auto id = Controller::Get()->ColocateAdjust(3);
-            if (!Config::colocate_config.skip_malloc) {
-              Controller::Get()->WaitColocateAdjustDone(id);
+          if (!Config::ondemand_adjust) {
+            pid_t infer_waited_train;
+            if (!Controller::Get()->IsTrainIdle()) {
+              infer_waited_train = ModelTrainStore::Get()->GetTrainPid();
+              auto id = Controller::Get()->ColocateAdjust(3);
+              if (!Config::colocate_config.skip_malloc) {
+                Controller::Get()->WaitColocateAdjustDone(id);
+              }
+              auto t1 = std::chrono::steady_clock::now();
+              LOG(INFO) << "[Inference]: Wait adjust train batch size before add infer "
+                        << std::chrono::duration<double, std::milli>(t1-t0).count() << " ms";
+              // PROFILE_END(TrainAdjust, 1);
+              Profiler::Get()->RecordEvent(Profiler::EventItem::TrainAdjustStart, t0);
+              Profiler::Get()->RecordEvent(Profiler::EventItem::TrainAdjustEnd, t1);
+              Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainAdjust, t0, t1);
+            } else {
+              infer_waited_train = -1;
+              LOG(INFO) << "[Inference]: add infer skip wait, train is idle";
             }
-            auto t1 = std::chrono::steady_clock::now();
-            LOG(INFO) << "[Inference]: Wait adjust train batch size before add infer "
-                      << std::chrono::duration<double, std::milli>(t1-t0).count() << " ms";
-            // PROFILE_END(TrainAdjust, 1);
-            Profiler::Get()->RecordEvent(Profiler::EventItem::TrainAdjustStart, t0);
-            Profiler::Get()->RecordEvent(Profiler::EventItem::TrainAdjustEnd, t1);
-            Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainAdjust, t0, t1);
-          } else {
-            infer_waited_train = -1;
-            LOG(INFO) << "[Inference]: add infer skip wait, train is idle";
+            waited_trains_[i] = infer_waited_train;
           }
           
           pthread_barrier_t barrier;
           pthread_barrier_init(&barrier, nullptr, 2);
           *worker_running_[i] = true;
-          infer_workers_[i].reset(new std::thread{&Model::Inference, this, i, &barrier, infer_waited_train});
+          infer_workers_[i].reset(new std::thread{&Model::Inference, this, i, &barrier});
           pthread_barrier_wait(&barrier);
           Profiler::Get()->RecordEvent(Profiler::EventItem::AddInfer);
           LOG(INFO) << "[Model] " << name_ << " increase worker " << i;

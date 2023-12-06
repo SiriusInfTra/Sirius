@@ -8,17 +8,20 @@
 #include "graph_executor_factory.h"
 #include "texture.h"
 
+#include "../model_infer_store.h"
+
 #include <glog/logging.h>
 
 namespace colserve {
 namespace tvm {
 
 GraphExecutorFactory::GraphExecutorFactory(
+    size_t rank, ::colserve::Model *model,
     const std::string &model_name,
     const std::string &graph_json,
     const ::tvm::runtime::Module mod,
     const std::string &params_file,
-    const std::vector<DLDevice> &devs) : model_name_(model_name) {
+    const std::vector<DLDevice> &devs) : model_rank_(rank), infer_model_(model), model_name_(model_name) {
   std::ifstream graph_json_ifs{graph_json};
   std::string graph_json_str{(std::istreambuf_iterator<char>(graph_json_ifs)),
                              std::istreambuf_iterator<char>()};
@@ -50,11 +53,12 @@ GraphExecutorFactory::GraphExecutorFactory(
 }
 
 GraphExecutorFactory::GraphExecutorFactory(
+    size_t rank, ::colserve::Model *model,
     const std::string &model_name,
     const std::string &graph_json,
     const ::tvm::runtime::Module mod,
     const std::map<std::string, TVMArray> &params,
-    const std::vector<DLDevice> &devs) : model_name_(model_name) {
+    const std::vector<DLDevice> &devs) : model_rank_(rank), infer_model_(model), model_name_(model_name) {
   std::ifstream graph_json_ifs{graph_json};
   std::string graph_json_str{(std::istreambuf_iterator<char>(graph_json_ifs)),
                              std::istreambuf_iterator<char>()};
@@ -277,8 +281,8 @@ std::map<std::string, TVMArray> GraphExecutorFactory::LoadParamsAsTVMArray(const
   return params_ret;
 }
 
-std::unique_ptr<GraphExecutor> GraphExecutorFactory::CreateGraphExecutor() {
-  return std::make_unique<GraphExecutor>(*this);
+std::unique_ptr<GraphExecutor> GraphExecutorFactory::CreateGraphExecutor(size_t worker_id) {
+  return std::make_unique<GraphExecutor>(*this, worker_id);
 }
 
 std::tuple<GraphExecutorFactory::ShapeInfo, GraphExecutorFactory::DtypeInfo>

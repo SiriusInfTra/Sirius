@@ -61,13 +61,16 @@ class System:
                  train_mps_thread_percent: Optional[int] = None,
                  colocate_skip_malloc: bool = False,
                  colocate_skip_loading: bool = False,
+                 memory_pressure_mb: str | float = None,
+                 ondemand_adjust: bool = True,
+                 train_memory_over_predict_mb: str | float = None,
                  keep_last_time_stamp: bool = False) -> None:
         self.mode = mode
         self.use_sta = use_sta
         self.cuda_memory_pool_gb = cuda_memory_pool_gb
         self.profile_log = profile_log
         self.server_log = server_log
-        self.port = str(int(port) + os.getpid() % 10)
+        self.port = str(int(port) + os.getuid() % 10)
         self.server:Optional[subprocess.Popen]= None
         self.log_dir:Optional[str] = None
         self.cmd_trace = []
@@ -84,6 +87,9 @@ class System:
         self.train_mps_thread_percent = train_mps_thread_percent
         self.colocate_skip_malloc = colocate_skip_malloc
         self.colocate_skip_loading = colocate_skip_loading
+        self.memory_pressure_mb = memory_pressure_mb
+        self.ondemand_adjust = ondemand_adjust
+        self.train_memory_over_predict_mb = train_memory_over_predict_mb
         if System._last_time_stamp is None or not keep_last_time_stamp:
             self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
             System._last_time_stamp = self.time_stamp
@@ -118,7 +124,7 @@ class System:
             "--profile-log", profile_log
         ]
         if self.cuda_memory_pool_gb is not None:
-            cmd += ["--cuda-memory-pool-gb", self.cuda_memory_pool_gb]
+            cmd += ["--cuda-memory-pool-gb", str(self.cuda_memory_pool_gb)]
         if infer_model_config is not None:
             if isinstance(infer_model_config, System.InferModelConfig):
                 infer_model_config = [infer_model_config]
@@ -155,6 +161,17 @@ class System:
             cmd += ["--colocate-skip-malloc"]
         if self.colocate_skip_loading:
             cmd += ["--colocate-skip-loading"]
+
+        if self.memory_pressure_mb:
+            cmd += ["--memory-pressure-mb", str(self.memory_pressure_mb)]
+
+        if self.ondemand_adjust:
+            cmd += ["--ondemand-adjust", "1"]
+        else:
+            cmd += ["--ondemand-adjust", "0"]
+
+        if self.train_memory_over_predict_mb:
+            cmd += ["--train-memory-over-predict-mb", str(self.train_memory_over_predict_mb)]
 
         self.cmd_trace.append(" ".join(cmd))
         print("\n---------------------------\n")
@@ -310,6 +327,6 @@ class HyperWorkload:
                 if completed.returncode != 0:
                     raise Exception(f"Workload exited with code {completed.returncode}")
         except Exception as e:
-            print(f"Workload exited with exception")
+            print(f"Workload exited with exception, see detail in {server.log_dir}/{server.server_log}.log and {client_log}")
             server.stop()
             raise e

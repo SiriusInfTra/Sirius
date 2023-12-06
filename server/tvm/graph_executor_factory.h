@@ -17,6 +17,9 @@
 
 
 namespace colserve {
+
+class Model;
+
 namespace tvm {
 
 using TVMArray = ::tvm::runtime::NDArray;
@@ -218,22 +221,26 @@ struct GraphAttr {
 class GraphExecutor;
 class GraphExecutorFactory {
  public:
-  GraphExecutorFactory(const std::string &model_name,
+  GraphExecutorFactory(size_t rank, ::colserve::Model* infer_model,
+                       const std::string &model_name,
                        const std::string &graph_json,
                        const ::tvm::runtime::Module mod,
                        const std::string &params_file,
                        const std::vector<DLDevice> &devs);
-  GraphExecutorFactory(const std::string &model_name,
+  GraphExecutorFactory(size_t rank, ::colserve::Model* infer_model,
+                       const std::string &model_name,
                        const std::string &graph_json,
                        const ::tvm::runtime::Module mod,
                        const std::map<std::string, TVMArray> &params,
                        const std::vector<DLDevice> &devs);
-  std::unique_ptr<GraphExecutor> CreateGraphExecutor();
+  std::unique_ptr<GraphExecutor> CreateGraphExecutor(size_t worker_id);
 
   using ShapeInfo = std::map<std::string, std::vector<int64_t>>;
   using DtypeInfo = std::map<std::string, std::string>;
   std::tuple<ShapeInfo, DtypeInfo> GetInputInfo() const;
   std::tuple<ShapeInfo, DtypeInfo> GetOutputInfo() const;
+
+  inline size_t GetModelRank() const { return model_rank_; }
 
   static std::map<std::string, TVMArray> LoadParamsAsTVMArray(const std::string &params_file);
 
@@ -287,6 +294,8 @@ class GraphExecutorFactory {
     return false;
   }
 
+  size_t model_rank_;
+  ::colserve::Model *infer_model_;
   std::string model_name_;
   ::tvm::runtime::Module module_;
   std::vector<DLDevice> devices_;

@@ -21,13 +21,16 @@ enum class Event {
   kResumeTrainDone,
   kColocateAdjustL1Done,
   kColocateAdjustL2Done,
+  
+  kReportBatchSize,
 
-  // cmd event
+  // cmd event: switch mode
   kInterruptTrain,
   kResumeTrain,
+  // cmd event: colocate mode
   kColocateAdjustL1,
   kColocateAdjustL2,
-  kInferExit,
+  kInferExit, // train adjust back
 };
 
 void ReleaseMempool();
@@ -42,6 +45,7 @@ class SwitchStub {
   void Cmd(int cmd);
   void TrainEnd();
   void TrainStart();
+  void ReportBatchSize(int batch_size);
 
  private:
   bool running_{true};
@@ -61,6 +65,7 @@ class ColocateStub {
   void TrainStart();
   void TrainEnd();
   double PassedTimeFromSetCmd();
+  void ReportBatchSize(int batch_size);
 
  private:
   bool running_{true};

@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <mutex>
 #include <optional>
+#include <cstdlib>
 
 
 // #include <dlpack/dlpack.h>
@@ -30,6 +31,7 @@ class ModelInferStore {
   static void Init(const std::filesystem::path &infer_store_path);
   static bool Shutdown() { return true; }
 
+  static std::atomic<size_t> model_rank;
 
   Model* GetModel(const std::string &name);
   size_t NumJobs();
@@ -51,9 +53,14 @@ class Model {
   bool AddJob(network::InferHandler::InferData* data);
   size_t NumJobs() { return job_queue_.NumJobs(); }
 
+  void SetWaitTrainPid(size_t worker_id, pid_t train_pid) {
+    CHECK_LT(worker_id, waited_trains_.size());
+    waited_trains_[worker_id] = train_pid;
+  }
+
  private:
   void InitMetaInfo();
-  bool Inference(uint32_t rank, pthread_barrier_t* barrier, pid_t waited_train);
+  bool Inference(uint32_t rank, pthread_barrier_t* barrier);
   bool SetInput(tvm::GraphExecutor &graph_executor, size_t idx, const std::string &input_id, 
                 const std::vector<std::shared_ptr<Job>> &jobs);
   bool GetOutput(tvm::GraphExecutor &graph_executor, 
@@ -75,6 +82,7 @@ class Model {
   std::atomic<uint32_t> num_worker_;
   std::vector<std::unique_ptr<std::atomic<bool>>> worker_running_;
 
+  std::vector<pid_t> waited_trains_; 
 
   // param_name -> [[shape], dtype]
   std::unordered_map<std::string, 

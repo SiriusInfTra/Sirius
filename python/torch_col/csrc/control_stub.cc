@@ -56,6 +56,10 @@ void SwitchStub::Cmd(int cmd) {
   cmd_ = cmd;
 }
 
+void SwitchStub::ReportBatchSize(int batch_size) {
+  status_event_mq_->Put({0, static_cast<int>(Event::kReportBatchSize), batch_size});
+}
+
 ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_(batch_size) {
   cmd_event_mq_ = std::make_unique<MemoryQueue<CtrlMsgEntry>>("cmd-ctrl", false);
   status_event_mq_ = std::make_unique<MemoryQueue<CtrlMsgEntry>>("status-ctrl", false);
@@ -137,6 +141,10 @@ void ColocateStub::TrainEnd() {
 double ColocateStub::PassedTimeFromSetCmd() {
   auto now = std::chrono::steady_clock::now();
   return std::chrono::duration<double, std::milli>(now - set_cmd_time_).count();
+}
+
+void ColocateStub::ReportBatchSize(int batch_size) {
+  status_event_mq_->Put({0, static_cast<int>(Event::kReportBatchSize), batch_size});
 }
 
 void ReleaseMempool() {

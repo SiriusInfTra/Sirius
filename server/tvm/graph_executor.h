@@ -23,7 +23,7 @@ namespace tvm {
 
 class GraphExecutor {
  public:
-  GraphExecutor(GraphExecutorFactory &factory);
+  GraphExecutor(GraphExecutorFactory &factory, size_t worker_id);
   void Init();
   void FakeInit(bool malloc, bool load_param); // used for simulating unlimted get gpu resource
   void DeInit();
@@ -46,6 +46,7 @@ class GraphExecutor {
   // void AllocParamStorage();
   void ResetStorage();
   void AllocStorage();
+  void AllocStorageMaybeAdjust();
   void LoadParams(bool pipeline, bool force);
   void ReSetupDataEntry();
 
@@ -66,6 +67,7 @@ class GraphExecutor {
     const TVMOpParam &param, const std::vector<DLTensor*>& args);
 
   bool initialized_;
+  size_t infer_model_worker_id_;
   GraphExecutorFactory &factory_;
 
   // std::vector<TVMArray> storage_pool_;

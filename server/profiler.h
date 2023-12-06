@@ -15,7 +15,12 @@ namespace colserve {
 class Profiler {
  public:
   using time_point_t = std::chrono::time_point<std::chrono::steady_clock>;
-  
+
+  static std::pair<size_t, size_t> GetGPUMemInfo();
+  static size_t GetLastInferMem();
+  static size_t GetLastTrainMem();
+
+
   static void Init(const std::string &profile_log_path);
   static void Start();
   static void Shutdown();
@@ -46,6 +51,8 @@ class Profiler {
     TrainAdjustEnd,
     InferAllocStorageStart,
     InferAllocStorageEnd,
+    InferAdjustAllocStart, // for ondemand adjust
+    InferAdjustAllocEnd,
     InferLoadParamStart,
     InferLoadParamEnd,
     AddInfer,
@@ -63,9 +70,12 @@ class Profiler {
 
     TrainAdjust,
     InferAllocStorage,
+    InferAdjustAlloc,
     InferLoadParam,
 
     InferRealBatchSize,
+
+    NumPerfItem,
   };
 
 
@@ -92,6 +102,9 @@ class Profiler {
   std::vector<std::tuple<double, EventItem>> event_info_;
   std::unordered_map<int, std::vector<double>> perf_info_;
   std::mutex infer_info_mut_, event_info_mut_, perf_info_mut_;
+
+  size_t last_infer_mem_;
+  size_t last_train_mem_;
 
   std::unique_ptr<std::thread> thread_;
 };

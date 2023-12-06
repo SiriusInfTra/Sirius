@@ -24,6 +24,16 @@
 
 namespace colserve {
 namespace sta {
+namespace detail {
+inline size_t GetAlignedNbytes(size_t nbytes) {
+  constexpr size_t alignment = 1024;
+  static_assert((alignment & (alignment - 1)) == 0, "alignment must be power of 2");
+  return (nbytes + (alignment - 1)) & (~(alignment - 1));
+}
+inline double ByteToMB(size_t nbytes) {
+  return static_cast<double>(nbytes) / 1024 / 1024;
+}
+}
 
 namespace bip = boost::interprocess;
 
@@ -70,6 +80,9 @@ public:
   }
   inline size_t TrainMemUsage() {
     return stat_->at(static_cast<size_t>(MemType::kTrain));
+  }
+  inline size_t FreeMemUsage() {
+    return config_.cuda_memory_size - InferMemUsage() - TrainMemUsage();
   }
 
   bool CheckAddr(void *addr);
@@ -140,13 +153,15 @@ class CUDAMemPool {
   static CUDAMemPool* Get();
   static size_t InferMemUsage();
   static size_t TrainMemUsage();
+  static size_t FreeMemUsage();
+  static size_t PoolNbytes();
   static void ReleaseMempool();
 
   static std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes, MemType mtype);
 
   CUDAMemPool(std::size_t nbytes, bool master, bool no_cuda=false);
   ~CUDAMemPool();
-  std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes, MemType mtype);
+  std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes, MemType mtype, bool allow_nullptr);
   std::shared_ptr<PoolEntry> Resize(std::shared_ptr<PoolEntry> entry, std::size_t nbytes);
   void CopyFromTo(std::shared_ptr<PoolEntry> src, std::shared_ptr<PoolEntry> dst);
 

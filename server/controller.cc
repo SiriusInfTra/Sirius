@@ -10,6 +10,8 @@ namespace colserve
   
 std::unique_ptr<Controller> Controller::controller_;
 
+std::atomic<uint64_t> Controller::adjust_cmd_id = 1;
+
 std::ostream& operator<<(std::ostream&os, Controller::Event event) {
   switch (event) {
   // status event
@@ -59,11 +61,11 @@ void Controller::Init() {
 }
 
 Controller* Controller::Get(){
-    if (controller_ == nullptr) {
-      LOG(FATAL) << "Controller not initialized";
-    }
-    return controller_.get();
+  if (controller_ == nullptr) {
+    LOG(FATAL) << "Controller not initialized";
   }
+  return controller_.get();
+}
 
 Controller::Controller() {
   train_cmd_event_mq_ = std::make_unique<MemoryQueue<CtrlMsgEntry>>("cmd-ctrl", true);
@@ -103,6 +105,10 @@ void Controller::MonitorTrain() {
       train_status_.status = TrainStatus::kIdle;
       train_cmd_event_mq_->Clear();
       break;
+    case Event::kReportBatchSize:
+      CHECK_EQ(train_status_.status, TrainStatus::kRunning);
+      ModelTrainStore::Get()->SetCurBatchSize(entry.value);
+      break;
     default:
       break;
     }
@@ -110,8 +116,10 @@ void Controller::MonitorTrain() {
         && train_status_.status != TrainStatus::kRunning) {
       wait_train_cv_.notify_one();
     }
-    LOG(INFO) << "[Controller] MonitorTrain: train status " 
-              << cur_status << " -> " << train_status_;
+    if (cur_status.status != train_status_.status) {
+      LOG(INFO) << "[Controller] MonitorTrain: train status " 
+                << cur_status << " -> " << train_status_;
+    }
   }
 }
 
@@ -144,8 +152,7 @@ uint64_t Controller::ResumeTrain() {
 }
 
 uint64_t Controller::ColocateAdjust(size_t batch_size) {
-  static std::atomic<uint64_t> adjust_cmd_id = 1;
-  auto cmd_id = adjust_cmd_id.fetch_add(1, std::memory_order_relaxed);
+  auto cmd_id = Controller::adjust_cmd_id.fetch_add(1, std::memory_order_relaxed);
   if (!IsTrainIdle()) {
     if (Config::serve_mode == ServeMode::kColocateL1) {
       train_cmd_event_mq_->Put({cmd_id, static_cast<int>(Event::kColocateAdjustL1), static_cast<int>(batch_size)});
@@ -223,6 +230,34 @@ void Controller::TrainEnd() {
 
 bool Controller::IsTrainIdle() {
   return train_status_.status == TrainStatus::kIdle;
+}
+
+bool Controller::HasFlyingColocateAdjust() {
+  return adjust_done_id_ + 1 < Controller::adjust_cmd_id;
+}
+
+bool Controller::TryEnterInferModelAlloc(size_t model_rank) {
+  if (last_alloc_infer_model_ != static_cast<size_t>(-1)) {
+    return false;
+  }
+  EnterInferModelAlloc(model_rank);
+  return true;
+}
+
+void Controller::EnterInferModelAlloc(size_t model_rank) {
+  std::unique_lock<std::mutex> lock{infer_model_alloc_mutex_};
+  infer_model_alloc_cv_.wait(lock, [this, model_rank] {
+    return last_alloc_infer_model_ == static_cast<size_t>(-1);
+  });
+  last_alloc_infer_model_ = model_rank;
+  LOG(INFO) << "InferModel " << model_rank << " enter allocation";
+}
+
+void Controller::ExitInferModelAlloc(size_t model_rank) {
+  CHECK_EQ(last_alloc_infer_model_, model_rank);
+  last_alloc_infer_model_ = static_cast<size_t>(-1);
+  infer_model_alloc_cv_.notify_one();
+  LOG(INFO) << "InferModel " << model_rank << " exit allocation";
 }
 
 } // namespace colserve

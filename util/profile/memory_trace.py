@@ -7,12 +7,14 @@ app = argparse.ArgumentParser("memory trace")
 app.add_argument('-l', type=str)
 app.add_argument('-b', type=int, default=0)
 app.add_argument('-e', type=int, default=3600*1e3)
+app.add_argument('-o', type=str, required=True)
 app.add_argument('--event', action='store_true')
 args = app.parse_args()
 # log = sys.argv[1]
 log = args.l
 begin_time = args.b
 end_time = args.e
+outdir = args.o
 
 timeline = []
 infer_mem, train_mem, total_mem = [], [], []
@@ -81,4 +83,4 @@ ax.set_xlim(0,
 ax.set_xlabel("Time (ms)", fontsize=14)
 ax.set_ylabel("GPU Memory (MB)",fontsize=14)
 
-plt.savefig('memory-trace.svg')
+plt.savefig(f'{outdir}/memory-trace.svg')
