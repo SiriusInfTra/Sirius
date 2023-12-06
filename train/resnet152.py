@@ -17,7 +17,7 @@ class MicroBatchRecord(NamedTuple):
     start_time: int
     end_time: int
     batch_size: int
-    fnished: bool
+    finished: bool
     
 
 # TODO: wrapp in torch_col package
@@ -252,7 +252,8 @@ def train(num_epoch=10, batch_size=256, mode='normal', timeline: os.PathLike = s
                 train_dataset.next_batch()
             finally:
                 micro_batch_end = torch_col.get_unix_timestamp()
-                micro_batch_record_list.append(MicroBatchRecord(micro_batch_begin, micro_batch_end, len(images), micro_batch_fnished))
+                if epoch != 0:
+                    micro_batch_record_list.append(MicroBatchRecord(micro_batch_begin, micro_batch_end, len(images), micro_batch_fnished))
 
 
         scheduler.step()
