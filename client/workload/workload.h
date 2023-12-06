@@ -140,7 +140,7 @@ class Workload {
       : stub_(ColServe::NewStub(channel)), duration_(duration), timeline_handle_(infer_timeline) {
     ready_future_ = std::shared_future<void>{ready_promise_.get_future()};
     CHECK(timeline_handle_.is_open());
-    timeline_handle_ << "model_name,start,end" << std::endl;
+    timeline_handle_ << "model_name,start_time,end_time" << std::endl;
   };
 
   ~Workload() {
