@@ -31,6 +31,8 @@ class Config {
   static bool check_mps;
   
   static std::atomic<bool> running;
+
+  static std::string train_timeline;
   
   static bool use_shared_tensor;
   static bool use_shared_tensor_infer;
@@ -47,6 +49,7 @@ class Config {
   static std::string infer_model_config_path;
 
   static int train_mps_thread_percent;
+
 
   inline static bool IsSwitchMode() {
     return Config::serve_mode == ServeMode::kTaskSwitchL1

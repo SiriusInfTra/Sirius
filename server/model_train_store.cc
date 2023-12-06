@@ -88,6 +88,9 @@ bool ModelTrainStore::Train() {
     args_str.push_back("colocate-l2");
   }
 
+  args_str.push_back("--timeline");
+  args_str.push_back(Config::train_timeline);
+
   while (Config::running) {
     if (LaunchTrain(job, args_str)) {
       break;

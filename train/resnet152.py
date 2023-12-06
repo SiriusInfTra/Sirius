@@ -9,8 +9,16 @@ from torch.utils.data import DataLoader, Dataset, Sampler, IterableDataset, get_
 import time
 import argparse
 import os, sys
-
+import pandas as pd
+from typing import NamedTuple
 import torch_col
+
+class MicroBatchRecord(NamedTuple):
+    start_time: int
+    end_time: int
+    batch_size: int
+    fnished: bool
+    
 
 # TODO: wrapp in torch_col package
 class SwitchL1Exception(Exception):
@@ -137,7 +145,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
             raise Exception("not support multi-process")
 
 
-def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
+def train(num_epoch=10, batch_size=256, mode='normal', timeline: os.PathLike = sys.stdout, **kargs):
     hook = kargs["hook"]
     
     ori_batch_size = batch_size
@@ -171,6 +179,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
     total_killed_batch = 0
     total_finished_batch = 0
     total_tried_batch = 0
+    micro_batch_record_list = []
 
     model.train()
     for epoch in range(num_epoch):
@@ -191,7 +200,8 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
             # micro_batch_size = random.randint(1, batch_size)
             # print(micro_batch_size)
             batch_begin = time.time()
-            micro_batch_begin = None
+            micro_batch_begin = torch_col.get_unix_timestamp()
+            micro_batch_fnished = True
             try:
                 # print('hook.cmd', hook.stub.cmd, flush=True)
                 micro_batch_begin = time.time()
@@ -210,6 +220,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
             except (ColocateAdjustL1Exception, SwitchL1Exception) as e:
                 killed_batch += 1
                 total_killed_batch += 1
+                micro_batch_fnished = False
                 # killed_time += time.time() - micro_batch_begin
                 t0 = time.time()
                 torch.cuda.synchronize()
@@ -239,7 +250,10 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                     print('batch {} adjust : bs {} -> {} | {:.1f}ms | {:.1f}ms | {}'.format(
                         i, train_dataset.last_batch_size, train_dataset.batch_size, (time.time()-batch_begin) * 1000, (t1 - t0) * 1000, 
                         mem_info))
-            train_dataset.next_batch()
+                train_dataset.next_batch()
+            finally:
+                micro_batch_end = torch_col.get_unix_timestamp()
+                micro_batch_record_list.append(MicroBatchRecord(micro_batch_begin, micro_batch_end, len(images), micro_batch_fnished))
 
 
         scheduler.step()
@@ -255,6 +269,8 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                 model.__class__.__name__, epoch, end - begin,
                 batch_info, batch_size, train_dataset.batch_size,
                 mem_info, finished_imgs / (end - begin), wait_bs_valid_sec), flush=True)
+        with open(timeline, 'w') as f:
+            pd.DataFrame(micro_batch_record_list).to_csv(f, index=None)
     
 
     if mode == 'task-switch-l1' or mode == 'colocate-l1' or mode == 'colocate-l2':
@@ -268,7 +284,6 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
 
 
 if __name__ == '__main__':
-
     parser = argparse.ArgumentParser('Train Resnet')    
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--num-epoch', type=int, default=10)
@@ -276,6 +291,7 @@ if __name__ == '__main__':
                         choices=['normal', 
                                  'task-switch-l1', 'task-switch-l2','task-switch-l3', 
                                  'colocate-l1', 'colocate-l2'])
+    parser.add_argument('--timeline', type=str)
     # parser.add_argument('--dynamic-epoch-batch-size', action='store_true', default=False)
     # parser.add_argument('--dynamic-epoch-batch-size-schedule', nargs='*', type=int)
     args = parser.parse_args()
@@ -296,7 +312,7 @@ if __name__ == '__main__':
 
     try:
         train(num_epoch=num_epoch, batch_size=batch_size,
-              mode=args.mode, hook=hook)
+              mode=args.mode, hook=hook, timeline=args.timeline)
     except SwitchL1Exception as e:
         print(e) # should not reach here
 

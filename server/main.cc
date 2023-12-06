@@ -60,6 +60,8 @@ void init_cli_options() {
       "colocate skip malloc, default is false");
   app.add_flag("--colocate-skip-loading", colserve::Config::colocate_config.skip_loading, 
       "colocate skip loading, default is false");
+  app.add_option("--train-timeline", colserve::Config::train_timeline, 
+    "train timeline path, default is train-timeline");
 }
 
 void init_config() {
