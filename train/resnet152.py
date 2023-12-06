@@ -204,7 +204,6 @@ def train(num_epoch=10, batch_size=256, mode='normal', timeline: os.PathLike = s
             micro_batch_fnished = True
             try:
                 # print('hook.cmd', hook.stub.cmd, flush=True)
-                micro_batch_begin = time.time()
                 tried_batch += 1
                 total_tried_batch += 1
                 optimizer.zero_grad()

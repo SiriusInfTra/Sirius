@@ -54,6 +54,7 @@ class System:
                  cuda_memory_pool_gb: str=None,
                  profile_log: str = "profile-log", 
                  server_log: str = "server-log", 
+                 train_timeline:str = "train-timeline", 
                  port: str = "18080",
                  infer_model_config: List[InferModelConfig] | InferModelConfig = None,
                  mps: bool = True,
@@ -68,6 +69,7 @@ class System:
         self.cuda_memory_pool_gb = cuda_memory_pool_gb
         self.profile_log = profile_log
         self.server_log = server_log
+        self.train_timeline = train_timeline
         self.port = port
         self.server:Optional[subprocess.Popen]= None
         self.log_dir:Optional[str] = None
@@ -109,6 +111,7 @@ class System:
         pathlib.Path(self.log_dir).mkdir(parents=True, exist_ok=True)
         server_log = f"{self.log_dir}/{self.server_log}.log"
         profile_log = f"{self.log_dir}/{self.profile_log}.log"
+        train_timeline = f"{self.log_dir}/{self.train_timeline}.csv"
 
         self.cmd_trace = []
         cmd = [
@@ -156,6 +159,8 @@ class System:
             cmd += ["--colocate-skip-malloc"]
         if self.colocate_skip_loading:
             cmd += ["--colocate-skip-loading"]
+
+        cmd += ['--train-timeline', str(train_timeline)]
 
         self.cmd_trace.append(" ".join(cmd))
         print("\n---------------------------\n")
@@ -206,6 +211,7 @@ class HyperWorkload:
                  workload_log:str = "workload-log", 
                  client_log:str = "client-log", 
                  trace_cfg:str = "trace-cfg",
+                 infer_timeline:str = "infer-timeline",
                  seed: Optional[int] = None, 
                  delay_before_infer: float = 0,
                  warmup: int = 0,
@@ -217,6 +223,7 @@ class HyperWorkload:
         self.train_workload: NoneType | TrainWorkload = None
         self.duration = duration
         self.workload_log = workload_log
+        self.infer_timeline = infer_timeline
         self.client_log = client_log
         self.trace_cfg = trace_cfg
         self.concurrency = concurrency
@@ -251,7 +258,7 @@ class HyperWorkload:
             trace_cfg = pathlib.Path(server.log_dir) / self.trace_cfg
             InferTraceDumper(self.infer_workloads, trace_cfg).dump()
             infer_trace_args += ["--infer-trace", str(trace_cfg)]
-
+        
         self._launch(server, "workload_launcher", infer_trace_args)
 
     def launch_busy_loop(self, server: System, infer_models: List[InferModel] = None):
@@ -296,8 +303,12 @@ class HyperWorkload:
             cmd += ["--delay-after-warmup", str(self.delay_after_warmup)]
 
         workload_log = pathlib.Path(server.log_dir) / self.workload_log
+
         cmd += ['--log', str(workload_log)]
         cmd += ['-v', '1']
+        
+        infer_timeline = pathlib.Path(server.log_dir) / self.infer_timeline
+        cmd += ['--infer-timeline', str(infer_timeline)]
 
         cmd += custom_args
 

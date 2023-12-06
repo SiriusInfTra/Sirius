@@ -4,6 +4,7 @@
 #include <climits>
 #include <cstddef>
 #include <iostream>
+#include <ostream>
 #include <random>
 #include <tuple>
 #include <unordered_map>
@@ -135,10 +136,16 @@ struct AzureTrace {
 
 class Workload {
  public:
-  Workload(std::shared_ptr<grpc::Channel> channel, std::chrono::seconds duration)
-      : stub_(ColServe::NewStub(channel)), duration_(duration) {
+  Workload(std::shared_ptr<grpc::Channel> channel, std::chrono::seconds duration, const std::string &infer_timeline)
+      : stub_(ColServe::NewStub(channel)), duration_(duration), timeline_handle_(infer_timeline) {
     ready_future_ = std::shared_future<void>{ready_promise_.get_future()};
+    CHECK(timeline_handle_.is_open());
+    timeline_handle_ << "model_name,start,end" << std::endl;
   };
+
+  ~Workload() {
+    timeline_handle_.close();
+  }
 
   bool Hello();
 
@@ -191,6 +198,30 @@ class Workload {
   std::unique_ptr<ColServe::Stub> stub_;
 
   std::unordered_map<std::string, AzureTrace> azure_model_index_;
+
+  std::mutex timeline_handle_lock_;
+  std::ofstream timeline_handle_;
+
+  friend class InferRecorder;
+
+};
+
+class InferRecorder {
+public:
+  InferRecorder(Workload &workload, const std::string &model_name): model_name_(model_name), workload_(workload) {
+    start_ = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+  }
+
+  ~InferRecorder() {
+    end_ = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    std::unique_lock locker{workload_.timeline_handle_lock_};
+    workload_.timeline_handle_ << model_name_ << "," << start_ << "," << end_ << "\n";
+  }
+private:
+  const std::string &model_name_;
+  Workload &workload_;
+  long start_;
+  long end_;
 
 };
 

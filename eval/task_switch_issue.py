@@ -26,20 +26,21 @@ def run(system: System, hyper_workload:HyperWorkload, num_model:int, req_per_sec
     time.sleep(1)
 
 
-system = System(mode=System.ServerMode.Normal, use_sta=False, mps=True, train_mps_thread_percent=40)
-workload = HyperWorkload(concurrency=1, duration=30, delay_before_infer=30)
+# system = System(mode=System.ServerMode.Normal, use_sta=False, mps=True, train_mps_thread_percent=40)
+# workload = HyperWorkload(concurrency=1, duration=30, delay_before_infer=30)
 
-run(system, workload, 1, 1, "ideal")
-run(system, workload, 1, 2, "ideal")
-run(system, workload, 1, 4, "ideal")
-run(system, workload, 1, 8, "ideal")
-run(system, workload, 1, 16, "ideal")
+# run(system, workload, 1, 1, "ideal")
+# run(system, workload, 1, 2, "ideal")
+# run(system, workload, 1, 4, "ideal")
+# run(system, workload, 1, 8, "ideal")
+# run(system, workload, 1, 16, "ideal")
 
-system = System(mode=System.ServerMode.TaskSwitchL2, use_sta=False, mps=True)
+system = System(mode=System.ServerMode.TaskSwitchL1, use_sta=False, mps=True)
 workload = HyperWorkload(concurrency=1, duration=30, delay_before_infer=30)
 
 run(system, workload, 1, 1, "taskswitch")
-run(system, workload, 1, 2, "taskswitch")
-run(system, workload, 1, 4, "taskswitch")
-run(system, workload, 1, 8, "taskswitch")
 run(system, workload, 1, 16, "taskswitch")
+run(system, workload, 1, 32, "taskswitch")
+run(system, workload, 1, 64, "taskswitch")
+run(system, workload, 1, 128, "taskswitch")
+run(system, workload, 1, 256, "taskswitch")

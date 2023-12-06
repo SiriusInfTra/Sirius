@@ -46,6 +46,8 @@ class AppBase {
   int verbose{0};
   int64_t show_result{0};
 
+  std::string infer_timeline;
+
   static uint64_t seed;
 };
 

@@ -1,5 +1,5 @@
 #include <c10/util/ArrayRef.h>
-
+#include <chrono>
 #include <vector>
 
 namespace torch_col {

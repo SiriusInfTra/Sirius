@@ -9,11 +9,13 @@ def cuda_memory_pool_infer_usage():
 def cuda_memory_pool_train_usage():
     return CUDAMemPool.TrainMemUsage()
 
+cdef extern from "<csrc/unix_time.h>" namespace "torch_col":
+    cpdef long get_unix_timestamp()
+
 cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
     cpdef void ReleaseMempool()
     cpdef void DumpMempoolFreeList(string filename)
     cpdef void DumpMempoolBlockList(string filename)
-
 
 
 cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
