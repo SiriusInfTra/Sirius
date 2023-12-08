@@ -1,5 +1,6 @@
 #include <glog/logging.h>
 #include <nvml.h>
+#include <numeric>
 #include <regex>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
@@ -64,6 +65,7 @@ std::ostream& operator<<(std::ostream &os, Profiler::PerfItem item) {
     LOG_ITEM(Profiler::PerfItem, InferLoadParam)
 
     LOG_ITEM(Profiler::PerfItem, InferRealBatchSize)
+    LOG_ITEM(Profiler::PerfItem, InferModelLoad)
   default:
     return os;
   }
@@ -268,6 +270,9 @@ void Profiler::WriteLog() {
         << std::endl;
   }
   ofs << std::endl;
+
+  // int hit_count = std::accumulate()
+  // ofs << "[Cache Info]" << "Hit: " << << std::endl;
 
   LOG(INFO) << "[Profiler] write prfile info to " << profile_log_path_;
 }

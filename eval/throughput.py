@@ -42,10 +42,10 @@ def main():
         for sub_log_dir in sorted(filter(lambda file_or_dir: file_or_dir.is_dir(), log_dir.iterdir()), key=lambda must_dir: str(must_dir)):
             df = read_dataframe(sub_log_dir, train_timeline_name, infer_timeline_name, require=True)
             ideal_thpt, real_thpt = eval_throughput(*df)
-            print(f"{sub_log_dir.name} thpt: {real_thpt}/{ideal_thpt} it/sec")
+            print(f"{sub_log_dir.name} thpt: {real_thpt:.2f}/{ideal_thpt:.2f} it/sec")
     else:    
         ideal_thpt, real_thpt = eval_throughput(*df)
-        print(f"{log_dir.name} thpt: {real_thpt}/{ideal_thpt} it/sec")
+        print(f"{log_dir.name} thpt: {real_thpt:.2f}/{ideal_thpt:.2f} it/sec")
     
 if __name__ == "__main__":
     main()

@@ -66,6 +66,8 @@ class Profiler {
     InferLoadParam,
 
     InferRealBatchSize,
+
+    InferModelLoad,
   };
 
 

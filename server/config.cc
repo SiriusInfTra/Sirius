@@ -31,4 +31,6 @@ std::string Config::infer_model_config_path = "config";
 
 int Config::train_mps_thread_percent = -1;
 
+size_t Config::max_cache_nbytes = 1 * 1024 * 1024 * 1024;
+
 }

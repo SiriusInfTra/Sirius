@@ -50,6 +50,8 @@ class Config {
 
   static int train_mps_thread_percent;
 
+  static size_t max_cache_nbytes;
+
 
   inline static bool IsSwitchMode() {
     return Config::serve_mode == ServeMode::kTaskSwitchL1

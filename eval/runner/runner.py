@@ -62,6 +62,7 @@ class System:
                  train_mps_thread_percent: Optional[int] = None,
                  colocate_skip_malloc: bool = False,
                  colocate_skip_loading: bool = False,
+                 max_cache_nbytes: int = 1 * 1024 * 1024 * 1024,
                  keep_last_time_stamp: bool = False) -> None:
         self.mode = mode
         self.port = port
@@ -87,11 +88,13 @@ class System:
         self.train_mps_thread_percent = train_mps_thread_percent
         self.colocate_skip_malloc = colocate_skip_malloc
         self.colocate_skip_loading = colocate_skip_loading
+        self.max_cache_nbytes = max_cache_nbytes
         if System._last_time_stamp is None or not keep_last_time_stamp:
             self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
             System._last_time_stamp = self.time_stamp
         else:
             self.time_stamp = System._last_time_stamp
+            
 
     def next_time_stamp(self):
         self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
@@ -161,6 +164,7 @@ class System:
             cmd += ["--colocate-skip-loading"]
 
         cmd += ['--train-timeline', str(train_timeline)]
+        cmd += ['--max-cache-nbytes', str(self.max_cache_nbytes)]
 
         self.cmd_trace.append(" ".join(cmd))
         print("\n---------------------------\n")

@@ -8,11 +8,13 @@
 
 #include <sta/dtype_helper.h>
 
+#include "cache.h"
 #include "model_infer_store.h"
 #include "model_train_store.h"
 #include "controller.h"
 #include "profiler.h"
 #include "config.h"
+#include "tvm/runtime/logging.h"
 
 
 namespace colserve {
@@ -255,7 +257,8 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier, pid_t waited_tr
   LOG(INFO) << "Model " << name_ << " inference thread start";
   // auto graph_executor = graph_executor_factory_->CreateGraphExecutor();
   auto graph_executor = graph_executor_pool_[rank].get();
-  graph_executor->Init();
+  GraphCache::Get()->InitGraphExecutor(name_, graph_executor);
+
   if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
     // graph_executor->ResetBufStorage();
     graph_executor->ResetStorage();
@@ -265,10 +268,10 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier, pid_t waited_tr
   num_worker_.fetch_add(1, std::memory_order_relaxed);
   bool task_switch_l3_cold_start = true;
   auto last_get_batch_time = std::chrono::steady_clock::now();
-  while (true) {
+  while (true) {                                                    
     if (Config::IsColocateMode() && Profiler::MilliFrom(last_get_batch_time) >= scale_down_idle_time_) {
       uint32_t num_worker = num_worker_;
-      if (num_worker - 0 > 0) {
+      if (num_worker - 0 > 0) { /* check if num_worker reduce */
         // LOG(INFO) << "num_worker " << num_worker;
         auto ok = num_worker_.compare_exchange_strong(num_worker, num_worker - 1,
             std::memory_order_relaxed);
@@ -322,7 +325,12 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier, pid_t waited_tr
       auto begin = std::chrono::steady_clock::now();
       for (auto& input: input_info_) {
         auto& input_id = input.first;
-        err = SetInput(*graph_executor, idx++, input_id, jobs);
+        try {
+          err = SetInput(*graph_executor, idx++, input_id, jobs);
+        } catch (::tvm::InternalError &e) {
+          std::cout << name_ << std::endl;
+          throw e;
+        }
       }
       auto end = std::chrono::steady_clock::now();
       set_input_ms = std::chrono::duration<double, std::milli>(end - begin).count();
@@ -394,7 +402,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier, pid_t waited_tr
 
   LOG(INFO) << "[Inference] worker " << rank << " exit";
   Profiler::Get()->RecordEvent(Profiler::EventItem::InferExit);
-  graph_executor->DeInit();
+  GraphCache::Get()->DeInitGraphExecutor(name_, graph_executor);
   if (Config::IsColocateMode()) {
     Controller::Get()->InferExit(
       (waited_train != -1 && waited_train == ModelTrainStore::Get()->GetTrainPid()) ? 3 : 0);

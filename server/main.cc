@@ -14,6 +14,7 @@
 #include "grpc/grcp_server.h"
 #include "colserve.grpc.pb.h"
 #include "model_train_store.h"
+#include "cache.h"
 #include "controller.h"
 #include "profiler.h"
 #include "config.h"
@@ -62,6 +63,8 @@ void init_cli_options() {
       "colocate skip loading, default is false");
   app.add_option("--train-timeline", colserve::Config::train_timeline, 
     "train timeline path, default is train-timeline");
+  app.add_option("--max-cache-nbytes", colserve::Config::max_cache_nbytes, 
+    "max cache nbytes, default is 1*1024*1024*1024(1G).");
 }
 
 void init_config() {
@@ -125,6 +128,7 @@ int main(int argc, char *argv[]) {
   }
   colserve::Controller::Init();
   colserve::Profiler::Init(colserve::Config::profile_log_path);
+  colserve::GraphCache::Init(colserve::Config::max_cache_nbytes);
   colserve::ModelInferStore::Init("models");
   colserve::ModelTrainStore::Init("train");
   colserve::Profiler::Start();
