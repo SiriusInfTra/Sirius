@@ -134,6 +134,7 @@ target_link_libraries(sta PRIVATE CUDA::cudart glog::glog
 
 add_executable(${PROJECT_NAME}
   server/main.cc
+  server/cache.cc
   server/grpc/grpc_server.cc
   server/tvm/graph_executor_factory.cc
   server/tvm/graph_executor.cc

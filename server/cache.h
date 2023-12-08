@@ -44,15 +44,16 @@ private:
 
 public:
 
-  std::tuple<CacheItem, std::mutex*> RemoveIfPresent(const std::string &name, tvm::GraphExecutor *graph_exector) {
+  CacheItem RemoveIfPresent(const std::string &name, tvm::GraphExecutor *graph_executor) {
     std::unique_lock lock{mutex_};
     DumpLRUList("RemoveIfPresent-" + name + "-begin");
-    auto iter = cache_.find(graph_exector); 
+    auto iter = cache_.find(graph_executor); 
     if (iter == cache_.end()) {
       DumpLRUList("RemoveIfPresent-" + name + "-end1");
-      auto &loading_lock = loading_locks_[graph_exector];
-      loading_lock.lock();
-      return {CacheItem{graph_exector, false, name}, &loading_lock};
+      std::unique_lock loading_locker{loading_locks_[graph_executor]};
+      lock.unlock();
+      graph_executor->Init();
+      return {CacheItem{graph_executor, false, name}};
     }
     auto list_node = iter->second;
     auto cache_item = *list_node;
@@ -62,10 +63,10 @@ public:
     cached_nbytes_ -= cache_item.graph_executor->GetStorageSize();
     DumpLRUList("RemoveIfPresent-" + name + "-end2");
 
-    return {cache_item, nullptr};
+    return cache_item;
   }
 
-  std::tuple<CacheItem, std::mutex*, size_t> PutRemoveLast(const std::string &name, tvm::GraphExecutor *graph_executor, size_t max_cache_nbytes) {
+  std::tuple<CacheItem, size_t> PutRemoveLast(const std::string &name, tvm::GraphExecutor *graph_executor, size_t max_cache_nbytes) {
     std::unique_lock lock{mutex_};
     DumpLRUList("PutRemoveLast-" + name + "-begin");
     CHECK_LE(graph_executor->GetStorageSize(), max_cache_nbytes);
@@ -76,16 +77,17 @@ public:
       cached_nbytes_ -= cache_item.graph_executor->GetStorageSize();
       CHECK_EQ(cache_.erase(cache_item.graph_executor), 1);
       DumpLRUList("PutRemoveLast-" + name + "-end1");
-      auto &loading_lock = loading_locks_[cache_item.graph_executor];
-      loading_lock.lock();
-      return {cache_item, &loading_lock, cached_nbytes_};
+      std::unique_lock loading_locker{loading_locks_[cache_item.graph_executor]};
+      lock.unlock();
+      cache_item.graph_executor->DeInit();
+      return {cache_item, cached_nbytes_};
     }
     auto cache_item = CacheItem{graph_executor, true, name};
     lru_list_.push_front(cache_item);
     cache_.emplace(std::make_pair(graph_executor, lru_list_.begin()));
     cached_nbytes_ += graph_executor->GetStorageSize();
     DumpLRUList("PutRemoveLast-" + name + "-end2");
-    return {cache_item, nullptr, cached_nbytes_};
+    return {cache_item, cached_nbytes_};
   }
 
 };
@@ -107,7 +109,7 @@ public:
   
   // assume graph_executor is accessed by a unique thread
   void InitGraphExecutor(const std::string &name, tvm::GraphExecutor* graph_executor) {
-    auto [cache_item, loading_lock] = policy_.RemoveIfPresent(name, graph_executor);
+    auto cache_item = policy_.RemoveIfPresent(name, graph_executor);
     if (cache_item.is_cache) { /* cached, already inited*/
       LOG(INFO) << CACHE_LOG_PREFIX << " load model: " << name << ", found it already in cache, skip init.";
       Profiler::Get()->RecordPerf(Profiler::PerfItem::InferModelLoad, 1.0);
@@ -126,12 +128,11 @@ public:
       return;
     }
     while (true) {
-      auto [cache_item, loading_lock, cached_nbytes] = policy_.PutRemoveLast(name, graph_executor, max_cache_nbytes_);
+      auto [cache_item, cached_nbytes] = policy_.PutRemoveLast(name, graph_executor, max_cache_nbytes_);
       if (cache_item.graph_executor == graph_executor) {
         LOG(INFO) << log_prefix.str() << " put it into cache, current cache nbyte=" << cached_nbytes << ".";
         break;
       }
-  
       LOG(INFO) << log_prefix.str() << " no space to hold it. so remove " << cache_item.name << "(" << cache_item.graph_executor->GetStorageSize() << "), current cache nbyte=" << cached_nbytes << ".";
     }
   }
