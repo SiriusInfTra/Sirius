@@ -54,7 +54,7 @@ class System:
                  cuda_memory_pool_gb: str=None,
                  profile_log: str = "profile-log", 
                  server_log: str = "server-log", 
-                 train_timeline:str = "train-timeline", 
+                 train_timeline:str = "train-profile", 
                  port: str = "18080",
                  infer_model_config: List[InferModelConfig] | InferModelConfig = None,
                  mps: bool = True,
@@ -163,7 +163,7 @@ class System:
         if self.colocate_skip_loading:
             cmd += ["--colocate-skip-loading"]
 
-        cmd += ['--train-timeline', str(train_timeline)]
+        cmd += ['--train-profile', str(train_timeline)]
         cmd += ['--max-cache-nbytes', str(self.max_cache_nbytes)]
 
         self.cmd_trace.append(" ".join(cmd))

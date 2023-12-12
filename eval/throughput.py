@@ -31,7 +31,7 @@ def read_dataframe(log_dir: Path, train_timeline_name: str, infer_timeline_name:
 def main():
     parser = ArgumentParser()
     parser.add_argument("--log-dir", type=Path, help="log dir", required=True)
-    parser.add_argument("--train-timeline", type=str, help="train timeline csv file path", default="train-timeline")
+    parser.add_argument("--train-profile", type=str, help="train timeline csv file path", default="train-timeline")
     parser.add_argument("--infer-timeline", type=str, help="train timeline csv file path", default="infer-timeline")
     args = parser.parse_args()
     log_dir: Path = args.log_dir
