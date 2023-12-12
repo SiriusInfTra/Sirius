@@ -155,6 +155,7 @@ class Workload {
     running_ = true;
     run_btime_ = std::chrono::steady_clock::now();
     std::this_thread::sleep_for(duration_);
+    LOG(INFO) << "Workload timeout ...";
     running_ = false;
     for (auto &thread : threads_) {
       LOG(INFO) << "Worker Thread " << std::hex << thread->get_id() << " joined";

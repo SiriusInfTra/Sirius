@@ -359,12 +359,31 @@ void CUDAMemPoolImpl::Free(CUDAMemPoolImpl::PoolEntryImpl *entry, MemType mtype)
   DCHECK(CheckMemPool());
   CHECK_EQ(entry->allocate, true);
   stat_->at(static_cast<size_t>(mtype)).fetch_sub(entry->nbytes, std::memory_order_relaxed);
-  if (auto *prev = GetEntry(entry->prev); prev != empty_ && !prev->allocate) { /* merge prev */
+  auto *prev = GetEntry(entry->prev);
+  bool prev_free = prev != empty_ && !prev->allocate;
+  auto *next = GetEntry(entry->next);
+  bool next_free = next != empty_ && !next->allocate;
+  if (prev_free && next_free) {
+    addr2entry_->erase(entry->addr_offset);
+    addr2entry_->erase(next->addr_offset);
+    // remove next from free list
+    auto iter = size2entry_->find(next->nbytes);
+    while(iter->second != entry->next) {
+      iter++;
+      CHECK_EQ(iter->first, next->nbytes);
+    }
+    size2entry_->erase(iter);
+
+    UpdateFreeEntrySize(size2entry_->find(prev->nbytes), prev, prev->nbytes + entry->nbytes + next->nbytes);
+    ConnectPoolEntryHandle(prev, GetEntry(next->next));
+    segment_.deallocate(entry);
+    segment_.deallocate(next);
+  } else if (prev_free) { /* merge prev */
     addr2entry_->erase(entry->addr_offset);
     UpdateFreeEntrySize(size2entry_->find(prev->nbytes), prev, prev->nbytes + entry->nbytes);
     ConnectPoolEntryHandle(prev, GetEntry(entry->next));
     segment_.deallocate(entry);
-  } else if (auto *next = GetEntry(entry->next); next != empty_ && !next->allocate) { /* merge next */
+  } else if (next_free) { /* merge next */
     addr2entry_->erase(entry->addr_offset);
     UpdateFreeEntrySize(size2entry_->find(next->nbytes), next, next->nbytes + entry->nbytes);
     UpdateEntryAddr(addr2entry_->find(next->addr_offset),
