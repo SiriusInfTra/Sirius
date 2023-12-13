@@ -1,4 +1,6 @@
 #include "mempool.h"
+#include <initializer_list>
+#include <tuple>
 #include <glog/logging.h>
 
 
@@ -187,10 +189,10 @@ bool MemPool::CheckPoolInternal() {
 }
 void MemPool::CopyFromToInternel(void *dst_dev_ptr, void *src_dev_ptr,
                                         size_t nbytes) {
-  CUDA_CALL(cudaSetDevice(config_.cuda_device));
-  CUDA_CALL(cudaMemcpyAsync(dst_dev_ptr, src_dev_ptr, nbytes, cudaMemcpyDefault,
+  CUDA_CALL0(cudaSetDevice(config_.cuda_device));
+  CUDA_CALL0(cudaMemcpyAsync(dst_dev_ptr, src_dev_ptr, nbytes, cudaMemcpyDefault,
                             cuda_memcpy_stream_));
-  CUDA_CALL(cudaStreamSynchronize(cuda_memcpy_stream_));
+  CUDA_CALL0(cudaStreamSynchronize(cuda_memcpy_stream_));
 }
 MemPool::MemPool(MemPoolConfig config, bool cleanup, bool observe)
     : config_(std::move(config)), mem_pool_base_ptr_(nullptr), observe_(observe) {
@@ -223,24 +225,24 @@ MemPool::MemPool(MemPoolConfig config, bool cleanup, bool observe)
   };
   segment_.atomic_func(atomic_init);
   if (observe_)  { return; }
-  CUDA_CALL(cudaSetDevice(config.cuda_device));
-  CUDA_CALL(cudaStreamCreate(&cuda_memcpy_stream_));
+  CUDA_CALL0(cudaSetDevice(config.cuda_device));
+  CUDA_CALL0(cudaStreamCreate(&cuda_memcpy_stream_));
   bip::scoped_lock locker(*mutex_);
   master_ = (*ref_count_)++ == 0;
   if (master_) {
     auto *entry = CreateMemPoolEntry(0, config_.cuda_memory_size,
                                      MemType::kFree, mem_entry_list_->end());
     freeblock_policy_->InitMaster(entry);
-    CUDA_CALL(cudaSetDevice(config_.cuda_device));
-    CUDA_CALL(cudaMalloc(reinterpret_cast<void **>(&mem_pool_base_ptr_),
+    CUDA_CALL0(cudaSetDevice(config_.cuda_device));
+    CUDA_CALL0(cudaMalloc(reinterpret_cast<void **>(&mem_pool_base_ptr_),
                          config_.cuda_memory_size));
-    CUDA_CALL(cudaIpcGetMemHandle(cuda_mem_handle_, mem_pool_base_ptr_));
+    CUDA_CALL0(cudaIpcGetMemHandle(cuda_mem_handle_, mem_pool_base_ptr_));
     LOG(INFO) << "[mempool] init master, base_ptr = " << std::hex
               << mem_pool_base_ptr_ << ", shm = " << config_.shared_memory_name
               << ".";
   } else {
     freeblock_policy_->InitSlave();
-    CUDA_CALL(cudaIpcOpenMemHandle(
+    CUDA_CALL0(cudaIpcOpenMemHandle(
         reinterpret_cast<void **>(&mem_pool_base_ptr_), *cuda_mem_handle_,
         cudaIpcMemLazyEnablePeerAccess));
     LOG(INFO) << "[mempool] init slave, base_ptr = " << std::hex
@@ -361,5 +363,24 @@ void MemPool::CopyFromTo(std::shared_ptr<PoolEntry> src,
   if (src->addr == dst->addr)
     return;
   CopyFromToInternel(dst->addr, src->addr, std::min(src->nbytes, dst->nbytes));
+}
+
+void MemPool::DumpSummary() {
+  std::initializer_list<std::tuple<std::string, MemType>> mtype_list = {
+    {"free", MemType::kFree},
+    {"infer", MemType::kInfer},
+    {"train", MemType::kTrain}
+  };
+  auto usages = GetUsage();
+  LOG(INFO) << "---------- mempool summary ----------";
+  for(auto&& [name, mtype] : mtype_list) {
+    auto &usages_mtype = usages[mtype];
+    LOG(INFO) << name << " max: " << detail::ByteDisplay(usages_mtype[UsageStat::kMaxNBytes]);
+    LOG(INFO) << name << " max: " << detail::ByteDisplay(usages_mtype[UsageStat::kMinNBytes]);
+    LOG(INFO) << name << " sum: " << detail::ByteDisplay(usages_mtype[UsageStat::kTotalNBytes]);
+    LOG(INFO) << name << " cnt: " << detail::ByteDisplay(usages_mtype[UsageStat::kCount]);
+    LOG(INFO) << name << " avg: " << detail::ByteDisplay(usages_mtype[UsageStat::kTotalNBytes] / usages_mtype[UsageStat::kCount]);
+  }
+  google::FlushLogFiles(google::INFO);
 }
 }  // namespace colserve::sta

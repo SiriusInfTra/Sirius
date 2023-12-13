@@ -25,6 +25,8 @@
 namespace colserve {
 namespace sta {
 
+
+
 class CUDAMemPool {
  public:
   using PoolEntry = colserve::sta::PoolEntry;

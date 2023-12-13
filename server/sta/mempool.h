@@ -12,6 +12,7 @@
 #include <boost/thread/lock_guard.hpp>
 #include <cassert>
 #include <cstddef>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -25,13 +26,13 @@
 
 #ifdef NO_CUDA
 
-#define CUDA_CALL(func)
+#define CUDA_CALL0(func)
 #define CUDA_TYPE(cuda_type) long
 
 #else
 
 #include <cuda_runtime_api.h>
-#define CUDA_CALL(func) do { \
+#define CUDA_CALL0(func) do { \
   auto error = func; \
   if (error != cudaSuccess) { \
     LOG(FATAL) << #func << " " << cudaGetErrorString(error); \
@@ -62,6 +63,23 @@ enum class UsageStat {
   kTotalNBytes,
 };
 
+
+namespace detail {
+inline size_t GetAlignedNbytes(size_t nbytes) {
+  constexpr size_t alignment = 1024;
+  static_assert((alignment & (alignment - 1)) == 0, "alignment must be power of 2");
+  return (nbytes + (alignment - 1)) & (~(alignment - 1));
+}
+inline double ByteToMB(size_t nbytes) {
+  return static_cast<double>(nbytes) / 1024 / 1024;
+}
+
+inline std::string ByteDisplay(size_t nbytes) {
+  std::stringstream ss;
+  ss << static_cast<double>(nbytes) / 1024 / 1024 << "MB(" << nbytes << "bytes)";
+  return ss.str();
+}
+}
 
 using shared_memory = bip::managed_shared_memory;
 using segment_manager = shared_memory::segment_manager;
@@ -188,7 +206,9 @@ private:
 
   void CopyFromToInternel(void *dst_dev_ptr, void *src_dev_ptr, size_t nbytes);
 
-public:
+
+
+ public:
   MemPool(MemPoolConfig config, bool cleanup, bool observe);
 
   ~MemPool();
@@ -207,6 +227,8 @@ public:
   inline size_t TrainMemUsage() {
     return stat_->at(static_cast<size_t>(MemType::kTrain));
   }
+
+  void DumpSummary();
 };
 
 

@@ -1,7 +1,7 @@
 #ifndef COLSERVE_MEMPOOL_SAMPLER_H
 #define COLSERVE_MEMPOOL_SAMPLER_H
 
-#include <glog/logging.h>
+
 #include <cassert>
 #include <ios>
 #include <memory>
