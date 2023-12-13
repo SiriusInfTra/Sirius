@@ -19,7 +19,7 @@ STensor RawNull(at::IntArrayRef size, DLDataType dtype) {
 
 uint64_t Empty(at::IntArrayRef size, at::MemoryFormat memory_format, DLDataType dtype, MemType mtype) {
   auto storage_nbytes = ComputeStorageNbytes(size, dtype);
-  auto entry = CUDAMemPool::Get()->Alloc(storage_nbytes, mtype);
+  auto entry = CUDAMemPool::Get()->Alloc(storage_nbytes, mtype, false);
   CHECK_NE(entry, nullptr);
   // std::stringstream ss;
   // ss << "Create empty size " << size << " nbytes " << storage_nbytes;
@@ -50,7 +50,7 @@ STensor RawEmpty(at::IntArrayRef size, DLDataType dtype, MemType mtype) {
 uint64_t EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride,
                       DLDataType dtype, MemType mtype) {
   auto storage_nbytes = ComputeStorageNbytes(size, stride, dtype);
-  auto entry = CUDAMemPool::Get()->Alloc(storage_nbytes, mtype);
+  auto entry = CUDAMemPool::Get()->Alloc(storage_nbytes, mtype, false);
   CHECK_NE(entry, nullptr);
   // std::stringstream ss;
   // ss << "Create empty_strided size " << size << " stride " << stride << " nbytes " << storage_nbytes;
@@ -220,7 +220,7 @@ void STensor::AllocForNull(MemType mtype, bool raw_alloc) {
       get()->shape_, get()->stride_, get()->tensor_.dtype, StorageOffset());
   TensorContainer::memory_data_t mdata;
   if (!raw_alloc) {
-    mdata = CUDAMemPool::Get()->Alloc(storage_nbytes, mtype);
+    mdata = CUDAMemPool::Get()->Alloc(storage_nbytes, mtype, false);
   } else {
     mdata = CUDAMemPool::RawAlloc(storage_nbytes, mtype);
   }

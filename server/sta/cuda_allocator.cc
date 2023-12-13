@@ -44,8 +44,14 @@ CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool master) {
   impl_ = new MemPool{config, master, false};
 }
 
-std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(std::size_t nbytes, MemType mtype) {
-  return impl_->Alloc(nbytes, mtype);
+std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(
+    std::size_t nbytes, MemType mtype, bool allow_nullptr) {
+  auto ret = impl_->Alloc(nbytes, mtype);
+  if (!allow_nullptr && ret == nullptr) {
+    impl_->DumpSummary();
+    LOG(FATAL) << "request size " << nbytes << " byte ( " << detail::ByteToMB(nbytes) << " mb )"  << " out of free gpu memory";
+  }
+  return ret;
 }
 
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Resize(

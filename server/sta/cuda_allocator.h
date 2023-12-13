@@ -32,13 +32,15 @@ class CUDAMemPool {
   static CUDAMemPool* Get();
   static size_t InferMemUsage();
   static size_t TrainMemUsage();
+  static size_t FreeMemUsage();
+  static size_t PoolNbytes();
   static void ReleaseMempool();
 
   static std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes, MemType mtype);
 
   CUDAMemPool(std::size_t nbytes, bool master);
   ~CUDAMemPool();
-  std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes, MemType mtype);
+  std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes, MemType mtype, bool allow_nullptr);
   std::shared_ptr<PoolEntry> Resize(std::shared_ptr<PoolEntry> entry, std::size_t nbytes);
   void CopyFromTo(std::shared_ptr<PoolEntry> src, std::shared_ptr<PoolEntry> dst);
 

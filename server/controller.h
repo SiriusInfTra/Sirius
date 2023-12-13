@@ -37,6 +37,12 @@ class Controller {
   void TrainEnd();
   bool IsTrainIdle();
 
+  bool HasFlyingColocateAdjust();
+
+  bool TryEnterInferModelAlloc(size_t model_rank);
+  void EnterInferModelAlloc(size_t model_rank);
+  void ExitInferModelAlloc(size_t model_rank);
+
   enum class Event {
     // status event
     kTrainStart,
@@ -45,6 +51,8 @@ class Controller {
     kResumeTrainDone,
     kColocateAdjustL1Done,
     kColocateAdjustL2Done,
+    
+    kReportBatchSize,
 
     // cmd event: switch mode
     kInterruptTrain,
@@ -92,7 +100,14 @@ class Controller {
   std::condition_variable wait_train_adjust_cv_;
   uint64_t adjust_done_id_{0};
   
-  
+  // constrol cooperated allocation
+  std::mutex infer_model_alloc_mutex_; // to allocate inference model in a sequential way
+  std::condition_variable infer_model_alloc_cv_;
+  std::atomic<size_t> last_alloc_infer_model_ = static_cast<size_t>(-1);
+
+  // cmd counter
+  static std::atomic<uint64_t> adjust_cmd_id;
+
  public:
   friend std::ostream& operator<<(std::ostream& os, const Controller::TrainStatus &status);
   

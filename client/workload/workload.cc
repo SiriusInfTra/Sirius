@@ -199,9 +199,11 @@ void InferWorker::FetchInferResult(Workload &workload,
   
     auto slot = reinterpret_cast<size_t>(tag);
     // CHECK(rpc_status_[i].ok());
-    CHECK(slots_[slot].rpc_status_.ok());
     {
       std::unique_lock status_lock{slot_status_mutex_};
+      std::shared_lock slot_lock{slot_mutex_};
+      CHECK(slots_[slot].rpc_status_.ok()) << " slot " << slot << ": " 
+                                           << slots_[slot].rpc_status_.error_code() << " " << slots_[slot].rpc_status_.error_message();
       CHECK(status_slots_id_[InferReqStatus::kWait].count(slot)) << " " << slot << " " << status_slots_id_[InferReqStatus::kWait].size();
     }
     auto response_time = std::chrono::steady_clock::now();

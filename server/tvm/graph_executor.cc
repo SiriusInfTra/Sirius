@@ -5,10 +5,14 @@
 #include <cuda_runtime_api.h>
 
 #include "graph_executor.h"
+#include <sta/shape_helper.h>
+
+#include "../model_train_store.h"
+#include "../model_infer_store.h"
 #include "../profiler.h"
+#include "../controller.h"
 #include "../config.h"
 
-#include <glog/logging.h>
 
 namespace colserve {
 namespace tvm {
@@ -31,8 +35,8 @@ inline size_t GetDataAlignment(const DLTensor& arr) {
     } \
   } while (0);
 
-GraphExecutor::GraphExecutor(GraphExecutorFactory &factory)
-    : factory_(factory), initialized_(false) {
+GraphExecutor::GraphExecutor(GraphExecutorFactory &factory, size_t worker_id)
+    : factory_(factory), infer_model_worker_id_(worker_id), initialized_(false) {
   using namespace ::tvm::runtime;
   auto t0 = std::chrono::steady_clock::now();
   SetupStorage(false);
@@ -45,22 +49,28 @@ GraphExecutor::GraphExecutor(GraphExecutorFactory &factory)
   param_ready_.resize(GetNumOfNodes(), false);
   auto t1 = std::chrono::steady_clock::now();
   DLOG(INFO) << "[GraphExecutor] Create " 
-            << std::chrono::duration<double, std::milli>(t1-t0).count() << "ms";
+             << std::chrono::duration<double, std::milli>(t1-t0).count() << "ms";
 }
 
 void GraphExecutor::Init() {
   if (!initialized_) {   
-    PROFILE_START(InferAllocStorage, 0);
-    if (!Config::colocate_config.skip_malloc)
-      AllocStorage();
-    PROFILE_END(InferAllocStorage, 0);
+    if (!Config::ondemand_adjust) {
+      PROFILE_START(InferAllocStorage, 0);
+      if (!Config::colocate_config.skip_malloc) AllocStorage();
+      PROFILE_END(InferAllocStorage, 0);
+    } else {
+      PROFILE_START(InferAdjustAlloc, 0);
+      AllocStorageMaybeAdjust();
+      PROFILE_END(InferAdjustAlloc, 0);
+    }
     
     if (!Config::colocate_config.skip_malloc)
       ReSetupDataEntry();
 
     PROFILE_START(InferLoadParam, 0);
-    if (!Config::colocate_config.skip_loading)
-      LoadParams(false);
+    if (!Config::colocate_config.skip_loading) {
+      LoadParams(false, Config::colocate_config.skip_malloc);
+    }
     PROFILE_END(InferLoadParam, 0);
     
     initialized_ = true;
@@ -76,7 +86,7 @@ void GraphExecutor::FakeInit(bool malloc, bool load_param) {
   }
   if (load_param) {
     LOG(INFO) << "FakeInit load_param, skip load_param in Init";
-    LoadParams(false);
+    LoadParams(false, true);
   }
 }
 
@@ -291,7 +301,12 @@ void GraphExecutor::AllocStorage() {
   // }
 }
 
-void GraphExecutor::LoadParams(bool pipeline) {
+void GraphExecutor::LoadParams(bool pipeline, bool force) {
+  if (force) {
+    for (auto &p : factory_.params_)
+      param_ready_[p.first] = false;
+  }
+
   for (auto &p : factory_.params_) {
     auto sid = factory_.attrs_.storage_id[p.first];
     if (!param_ready_[p.first]) {
@@ -559,6 +574,115 @@ std::pair<std::function<void()>, std::shared_ptr<OpArgs>> GraphExecutor::CreateT
     pf.CallPacked(targs, &rv);
   };
   return {fexec, arg_ptr};
+}
+
+void GraphExecutor::AllocStorageMaybeAdjust() {
+  // CHECK(Config::use_shared_tensor_infer && Config::ondemand_adjust);
+  CHECK(Config::ondemand_adjust);
+  CHECK(!Config::infer_raw_blob_alloc);
+
+  bool adjusted = false;
+
+  auto adjust_train_batch_size = [this, &adjusted]() {
+    if (adjusted) return;
+    if (!Controller::Get()->IsTrainIdle()) {
+      auto wait_train_pid = ModelTrainStore::Get()->GetTrainPid();
+      this->factory_.infer_model_->SetWaitTrainPid(this->infer_model_worker_id_, wait_train_pid);
+      LOG(INFO) << "[GraphExecutor] AllocStorageMaybeAdjust: model " << this->factory_.model_rank_ 
+                << " wait train pid " << wait_train_pid;
+
+      PROFILE_START(TrainAdjust, 0);
+      auto cmd_id = Controller::Get()->ColocateAdjust(3);
+      Controller::Get()->WaitColocateAdjustDone(cmd_id);
+      PROFILE_END(TrainAdjust, 0);
+    } else {
+      LOG(INFO) << "[GraphExecutor] AllocStorageMaybeAdjust: model "<< this->factory_.model_rank_ << " train idle";
+    }
+    adjusted = true;
+  };
+
+  // ensure sequential inference allocation  
+  if (!Controller::Get()->TryEnterInferModelAlloc(factory_.model_rank_)) {
+    if (Controller::Get()->HasFlyingColocateAdjust()) {
+      adjust_train_batch_size();
+    }
+    Controller::Get()->EnterInferModelAlloc(factory_.model_rank_);
+  }
+
+  double free_memory_mb;
+  if (!Controller::Get()->IsTrainIdle()) {
+    if (Config::use_shared_tensor_train) {
+      free_memory_mb = sta::detail::ByteToMB(sta::CUDAMemPool::PoolNbytes() - sta::CUDAMemPool::InferMemUsage());
+      free_memory_mb -= std::max(sta::detail::ByteToMB(sta::CUDAMemPool::TrainMemUsage()),
+                                 ModelTrainStore::Get()->PredictMemUsageMB()) + Config::train_memory_over_predict_mb;
+    } else {
+      auto [free, total] = Profiler::GetGPUMemInfo();
+      auto infer_memory_mb = sta::detail::ByteToMB(Profiler::GetLastInferMem());
+      auto train_memory_mb = std::max(sta::detail::ByteToMB(Profiler::GetLastTrainMem()),
+                                            ModelTrainStore::Get()->PredictMemUsageMB());
+      free_memory_mb = std::min(sta::detail::ByteToMB(free), 
+                                sta::detail::ByteToMB(total) - infer_memory_mb - train_memory_mb);
+      free_memory_mb -= Config::train_memory_over_predict_mb; 
+      DLOG(INFO) << "free " << sta::detail::ByteToMB(free) << " total " << sta::detail::ByteToMB(total)
+                << " infer memory " << infer_memory_mb << " train memory " << train_memory_mb
+                << " free memory " << free_memory_mb;
+    }
+  }
+
+  size_t total_storage_nbytes = 0;
+  std::vector<size_t> storage_nbytes(storage_pool_.size());
+  for (size_t sid = 0; sid < storage_pool_.size(); sid++) {
+    auto &s = storage_pool_[sid];
+    auto tensor = sta::TensorPool::Get()->Tensor(s);
+    auto nbytes = sta::ComputeStorageNbytes(tensor.Shape(), tensor.Stride(), 
+        tensor->dtype, tensor.StorageOffset());
+    storage_nbytes[sid] = nbytes;
+    total_storage_nbytes += sta::detail::GetAlignedNbytes(nbytes);
+  }
+
+  if (sta::detail::ByteToMB(total_storage_nbytes) > free_memory_mb) {
+    adjust_train_batch_size();
+  }
+
+  PROFILE_START(InferAllocStorage, 0);
+  if (Config::use_shared_tensor_infer) {
+    for (size_t sid = 0; sid < storage_pool_.size(); sid++) {
+      auto &s = storage_pool_[sid];
+      auto tensor = sta::TensorPool::Get()->Tensor(s);
+      tensor.AllocForNull(sta::MemType::kInfer, Config::use_shared_tensor_infer ? false : true);
+    }
+  } else {
+    for (auto &s : raw_storage_pool_) {
+      s.AllocForNull(sta::MemType::kInfer, true);
+    }
+  }
+  PROFILE_END(InferAllocStorage, 0);
+
+  // TODO: consider fwd/bwd
+  // if (sta::detail::ByteToMB(total_storage_nbytes) < free_memory_mb) {
+  // // case 1: memory is enough, do not need to adjust
+  //   for (size_t sid = 0; sid < storage_pool_.size(); sid++) {
+  //     auto &s = storage_pool_[sid];
+  //     auto tensor = sta::TensorPool::Get()->Tensor(s);
+  //     tensor.AllocForNull(sta::MemType::kInfer, false);
+  //   }
+  // } else { 
+  // // casae 2: memory is not enough, adjustment batch
+  //   for (size_t sid = 0; sid < storage_pool_.size(); ) {
+  //     auto &s = storage_pool_[sid];
+  //     auto tensor = sta::TensorPool::Get()->Tensor(s);
+  //     auto nbytes = sta::ComputeStorageNbytes(tensor.Shape(), tensor.Stride(), 
+  //         tensor->dtype, tensor.StorageOffset());
+  //     auto mdata = sta::CUDAMemPool::Get()->Alloc(nbytes, sta::MemType::kInfer, true);
+  //     if (nbytes > 0 && mdata == nullptr) {
+  //       adjust_train_batch_size();
+  //     } else {
+  //       tensor.AssignMDataForNull(mdata);
+  //       sid++;
+  //     }
+  //   }
+  // }
+  Controller::Get()->ExitInferModelAlloc(factory_.model_rank_);
 }
 
 }

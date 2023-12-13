@@ -38,6 +38,9 @@ class SwitchHook:
                 self.stub.cmd = None
         return hook
     
+    def report_batch_size(self, batch_size):
+        self.stub.report_batch_size(batch_size)
+    
     def stop(self):
         self.stub.stop()
 
@@ -70,6 +73,9 @@ class ColocateHook:
                 raise ColocateAdjustL1Exception("[Colocate Adjust L1]")
         return hook
     
+    def report_batch_size(self, batch_size):
+        self.stub.report_batch_size(batch_size)
+
     def stop(self):
         self.stub.stop()
 
@@ -125,9 +131,11 @@ class CustomeDynamicBatchDataset(IterableDataset):
                 if self.mode == 'colocate-l1' or self.mode == 'colocate-l2':
                     assert self.hook is not None
                     while batch_size <= 0:
+                        self.hook.report_batch_size(batch_size)
                         time.sleep(1e-3)
                         self.hook.try_reply_adjust_l1()
                         self.hook.try_reply_adjust_l2()
+                        batch_size = min(self.batch_size, self.size - self.iter_idx)
                 elif self.mode == 'task-switch-l1':
                     assert self.hook is not None
                     while self.hook.stub.cmd == torch_col.Event.kInterruptTrain:
@@ -140,6 +148,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
                 # targets = torch.randint(0, self.num_class, size=(batch_size,), dtype=torch.long)
                 inputs = self.all_inputs[self.iter_idx:self.iter_idx+batch_size]
                 targets = self.all_targets[self.iter_idx:self.iter_idx+batch_size]
+                self.hook.report_batch_size(batch_size)
                 yield (inputs, targets)
         else:
             raise Exception("not support multi-process")
@@ -249,7 +258,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', timeline: os.PathLike = s
                     print('batch {} adjust : bs {} -> {} | {:.1f}ms | {:.1f}ms | {}'.format(
                         i, train_dataset.last_batch_size, train_dataset.batch_size, (time.time()-batch_begin) * 1000, (t1 - t0) * 1000, 
                         mem_info))
-                train_dataset.next_batch()
+                    train_dataset.next_batch()
             finally:
                 micro_batch_end = torch_col.get_unix_timestamp()
                 if epoch != 0:

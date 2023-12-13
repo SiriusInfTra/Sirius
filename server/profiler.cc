@@ -17,22 +17,6 @@ namespace {
   }
 }
 
-#define NVML_CALL(func) do{ \
-    auto error = func; \
-    if (error != NVML_SUCCESS) { \
-      LOG(FATAL) << #func << " " << nvmlErrorString(error); \
-      exit(EXIT_FAILURE); \
-    } \
-  } while(0);
-
-#define CUDA_CALL(func) do { \
-    auto error = func; \
-    if (error != cudaSuccess) { \
-    LOG(FATAL) << #func << " " << cudaGetErrorString(error); \
-      exit(EXIT_FAILURE); \
-    } \
-  } while (0);
-
 #define LOG_ITEM(enum, item) case enum::item: os << #item; return os;
 
 std::ostream& operator<<(std::ostream &os, Profiler::EventItem item) {
@@ -42,6 +26,8 @@ std::ostream& operator<<(std::ostream &os, Profiler::EventItem item) {
     LOG_ITEM(Profiler::EventItem, TrainAdjustEnd)
     LOG_ITEM(Profiler::EventItem, InferAllocStorageStart)
     LOG_ITEM(Profiler::EventItem, InferAllocStorageEnd)
+    LOG_ITEM(Profiler::EventItem, InferAdjustAllocStart)
+    LOG_ITEM(Profiler::EventItem, InferAdjustAllocEnd)
     LOG_ITEM(Profiler::EventItem, InferLoadParamStart)
     LOG_ITEM(Profiler::EventItem, InferLoadParamEnd)
     LOG_ITEM(Profiler::EventItem, AddInfer)
@@ -62,6 +48,7 @@ std::ostream& operator<<(std::ostream &os, Profiler::PerfItem item) {
 
     LOG_ITEM(Profiler::PerfItem, TrainAdjust)
     LOG_ITEM(Profiler::PerfItem, InferAllocStorage)
+    LOG_ITEM(Profiler::PerfItem, InferAdjustAlloc)
     LOG_ITEM(Profiler::PerfItem, InferLoadParam)
 
     LOG_ITEM(Profiler::PerfItem, InferRealBatchSize)
@@ -72,6 +59,22 @@ std::ostream& operator<<(std::ostream &os, Profiler::PerfItem item) {
 }
 
 std::unique_ptr<Profiler> Profiler::profiler_;
+
+std::pair<size_t, size_t> Profiler::GetGPUMemInfo() {
+  size_t free, total;
+  CUDA_CALL(cudaMemGetInfo(&free, &total));
+  return {free, total};
+}
+
+size_t Profiler::GetLastInferMem() {
+  CHECK(profiler_ != nullptr);
+  return profiler_->last_infer_mem_;
+}
+
+size_t Profiler::GetLastTrainMem() {
+  CHECK(profiler_ != nullptr);
+  return profiler_->last_train_mem_;
+}
 
 void Profiler::Init(const std::string &profile_log_path) {
   CHECK(profiler_ == nullptr);
@@ -183,6 +186,8 @@ Profiler::Profiler(const std::string &profile_log_path)
         total_mem = static_cast<size_t>(Config::cuda_memory_pool_gb * 1024 * 1024 * 1024);
       }
 
+      this->last_infer_mem_ = infer_mem;
+      this->last_train_mem_ = train_mem;
       this->resource_info_.push_back({this->Passed(), 
                                      {infer_mem, train_mem, total_mem}});
       // this->profile_log_ifs_ << this->Passed()
@@ -251,6 +256,12 @@ void Profiler::WriteLog() {
         << " p60 " << sorted[int(0.60 * sorted.size())]
         << " p50 " << sorted[int(0.50 * sorted.size())]
         << std::endl;
+  }
+  for (int i = 0; i < static_cast<int>(Profiler::PerfItem::NumPerfItem); i++) {
+    auto item = static_cast<Profiler::PerfItem>(i);
+    if (perf_info_.find(i) == perf_info_.end()) {
+      ofs << item << ": no record" << std::endl;
+    }
   }
   ofs << std::endl;
 

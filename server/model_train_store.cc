@@ -52,6 +52,18 @@ bool ModelTrainStore::AddJob(network::TrainHandler::TrainData* data) {
   return true;
 }
 
+double ModelTrainStore::PredictMemUsageMB() {
+  if (train_pid_ == -1 || cur_batch_size_ <= 0) {
+    return 0;
+  } else {
+    if (cur_model_name_ == "resnet152") {
+      return cur_batch_size_ * 145 + 200;
+    } else {
+      LOG(FATAL) << "Unsupported model: " << cur_model_name_;
+    }
+  }
+}
+
 bool ModelTrainStore::Train() {
   std::shared_ptr<Job> job = nullptr;
   while (job == nullptr) {
@@ -61,6 +73,7 @@ bool ModelTrainStore::Train() {
 
   auto data = job->GetTrainData();
   auto model = data->GetModelName();
+  cur_model_name_ = model;
   auto train_script = train_handles_[model];
 
   std::vector<std::string> args_str;
@@ -68,10 +81,16 @@ bool ModelTrainStore::Train() {
   args_str.push_back(train_script.string());
   auto args = data->GetTrainArgs();
   for (size_t i = 0, j = 0; i < args.size(); ) {
+    std::string arg_k, arg_v;
     for (j = i; j < args.size() && args[j] != '='; j++);
-    args_str.push_back("--" + args.substr(i, j - i));
+    args_str.push_back("--" + args.substr(i, j - i)); 
+    arg_k = args.substr(i, j - 1);
     for (i = j + 1, j = i; j < args.size() && args[j] != ' ' && args[j] != ','; j++); 
     args_str.push_back(args.substr(i, j - i));
+    arg_v = args.substr(i, j - i);
+    if (arg_k == "batch-size") {
+      SetCurBatchSize(std::stoi(arg_v));
+    }
     for (i = j + 1; i < args.size() && args[i] == ' '; i++);
   }
   if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
@@ -176,6 +195,7 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
   int status;
   waitpid(pid, &status, 0);
   train_pid_ = -1;
+  cur_batch_size_ = -1;
   Controller::Get()->TrainEnd(); // double check train end
   
   // LOG(INFO) << "signaled " << WIFSIGNALED(status) << " " << WTERMSIG(status);

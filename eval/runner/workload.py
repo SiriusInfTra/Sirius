@@ -264,7 +264,7 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
             for j in range(len(model_list)):
                 if j not in set(model_req_list):
                     poisson_params[j].append(PoissonParam(i * interval_sec, 0))
-        print(poisson_params)
+        # print(poisson_params)
         self.poisson_params = []
         for i, poisson_param in enumerate(poisson_params):
             self.poisson_params.append((model_list[i], poisson_param))
