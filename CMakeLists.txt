@@ -122,6 +122,7 @@ target_link_libraries(proto ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOB
 add_library(sta SHARED
   server/sta/cuda_allocator.cc
   server/sta/tensor_pool.cc
+  server/sta/mempool.cc
   server/sta/tensor_methods.cc
   server/sta/shape_helper.cc
   server/sta/dtype_helper.cc
