@@ -9,43 +9,26 @@ namespace colserve::sta {
 
 FirstFitPolicy::FirstFitPolicy(shared_memory &segment)
     : segment_(segment) {
-  freelist_ = segment.find_or_construct<MemEntryList>("FreeList")(
-      segment.get_segment_manager());
-  freelist_pos_ =
-      segment.find_or_construct<MemEntryListIterator>("FreeListPos")();
+  freelist_ = segment.find_or_construct<MemEntryList>("FreeList")(segment.get_segment_manager());
 }
 void FirstFitPolicy::InitMaster(MemPoolEntry *free_entry) {
   free_entry->freelist_pos =
       freelist_->insert(freelist_->end(), GetHandle(segment_, free_entry));
-  *freelist_pos_ = free_entry->freelist_pos;
 }
+
 void FirstFitPolicy::InitSlave() {}
 MemPoolEntry *
 FirstFitPolicy::GetFreeBlock(size_t nbytes) {
-  {
-    auto iter = *freelist_pos_;
-    while (iter != freelist_->cend()) {
-      auto *entry = GetEntry(segment_, *iter);
-      if (entry->nbytes >= nbytes) {
-        *freelist_pos_ = iter;
-        return entry;
-      }
-      iter++;
-    }
-  }
-  {
-    auto iter = freelist_->begin();
-    while (iter != *freelist_pos_) {
-      auto *entry = GetEntry(segment_, *iter);
-      if (entry->nbytes >= nbytes) {
-        *freelist_pos_ = iter;
-        return entry;
-      }
-      iter++;
+  for(auto handle : *freelist_) {
+    auto *entry = GetEntry(segment_, handle);
+    CHECK(entry->mtype == MemType::kFree) << "not free entry in freelist: " << *entry << ".";
+    if (entry->nbytes >= nbytes) {
+      return entry;
     }
   }
   return nullptr;
 }
+
 void FirstFitPolicy::NotifyUpdateFreeBlockNbytes(
     MemPoolEntry *entry, size_t old_nbytes) {
   CHECK(entry->mtype == MemType::kFree)
@@ -54,11 +37,7 @@ void FirstFitPolicy::NotifyUpdateFreeBlockNbytes(
 void FirstFitPolicy::RemoveFreeBlock(MemPoolEntry *entry) {
   CHECK(entry->mtype != MemType::kFree)
       << "try to remove free entry from freelist: " << *entry << ".";
-  if (entry->freelist_pos == *freelist_pos_) {
-    *freelist_pos_ = freelist_->erase(entry->freelist_pos);
-  } else {
-    freelist_->erase(entry->freelist_pos);
-  }
+  freelist_->erase(entry->freelist_pos);
 }
 void FirstFitPolicy::AddFreeBlock(MemPoolEntry *entry) {
   CHECK(entry->mtype == MemType::kFree)
@@ -86,6 +65,88 @@ void FirstFitPolicy::CheckFreeList(
     }
   }
 }
+
+
+NextFitPolicy::NextFitPolicy(shared_memory &segment)
+    : segment_(segment) {
+  freelist_ = segment.find_or_construct<MemEntryList>("FreeList")(
+      segment.get_segment_manager());
+  freelist_pos_ =
+      segment.find_or_construct<MemEntryListIterator>("FreeListPos")();
+}
+void NextFitPolicy::InitMaster(MemPoolEntry *free_entry) {
+  free_entry->freelist_pos =
+      freelist_->insert(freelist_->end(), GetHandle(segment_, free_entry));
+  *freelist_pos_ = free_entry->freelist_pos;
+}
+void NextFitPolicy::InitSlave() {}
+MemPoolEntry *
+NextFitPolicy::GetFreeBlock(size_t nbytes) {
+  {
+    auto iter = *freelist_pos_;
+    while (iter != freelist_->cend()) {
+      auto *entry = GetEntry(segment_, *iter);
+      if (entry->nbytes >= nbytes) {
+        *freelist_pos_ = iter;
+        return entry;
+      }
+      iter++;
+    }
+  }
+  {
+    auto iter = freelist_->begin();
+    while (iter != *freelist_pos_) {
+      auto *entry = GetEntry(segment_, *iter);
+      if (entry->nbytes >= nbytes) {
+        *freelist_pos_ = iter;
+        return entry;
+      }
+      iter++;
+    }
+  }
+  return nullptr;
+}
+void NextFitPolicy::NotifyUpdateFreeBlockNbytes(
+    MemPoolEntry *entry, size_t old_nbytes) {
+  CHECK(entry->mtype == MemType::kFree)
+      << "try update not free entry in freelist: " << *entry << ".";
+}
+void NextFitPolicy::RemoveFreeBlock(MemPoolEntry *entry) {
+  CHECK(entry->mtype != MemType::kFree)
+      << "try to remove free entry from freelist: " << *entry << ".";
+  if (entry->freelist_pos == *freelist_pos_) {
+    *freelist_pos_ = freelist_->erase(entry->freelist_pos);
+  } else {
+    freelist_->erase(entry->freelist_pos);
+  }
+}
+void NextFitPolicy::AddFreeBlock(MemPoolEntry *entry) {
+  CHECK(entry->mtype == MemType::kFree)
+      << "try add not free entry to freelist: " << *entry << ".";
+  entry->freelist_pos =
+      freelist_->insert(freelist_->end(), GetHandle(segment_, entry));
+}
+void NextFitPolicy::CheckFreeList(
+    const MemEntryListIterator &begin, const MemEntryListIterator &end) {
+  DLOG(INFO) << "Check freelist";
+  std::unordered_set<std::ptrdiff_t> free_set;
+  for (auto iter = freelist_->cbegin(); iter != freelist_->cend(); iter++) {
+    auto *entry = GetEntry(segment_, *iter);
+    free_set.insert(entry->addr_offset);
+    CHECK(entry->mtype == MemType::kFree)
+        << "entry in freelist but not free: " << *entry << ".";
+  }
+
+  for (auto iter = begin; iter != end; iter++) {
+    auto *entry = GetEntry(segment_, *iter);
+    if (entry->mtype == MemType::kFree &&
+        free_set.find(entry->addr_offset) == free_set.cend()) {
+      CHECK(entry->mtype == MemType::kFree)
+          << "entry in free but not in free list: " << *entry << ".";
+    }
+  }
+}
+
 void MemPool::Free(MemPoolEntry *entry) {
   DLOG(INFO) << "[mempool] free " << entry->nbytes << ".";
   stat_->at(static_cast<size_t>(entry->mtype)).fetch_sub(entry->nbytes, std::memory_order_relaxed);

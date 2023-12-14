@@ -146,9 +146,33 @@ class FirstFitPolicy {
 private:
   const shared_memory &segment_;
   MemEntryList *freelist_;
-  MemEntryListIterator *freelist_pos_;
 public:
   FirstFitPolicy(shared_memory &segment);
+
+  void InitMaster(MemPoolEntry *free_entry);
+
+  void InitSlave();
+
+  MemPoolEntry *GetFreeBlock(size_t nbytes);
+
+  void NotifyUpdateFreeBlockNbytes(MemPoolEntry *entry, size_t old_nbytes);
+
+  void RemoveFreeBlock(MemPoolEntry *entry);
+
+  void AddFreeBlock(MemPoolEntry *entry);
+
+  void CheckFreeList(const MemEntryListIterator &begin,
+                     const MemEntryListIterator &end);
+};
+
+class NextFitPolicy {
+  friend class MempoolSampler;
+private:
+  const shared_memory &segment_;
+  MemEntryList *freelist_;
+  MemEntryListIterator *freelist_pos_;
+public:
+  NextFitPolicy(shared_memory &segment);
 
   void InitMaster(MemPoolEntry *free_entry);
 
