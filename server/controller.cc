@@ -246,7 +246,7 @@ bool Controller::TryEnterInferModelAlloc(size_t model_rank) {
 
 void Controller::EnterInferModelAlloc(size_t model_rank) {
   std::unique_lock<std::mutex> lock{infer_model_alloc_mutex_};
-  infer_model_alloc_cv_.wait(lock, [this, model_rank] {
+  infer_model_alloc_cv_.wait(lock, [this, model_rank]() {
     return last_alloc_infer_model_ == static_cast<size_t>(-1);
   });
   last_alloc_infer_model_ = model_rank;

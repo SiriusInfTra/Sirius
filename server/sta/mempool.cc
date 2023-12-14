@@ -1,5 +1,6 @@
 #include "mempool.h"
 #include <initializer_list>
+#include <iostream>
 #include <tuple>
 #include <glog/logging.h>
 
@@ -26,16 +27,18 @@ FirstFitPolicy::GetFreeBlock(size_t nbytes) {
     while (iter != freelist_->cend()) {
       auto *entry = GetEntry(segment_, *iter);
       if (entry->nbytes >= nbytes) {
+        *freelist_pos_ = iter;
         return entry;
       }
       iter++;
     }
   }
   {
-    auto iter = freelist_->cbegin();
+    auto iter = freelist_->begin();
     while (iter != *freelist_pos_) {
       auto *entry = GetEntry(segment_, *iter);
       if (entry->nbytes >= nbytes) {
+        *freelist_pos_ = iter;
         return entry;
       }
       iter++;
@@ -87,7 +90,7 @@ void MemPool::Free(MemPoolEntry *entry) {
   DLOG(INFO) << "[mempool] free " << entry->nbytes << ".";
   stat_->at(static_cast<size_t>(entry->mtype)).fetch_sub(entry->nbytes, std::memory_order_relaxed);
   bip::scoped_lock locker(*mutex_);
-  DCHECK(CheckPoolInternal());
+  DCHECK(CheckPoolWithoutLock());
   auto *next = GetNextEntry(entry);
   auto *prev = GetPrevEntry(entry);
   auto next_free = next != nullptr && next->mtype == MemType::kFree;
@@ -146,7 +149,7 @@ void MemPool::WaitSlaveExit() {
     }
   }
 }
-bool MemPool::CheckPoolInternal() {
+bool MemPool::CheckPoolWithoutLock() {
   freeblock_policy_->CheckFreeList(mem_entry_list_->begin(),
                                    mem_entry_list_->end());
   DLOG(INFO) << "Check initial cond";
@@ -265,34 +268,9 @@ MemPool::~MemPool() {
 }
 void MemPool::CheckPool() {
   bip::scoped_lock locker(*mutex_);
-  CheckPoolInternal();
+  CheckPoolWithoutLock();
 }
-std::unordered_map<MemType, std::unordered_map<UsageStat, size_t>>
-MemPool::GetUsage() {
-  bip::scoped_lock locker(*mutex_);
-  std::unordered_map<MemType, std::unordered_map<UsageStat, size_t>> usages;
-  for (auto handle : *mem_entry_list_) {
-    auto *entry = GetEntry(segment_, handle);
-    auto &usages_mtype = usages[entry->mtype];
-    {
-      auto &maxNbytes = usages_mtype[UsageStat::kMaxNBytes];
-      maxNbytes = std::max(maxNbytes, entry->nbytes);
-    }
-    {
-      auto &minNbytes = usages_mtype[UsageStat::kMinNBytes];
-      minNbytes = std::max(minNbytes, entry->nbytes);
-    }
-    {
-      auto &count = usages_mtype[UsageStat::kCount];
-      ++count;
-    }
-    {
-      auto &totalNBytes = usages_mtype[UsageStat::kTotalNBytes];
-      totalNBytes += entry->nbytes;
-    }
-  }
-  return usages;
-}
+
 MemPoolEntry *
 MemPool::GetPrevEntry(MemPoolEntry *entry) {
   if (entry->mem_entry_pos == mem_entry_list_->cbegin()) {
@@ -334,12 +312,18 @@ MemPool::CreateMemPoolEntry(std::ptrdiff_t addr_offset,
 std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
                                                          MemType mtype) {
   DLOG(INFO) << "[mempool] alloc " << nbytes << ".";
+  if (nbytes == 0) { 
+    return std::shared_ptr<PoolEntry>(new PoolEntry{nullptr, 0, mtype});
+  }
   nbytes = (nbytes + 1023) / 1024 * 1024;
   stat_->at(static_cast<size_t>(mtype)).fetch_add(nbytes, std::memory_order_relaxed);
   bip::scoped_lock locker(*mutex_);  
-  DCHECK(CheckPoolInternal());
+  DCHECK(CheckPoolWithoutLock());
   auto *entry = freeblock_policy_->GetFreeBlock(nbytes);
-  CHECK(entry != nullptr);
+  if (entry == nullptr) {
+    DumpSummaryWithoutLock();
+    LOG(FATAL) << "[mempool] fail to alloc " << detail::ByteDisplay(nbytes) << ".";
+  }
   CHECK(entry->mtype == MemType::kFree);
   entry->mtype = mtype;
   freeblock_policy_->RemoveFreeBlock(entry);
@@ -365,21 +349,54 @@ void MemPool::CopyFromTo(std::shared_ptr<PoolEntry> src,
   CopyFromToInternel(dst->addr, src->addr, std::min(src->nbytes, dst->nbytes));
 }
 
-void MemPool::DumpSummary() {
+std::unordered_map<MemType, std::unordered_map<UsageStat, size_t>>
+MemPool::GetUsageWithoutLock() {
+  std::unordered_map<MemType, std::unordered_map<UsageStat, size_t>> usages;
+  for (auto handle : *mem_entry_list_) {
+    auto* entry = GetEntry(segment_, handle);
+    auto& usages_mtype = usages[entry->mtype];
+    {
+      auto& maxNbytes = usages_mtype[UsageStat::kMaxNBytes];
+      maxNbytes = std::max(maxNbytes, entry->nbytes);
+    }
+    {
+      auto& minNbytes = usages_mtype[UsageStat::kMinNBytes];
+      minNbytes = std::max(minNbytes, entry->nbytes);
+    }
+    {
+      auto& count = usages_mtype[UsageStat::kCount];
+      ++count;
+    }
+    {
+      auto& totalNBytes = usages_mtype[UsageStat::kTotalNBytes];
+      totalNBytes += entry->nbytes;
+    }
+  }
+  return usages;
+}
+
+void MemPool::DumpSummaryWithoutLock() {
   std::initializer_list<std::tuple<std::string, MemType>> mtype_list = {
-    {"free", MemType::kFree},
-    {"infer", MemType::kInfer},
-    {"train", MemType::kTrain}
-  };
-  auto usages = GetUsage();
+      {"free", MemType::kFree},
+      {"infer", MemType::kInfer},
+      {"train", MemType::kTrain}};
+  auto usages = GetUsageWithoutLock();
+  std::cout << "now dump memory pool summary" << std::endl;
   LOG(INFO) << "---------- mempool summary ----------";
-  for(auto&& [name, mtype] : mtype_list) {
-    auto &usages_mtype = usages[mtype];
-    LOG(INFO) << name << " max: " << detail::ByteDisplay(usages_mtype[UsageStat::kMaxNBytes]);
-    LOG(INFO) << name << " max: " << detail::ByteDisplay(usages_mtype[UsageStat::kMinNBytes]);
-    LOG(INFO) << name << " sum: " << detail::ByteDisplay(usages_mtype[UsageStat::kTotalNBytes]);
-    LOG(INFO) << name << " cnt: " << detail::ByteDisplay(usages_mtype[UsageStat::kCount]);
-    LOG(INFO) << name << " avg: " << detail::ByteDisplay(usages_mtype[UsageStat::kTotalNBytes] / usages_mtype[UsageStat::kCount]);
+  for (auto&& [name, mtype] : mtype_list) {
+    auto& usages_mtype = usages[mtype];
+    LOG(INFO) << name << " max: "
+              << detail::ByteDisplay(usages_mtype[UsageStat::kMaxNBytes]);
+    LOG(INFO) << name << " max: "
+              << detail::ByteDisplay(usages_mtype[UsageStat::kMinNBytes]);
+    LOG(INFO) << name << " sum: "
+              << detail::ByteDisplay(usages_mtype[UsageStat::kTotalNBytes]);
+    LOG(INFO) << name << " cnt: "
+              << usages_mtype[UsageStat::kCount];
+    if (usages_mtype[UsageStat::kCount] == 0) { continue; }
+    LOG(INFO) << name << " avg: "
+              << detail::ByteDisplay(usages_mtype[UsageStat::kTotalNBytes] /
+                                     usages_mtype[UsageStat::kCount]);
   }
   google::FlushLogFiles(google::INFO);
 }

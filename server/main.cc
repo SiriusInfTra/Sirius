@@ -140,11 +140,11 @@ int main(int argc, char *argv[]) {
   colserve::Controller::Init();
   colserve::Profiler::Init(colserve::Config::profile_log_path);
   colserve::GraphCache::Init(colserve::Config::max_cache_nbytes);
-  colserve::ModelInferStore::Init("models");
   colserve::ModelTrainStore::Init("train");
+  colserve::ModelInferStore::Init("models");
   colserve::Profiler::Start();
 
-  if (colserve::Config::memory_pressure_mb > 0) {
+  if (colserve::Config::memory_pressure_mb > 0) { 
     size_t nbytes = static_cast<size_t>(colserve::Config::memory_pressure_mb * 1024 * 1024);
     CUDA_CALL(cudaMalloc(&memory_pressure_ptr, nbytes));
   }

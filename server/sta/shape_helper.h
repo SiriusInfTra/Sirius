@@ -31,7 +31,7 @@ inline void CheckMemoryBound(at::IntArrayRef size,
                              size_t storage_offset,
                              const TensorContainer::memory_data_t mdata) {
   size_t nbytes = ComputeStorageNbytes(size, stride, dtype, storage_offset);
-  CHECK_NE(mdata, nullptr);
+  CHECK(mdata != nullptr);
   CHECK_LE(nbytes, mdata->nbytes) << "CheckMemoryBound: Out of memory bound";
 }
 

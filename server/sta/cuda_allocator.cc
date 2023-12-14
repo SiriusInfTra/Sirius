@@ -57,7 +57,7 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Resize(
     std::shared_ptr<PoolEntry> entry, std::size_t nbytes) {
   // TODO: handle reallocate
-  CHECK_NE(entry, nullptr);
+  CHECK(entry != nullptr);
   auto ptr = impl_->Alloc(nbytes, entry->mtype);
   CopyFromTo(entry, ptr);
   return ptr;
@@ -138,5 +138,10 @@ size_t CUDAMemPool::TrainMemUsage() {
 }
 
 void CUDAMemPool::ReleaseMempool() {}
+
+size_t CUDAMemPool::PoolNbytes() {
+  CHECK(cuda_mem_pool_ != nullptr);
+  return Get()->impl_->PoolNbytes();
+}
 }  // namespace sta
 }

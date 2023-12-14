@@ -258,7 +258,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', timeline: os.PathLike = s
                     print('batch {} adjust : bs {} -> {} | {:.1f}ms | {:.1f}ms | {}'.format(
                         i, train_dataset.last_batch_size, train_dataset.batch_size, (time.time()-batch_begin) * 1000, (t1 - t0) * 1000, 
                         mem_info))
-                    train_dataset.next_batch()
+                train_dataset.next_batch()
             finally:
                 micro_batch_end = torch_col.get_unix_timestamp()
                 if epoch != 0:

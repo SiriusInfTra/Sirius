@@ -1,6 +1,7 @@
 #ifndef COLSERVE_CUDA_MEMPOOL_H
 #define COLSERVE_CUDA_MEMPOOL_H
 #include <algorithm>
+#include <atomic>
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/list.hpp>
@@ -202,7 +203,12 @@ private:
 
   void WaitSlaveExit();
 
-  bool CheckPoolInternal();
+  bool CheckPoolWithoutLock();
+
+  std::unordered_map<MemType, std::unordered_map<UsageStat, size_t>>
+  GetUsageWithoutLock();
+
+  void DumpSummaryWithoutLock();
 
   void CopyFromToInternel(void *dst_dev_ptr, void *src_dev_ptr, size_t nbytes);
 
@@ -215,20 +221,31 @@ private:
 
   void CheckPool();
 
-  std::unordered_map<MemType, std::unordered_map<UsageStat, size_t>> GetUsage();
 
-  std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes, MemType mtype = MemType::kInfer);
+  std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes, MemType mtype);
 
   void CopyFromTo(std::shared_ptr<PoolEntry> src, std::shared_ptr<PoolEntry> dst);
 
   inline size_t InferMemUsage() {
-    return stat_->at(static_cast<size_t>(MemType::kInfer));
+    return stat_->at(static_cast<size_t>(MemType::kInfer)).load(std::memory_order_relaxed);
   }
   inline size_t TrainMemUsage() {
-    return stat_->at(static_cast<size_t>(MemType::kTrain));
+    return stat_->at(static_cast<size_t>(MemType::kTrain)).load(std::memory_order_relaxed);
   }
 
-  void DumpSummary();
+  inline size_t PoolNbytes() {
+    return config_.cuda_memory_size;
+  }
+
+  inline void DumpSummary() {
+    bip::scoped_lock locker(*mutex_);
+    DumpSummaryWithoutLock();
+  }
+
+  inline std::unordered_map<MemType, std::unordered_map<UsageStat, size_t>> GetUsage() {
+    bip::scoped_lock locker(*mutex_);
+    return GetUsageWithoutLock();
+  }
 };
 
 
