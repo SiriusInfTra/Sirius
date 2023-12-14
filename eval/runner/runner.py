@@ -62,7 +62,7 @@ class System:
                  train_mps_thread_percent: Optional[int] = None,
                  colocate_skip_malloc: bool = False,
                  colocate_skip_loading: bool = False,
-                 max_cache_nbytes: int = 1 * 1024 * 1024 * 1024,
+                 max_cache_nbytes: int = 0 * 1024 * 1024 * 1024,
                  memory_pressure_mb: str | float = None,
                  ondemand_adjust: bool = True,
                  train_memory_over_predict_mb: str | float = None,
