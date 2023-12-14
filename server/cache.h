@@ -109,6 +109,10 @@ public:
   
   // assume graph_executor is accessed by a unique thread
   void InitGraphExecutor(const std::string &name, tvm::GraphExecutor* graph_executor) {
+    if (max_cache_nbytes_ == 0) {
+      graph_executor->Init();
+      return;;
+    }
     auto cache_item = policy_.RemoveIfPresent(name, graph_executor);
     if (cache_item.is_cache) { /* cached, already inited*/
       LOG(INFO) << CACHE_LOG_PREFIX << " load model: " << name << ", found it already in cache, skip init.";
@@ -120,6 +124,10 @@ public:
   }
 
   void DeInitGraphExecutor(const std::string &name, tvm::GraphExecutor* graph_executor) {
+    if (max_cache_nbytes_ == 0) {
+      graph_executor->DeInit();
+      return;
+    }
     std::stringstream log_prefix;
     log_prefix << CACHE_LOG_PREFIX << " model " << name << " with graph size " << graph_executor->GetStorageSize() << " deinit.";
     if (graph_executor->GetStorageSize() > max_cache_nbytes_) {
