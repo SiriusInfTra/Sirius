@@ -26,3 +26,5 @@ dist/
 *.pyc
 
 log/*
+
+.env
