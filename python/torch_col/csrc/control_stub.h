@@ -33,10 +33,6 @@ enum class Event {
   kInferExit, // train adjust back
 };
 
-void ReleaseMempool();
-void DumpMempoolFreeList(std::string filename);
-void DumpMempoolBlockList(std::string filename);
-
 class SwitchStub {
  public:
   SwitchStub();
@@ -78,6 +74,10 @@ class ColocateStub {
   std::unique_ptr<std::thread> thread_;
 };
 
+
+void ReleaseMempool();
+void DumpMempoolFreeList(std::string filename);
+void DumpMempoolBlockList(std::string filename);
 }
 
 #endif

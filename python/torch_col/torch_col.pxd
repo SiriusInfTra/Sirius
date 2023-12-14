@@ -1,6 +1,7 @@
 # distutils: language = c++
 
 from libcpp.string cimport string
+from cpython.ref cimport PyObject
 
 cdef extern from "<sta/cuda_allocator.h>" namespace "colserve::sta":
     cdef cppclass CUDAMemPool:
@@ -9,6 +10,10 @@ cdef extern from "<sta/cuda_allocator.h>" namespace "colserve::sta":
 
         @staticmethod
         size_t TrainMemUsage()
+
+
+cdef extern from "<csrc/torch_helper.h>" namespace "torch_col":
+    cpdef void ReleaseGradFnSavedTensor(PyObject* function)
 
 
 cdef extern from "<csrc/control_stub.h>" namespace "colserve":

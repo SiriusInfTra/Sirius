@@ -50,16 +50,16 @@ target_include_directories(torch_col_tensor PRIVATE ${CUDNN_INCLUDE_DIR})
 target_include_directories(torch_col_tensor PRIVATE ${CUDNN_FRONTEND_INCLUDE_DIR})
 
 
-target_link_libraries(torch_col_tensor PRIVATE ${TORCH_LIBRARIES} Python::Python)
-target_link_libraries(torch_col_tensor PUBLIC sta glog::glog)
+target_link_libraries(torch_col_tensor PUBLIC sta glog::glog  ${TORCH_LIBRARIES} Python::Python)
 
 add_library(torch_col SHARED 
   torch_col/csrc/control_stub.cc
+  torch_col/csrc/torch_helper.cc
   torch_col/csrc/init.cc
 )
 
 target_include_directories(torch_col PRIVATE "../")
-target_link_libraries(torch_col PRIVATE glog::glog sta)
+target_link_libraries(torch_col PRIVATE torch_col_tensor)
 
 
 # build python ext

@@ -1,13 +1,20 @@
 # cython: c_string_type=unicode, c_string_encoding=utf8
 from .torch_col cimport *
 from libcpp.string cimport string
-
+from cpython.ref cimport PyObject
 
 def cuda_memory_pool_infer_usage():
     return CUDAMemPool.InferMemUsage()
 
+
 def cuda_memory_pool_train_usage():
     return CUDAMemPool.TrainMemUsage()
+
+
+def release_grad_fn_saved_tensor(grad_fn):
+    cdef PyObject* obj = <PyObject*> grad_fn
+    ReleaseGradFnSavedTensor(obj)
+
 
 cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
     cpdef void ReleaseMempool()
