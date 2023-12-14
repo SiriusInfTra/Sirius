@@ -48,19 +48,9 @@ if (NOT grpc_POPULATED)
   set(CMAKE_BUILD_TYPE ${BUILD_TYPE_OLD} CACHE INTERNAL "build type" FORCE)
 endif()
 
-FetchContent_Declare(
-  glog
-  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/glog
-)
-# FetchContent_MakeAvailable(glog)
-FetchContent_GetProperties(glog)
-if (NOT glog_POPULATED)
-  FetchContent_Populate(glog)
-  set(BUILD_SHARED_LIBS_OLD ${BUILD_SHARED_LIBS})
-  set(BUILD_SHARED_LIBS ON CACHE INTERNAL "build shared library" FORCE)
-  add_subdirectory(${glog_SOURCE_DIR} ${glog_BINARY_DIR})
-  set(BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS_OLD} CACHE INTERNAL "library build type" FORCE)
-endif()
+include(~/miniforge3/envs/dev/lib/python3.10/site-packages/torch/share/cmake/Caffe2/public/glog.cmake)
+# find_package(glog REQUIRED)
+
 
 FetchContent_Declare(
   CLI11
