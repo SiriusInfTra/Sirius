@@ -29,8 +29,8 @@ public:
     bip::scoped_lock locker(*impl->mutex_);
     for(const auto & element : *impl->mem_entry_list_) {
       auto *entry = GetEntry(impl->segment_, element);
-      auto *prev = impl->GetPrevEntry(entry);
-      auto *next = impl->GetNextEntry(entry);
+      auto *prev = GetPrevEntry(impl->segment_, entry, impl->mem_entry_list_->begin());
+      auto *next = GetNextEntry(impl->segment_, entry, impl->mem_entry_list_->end());
       stream << entry->addr_offset << "," 
         << entry->nbytes << ","
         << static_cast<int>(entry->mtype) << ","
@@ -42,22 +42,11 @@ public:
   }
 
   void DumpFreeList(const std::string &filename) {
+    std::cout << "---------- dump whole mempool (free) ----------" << std::endl;
+    bip::scoped_lock locker(*impl->mutex_);
     std::fstream stream{filename, std::ios_base::out | std::ios_base::trunc};
     assert(stream.is_open());
-    std::cout << "---------- dump whole mempool (free) ----------" << std::endl;
-    stream << "start,len,allocated,next,prev,mtype" << std::endl;
-    bip::scoped_lock locker(*impl->mutex_);
-    for(const auto & element : *impl->freeblock_policy_->freelist_) {
-      auto *entry = GetEntry(impl->segment_, element);
-      auto *prev = impl->GetPrevEntry(entry);
-      auto *next = impl->GetNextEntry(entry);
-      stream << entry->addr_offset << "," 
-        << entry->nbytes << ","
-        << static_cast<int>(entry->mtype) << ","
-        << (prev ? next->addr_offset : -1) << "," 
-        << (prev ? prev->addr_offset : -1) << ","
-        << static_cast<unsigned>(entry->mtype) << std::endl;
-    }
+    impl->freeblock_policy_->DumpFreeList(stream, impl->mem_entry_list_->begin(), impl->mem_entry_list_->end());
     stream.close();
   }
 };
