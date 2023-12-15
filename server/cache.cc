@@ -1,3 +1,4 @@
+#include "tvm/tvm.h"
 #include "cache.h" 
 
 std::unique_ptr<colserve::GraphCache> colserve::GraphCache::instance_ = nullptr;

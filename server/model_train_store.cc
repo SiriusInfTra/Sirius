@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <chrono>
+#include "tvm/tvm.h"
 #include "model_infer_store.h"
 #include <glog/logging.h>
 

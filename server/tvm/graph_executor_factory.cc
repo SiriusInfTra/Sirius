@@ -2,7 +2,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-
+#include "tvm.h"
 
 #include "graph_executor.h"
 #include "graph_executor_factory.h"

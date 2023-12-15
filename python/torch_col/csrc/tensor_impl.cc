@@ -4,7 +4,6 @@
 #include "tensor_impl.h"
 #include "dlpack_convert.h"
 
-#include <undef_log.h>
 #include <glog/logging.h>
 
 namespace torch_col {

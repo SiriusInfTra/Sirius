@@ -1,3 +1,4 @@
+#include "tvm/tvm.h"
 #include <filesystem>
 #include <cstdio>
 #include <cstdlib>
@@ -14,7 +15,6 @@
 #include "controller.h"
 #include "profiler.h"
 #include "config.h"
-#include "tvm/runtime/logging.h"
 
 
 namespace colserve {

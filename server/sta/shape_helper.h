@@ -3,7 +3,6 @@
 
 // #include <dlpack/dlpack.h>
 #include <ATen/Tensor.h>
-#include "../undef_log.h"
 #include <glog/logging.h>
 
 #include <vector>

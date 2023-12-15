@@ -1,3 +1,4 @@
+#include "tvm.h"
 #include <numeric>
 #include <thread>
 #include <c10/core/MemoryFormat.h>
