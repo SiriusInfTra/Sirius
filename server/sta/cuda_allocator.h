@@ -30,7 +30,7 @@ namespace sta {
 class CUDAMemPool {
  public:
   using PoolEntry = colserve::sta::PoolEntry;
-  static void Init(std::size_t nbytes, bool master);
+  static void Init(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy);
   static CUDAMemPool* Get();
   static size_t InferMemUsage();
   static size_t TrainMemUsage();
@@ -40,7 +40,7 @@ class CUDAMemPool {
 
   static std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes, MemType mtype);
 
-  CUDAMemPool(std::size_t nbytes, bool master);
+  CUDAMemPool(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy);
   ~CUDAMemPool();
   std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes, MemType mtype, bool allow_nullptr);
   std::shared_ptr<PoolEntry> Resize(std::shared_ptr<PoolEntry> entry, std::size_t nbytes);

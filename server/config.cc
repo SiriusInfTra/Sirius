@@ -22,6 +22,8 @@ bool Config::ondemand_adjust = true;
 
 double Config::cuda_memory_pool_gb = 12;
 
+std::string Config::mempool_freelist_policy= "best-fit";
+
 bool Config::infer_raw_blob_alloc = false;
 
 bool Config::capture_train_log = true;

@@ -174,6 +174,7 @@ enum class FreeListPolicyType {
   kNextFit,
   kFirstFit,
   kBestFit,
+  kReserved,
   kPolicyNum,
 };
 
@@ -346,8 +347,6 @@ public:
 };
 
 class FirstFitPolicy: public NextFitPolicy {
-protected:
-  EntryList *freelist_;
 public:
   FirstFitPolicy(shared_memory &segment): NextFitPolicy(segment) {}; 
 
@@ -409,7 +408,7 @@ private:
 
 
  public:
-  MemPool(MemPoolConfig config, bool cleanup, bool observe, FreeListPolicyType policy_type = FreeListPolicyType::kBestFit);
+  MemPool(MemPoolConfig config, bool cleanup, bool observe, FreeListPolicyType policy_type = FreeListPolicyType::kNextFit);
 
   ~MemPool();
 

@@ -13,8 +13,8 @@ void MemPool::Free(MemPoolEntry *entry) {
   stat_->at(static_cast<size_t>(entry->mtype)).fetch_sub(entry->nbytes, std::memory_order_relaxed);
   bip::scoped_lock locker(*mutex_);
   DCHECK(CheckPoolWithoutLock());
-  auto *next = GetNextEntry(segment_, entry, mem_entry_list_->begin());
-  auto *prev = GetPrevEntry(segment_, entry, mem_entry_list_->end());
+  auto *next = GetNextEntry(segment_, entry, mem_entry_list_->end());
+  auto *prev = GetPrevEntry(segment_, entry, mem_entry_list_->begin());
   auto next_free = next != nullptr && next->mtype == MemType::kFree;
   auto prev_free = prev != nullptr && prev->mtype == MemType::kFree;
   if (next_free && prev_free) {
@@ -149,12 +149,15 @@ MemPool::MemPool(MemPoolConfig config, bool cleanup, bool observe, FreeListPolic
 
       case FreeListPolicyType::kNextFit:
         freeblock_policy_ = new NextFitPolicy(segment_);
+        LOG(INFO) << "Init next-fit policy";
         break;
       case FreeListPolicyType::kFirstFit:
         freeblock_policy_ = new FirstFitPolicy(segment_);
+        LOG(INFO) << "Init first-fit policy";
         break;
       case FreeListPolicyType::kBestFit:
         freeblock_policy_ = new BestFitPolicy(segment_);
+        LOG(INFO) << "Init best-fit policy";
         break;
       default:
         LOG(FATAL) << "unknown policy_type: " << static_cast<int>(policy_type);

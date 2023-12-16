@@ -29,19 +29,19 @@ CUDAMemPool *CUDAMemPool::Get() {
   return cuda_mem_pool_.get();
 }
 
-void CUDAMemPool::Init(std::size_t nbytes, bool master) {
+void CUDAMemPool::Init(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy) {
   // LOG(INFO) << "[CUDA Memory Pool] initilized with size " << size / 1024 / 1024 << " Mb";
-  cuda_mem_pool_ = std::make_unique<CUDAMemPool>(nbytes, master);
+  cuda_mem_pool_ = std::make_unique<CUDAMemPool>(nbytes, cleanup, observe, free_list_policy);
 }
 
 
 
 
 
-CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool master) {
+CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy) {
 //    remove("/dev/shm/gpu_colocation_mempool");
   MemPoolConfig config = GetDefaultMemPoolConfig(nbytes);
-  impl_ = new MemPool{config, master, false};
+  impl_ = new MemPool{config, cleanup, observe, free_list_policy};
 }
 
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(

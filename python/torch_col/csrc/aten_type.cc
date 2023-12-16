@@ -12,6 +12,7 @@
 #include <sta/tensor_pool.h>
 #include <sta/tensor_methods.h>
 #include <sta/shape_helper.h>
+#include "sta/mempool.h"
 #include "tensor_impl.h"
 #include "dlpack_convert.h"
 #include "convolution.h"
@@ -312,7 +313,7 @@ struct ColTensorInitializer {
       pool_gb = std::stod(pool_size_env);
     }
     size_t pool_nbytes = static_cast<size_t>(pool_gb * 1024 * 1024 * 1024);
-    colserve::sta::Init(pool_nbytes, !has_server);
+    colserve::sta::Init(pool_nbytes, !has_server, false, colserve::sta::FreeListPolicyType::kReserved);
   }
 };
 

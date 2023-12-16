@@ -1,4 +1,5 @@
 #include "tvm/tvm.h"
+#include "sta/mempool.h"
 #include <iostream>
 #include <filesystem>
 #include <csignal>
@@ -46,6 +47,8 @@ void init_cli_options() {
       "use shared tensor allocator in train, default is 1");
   app.add_option("--cuda-memory-pool-gb", colserve::Config::cuda_memory_pool_gb,
       "cuda memory pool size in GB, default is 12");
+  app.add_option("--memory-pool-policy", colserve::Config::mempool_freelist_policy, 
+        "cuda memory pool freelist policy, default is best-fit.");
   app.add_option("-p,--port", port,
       "gRPC server port, default is 8080");
   app.add_option("--max-live-minute", max_live_minute,
@@ -133,10 +136,18 @@ int main(int argc, char *argv[]) {
   });
 
   CHECK_EQ(cuInit(0), CUDA_SUCCESS);
+  colserve::sta::FreeListPolicyType free_list_policy;
+  if (colserve::Config::mempool_freelist_policy == "first-fit") {
+    free_list_policy = colserve::sta::FreeListPolicyType::kFirstFit;
+  } else if (colserve::Config::mempool_freelist_policy == "next-fit") {
+    free_list_policy = colserve::sta::FreeListPolicyType::kNextFit;
+  } else {
+    free_list_policy = colserve::sta::FreeListPolicyType::kBestFit;
+  }
   if (colserve::Config::use_shared_tensor) {
     colserve::sta::Init(
       static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1024 * 1024 * 1024),
-      true);
+      true, false, free_list_policy);
   }
   colserve::Controller::Init();
   colserve::Profiler::Init(colserve::Config::profile_log_path);
