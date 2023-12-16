@@ -1,6 +1,5 @@
 #ifndef COLSERVE_CUDA_MEMPOOL_H
 #define COLSERVE_CUDA_MEMPOOL_H
-#include <glog/logging.h>
 #include <algorithm>
 #include <atomic>
 #include <boost/interprocess/interprocess_fwd.hpp>
@@ -24,24 +23,14 @@
 #include <thread>
 #include <utility>
 
-
+#include <cuda_runtime_api.h>
 
 
 #ifdef NO_CUDA
 
-#define CUDA_CALL0(func)
 #define CUDA_TYPE(cuda_type) long
 
 #else
-
-#include <cuda_runtime_api.h>
-#define CUDA_CALL0(func) do { \
-  auto error = func; \
-  if (error != cudaSuccess) { \
-    LOG(FATAL) << #func << " " << cudaGetErrorString(error); \
-    exit(EXIT_FAILURE); \
-  } \
-  } while (0)
 
 #define CUDA_TYPE(cuda_type) cuda_type 
 
@@ -177,6 +166,7 @@ enum class FreeListPolicyType {
   kReserved,
   kPolicyNum,
 };
+FreeListPolicyType getFreeListPolicy(const std::string& s);
 
 class FreeListPolicy {
 protected:
@@ -290,60 +280,18 @@ public:
   return nullptr;
  }
 
- void NotifyUpdateFreeBlockNbytes(MemPoolEntry *entry, size_t old_nbytes) override{
-  CHECK(entry->mtype == MemType::kFree) << "try update not free entry in freelist: " << *entry << ".";
-  }
+ void NotifyUpdateFreeBlockNbytes(MemPoolEntry* entry,
+                                  size_t old_nbytes) override;
 
+ void AddFreeBlock(MemPoolEntry* entry) override;
 
-  void AddFreeBlock(MemPoolEntry *entry) override {
-    CHECK(entry->mtype == MemType::kFree) << "try add not free entry to freelist: " << *entry << ".";
-    entry->freelist_pos = freelist_->insert(freelist_->end(), GetHandle(segment_, entry));
-  }
+ void RemoveFreeBlock(MemPoolEntry* entry) override;
 
- void RemoveFreeBlock(MemPoolEntry* entry) override {
-    CHECK(entry->mtype != MemType::kFree) << "try to remove free entry from freelist: " << *entry << ".";
-    if (entry->freelist_pos == *freelist_pos_) {
-      *freelist_pos_ = freelist_->erase(entry->freelist_pos);
-    } else {
-      freelist_->erase(entry->freelist_pos);
-    }
-  }
+ void CheckFreeList(const EntryListIterator& begin,
+                    const EntryListIterator& end) override;
 
-
-
-  void CheckFreeList(const EntryListIterator &begin, const EntryListIterator &end) override {
-    DLOG(INFO) << "Check freelist";
-    std::unordered_set<std::ptrdiff_t> free_set;
-    for (auto iter = freelist_->cbegin(); iter != freelist_->cend(); iter++) {
-      auto *entry = GetEntry(segment_, *iter);
-      free_set.insert(entry->addr_offset);
-      CHECK(entry->mtype == MemType::kFree)
-          << "entry in freelist but not free: " << *entry << ".";
-    }
-
-    for (auto iter = begin; iter != end; iter++) {
-      auto *entry = GetEntry(segment_, *iter);
-      if (entry->mtype == MemType::kFree &&
-          free_set.find(entry->addr_offset) == free_set.cend()) {
-        CHECK(entry->mtype == MemType::kFree)
-            << "entry in free but not in free list: " << *entry << ".";
-      }
-    }
-  }
-
-  void DumpFreeList(std::ostream& stream, const EntryListIterator& begin, const EntryListIterator& end) override {
-    stream << "start,len,allocated,next,prev,mtype" << std::endl;
-    for (const auto& element : *freelist_) {
-      auto* entry = GetEntry(segment_, element);
-      auto* prev = GetPrevEntry(segment_, entry, begin);
-      auto* next = GetNextEntry(segment_, entry, end);
-      stream << entry->addr_offset << "," << entry->nbytes << ","
-            << static_cast<int>(entry->mtype) << ","
-            << (prev ? next->addr_offset : -1) << ","
-            << (prev ? prev->addr_offset : -1) << ","
-            << static_cast<unsigned>(entry->mtype) << std::endl;
-      }
-  }
+ void DumpFreeList(std::ostream& stream, const EntryListIterator& begin,
+                   const EntryListIterator& end) override;
 };
 
 class FirstFitPolicy: public NextFitPolicy {
@@ -352,16 +300,7 @@ public:
 
   ~FirstFitPolicy() {}
 
-  MemPoolEntry *GetFreeBlock(size_t nbytes) override {
-    for(auto handle : *freelist_) {
-      auto *entry = GetEntry(segment_, handle);
-      CHECK(entry->mtype == MemType::kFree) << "not free entry in freelist: " << *entry << ".";
-      if (entry->nbytes >= nbytes) {
-        return entry;
-      }
-    }
-    return nullptr;
-  }
+  MemPoolEntry* GetFreeBlock(size_t nbytes) override;
 };
 
 class MemPool {

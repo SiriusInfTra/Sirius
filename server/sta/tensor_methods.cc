@@ -1,3 +1,4 @@
+#include "../logging_as_glog.h"
 #include <ATen/native/TensorConversions.h>
 #include <cuda_runtime_api.h>
 

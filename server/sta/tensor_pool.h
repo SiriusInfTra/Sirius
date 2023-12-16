@@ -1,15 +1,16 @@
 #ifndef COLSERVE_TENSOR_POOL_H
 #define COLSERVE_TENSOR_POOL_H
 
+#include "../logging_as_glog.h"
+
 #include <memory>
 #include <unordered_map>
 // #include <dlpack/dlpack.h>
 #include <vector>
 #include <optional>
-#include <ATen/Tensor.h>
+
 #include <c10/core/MemoryFormat.h>
-
-
+#include <ATen/Tensor.h>
 #include "dlpack.h"
 #include "cuda_allocator.h"
 

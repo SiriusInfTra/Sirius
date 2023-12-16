@@ -5,6 +5,7 @@
 #include <chrono>
 #include <vector>
 #include <thread>
+#include <atomic>
 #include <mutex>
 #include <fstream>
 #include <unordered_map>

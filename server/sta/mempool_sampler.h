@@ -1,6 +1,7 @@
 #ifndef COLSERVE_MEMPOOL_SAMPLER_H
 #define COLSERVE_MEMPOOL_SAMPLER_H
 
+#include "../logging_as_glog.h"
 
 #include <cassert>
 #include <ios>

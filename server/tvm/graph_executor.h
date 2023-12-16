@@ -7,7 +7,9 @@
 #include <sta/tensor_methods.h>
 #include <sta/tensor_pool.h>
 
+
 #include "graph_executor_factory.h"
+
 #include "glog/logging.h"
 
 namespace colserve {

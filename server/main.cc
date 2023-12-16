@@ -1,4 +1,10 @@
-#include "tvm/tvm.h"
+#include "logging_as_glog.h"
+#include <tvm/runtime/device_api.h>
+#include <tvm/runtime/c_runtime_api.h>
+#include <tvm/runtime/packed_func.h>
+#include <tvm/runtime/module.h>
+#include <tvm/runtime/registry.h>
+#include <tvm/runtime/logging.h>
 #include "sta/mempool.h"
 #include <iostream>
 #include <filesystem>
@@ -136,14 +142,7 @@ int main(int argc, char *argv[]) {
   });
 
   CHECK_EQ(cuInit(0), CUDA_SUCCESS);
-  colserve::sta::FreeListPolicyType free_list_policy;
-  if (colserve::Config::mempool_freelist_policy == "first-fit") {
-    free_list_policy = colserve::sta::FreeListPolicyType::kFirstFit;
-  } else if (colserve::Config::mempool_freelist_policy == "next-fit") {
-    free_list_policy = colserve::sta::FreeListPolicyType::kNextFit;
-  } else {
-    free_list_policy = colserve::sta::FreeListPolicyType::kBestFit;
-  }
+  auto free_list_policy = colserve::sta::getFreeListPolicy(colserve::Config::mempool_freelist_policy);
   if (colserve::Config::use_shared_tensor) {
     colserve::sta::Init(
       static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1024 * 1024 * 1024),

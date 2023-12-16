@@ -48,9 +48,9 @@ if (NOT grpc_POPULATED)
   set(CMAKE_BUILD_TYPE ${BUILD_TYPE_OLD} CACHE INTERNAL "build type" FORCE)
 endif()
 
-include(~/miniforge3/envs/dev/lib/python3.10/site-packages/torch/share/cmake/Caffe2/public/glog.cmake)
+include(cmake/glog.cmake)
 # find_package(glog REQUIRED)
-
+# add_definitions(-DDMLC_USE_GLOG)
 
 FetchContent_Declare(
   CLI11
@@ -118,6 +118,8 @@ add_library(sta SHARED
   server/sta/dtype_helper.cc
   server/sta/init.cc
 )
+target_compile_definitions(sta PRIVATE -DNO_TVM)
+# add_definitions(st)
 # target_include_directories(sta INTERFACE ${TVM_HOME}/3rdparty/dlpack/include)
 target_include_directories(sta PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/server/)
 target_link_libraries(sta PRIVATE CUDA::cudart glog::glog

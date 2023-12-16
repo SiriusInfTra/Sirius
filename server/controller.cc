@@ -1,6 +1,5 @@
+#include "logging_as_glog.h"
 #include <signal.h>
-#include <glog/logging.h>
-
 #include "controller.h"
 #include "config.h"
 #include "model_train_store.h"

@@ -1,4 +1,4 @@
-#include <glog/logging.h>
+#include <logging_as_glog.h>
 #include <sta/cuda_allocator.h>
 
 #include "control_stub.h"

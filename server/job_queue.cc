@@ -1,3 +1,4 @@
+#include "logging_as_glog.h"
 #include <chrono>
 #include <glog/logging.h>
 

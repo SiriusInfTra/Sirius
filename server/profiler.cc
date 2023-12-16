@@ -1,4 +1,4 @@
-#include <glog/logging.h>
+#include "logging_as_glog.h"
 #include <nvml.h>
 #include <numeric>
 #include <regex>

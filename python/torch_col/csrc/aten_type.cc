@@ -20,6 +20,7 @@
 #include "override_ops/override_ops.h"
 
 #include <glog/logging.h>
+#include <string>
 
 
 namespace torch_col {
@@ -305,6 +306,7 @@ struct ColTensorInitializer {
     LOG(INFO) << "ColTensor Initialized";
     auto has_server_env = std::getenv("SHARED_TENSOR_HAS_SERVER");
     auto pool_size_env = std::getenv("SHARED_TENSOR_POOL_GB");
+    auto pool_freelist_poolicy = colserve::sta::getFreeListPolicy(std::getenv("SHARED_TENSOR_POOL_FREELIST_POLICY"));
     bool has_server = has_server_env && std::string(has_server_env) == "1";
     double pool_gb = 12;
     if (!has_server && !pool_size_env) {
@@ -313,7 +315,7 @@ struct ColTensorInitializer {
       pool_gb = std::stod(pool_size_env);
     }
     size_t pool_nbytes = static_cast<size_t>(pool_gb * 1024 * 1024 * 1024);
-    colserve::sta::Init(pool_nbytes, !has_server, false, colserve::sta::FreeListPolicyType::kReserved);
+    colserve::sta::Init(pool_nbytes, !has_server, false, pool_freelist_poolicy);
   }
 };
 

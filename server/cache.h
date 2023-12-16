@@ -1,5 +1,6 @@
 #ifndef COLSERVE_CACHE_H
 #define COLSERVE_CACHE_H
+#include "logging_as_glog.h"
 #include <cstddef>
 #include <memory>
 #include <unordered_map>
@@ -10,7 +11,6 @@
 #include <sstream>
 #include <mutex>
 #include "profiler.h"
-#include "glog/logging.h"
 
 namespace colserve {
 

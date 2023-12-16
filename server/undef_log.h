@@ -1,3 +1,13 @@
+#ifdef GLOG_LOGGING_H 
+  #define GLOG_LOGGING_H
+  #error "glog/glog.h should be included after this file"
+#endif
+
+#ifdef _LOGGING_H_
+  #define _LOGGING_H_
+  #error "glog/logging.h should be included after this file"
+#endif
+
 #undef LOG
 #undef LOG_FATAL
 #undef LOG_INFO

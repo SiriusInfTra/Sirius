@@ -25,6 +25,11 @@ class System:
         TaskSwitchL1 = "task-switch-l1"
         TaskSwitchL2 = "task-switch-l2"
         TaskSwitchL3 = "task-switch-l3"
+    
+    class MemoryPoolPolicy:
+        FirstFit = "first-fit"
+        NextFit = "next-fit"
+        BestFit = "best-fit"
 
     @dataclass
     class InferModelConfig:
@@ -52,6 +57,7 @@ class System:
 
     def __init__(self, mode: str, use_sta: bool, 
                  cuda_memory_pool_gb: str=None,
+                 memory_pool_policy: str=MemoryPoolPolicy.BestFit,
                  profile_log: str = "profile-log", 
                  server_log: str = "server-log", 
                  train_timeline:str = "train-profile", 
@@ -70,6 +76,7 @@ class System:
         self.mode = mode
         self.use_sta = use_sta
         self.cuda_memory_pool_gb = cuda_memory_pool_gb
+        self.memory_pool_policy = memory_pool_policy
         self.profile_log = profile_log
         self.server_log = server_log
         self.train_timeline = train_timeline

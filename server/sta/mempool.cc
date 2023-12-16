@@ -1,9 +1,26 @@
 #include "mempool.h"
+#include <glog/logging.h>
 #include <initializer_list>
 #include <iostream>
 #include <tuple>
-#include <glog/logging.h>
 
+#ifdef NO_CUDA
+
+#define CUDA_CALL(func)
+
+#else
+
+#include <cuda_runtime_api.h>
+#define CUDA_CALL(func) do { \
+  auto error = func; \
+  if (error != cudaSuccess) { \
+    LOG(FATAL) << #func << " " << cudaGetErrorString(error); \
+    exit(EXIT_FAILURE); \
+  } \
+  } while (0)
+
+
+#endif
 
 namespace colserve::sta {
 
@@ -114,10 +131,10 @@ bool MemPool::CheckPoolWithoutLock() {
 }
 void MemPool::CopyFromToInternel(void *dst_dev_ptr, void *src_dev_ptr,
                                         size_t nbytes) {
-  CUDA_CALL0(cudaSetDevice(config_.cuda_device));
-  CUDA_CALL0(cudaMemcpyAsync(dst_dev_ptr, src_dev_ptr, nbytes, cudaMemcpyDefault,
+  CUDA_CALL(cudaSetDevice(config_.cuda_device));
+  CUDA_CALL(cudaMemcpyAsync(dst_dev_ptr, src_dev_ptr, nbytes, cudaMemcpyDefault,
                             cuda_memcpy_stream_));
-  CUDA_CALL0(cudaStreamSynchronize(cuda_memcpy_stream_));
+  CUDA_CALL(cudaStreamSynchronize(cuda_memcpy_stream_));
 }
 MemPool::MemPool(MemPoolConfig config, bool cleanup, bool observe, FreeListPolicyType policy_type)
     : config_(std::move(config)), mem_pool_base_ptr_(nullptr), observe_(observe) {
@@ -167,24 +184,24 @@ MemPool::MemPool(MemPoolConfig config, bool cleanup, bool observe, FreeListPolic
   };
   segment_.atomic_func(atomic_init);
   if (observe_)  { return; }
-  CUDA_CALL0(cudaSetDevice(config.cuda_device));
-  CUDA_CALL0(cudaStreamCreate(&cuda_memcpy_stream_));
+  CUDA_CALL(cudaSetDevice(config.cuda_device));
+  CUDA_CALL(cudaStreamCreate(&cuda_memcpy_stream_));
   bip::scoped_lock locker(*mutex_);
   master_ = (*ref_count_)++ == 0;
   if (master_) {
     auto *entry = CreateMemPoolEntry(0, config_.cuda_memory_size,
                                      MemType::kFree, mem_entry_list_->end());
     freeblock_policy_->InitMaster(entry);
-    CUDA_CALL0(cudaSetDevice(config_.cuda_device));
-    CUDA_CALL0(cudaMalloc(reinterpret_cast<void **>(&mem_pool_base_ptr_),
+    CUDA_CALL(cudaSetDevice(config_.cuda_device));
+    CUDA_CALL(cudaMalloc(reinterpret_cast<void **>(&mem_pool_base_ptr_),
                          config_.cuda_memory_size));
-    CUDA_CALL0(cudaIpcGetMemHandle(cuda_mem_handle_, mem_pool_base_ptr_));
+    CUDA_CALL(cudaIpcGetMemHandle(cuda_mem_handle_, mem_pool_base_ptr_));
     LOG(INFO) << "[mempool] init master, base_ptr = " << std::hex
               << mem_pool_base_ptr_ << ", shm = " << config_.shared_memory_name
               << ".";
   } else {
     freeblock_policy_->InitSlave();
-    CUDA_CALL0(cudaIpcOpenMemHandle(
+    CUDA_CALL(cudaIpcOpenMemHandle(
         reinterpret_cast<void **>(&mem_pool_base_ptr_), *cuda_mem_handle_,
         cudaIpcMemLazyEnablePeerAccess));
     LOG(INFO) << "[mempool] init slave, base_ptr = " << std::hex
@@ -388,4 +405,87 @@ BestFitPolicy::BestFitPolicy(shared_memory& segment)
       segment_.get_segment_manager());
 }
 
+void NextFitPolicy::NotifyUpdateFreeBlockNbytes(MemPoolEntry* entry,
+                                                size_t old_nbytes) {
+  CHECK(entry->mtype == MemType::kFree)
+      << "try update not free entry in freelist: " << *entry << ".";
+}
+
+void NextFitPolicy::AddFreeBlock(MemPoolEntry* entry) {
+  CHECK(entry->mtype == MemType::kFree)
+      << "try add not free entry to freelist: " << *entry << ".";
+  entry->freelist_pos =
+      freelist_->insert(freelist_->end(), GetHandle(segment_, entry));
+}
+
+void NextFitPolicy::RemoveFreeBlock(MemPoolEntry* entry) {
+  CHECK(entry->mtype != MemType::kFree)
+      << "try to remove free entry from freelist: " << *entry << ".";
+  if (entry->freelist_pos == *freelist_pos_) {
+    *freelist_pos_ = freelist_->erase(entry->freelist_pos);
+  } else {
+    freelist_->erase(entry->freelist_pos);
+  }
+}
+
+void NextFitPolicy::CheckFreeList(const EntryListIterator& begin,
+                                  const EntryListIterator& end) {
+  DLOG(INFO) << "Check freelist";
+  std::unordered_set<std::ptrdiff_t> free_set;
+  for (auto iter = freelist_->cbegin(); iter != freelist_->cend(); iter++) {
+    auto* entry = GetEntry(segment_, *iter);
+    free_set.insert(entry->addr_offset);
+    CHECK(entry->mtype == MemType::kFree)
+        << "entry in freelist but not free: " << *entry << ".";
+  }
+
+  for (auto iter = begin; iter != end; iter++) {
+    auto* entry = GetEntry(segment_, *iter);
+    if (entry->mtype == MemType::kFree &&
+        free_set.find(entry->addr_offset) == free_set.cend()) {
+      CHECK(entry->mtype == MemType::kFree)
+          << "entry in free but not in free list: " << *entry << ".";
+    }
+  }
+}
+
+void NextFitPolicy::DumpFreeList(std::ostream& stream,
+                                 const EntryListIterator& begin,
+                                 const EntryListIterator& end) {
+  stream << "start,len,allocated,next,prev,mtype" << std::endl;
+  for (const auto& element : *freelist_) {
+    auto* entry = GetEntry(segment_, element);
+    auto* prev = GetPrevEntry(segment_, entry, begin);
+    auto* next = GetNextEntry(segment_, entry, end);
+    stream << entry->addr_offset << "," << entry->nbytes << ","
+           << static_cast<int>(entry->mtype) << ","
+           << (prev ? next->addr_offset : -1) << ","
+           << (prev ? prev->addr_offset : -1) << ","
+           << static_cast<unsigned>(entry->mtype) << std::endl;
+  }
+}
+
+MemPoolEntry* FirstFitPolicy::GetFreeBlock(size_t nbytes) {
+  for (auto handle : *freelist_) {
+    auto* entry = GetEntry(segment_, handle);
+    CHECK(entry->mtype == MemType::kFree)
+        << "not free entry in freelist: " << *entry << ".";
+    if (entry->nbytes >= nbytes) {
+      return entry;
+    }
+  }
+  return nullptr;
+}
+
+FreeListPolicyType getFreeListPolicy(const std::string& s) {
+  if (s == "first-fit") {
+    return colserve::sta::FreeListPolicyType::kFirstFit;
+  } else if (s == "next-fit") {
+    return colserve::sta::FreeListPolicyType::kNextFit;
+  } else if (s == "best-fit") {
+    return colserve::sta::FreeListPolicyType::kBestFit;
+  } else {
+    LOG(FATAL) << "unknown free list policy: " << s;
+  }
+}
 }  // namespace colserve::sta
