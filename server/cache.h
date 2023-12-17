@@ -24,7 +24,7 @@ struct CacheItem {
 
 
 class LRUPolicy {
-private:
+ private:
   std::mutex mutex_;
   std::list<CacheItem> lru_list_;
   std::unordered_map<tvm::GraphExecutor*, std::list<CacheItem>::iterator> cache_;
@@ -42,8 +42,7 @@ private:
     LOG(INFO) << CACHE_LOG_PREFIX << " LRU List(" << tag <<"): " << ss.str() << std::endl;
   }
 
-public:
-
+ public:
   CacheItem RemoveIfPresent(const std::string &name, tvm::GraphExecutor *graph_executor) {
     std::unique_lock lock{mutex_};
     DumpLRUList("RemoveIfPresent-" + name + "-begin");
@@ -93,11 +92,11 @@ public:
 };
 
 class GraphCache {
-private:
+ private:
   LRUPolicy policy_;
   static std::unique_ptr<GraphCache> instance_;
   size_t max_cache_nbytes_;
-public:
+ public:
   static void Init(size_t nbytes);
   static GraphCache* Get();
 
@@ -111,7 +110,7 @@ public:
   void InitGraphExecutor(const std::string &name, tvm::GraphExecutor* graph_executor) {
     if (max_cache_nbytes_ == 0) {
       graph_executor->Init();
-      return;;
+      return;
     }
     auto cache_item = policy_.RemoveIfPresent(name, graph_executor);
     if (cache_item.is_cache) { /* cached, already inited*/

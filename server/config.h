@@ -58,7 +58,7 @@ class Config {
 
   static double cuda_memory_pool_gb;
 
-  static std::string mempool_freelist_policy ;
+  static std::string mempool_freelist_policy;
 
   static bool infer_raw_blob_alloc;
 

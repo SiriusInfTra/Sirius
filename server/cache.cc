@@ -7,6 +7,8 @@
 #include <tvm/runtime/logging.h>
 #include "cache.h" 
 
+namespace colserve {
+
 std::unique_ptr<colserve::GraphCache> colserve::GraphCache::instance_ = nullptr;
 
 void colserve::GraphCache::Init(size_t nbytes) {
@@ -16,4 +18,6 @@ void colserve::GraphCache::Init(size_t nbytes) {
 
 colserve::GraphCache* colserve::GraphCache::Get() {
   return instance_.get();
+}
+
 }
