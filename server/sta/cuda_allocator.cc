@@ -16,7 +16,6 @@
   } while (0)
 
 
-
 namespace colserve {
 namespace sta {
 
@@ -33,10 +32,6 @@ void CUDAMemPool::Init(std::size_t nbytes, bool cleanup, bool observe, FreeListP
   // LOG(INFO) << "[CUDA Memory Pool] initilized with size " << size / 1024 / 1024 << " Mb";
   cuda_mem_pool_ = std::make_unique<CUDAMemPool>(nbytes, cleanup, observe, free_list_policy);
 }
-
-
-
-
 
 CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy) {
 //    remove("/dev/shm/gpu_colocation_mempool");
@@ -136,8 +131,6 @@ size_t CUDAMemPool::InferMemUsage() {
 size_t CUDAMemPool::TrainMemUsage() {
   return Get()->impl_->TrainMemUsage();
 }
-
-void CUDAMemPool::ReleaseMempool() {}
 
 size_t CUDAMemPool::PoolNbytes() {
   CHECK(cuda_mem_pool_ != nullptr);

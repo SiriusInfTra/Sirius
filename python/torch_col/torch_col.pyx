@@ -19,7 +19,6 @@ def release_grad_fn_saved_tensor(grad_fn):
 
 
 cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
-    cpdef void ReleaseMempool()
     cpdef void DumpMempoolFreeList(string filename)
     cpdef void DumpMempoolBlockList(string filename)
 

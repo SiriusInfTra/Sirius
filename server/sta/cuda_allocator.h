@@ -34,7 +34,6 @@ class CUDAMemPool {
   static size_t TrainMemUsage();
   static size_t FreeMemUsage();
   static size_t PoolNbytes();
-  static void ReleaseMempool();
 
   static std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes, MemType mtype);
 

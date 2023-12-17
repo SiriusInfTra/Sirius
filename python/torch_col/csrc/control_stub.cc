@@ -147,11 +147,6 @@ void ColocateStub::ReportBatchSize(int batch_size) {
   status_event_mq_->Put({0, static_cast<int>(Event::kReportBatchSize), batch_size});
 }
 
-void ReleaseMempool() {
-  colserve::sta::CUDAMemPool::ReleaseMempool();
-}
-
-
 void DumpMempoolFreeList(std::string filename) {
   colserve::sta::DumpMempoolFreeList(filename);
 }
