@@ -64,7 +64,7 @@ double ModelTrainStore::PredictMemUsageMB() {
     return 0;
   } else {
     if (cur_model_name_ == "resnet152") {
-      return cur_batch_size_ * 145 + 200;
+      return cur_batch_size_ * 145;
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
@@ -84,6 +84,9 @@ bool ModelTrainStore::Train() {
   auto train_script = train_handles_[model];
 
   std::vector<std::string> args_str;
+  // args_str.push_back("nsys");
+  // args_str.push_back("profile");
+  
   args_str.push_back("python");
   args_str.push_back(train_script.string());
   auto args = data->GetTrainArgs();
@@ -176,6 +179,7 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
     }
 
     auto err = execvp("python", argv);
+    // auto err = execvp("nsys", argv);
     perror("execvp");
     CHECK_GE(err, 0) << "[ModelTrainStore]: spawn train worker fail, errno " << err;
   } else {

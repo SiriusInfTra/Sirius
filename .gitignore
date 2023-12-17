@@ -27,3 +27,5 @@ dist/
 
 log/*
 /dcgmi_output/*.txt
+
+.env

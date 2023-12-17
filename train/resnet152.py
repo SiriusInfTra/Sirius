@@ -29,6 +29,12 @@ class SwitchHook:
         self.stub = torch_col.PySwitchStub()
         self.mode = mode
 
+    def get_fwd_hook(self):
+        return self.get_hook()
+    
+    def get_bwd_hook(self):
+        return self.get_hook()
+
     def get_hook(self):
         def hook(module, input, output):
             torch.cuda.synchronize()
@@ -51,25 +57,42 @@ class ColocateAdjustL1Exception(Exception):
 class ColocateHook:
     def __init__(self, batch_size) -> None:
         self.stub = torch_col.PyColocateStub(batch_size)
+        self.grad_fn = []
 
     def try_reply_adjust_l1(self):
         if self.stub.cmd == torch_col.Event.kColocateAdjustL1:
-            self.stub.adjust_l1_done()
+            self.adjust_l1()
 
     def try_reply_adjust_l2(self):
         if self.stub.cmd == torch_col.Event.kColocateAdjustL2:
-            self.stub.adjust_l2_done()
+            self.adjust_l2()
 
+    def adjust_l1(self):
+        for fn in self.grad_fn:
+            torch_col.release_grad_fn_saved_tensor(fn)
+        self.grad_fn = []
+        self.reply_adjust_l1()
+
+    def adjust_l2(self):
+        assert self.stub.cmd == torch_col.Event.kColocateAdjustL2
+        self.stub.adjust_l2_done()
+        
     def reply_adjust_l1(self):
         assert self.stub.cmd == torch_col.Event.kColocateAdjustL1
         self.stub.adjust_l1_done()
 
-    def get_hook(self):
+    def get_fwd_hook(self):
         def hook(module, input, output):
             torch.cuda.synchronize()
-            # print(f'{module} {time.time()}')
+            self.grad_fn.append(output.grad_fn)
             if self.stub.cmd == torch_col.Event.kColocateAdjustL1:
-                # print(f'receive kColocateAdjustL1 {time.time()}')
+                raise ColocateAdjustL1Exception("[Colocate Adjust L1]")
+        return hook
+    
+    def get_bwd_hook(self):
+        def hook(module, grad_input, grad_output):
+            torch.cuda.synchronize()
+            if self.stub.cmd == torch_col.Event.kColocateAdjustL1:
                 raise ColocateAdjustL1Exception("[Colocate Adjust L1]")
         return hook
     
@@ -80,13 +103,13 @@ class ColocateHook:
         self.stub.stop()
 
 
-def register_fbward_hook(module:torch.nn.Module, hook):
+def register_fbward_hook(module:torch.nn.Module, fwd_hood, bwd_hook):
     if len(list(module.children())) == 0:
-        module.register_forward_hook(hook)
-        module.register_backward_hook(hook)
+        module.register_forward_hook(fwd_hood)
+        module.register_backward_hook(bwd_hook)
     else:
         for child in module.children():
-            register_fbward_hook(child, hook)
+            register_fbward_hook(child, fwd_hood, bwd_hook)
 
     
 def gpu_mem():
@@ -148,7 +171,8 @@ class CustomeDynamicBatchDataset(IterableDataset):
                 # targets = torch.randint(0, self.num_class, size=(batch_size,), dtype=torch.long)
                 inputs = self.all_inputs[self.iter_idx:self.iter_idx+batch_size]
                 targets = self.all_targets[self.iter_idx:self.iter_idx+batch_size]
-                self.hook.report_batch_size(batch_size)
+                if self.hook is not None:
+                    self.hook.report_batch_size(batch_size)
                 yield (inputs, targets)
         else:
             raise Exception("not support multi-process")
@@ -182,7 +206,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', train_profile: os.PathLik
                               shuffle=False, pin_memory=True, drop_last=False, num_workers=0)
     
     if mode == 'task-switch-l1' or mode == 'colocate-l1':
-        register_fbward_hook(model, hook.get_hook())
+        register_fbward_hook(model, hook.get_fwd_hook(), hook.get_bwd_hook())
     print(f"train in {mode} mode")
 
     total_killed_batch = 0
@@ -232,15 +256,15 @@ def train(num_epoch=10, batch_size=256, mode='normal', train_profile: os.PathLik
                 # killed_time += time.time() - micro_batch_begin
                 t0 = time.time()
                 torch.cuda.synchronize()
-                old_gpu_mem = gpu_mem()
+                old_gpu_mem = gpu_mem() if not use_shared_tensor else torch_col.cuda_memory_pool_train_usage() / 1024 / 1024
                 torch.cuda.empty_cache()
                 t1 = time.time()
                 if isinstance(e, ColocateAdjustL1Exception):
-                    hook.stub.adjust_l1_done()
+                    hook.adjust_l1()
                 if not use_shared_tensor:
                     mem_info = f'gpu mem {old_gpu_mem:.1f} -> {gpu_mem():.1f}'
                 else:
-                    mem_info = f'mem pool {torch_col.cuda_memory_pool_train_usage() / 1024 / 1024:.1f}M'
+                    mem_info = f'mem pool {old_gpu_mem:.1f} -> {torch_col.cuda_memory_pool_train_usage() / 1024 / 1024:.1f}M'
                 print('{} free cache {:.1f}ms, new micro batch size {}, {}'.format(
                     e, (t1 - t0) * 1000, train_dataset.batch_size, mem_info))
             else:

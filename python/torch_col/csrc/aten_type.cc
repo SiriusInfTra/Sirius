@@ -301,6 +301,10 @@ TORCH_LIBRARY_IMPL(_, PrivateUse1, m) {
       &cuda_fallback>());
 }
 
+TORCH_LIBRARY_IMPL(aten, CompositeImplicitAutograd, m) {
+  m.impl("_has_compatible_shallow_copy_type", TORCH_FN(_has_compatible_shallow_copy_type));
+}
+
 struct ColTensorInitializer {
   ColTensorInitializer() {
     LOG(INFO) << "ColTensor Initialized";
