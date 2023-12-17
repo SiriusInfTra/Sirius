@@ -13,7 +13,7 @@ bool Config::check_mps = true;
 
 std::atomic<bool> Config::running = true;
 
-std::string Config::train_timeline = "train-timeline";
+std::string Config::train_profile = "train-profile";
 
 bool Config::use_shared_tensor = true;
 bool Config::use_shared_tensor_infer = true;

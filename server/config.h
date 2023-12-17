@@ -48,7 +48,7 @@ class Config {
   
   static std::atomic<bool> running;
 
-  static std::string train_timeline;
+  static std::string train_profile;
   
   static bool use_shared_tensor;
   static bool use_shared_tensor_infer;
