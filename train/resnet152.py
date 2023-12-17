@@ -278,8 +278,6 @@ def train(num_epoch=10, batch_size=256, mode='normal', train_profile: os.PathLik
                 model.__class__.__name__, epoch, end - begin,
                 batch_info, batch_size, train_dataset.batch_size,
                 mem_info, finished_imgs / (end - begin), wait_bs_valid_sec), flush=True)
-        with open(train_profile, 'w') as f:
-            pd.DataFrame(micro_batch_record_list).to_csv(f, index=None)
     
 
     if mode == 'task-switch-l1' or mode == 'colocate-l1' or mode == 'colocate-l2':
@@ -290,6 +288,9 @@ def train(num_epoch=10, batch_size=256, mode='normal', train_profile: os.PathLik
         print("[{}] Epoch x Batch {} | Batch Total Tried {} Killed {} Finished {}".format(
             model.__class__.__name__,
             num_epoch * ori_batch_size, total_tried_batch, total_killed_batch, total_finished_batch))
+    
+    with open(train_profile, 'w') as f:
+        pd.DataFrame(micro_batch_record_list).to_csv(f, index=None)
 
 
 if __name__ == '__main__':
