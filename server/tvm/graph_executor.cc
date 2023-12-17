@@ -587,6 +587,8 @@ void GraphExecutor::AllocStorageMaybeAdjust() {
     if (adjusted) return;
     if (!Controller::Get()->IsTrainIdle()) {
       auto wait_train_pid = ModelTrainStore::Get()->GetTrainPid();
+      // LOG(INFO) << "[GraphExecutor] AllocStorageMaybeAdjust: model " << this->factory_.model_rank_ 
+      //           << " begin wait train pid " << wait_train_pid;
       this->factory_.infer_model_->SetWaitTrainPid(this->infer_model_worker_id_, wait_train_pid);
       LOG(INFO) << "[GraphExecutor] AllocStorageMaybeAdjust: model " << this->factory_.model_rank_ 
                 << " wait train pid " << wait_train_pid;
@@ -649,7 +651,7 @@ void GraphExecutor::AllocStorageMaybeAdjust() {
     for (size_t sid = 0; sid < storage_pool_.size(); sid++) {
       auto &s = storage_pool_[sid];
       auto tensor = sta::TensorPool::Get()->Tensor(s);
-      tensor.AllocForNull(sta::MemType::kInfer, Config::use_shared_tensor_infer ? false : true);
+      tensor.AllocForNull(sta::MemType::kInfer, false);
     }
   } else {
     for (auto &s : raw_storage_pool_) {

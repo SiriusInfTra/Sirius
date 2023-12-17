@@ -134,8 +134,8 @@ int main(int argc, char *argv[]) {
   }
   colserve::Controller::Init();
   colserve::Profiler::Init(colserve::Config::profile_log_path);
-  colserve::ModelInferStore::Init("models");
   colserve::ModelTrainStore::Init("train");
+  colserve::ModelInferStore::Init("models");
   colserve::Profiler::Start();
 
   if (colserve::Config::memory_pressure_mb > 0) {

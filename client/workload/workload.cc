@@ -215,7 +215,7 @@ void InferWorker::FetchInferResult(Workload &workload,
       if (show_result > 0) { // check outputs
         std::stringstream ss;
         size_t numel = slots_[slot].result_.outputs(0).data().size() / sizeof(float);
-        ss << "request " << slot << " numel " << numel
+        ss << "request " << slot << " model " << slots_[slot].request_.model() << " numel " << numel
           << " result[:" << show_result << "] : ";
         for (size_t j = 0; j < numel && j < show_result; j++) {
           ss << reinterpret_cast<const float*>(slots_[slot].result_.outputs(0).data().data())[j] << " ";
@@ -225,7 +225,7 @@ void InferWorker::FetchInferResult(Workload &workload,
       } else if (show_result < 0) {
         std::stringstream ss;
         size_t numel = slots_[slot].result_.outputs(0).data().size() / sizeof(float);
-        ss << "request " << slot << " numel " << numel
+        ss << "request " << slot << " model " << slots_[slot].request_.model() << " numel " << numel
           << " result[" << show_result << ":] : ";
         size_t j = std::max(0L, static_cast<int64_t>(numel) + show_result);
         for (; j < numel; j++) {
@@ -472,7 +472,7 @@ void Workload::InferBusyLoop(const std::string &model, size_t concurrency,
 }
 
 void Workload::InferTrace(const std::string &model, size_t concurrency, const std::vector<double> &start_points, double delay_before_infer,
-                            int warmup, int64_t show_result) {
+                          int warmup, int64_t show_result) {
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);

@@ -163,7 +163,8 @@ class CustomeDynamicBatchDataset(IterableDataset):
                 # targets = torch.randint(0, self.num_class, size=(batch_size,), dtype=torch.long)
                 inputs = self.all_inputs[self.iter_idx:self.iter_idx+batch_size]
                 targets = self.all_targets[self.iter_idx:self.iter_idx+batch_size]
-                self.hook.report_batch_size(batch_size)
+                if self.hook is not None:
+                    self.hook.report_batch_size(batch_size)
                 yield (inputs, targets)
         else:
             raise Exception("not support multi-process")

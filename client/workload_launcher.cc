@@ -110,7 +110,9 @@ int main(int argc, char** argv) {
       auto &model = trace_cfg.models[model_id];
       if (app.warmup > 0)
         workload.WarmupModel(model.model_name, app.warmup);
-      workload.InferTrace(model.model_name, app.concurrency, start_points, app.delay_before_infer, app.show_result);
+      workload.InferTrace(model.model_name, app.concurrency, 
+                          start_points, app.delay_before_infer,
+                          app.warmup, app.show_result);
     }
     if (app.warmup > 0 && app.delay_after_warmup > 0) {
       std::this_thread::sleep_for(std::chrono::duration<double>(app.delay_after_warmup));

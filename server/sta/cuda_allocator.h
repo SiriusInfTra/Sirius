@@ -25,8 +25,8 @@
 namespace colserve {
 namespace sta {
 namespace detail {
+constexpr size_t alignment = 1024;
 inline size_t GetAlignedNbytes(size_t nbytes) {
-  constexpr size_t alignment = 1024;
   static_assert((alignment & (alignment - 1)) == 0, "alignment must be power of 2");
   return (nbytes + (alignment - 1)) & (~(alignment - 1));
 }

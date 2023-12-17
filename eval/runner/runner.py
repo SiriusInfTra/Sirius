@@ -117,6 +117,7 @@ class System:
 
         self.cmd_trace = []
         cmd = [
+            # "compute-sanitizer", "--tool", "memcheck",
             "./build/colserve", 
             "-p", self.port, 
             "--mode", self.mode, 
@@ -225,7 +226,8 @@ class HyperWorkload:
                  seed: Optional[int] = None, 
                  delay_before_infer: float = 0,
                  warmup: int = 0,
-                 delay_after_warmup: Optional[float] = None) -> None:
+                 delay_after_warmup: Optional[float] = None,
+                 show_result: Optional[int] = None) -> None:
         self.enable_infer = True
         self.enable_train = True
         self.infer_workloads: List[InferWorkloadBase] = []
@@ -243,6 +245,7 @@ class HyperWorkload:
         self.delay_before_infer = delay_before_infer
         self.warmup = warmup
         self.delay_after_warmup = delay_after_warmup
+        self.show_result = show_result
 
     def set_infer_workloads(self, *infer_workloads: InferWorkloadBase):
         self.infer_workloads = list(infer_workloads)
@@ -314,6 +317,9 @@ class HyperWorkload:
         workload_log = pathlib.Path(server.log_dir) / self.workload_log
         cmd += ['--log', str(workload_log)]
         cmd += ['-v', '1']
+
+        if self.show_result is not None:
+            cmd += ['--show-result', str(self.show_result)]
 
         cmd += custom_args
 

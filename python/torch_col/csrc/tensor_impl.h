@@ -37,6 +37,10 @@ class ColTensorImpl : public c10::TensorImpl {
   const at::Storage& storage() const override;
   int64_t storage_offset() const override;
 
+  const char* tensorimpl_type_name() const override {
+    return "ColTensorImpl";
+  }
+
   c10::intrusive_ptr<c10::TensorImpl> shallow_copy_and_detach(
       const c10::VariableVersion& version_counter,
       bool allow_tensor_metadata_change) const override;

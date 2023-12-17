@@ -28,7 +28,7 @@ std::string Config::profile_log_path = "server-profile";
 
 std::string Config::infer_model_config_path = "config";
 
-double Config::train_memory_over_predict_mb = 2048 + 512;
+double Config::train_memory_over_predict_mb = 0;
 
 int Config::train_mps_thread_percent = -1;
 

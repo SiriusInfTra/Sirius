@@ -32,6 +32,7 @@ add_library(torch_col_tensor SHARED
   torch_col/csrc/cudnn/Descriptors.cpp
   torch_col/csrc/cudnn/Types.cpp
   torch_col/csrc/override_ops/nonzero.cu
+  torch_col/csrc/override_ops/shallow_copy.cc
   torch_col/csrc/aten_type.cc
   torch_col/csrc/dlpack_convert.cc
 )

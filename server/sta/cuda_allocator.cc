@@ -209,7 +209,14 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPoolImpl::MakeSharedPtr(CUDAMemPo
   CHECK_NE(mem_pool_base_ptr_, nullptr);
   CHECK_GE(static_cast<int64_t>(eh->addr_offset), 0);
   CHECK_LE(static_cast<size_t>(eh->addr_offset) + eh->nbytes, this->config_.cuda_memory_size);
+  CHECK_EQ(reinterpret_cast<size_t>(entry->addr) & (detail::alignment - 1), 0) 
+    << "unaligned entry->addr " << entry->addr;
+  // std::cout << "make mdata offset " << std::hex << eh->addr_offset << " nbytes " << eh->nbytes << std::endl;
   auto free = [this, eh, mtype](PoolEntry *entry) {
+    // std::cout << "del mdata offset " << std::hex << eh->addr_offset << " nbytes " << eh->nbytes << std::endl;
+    // cudaEvent_t event;
+    // CUDA_CALL(cudaEventCreate(&event));
+    // CUDA_CALL(cudaEventRecord(event));
     Free(eh, mtype);
     delete entry;
   };
