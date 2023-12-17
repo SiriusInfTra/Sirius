@@ -39,27 +39,9 @@
 
 namespace colserve {
 namespace sta {
-namespace bip = boost::interprocess;
-
-enum class MemType {
-  kFree,
-  kInfer,
-  kTrain,
-  kMemTypeNum,
-};
-
-enum class UsageStat {
-  kMaxNBytes,
-  kMinNBytes,
-  kCount,
-  kTotalNBytes,
-};
-
-
-
 namespace detail {
+constexpr size_t alignment = 1024;
 inline size_t GetAlignedNbytes(size_t nbytes) {
-  constexpr size_t alignment = 1024;
   static_assert((alignment & (alignment - 1)) == 0, "alignment must be power of 2");
   return (nbytes + (alignment - 1)) & (~(alignment - 1));
 }
@@ -72,10 +54,11 @@ inline std::string ByteDisplay(size_t nbytes) {
   ss << static_cast<double>(nbytes) / 1024 / 1024 << "MB(" << nbytes << "bytes)";
   return ss.str();
 }
-}
+} // namespace detail
 
-using shared_memory = bip::managed_shared_memory;
-using segment_manager = shared_memory::segment_manager;
+namespace bip = boost::interprocess;
+using bip_shared_memory = bip::managed_shared_memory;
+using bip_segment_manager = bip_shared_memory::segment_manager;
 
 using MemPoolEntryHandle = bip::managed_shared_memory::handle_t;
 using EntryAddrTableType = std::pair<std::ptrdiff_t, MemPoolEntryHandle>;
@@ -91,9 +74,20 @@ using EntryListAllocator = bip::allocator<MemPoolEntryHandle, bip::managed_share
 using EntryList = bip::list<MemPoolEntryHandle, EntryListAllocator>;
 using EntryListIterator = EntryList::iterator;
 
-using StatValueType = std::atomic<size_t>;
-using StatMap = std::array<StatValueType, static_cast<size_t>(MemType::kMemTypeNum)>;
-using RefCount = int;
+enum class MemType {
+  kFree,
+  kInfer,
+  kTrain,
+  kMemTypeNum,
+};
+
+enum class UsageStat {
+  kMaxNBytes,
+  kMinNBytes,
+  kCount,
+  kTotalNBytes,
+};
+
 struct MemPoolEntry {
   std::ptrdiff_t addr_offset;
   std::size_t nbytes;
@@ -104,12 +98,6 @@ struct MemPoolEntry {
     EntrySizeTableIterator freetable_pos;
   };
 };
-
-inline std::ostream &operator<<(std::ostream &os, const MemPoolEntry &entry) {
-  os << "entry: {addr_offset=" << entry.addr_offset << ", nbytes=" << entry.nbytes
-    << ", mtype=" << static_cast<int>(entry.mtype) << "}";
-  return os;
-}
 
 struct PoolEntry {
   void *addr;
@@ -124,6 +112,45 @@ struct MemPoolConfig {
   size_t shared_memory_size;
 };
 
+using StatValueType = std::atomic<size_t>;
+using StatMap = std::array<StatValueType, static_cast<size_t>(MemType::kMemTypeNum)>;
+using RefCount = int;
+
+inline std::ostream &operator<<(std::ostream &os, const MemPoolEntry &entry) {
+  os << "entry: {addr_offset=" << entry.addr_offset << ", nbytes=" << entry.nbytes
+    << ", mtype=" << static_cast<int>(entry.mtype) << "}";
+  return os;
+}
+
+inline MemPoolEntry *GetEntry(const bip_shared_memory &segment, MemPoolEntryHandle handle) {
+  return reinterpret_cast<MemPoolEntry *>(segment.get_address_from_handle(handle));
+}
+
+inline MemPoolEntryHandle GetHandle(const bip_shared_memory &segment, MemPoolEntry *entry) {
+  return segment.get_handle_from_address(entry);
+}
+
+inline MemPoolEntry *GetPrevEntry(const bip_shared_memory &segment, MemPoolEntry *entry, 
+                                  const EntryListIterator &begin_bound_check) {
+  auto iter = entry->mem_entry_pos;
+  if (iter == begin_bound_check) {
+    return nullptr;
+  }
+  iter--;
+  return GetEntry(segment, *iter);
+}
+
+inline MemPoolEntry *GetNextEntry(const bip_shared_memory &segment, MemPoolEntry *entry, 
+                                  const EntryListIterator &end_bound_check) {
+  auto iter = entry->mem_entry_pos;
+  iter++;
+  if (iter == end_bound_check) {
+    return nullptr;
+  }
+  return GetEntry(segment, *iter);
+}
+
+
 static inline MemPoolConfig GetDefaultMemPoolConfig(size_t nbytes) {
   return {
     .cuda_device = 0,
@@ -133,31 +160,6 @@ static inline MemPoolConfig GetDefaultMemPoolConfig(size_t nbytes) {
   };
 }
 
-inline MemPoolEntry *GetEntry(const shared_memory &segment, MemPoolEntryHandle handle) {
-  return reinterpret_cast<MemPoolEntry *>(segment.get_address_from_handle(handle));
-}
-
-inline MemPoolEntryHandle GetHandle(const shared_memory &segment, MemPoolEntry *entry) {
-  return segment.get_handle_from_address(entry);
-}
-
-inline MemPoolEntry *GetPrevEntry(const shared_memory &segment, MemPoolEntry *entry, const EntryListIterator &begin_bound_check) {
-  auto iter = entry->mem_entry_pos;
-  if (iter == begin_bound_check) {
-    return nullptr;
-  }
-  iter--;
-  return GetEntry(segment, *iter);
-}
-
-inline MemPoolEntry *GetNextEntry(const shared_memory &segment, MemPoolEntry *entry, const EntryListIterator &end_bound_check) {
-  auto iter = entry->mem_entry_pos;
-  iter++;
-  if (iter == end_bound_check) {
-    return nullptr;
-  }
-  return GetEntry(segment, *iter);
-}
 
 enum class FreeListPolicyType {
   kNextFit,
@@ -170,9 +172,9 @@ FreeListPolicyType getFreeListPolicy(const std::string& s);
 
 class FreeListPolicy {
 protected:
-  const shared_memory &segment_;
+  const bip_shared_memory &segment_;
 public:
-  FreeListPolicy(shared_memory &segment) : segment_(segment) {};
+  FreeListPolicy(bip_shared_memory &segment) : segment_(segment) {};
 
   virtual ~FreeListPolicy() = default;
 
@@ -193,16 +195,15 @@ public:
   virtual void DumpFreeList(std::ostream &stream, const EntryListIterator &begin, const EntryListIterator &end) = 0;
 };
 
+
 class BestFitPolicy: public FreeListPolicy {
 
 private:
   EntrySizeTable *free_entry_table;
 public:
-  BestFitPolicy(shared_memory& segment);
+  BestFitPolicy(bip_shared_memory& segment);
 
-  ~BestFitPolicy() {
-
-  }
+  ~BestFitPolicy() {}
 
   void InitMaster(MemPoolEntry* free_entry) override;
 
@@ -211,7 +212,7 @@ public:
   MemPoolEntry* GetFreeBlock(size_t nbytes) override;
 
   void NotifyUpdateFreeBlockNbytes(MemPoolEntry* entry,
-                                  size_t old_nbytes) override;
+                                   size_t old_nbytes) override;
 
   void RemoveFreeBlock(MemPoolEntry* entry) override;
 
@@ -241,7 +242,7 @@ protected:
   EntryList *freelist_;
   EntryListIterator *freelist_pos_;
 public:
-  NextFitPolicy(shared_memory& segment): FreeListPolicy(segment) {
+  NextFitPolicy(bip_shared_memory& segment): FreeListPolicy(segment) {
     freelist_ = segment.find_or_construct<EntryList>("FreeList")(segment.get_segment_manager());
     freelist_pos_ = segment.find_or_construct<EntryListIterator>("FreeListPos")();
   }
@@ -296,7 +297,7 @@ public:
 
 class FirstFitPolicy: public NextFitPolicy {
 public:
-  FirstFitPolicy(shared_memory &segment): NextFitPolicy(segment) {}; 
+  FirstFitPolicy(bip_shared_memory &segment): NextFitPolicy(segment) {}; 
 
   ~FirstFitPolicy() {}
 
@@ -306,7 +307,7 @@ public:
 class MemPool {
   friend class MempoolSampler;
 private:
-  shared_memory segment_;
+  bip_shared_memory segment_;
   FreeListPolicy *freeblock_policy_;
   EntryAddrTable *mem_entry_table_;
   EntryList *mem_entry_list_;

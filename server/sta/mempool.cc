@@ -24,7 +24,6 @@
 
 namespace colserve::sta {
 
-
 void MemPool::Free(MemPoolEntry *entry) {
   DLOG(INFO) << "[mempool] free " << entry->nbytes << ".";
   stat_->at(static_cast<size_t>(entry->mtype)).fetch_sub(entry->nbytes, std::memory_order_relaxed);
@@ -63,17 +62,25 @@ void MemPool::Free(MemPoolEntry *entry) {
     freeblock_policy_->AddFreeBlock(entry);
   }
 }
+
 std::shared_ptr<PoolEntry>
 MemPool::MakeSharedPtr(MemPoolEntry *entry) {
   auto *pool_entry = new PoolEntry{
       reinterpret_cast<std::byte *>(mem_pool_base_ptr_) + entry->addr_offset,
       entry->nbytes, entry->mtype};
+  CHECK_NE(mem_pool_base_ptr_, nullptr);
+  CHECK_GE(static_cast<int64_t>(entry->addr_offset), 0);
+  CHECK_LE(static_cast<size_t>(entry->addr_offset) + entry->nbytes, this->config_.cuda_memory_size);
+  CHECK_EQ(reinterpret_cast<size_t>(pool_entry->addr) & (detail::alignment - 1), 0) 
+    << "unaligned entry->addr " << pool_entry->addr;
+
   auto free = [this, entry](PoolEntry *pool_entry) {
     Free(entry);
     delete pool_entry;
   };
   return std::shared_ptr<PoolEntry>{pool_entry, free};
 }
+
 void MemPool::WaitSlaveExit() {
   if (master_) {
     auto getRefCount = [&] {
@@ -88,6 +95,7 @@ void MemPool::WaitSlaveExit() {
     }
   }
 }
+
 bool MemPool::CheckPoolWithoutLock() {
   freeblock_policy_->CheckFreeList(mem_entry_list_->begin(),
                                    mem_entry_list_->end());
@@ -129,13 +137,15 @@ bool MemPool::CheckPoolWithoutLock() {
   }
   return true;
 }
+
 void MemPool::CopyFromToInternel(void *dst_dev_ptr, void *src_dev_ptr,
-                                        size_t nbytes) {
+                                 size_t nbytes) {
   CUDA_CALL(cudaSetDevice(config_.cuda_device));
   CUDA_CALL(cudaMemcpyAsync(dst_dev_ptr, src_dev_ptr, nbytes, cudaMemcpyDefault,
                             cuda_memcpy_stream_));
   CUDA_CALL(cudaStreamSynchronize(cuda_memcpy_stream_));
 }
+
 MemPool::MemPool(MemPoolConfig config, bool cleanup, bool observe, FreeListPolicyType policy_type)
     : config_(std::move(config)), mem_pool_base_ptr_(nullptr), observe_(observe) {
   if (std::getenv("USER") != nullptr) {
@@ -232,10 +242,11 @@ void MemPool::RemoveMemPoolEntry(MemPoolEntry *entry) {
   mem_entry_table_->erase(entry->addr_offset);
   segment_.deallocate(entry);
 }
+
 MemPoolEntry *
 MemPool::CreateMemPoolEntry(std::ptrdiff_t addr_offset,
-                                           std::size_t nbytes, MemType mtype,
-                                           EntryListIterator insert_pos) {
+                            std::size_t nbytes, MemType mtype,
+                            EntryListIterator insert_pos) {
   auto *entry =
       reinterpret_cast<MemPoolEntry *>(segment_.allocate(sizeof(MemPoolEntry)));
   entry->nbytes = nbytes;
@@ -333,8 +344,8 @@ void MemPool::DumpSummaryWithoutLock() {
               << usages_mtype[UsageStat::kCount];
     if (usages_mtype[UsageStat::kCount] == 0) { continue; }
     LOG(INFO) << name << " avg: "
-              << detail::ByteDisplay(usages_mtype[UsageStat::kTotalNBytes] /
-                                     usages_mtype[UsageStat::kCount]);
+              << detail::ByteDisplay(static_cast<size_t>(1.0 * usages_mtype[UsageStat::kTotalNBytes] /
+                                     usages_mtype[UsageStat::kCount]));
   }
   google::FlushLogFiles(google::INFO);
 }
@@ -399,7 +410,7 @@ void BestFitPolicy::InitMaster(MemPoolEntry* free_entry) {
   AddFreeBlock(free_entry);
 }
 
-BestFitPolicy::BestFitPolicy(shared_memory& segment)
+BestFitPolicy::BestFitPolicy(bip_shared_memory& segment)
     : FreeListPolicy(segment) {
   free_entry_table = segment.find_or_construct<EntrySizeTable>("FreeTable")(
       segment_.get_segment_manager());
