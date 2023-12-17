@@ -154,7 +154,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
             raise Exception("not support multi-process")
 
 
-def train(num_epoch=10, batch_size=256, mode='normal', timeline: os.PathLike = sys.stdout, **kargs):
+def train(num_epoch=10, batch_size=256, mode='normal', train_profile: os.PathLike = sys.stdout, **kargs):
     hook = kargs["hook"]
     
     ori_batch_size = batch_size
@@ -278,8 +278,6 @@ def train(num_epoch=10, batch_size=256, mode='normal', timeline: os.PathLike = s
                 model.__class__.__name__, epoch, end - begin,
                 batch_info, batch_size, train_dataset.batch_size,
                 mem_info, finished_imgs / (end - begin), wait_bs_valid_sec), flush=True)
-        with open(timeline, 'w') as f:
-            pd.DataFrame(micro_batch_record_list).to_csv(f, index=None)
     
 
     if mode == 'task-switch-l1' or mode == 'colocate-l1' or mode == 'colocate-l2':
@@ -290,6 +288,9 @@ def train(num_epoch=10, batch_size=256, mode='normal', timeline: os.PathLike = s
         print("[{}] Epoch x Batch {} | Batch Total Tried {} Killed {} Finished {}".format(
             model.__class__.__name__,
             num_epoch * ori_batch_size, total_tried_batch, total_killed_batch, total_finished_batch))
+    
+    with open(train_profile, 'w') as f:
+        pd.DataFrame(micro_batch_record_list).to_csv(f, index=None)
 
 
 if __name__ == '__main__':
@@ -300,7 +301,7 @@ if __name__ == '__main__':
                         choices=['normal', 
                                  'task-switch-l1', 'task-switch-l2','task-switch-l3', 
                                  'colocate-l1', 'colocate-l2'])
-    parser.add_argument('--timeline', type=str)
+    parser.add_argument('--train-profile', type=str)
     # parser.add_argument('--dynamic-epoch-batch-size', action='store_true', default=False)
     # parser.add_argument('--dynamic-epoch-batch-size-schedule', nargs='*', type=int)
     args = parser.parse_args()
@@ -321,7 +322,7 @@ if __name__ == '__main__':
 
     try:
         train(num_epoch=num_epoch, batch_size=batch_size,
-              mode=args.mode, hook=hook, timeline=args.timeline)
+              mode=args.mode, hook=hook, train_profile=args.train_profile)
     except SwitchL1Exception as e:
         print(e) # should not reach here
 

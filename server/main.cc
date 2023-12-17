@@ -54,7 +54,8 @@ void init_cli_options() {
   app.add_option("--cuda-memory-pool-gb", colserve::Config::cuda_memory_pool_gb,
       "cuda memory pool size in GB, default is 12");
   app.add_option("--memory-pool-policy", colserve::Config::mempool_freelist_policy, 
-        "cuda memory pool freelist policy, default is best-fit.");
+        "cuda memory pool freelist policy, default is best-fit.")
+        ->check(CLI::IsMember({"first-fit", "next-fit", "best-fit"}));
   app.add_option("-p,--port", port,
       "gRPC server port, default is 8080");
   app.add_option("--max-live-minute", max_live_minute,
@@ -73,7 +74,7 @@ void init_cli_options() {
       "colocate skip malloc, default is false");
   app.add_flag("--colocate-skip-loading", colserve::Config::colocate_config.skip_loading, 
       "colocate skip loading, default is false");
-  app.add_option("--train-profile", colserve::Config::train_timeline, 
+  app.add_option("--train-profile", colserve::Config::train_profile, 
     "train timeline path, default is train-timeline");
   app.add_option("--max-cache-nbytes", colserve::Config::max_cache_nbytes, 
     "max cache nbytes, default is 1*1024*1024*1024(1G).");
@@ -142,7 +143,8 @@ int main(int argc, char *argv[]) {
   });
 
   CHECK_EQ(cuInit(0), CUDA_SUCCESS);
-  auto free_list_policy = colserve::sta::getFreeListPolicy(colserve::Config::mempool_freelist_policy);
+  auto free_list_policy = colserve::sta::getFreeListPolicy(
+      colserve::Config::mempool_freelist_policy);
   if (colserve::Config::use_shared_tensor) {
     colserve::sta::Init(
       static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1024 * 1024 * 1024),

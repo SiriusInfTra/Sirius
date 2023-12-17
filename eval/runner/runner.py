@@ -56,11 +56,11 @@ class System:
 '''
 
     def __init__(self, mode: str, use_sta: bool, 
-                 cuda_memory_pool_gb: str=None,
-                 memory_pool_policy: str=MemoryPoolPolicy.BestFit,
+                 cuda_memory_pool_gb: str = None,
+                 memory_pool_policy: str = MemoryPoolPolicy.BestFit,
                  profile_log: str = "profile-log", 
                  server_log: str = "server-log", 
-                 train_timeline:str = "train-profile", 
+                 train_profile:str = "train-profile", 
                  port: str = "18080",
                  infer_model_config: List[InferModelConfig] | InferModelConfig = None,
                  mps: bool = True,
@@ -79,7 +79,7 @@ class System:
         self.memory_pool_policy = memory_pool_policy
         self.profile_log = profile_log
         self.server_log = server_log
-        self.train_timeline = train_timeline
+        self.train_profile = train_profile
         self.port = str(int(port) + os.getuid() % 10)
         self.server:Optional[subprocess.Popen]= None
         self.log_dir:Optional[str] = None
@@ -126,7 +126,7 @@ class System:
         pathlib.Path(self.log_dir).mkdir(parents=True, exist_ok=True)
         server_log = f"{self.log_dir}/{self.server_log}.log"
         profile_log = f"{self.log_dir}/{self.profile_log}.log"
-        train_timeline = f"{self.log_dir}/{self.train_timeline}.csv"
+        train_profile = f"{self.log_dir}/{self.train_profile}.csv"
 
         self.cmd_trace = []
         cmd = [
@@ -175,7 +175,7 @@ class System:
         if self.colocate_skip_loading:
             cmd += ["--colocate-skip-loading"]
 
-        cmd += ['--train-profile', str(train_timeline)]
+        cmd += ['--train-profile', str(train_profile)]
         cmd += ['--max-cache-nbytes', str(self.max_cache_nbytes)]
 
         if self.memory_pressure_mb:
