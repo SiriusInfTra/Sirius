@@ -71,10 +71,12 @@ class ColocateHook:
         for fn in self.grad_fn:
             torch_col.release_grad_fn_saved_tensor(fn)
         self.grad_fn = []
+        torch_col.cuda_memory_pool_free_train_local()
         self.reply_adjust_l1()
 
     def adjust_l2(self):
         assert self.stub.cmd == torch_col.Event.kColocateAdjustL2
+        torch_col.cuda_memory_pool_free_train_local()
         self.stub.adjust_l2_done()
         
     def reply_adjust_l1(self):
@@ -189,7 +191,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', train_profile: os.PathLik
     use_shared_tensor = os.environ.get('USE_SHARED_TENSOR', '0') == '1'
 
     if use_shared_tensor:
-        print("Train params memory usage: {:.2f}M".format(torch_col.cuda_memory_pool_train_usage() / 1024 / 1024))
+        print("Train params memory usage: {:.2f}M".format(torch_col.cuda_memory_pool_train_all_usage() / 1024 / 1024))
 
     criterion = nn.CrossEntropyLoss().cuda(0)
     optimizer = torch.optim.SGD(model.parameters(), 0.1, 
@@ -197,7 +199,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', train_profile: os.PathLik
     scheduler = StepLR(optimizer, step_size=30, gamma=0.1)
 
     if use_shared_tensor:
-        print("Train after init memory pool usage: {:.2f}M".format(torch_col.cuda_memory_pool_train_usage() / 1024 / 1024))
+        print("Train after init memory pool usage: {:.2f}M".format(torch_col.cuda_memory_pool_train_all_usage() / 1024 / 1024))
 
     # dummy data, todo: learning rate auto scaling
     train_dataset = CustomeDynamicBatchDataset(1000, (3, 224, 224), 
@@ -256,7 +258,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', train_profile: os.PathLik
                 # killed_time += time.time() - micro_batch_begin
                 t0 = time.time()
                 torch.cuda.synchronize()
-                old_gpu_mem = gpu_mem() if not use_shared_tensor else torch_col.cuda_memory_pool_train_usage() / 1024 / 1024
+                old_gpu_mem = gpu_mem() if not use_shared_tensor else torch_col.cuda_memory_pool_train_all_usage() / 1024 / 1024
                 torch.cuda.empty_cache()
                 t1 = time.time()
                 if isinstance(e, ColocateAdjustL1Exception):
@@ -264,7 +266,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', train_profile: os.PathLik
                 if not use_shared_tensor:
                     mem_info = f'gpu mem {old_gpu_mem:.1f} -> {gpu_mem():.1f}'
                 else:
-                    mem_info = f'mem pool {old_gpu_mem:.1f} -> {torch_col.cuda_memory_pool_train_usage() / 1024 / 1024:.1f}M'
+                    mem_info = f'mem pool {old_gpu_mem:.1f} -> {torch_col.cuda_memory_pool_train_all_usage() / 1024 / 1024:.1f}M'
                 print('{} free cache {:.1f}ms, new micro batch size {}, {}'.format(
                     e, (t1 - t0) * 1000, train_dataset.batch_size, mem_info))
             else:
@@ -273,12 +275,12 @@ def train(num_epoch=10, batch_size=256, mode='normal', train_profile: os.PathLik
                     old_gpu_mem = gpu_mem()
                     torch.cuda.synchronize()
                     torch.cuda.empty_cache()
-                    hook.stub.adjust_l2_done()
+                    hook.adjust_l2()
                     t1 = time.time()
                     if not use_shared_tensor:
                         mem_info = f'gpu mem {old_gpu_mem:.1f} -> {gpu_mem():.1f}'
                     else:
-                        mem_info = f'mem pool {torch_col.cuda_memory_pool_train_usage() / 1024 / 1024:.1f}M'
+                        mem_info = f'mem pool {torch_col.cuda_memory_pool_train_all_usage() / 1024 / 1024:.1f}M'
                     print('batch {} adjust : bs {} -> {} | {:.1f}ms | {:.1f}ms | {}'.format(
                         i, train_dataset.last_batch_size, train_dataset.batch_size, (time.time()-batch_begin) * 1000, (t1 - t0) * 1000, 
                         mem_info))
@@ -294,7 +296,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', train_profile: os.PathLik
         if not use_shared_tensor:
             mem_info = f'memory {gpu_mem():.2f}Gb'
         else:
-            mem_info = f'mem pool {torch_col.cuda_memory_pool_train_usage() / 1024 / 1024:.1f}M'
+            mem_info = f'mem pool {torch_col.cuda_memory_pool_train_all_usage() / 1024 / 1024:.1f}M'
         batch_info = f'batch cnt {batch_cnt} avg {1e3*(end-begin)/batch_cnt:.1f}ms'
         if mode == 'task-switch-l1' or mode == 'colocate-l1':
             batch_info += f' | try {tried_batch} kill {killed_batch}, {killed_time*1e3:.1f}ms finish {finished_batch}, {finished_time*1e3:.1f}ms'
