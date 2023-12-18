@@ -333,12 +333,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
       auto begin = std::chrono::steady_clock::now();
       for (auto& input: input_info_) {
         auto& input_id = input.first;
-        try {
-          err = SetInput(*graph_executor, idx++, input_id, jobs);
-        } catch (::tvm::InternalError &e) {
-          std::cout << name_ << std::endl;
-          throw e;
-        }
+        err = SetInput(*graph_executor, idx++, input_id, jobs);
       }
       auto end = std::chrono::steady_clock::now();
       set_input_ms = std::chrono::duration<double, std::milli>(end - begin).count();
