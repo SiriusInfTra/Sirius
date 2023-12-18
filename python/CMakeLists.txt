@@ -61,7 +61,7 @@ add_library(torch_col SHARED
 
 target_include_directories(torch_col PRIVATE "../")
 target_link_libraries(torch_col PRIVATE torch_col_tensor)
-
+add_definitions(-DNO_TVM)
 
 # build python ext
 add_custom_target(

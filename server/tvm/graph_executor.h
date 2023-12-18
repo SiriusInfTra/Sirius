@@ -7,8 +7,10 @@
 #include <sta/tensor_methods.h>
 #include <sta/tensor_pool.h>
 
+
 #include "graph_executor_factory.h"
 
+#include "glog/logging.h"
 
 namespace colserve {
 namespace tvm {
@@ -38,7 +40,10 @@ class GraphExecutor {
   uint32_t GetInputIndex(const std::string &name) const;
   uint32_t GetOutputIndex(const std::string &name) const;
 
-  TVMStreamHandle GetExecStream() const { return exec_stream_; }
+  TVMStreamHandle GetExecStream() const { 
+    CHECK_EQ(initialized_, true);
+    return exec_stream_;
+  }
 
   // void ResetBufStorage();
   // void ResetParamStorage();
@@ -58,7 +63,18 @@ class GraphExecutor {
   uint32_t entry_id(uint32_t nid, uint32_t index) const {
     return factory_.node_row_ptr_[nid] + index;
   }
-  
+
+  size_t GetParamStorageSize() const {
+    return param_storage_size_;
+  }
+
+  size_t GetBufferStorageSize() const {
+    return buffer_storage_size_;
+  }
+
+  size_t GetStorageSize() const {
+    return param_storage_size_ + buffer_storage_size_;
+  }
 
  private:
   void SetupStorage(bool alloc);
@@ -102,6 +118,9 @@ class GraphExecutor {
   
   TVMStreamHandle exec_stream_;
   TVMStreamHandle load_param_stream_;
+
+  size_t param_storage_size_ = 0;
+  size_t buffer_storage_size_ = 0;
 };
 
 }

@@ -9,6 +9,7 @@ app.add_argument('-b', type=int, default=0)
 app.add_argument('-e', type=int, default=3600*1e3)
 app.add_argument('-o', type=str, required=True)
 app.add_argument('--event', action='store_true')
+app.add_argument('--train-all', action=argparse.BooleanOptionalAction, default=True)
 args = app.parse_args()
 # log = sys.argv[1]
 log = args.l
@@ -17,7 +18,7 @@ end_time = args.e
 outdir = args.o
 
 timeline = []
-infer_mem, train_mem, total_mem = [], [], []
+infer_mem, train_mem, train_all_mem, total_mem = [], [], [], []
 events = []
 with open(log) as f:
     parse_mem = False
@@ -43,6 +44,9 @@ with open(log) as f:
             m = re.search(r'Train (\d+\.\d+) Mb', line)
             train_mem.append(float(m.group(1)))
 
+            m = re.search(r'TrainAll (\d+\.\d+) Mb', line)
+            train_all_mem.append(float(m.group(1)))
+
             m = re.search(r'Total (\d+\.\d+) Mb', line)
             total_mem.append(float(m.group(1)))
 
@@ -56,16 +60,19 @@ with open(log) as f:
 
 total_mem = max(total_mem)
 
+if args.train_all:
+    train_mem = train_all_mem
+
 fig, ax = plt.subplots()
 infer_mem, train_mem = map(np.array, [infer_mem, train_mem])
 invert_train_mem = total_mem - train_mem 
 
 
-ax.plot(timeline, infer_mem, label='Infer', linewidth=1)
-ax.fill_between(timeline, 0, infer_mem, alpha=0.1)
+ax.plot(timeline, infer_mem, label='Infer', linewidth=0.2)
+ax.fill_between(timeline, 0, infer_mem, alpha=0.3)
 
-ax.plot(timeline, invert_train_mem, label='Train', linewidth=1)
-ax.fill_between(timeline, invert_train_mem, total_mem, alpha=0.1)
+ax.plot(timeline, invert_train_mem, label='Train', linewidth=0.2)
+ax.fill_between(timeline, invert_train_mem, total_mem, alpha=0.3)
 
 if args.event:
     ax.vlines([t for t, e in events], 0.0, total_mem, color='black', linewidth=0.5, linestyles='dashed')

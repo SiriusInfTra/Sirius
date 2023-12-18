@@ -24,7 +24,13 @@
 #ifndef TVM_RUNTIME_TEXTURE_H_
 #define TVM_RUNTIME_TEXTURE_H_
 
-#include "tvm.h" 
+#include "../logging_as_glog.h"
+#include <tvm/runtime/device_api.h>
+#include <tvm/runtime/c_runtime_api.h>
+#include <tvm/runtime/packed_func.h>
+#include <tvm/runtime/module.h>
+#include <tvm/runtime/registry.h>
+#include <tvm/runtime/logging.h>
 
 #include <memory>
 #include <string>

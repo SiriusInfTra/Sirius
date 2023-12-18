@@ -74,10 +74,9 @@ class ColocateStub {
   std::unique_ptr<std::thread> thread_;
 };
 
-
-void ReleaseMempool();
 void DumpMempoolFreeList(std::string filename);
 void DumpMempoolBlockList(std::string filename);
+
 }
 
 #endif

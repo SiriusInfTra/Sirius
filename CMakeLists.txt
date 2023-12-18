@@ -48,19 +48,9 @@ if (NOT grpc_POPULATED)
   set(CMAKE_BUILD_TYPE ${BUILD_TYPE_OLD} CACHE INTERNAL "build type" FORCE)
 endif()
 
-FetchContent_Declare(
-  glog
-  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/glog
-)
-# FetchContent_MakeAvailable(glog)
-FetchContent_GetProperties(glog)
-if (NOT glog_POPULATED)
-  FetchContent_Populate(glog)
-  set(BUILD_SHARED_LIBS_OLD ${BUILD_SHARED_LIBS})
-  set(BUILD_SHARED_LIBS ON CACHE INTERNAL "build shared library" FORCE)
-  add_subdirectory(${glog_SOURCE_DIR} ${glog_BINARY_DIR})
-  set(BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS_OLD} CACHE INTERNAL "library build type" FORCE)
-endif()
+include(cmake/glog.cmake)
+# find_package(glog REQUIRED)
+# add_definitions(-DDMLC_USE_GLOG)
 
 FetchContent_Declare(
   CLI11
@@ -122,11 +112,14 @@ target_link_libraries(proto ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOB
 add_library(sta SHARED
   server/sta/cuda_allocator.cc
   server/sta/tensor_pool.cc
+  server/sta/mempool.cc
   server/sta/tensor_methods.cc
   server/sta/shape_helper.cc
   server/sta/dtype_helper.cc
   server/sta/init.cc
 )
+target_compile_definitions(sta PRIVATE -DNO_TVM)
+# add_definitions(st)
 # target_include_directories(sta INTERFACE ${TVM_HOME}/3rdparty/dlpack/include)
 target_include_directories(sta PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/server/)
 target_link_libraries(sta PRIVATE CUDA::cudart glog::glog
@@ -134,6 +127,7 @@ target_link_libraries(sta PRIVATE CUDA::cudart glog::glog
 
 add_executable(${PROJECT_NAME}
   server/main.cc
+  server/cache.cc
   server/grpc/grpc_server.cc
   server/tvm/graph_executor_factory.cc
   server/tvm/graph_executor.cc

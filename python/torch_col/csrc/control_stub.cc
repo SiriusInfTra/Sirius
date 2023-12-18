@@ -1,4 +1,4 @@
-#include <glog/logging.h>
+#include <logging_as_glog.h>
 #include <sta/cuda_allocator.h>
 
 #include "control_stub.h"
@@ -146,11 +146,6 @@ double ColocateStub::PassedTimeFromSetCmd() {
 void ColocateStub::ReportBatchSize(int batch_size) {
   status_event_mq_->Put({0, static_cast<int>(Event::kReportBatchSize), batch_size});
 }
-
-void ReleaseMempool() {
-  colserve::sta::CUDAMemPool::ReleaseMempool();
-}
-
 
 void DumpMempoolFreeList(std::string filename) {
   colserve::sta::DumpMempoolFreeList(filename);

@@ -26,5 +26,6 @@ dist/
 *.pyc
 
 log/*
+/dcgmi_output/*.txt
 
 .env

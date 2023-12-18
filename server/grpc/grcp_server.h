@@ -2,6 +2,7 @@
 #define COLSERVE_GRPC_SERVER_H
 
 // #include <dlpack/dlpack.h>
+#include "logging_as_glog.h"
 #include <grpc++/grpc++.h>
 #include <glog/logging.h>
 #include <thread>

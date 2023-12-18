@@ -1,19 +1,20 @@
 #ifndef COLSERVE_GRAPH_EXECUTOR_FACTORY_H
 #define COLSERVE_GRAPH_EXECUTOR_FACTORY_H
-
+#include "../logging_as_glog.h"
 #include <iostream>
 #include <map>
 
-// #include <dlpack/dlpack.h>
-// #include <dmlc/json.h>
-// #include <dmlc/memory_io.h>
-// #include <tvm/runtime/device_api.h>
-// #include <tvm/runtime/packed_func.h>
-// #include <tvm/runtime/module.h>
+
+#include <dlpack/dlpack.h>
+#include <dmlc/json.h>
+#include <dmlc/memory_io.h>
+#include <tvm/runtime/device_api.h>
+#include <tvm/runtime/packed_func.h>
+#include <tvm/runtime/module.h>
 
 
 
-#include "tvm.h"
+// #include "tvm.h"
 
 
 namespace colserve {

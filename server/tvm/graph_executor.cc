@@ -1,3 +1,10 @@
+#include "logging_as_glog.h"
+#include <tvm/runtime/device_api.h>
+#include <tvm/runtime/c_runtime_api.h>
+#include <tvm/runtime/packed_func.h>
+#include <tvm/runtime/module.h>
+#include <tvm/runtime/registry.h>
+#include <tvm/runtime/logging.h>
 #include <numeric>
 #include <thread>
 #include <c10/core/MemoryFormat.h>
@@ -363,8 +370,8 @@ void GraphExecutor::SetupStorage(bool alloc) {
     vtype.push_back(::tvm::runtime::String2DLDataType(s_type));
   }
 
-  size_t param_storage_size = 0;
-  size_t buffer_storage_size = 0;
+  param_storage_size_ = 0;
+  buffer_storage_size_ = 0;
   for (size_t sid = 0; sid < factory_.pool_entry_.size(); sid++) {
     const auto &pit = factory_.pool_entry_[sid];
     // if (pit.params_entry)
@@ -402,9 +409,9 @@ void GraphExecutor::SetupStorage(bool alloc) {
     }
     // op_node_storage_id_map_[sid] = storage_pool_.size() - 1;
     if (pit.params_entry) {
-      param_storage_size += ::tvm::runtime::GetDataSize(*last_tensor.operator->());
+      param_storage_size_ += ::tvm::runtime::GetDataSize(*last_tensor.operator->());
     } else {
-      buffer_storage_size += ::tvm::runtime::GetDataSize(*last_tensor.operator->());
+      buffer_storage_size_ += ::tvm::runtime::GetDataSize(*last_tensor.operator->());
     }
   }
 
@@ -455,8 +462,8 @@ void GraphExecutor::SetupStorage(bool alloc) {
   if (!logged.count(factory_.model_name_)) {
     logged.insert(factory_.model_name_);
     LOG(INFO) << "[GraphExecutor] " << factory_.model_name_
-              << " params " << 1.0 * param_storage_size / 1024 / 1024 << " Mb"
-              << " intermediate " << 1.0 * buffer_storage_size / 1024 / 1024 << " Mb";
+              << " params " << 1.0 * param_storage_size_ / 1024 / 1024 << " Mb"
+              << " intermediate " << 1.0 * buffer_storage_size_ / 1024 / 1024 << " Mb";
   }
 }
 

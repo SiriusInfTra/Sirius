@@ -9,8 +9,16 @@ from torch.utils.data import DataLoader, Dataset, Sampler, IterableDataset, get_
 import time
 import argparse
 import os, sys
-
+import pandas as pd
+from typing import NamedTuple
 import torch_col
+
+class MicroBatchRecord(NamedTuple):
+    start_time: int
+    end_time: int
+    batch_size: int
+    finished: bool
+    
 
 # TODO: wrapp in torch_col package
 class SwitchL1Exception(Exception):
@@ -63,10 +71,12 @@ class ColocateHook:
         for fn in self.grad_fn:
             torch_col.release_grad_fn_saved_tensor(fn)
         self.grad_fn = []
+        torch_col.cuda_memory_pool_free_train_local()
         self.reply_adjust_l1()
 
     def adjust_l2(self):
         assert self.stub.cmd == torch_col.Event.kColocateAdjustL2
+        torch_col.cuda_memory_pool_free_train_local()
         self.stub.adjust_l2_done()
         
     def reply_adjust_l1(self):
@@ -170,7 +180,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
             raise Exception("not support multi-process")
 
 
-def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
+def train(num_epoch=10, batch_size=256, mode='normal', train_profile: os.PathLike = sys.stdout, **kargs):
     hook = kargs["hook"]
     
     ori_batch_size = batch_size
@@ -181,7 +191,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
     use_shared_tensor = os.environ.get('USE_SHARED_TENSOR', '0') == '1'
 
     if use_shared_tensor:
-        print("Train params memory usage: {:.2f}M".format(torch_col.cuda_memory_pool_train_usage() / 1024 / 1024))
+        print("Train params memory usage: {:.2f}M".format(torch_col.cuda_memory_pool_train_all_usage() / 1024 / 1024))
 
     criterion = nn.CrossEntropyLoss().cuda(0)
     optimizer = torch.optim.SGD(model.parameters(), 0.1, 
@@ -189,7 +199,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
     scheduler = StepLR(optimizer, step_size=30, gamma=0.1)
 
     if use_shared_tensor:
-        print("Train after init memory pool usage: {:.2f}M".format(torch_col.cuda_memory_pool_train_usage() / 1024 / 1024))
+        print("Train after init memory pool usage: {:.2f}M".format(torch_col.cuda_memory_pool_train_all_usage() / 1024 / 1024))
 
     # dummy data, todo: learning rate auto scaling
     train_dataset = CustomeDynamicBatchDataset(1000, (3, 224, 224), 
@@ -204,6 +214,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
     total_killed_batch = 0
     total_finished_batch = 0
     total_tried_batch = 0
+    micro_batch_record_list = []
 
     model.train()
     for epoch in range(num_epoch):
@@ -224,10 +235,10 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
             # micro_batch_size = random.randint(1, batch_size)
             # print(micro_batch_size)
             batch_begin = time.time()
-            micro_batch_begin = None
+            micro_batch_begin = torch_col.get_unix_timestamp()
+            micro_batch_fnished = True
             try:
                 # print('hook.cmd', hook.stub.cmd, flush=True)
-                micro_batch_begin = time.time()
                 tried_batch += 1
                 total_tried_batch += 1
                 optimizer.zero_grad()
@@ -243,10 +254,11 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
             except (ColocateAdjustL1Exception, SwitchL1Exception) as e:
                 killed_batch += 1
                 total_killed_batch += 1
+                micro_batch_fnished = False
                 # killed_time += time.time() - micro_batch_begin
                 t0 = time.time()
                 torch.cuda.synchronize()
-                old_gpu_mem = gpu_mem() if not use_shared_tensor else torch_col.cuda_memory_pool_train_usage() / 1024 / 1024
+                old_gpu_mem = gpu_mem() if not use_shared_tensor else torch_col.cuda_memory_pool_train_all_usage() / 1024 / 1024
                 torch.cuda.empty_cache()
                 t1 = time.time()
                 if isinstance(e, ColocateAdjustL1Exception):
@@ -254,7 +266,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                 if not use_shared_tensor:
                     mem_info = f'gpu mem {old_gpu_mem:.1f} -> {gpu_mem():.1f}'
                 else:
-                    mem_info = f'mem pool {old_gpu_mem:.1f} -> {torch_col.cuda_memory_pool_train_usage() / 1024 / 1024:.1f}M'
+                    mem_info = f'mem pool {old_gpu_mem:.1f} -> {torch_col.cuda_memory_pool_train_all_usage() / 1024 / 1024:.1f}M'
                 print('{} free cache {:.1f}ms, new micro batch size {}, {}'.format(
                     e, (t1 - t0) * 1000, train_dataset.batch_size, mem_info))
             else:
@@ -263,16 +275,20 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
                     old_gpu_mem = gpu_mem()
                     torch.cuda.synchronize()
                     torch.cuda.empty_cache()
-                    hook.stub.adjust_l2_done()
+                    hook.adjust_l2()
                     t1 = time.time()
                     if not use_shared_tensor:
                         mem_info = f'gpu mem {old_gpu_mem:.1f} -> {gpu_mem():.1f}'
                     else:
-                        mem_info = f'mem pool {torch_col.cuda_memory_pool_train_usage() / 1024 / 1024:.1f}M'
+                        mem_info = f'mem pool {torch_col.cuda_memory_pool_train_all_usage() / 1024 / 1024:.1f}M'
                     print('batch {} adjust : bs {} -> {} | {:.1f}ms | {:.1f}ms | {}'.format(
                         i, train_dataset.last_batch_size, train_dataset.batch_size, (time.time()-batch_begin) * 1000, (t1 - t0) * 1000, 
                         mem_info))
                 train_dataset.next_batch()
+            finally:
+                micro_batch_end = torch_col.get_unix_timestamp()
+                if epoch != 0:
+                    micro_batch_record_list.append(MicroBatchRecord(micro_batch_begin, micro_batch_end, len(images), micro_batch_fnished))
 
 
         scheduler.step()
@@ -280,7 +296,7 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
         if not use_shared_tensor:
             mem_info = f'memory {gpu_mem():.2f}Gb'
         else:
-            mem_info = f'mem pool {torch_col.cuda_memory_pool_train_usage() / 1024 / 1024:.1f}M'
+            mem_info = f'mem pool {torch_col.cuda_memory_pool_train_all_usage() / 1024 / 1024:.1f}M'
         batch_info = f'batch cnt {batch_cnt} avg {1e3*(end-begin)/batch_cnt:.1f}ms'
         if mode == 'task-switch-l1' or mode == 'colocate-l1':
             batch_info += f' | try {tried_batch} kill {killed_batch}, {killed_time*1e3:.1f}ms finish {finished_batch}, {finished_time*1e3:.1f}ms'
@@ -298,10 +314,12 @@ def train(num_epoch=10, batch_size=256, mode='normal', **kargs):
         print("[{}] Epoch x Batch {} | Batch Total Tried {} Killed {} Finished {}".format(
             model.__class__.__name__,
             num_epoch * ori_batch_size, total_tried_batch, total_killed_batch, total_finished_batch))
+    
+    with open(train_profile, 'w') as f:
+        pd.DataFrame(micro_batch_record_list).to_csv(f, index=None)
 
 
 if __name__ == '__main__':
-
     parser = argparse.ArgumentParser('Train Resnet')    
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--num-epoch', type=int, default=10)
@@ -309,6 +327,7 @@ if __name__ == '__main__':
                         choices=['normal', 
                                  'task-switch-l1', 'task-switch-l2','task-switch-l3', 
                                  'colocate-l1', 'colocate-l2'])
+    parser.add_argument('--train-profile', type=str)
     # parser.add_argument('--dynamic-epoch-batch-size', action='store_true', default=False)
     # parser.add_argument('--dynamic-epoch-batch-size-schedule', nargs='*', type=int)
     args = parser.parse_args()
@@ -329,7 +348,7 @@ if __name__ == '__main__':
 
     try:
         train(num_epoch=num_epoch, batch_size=batch_size,
-              mode=args.mode, hook=hook)
+              mode=args.mode, hook=hook, train_profile=args.train_profile)
     except SwitchL1Exception as e:
         print(e) # should not reach here
 

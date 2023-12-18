@@ -47,6 +47,8 @@ class Config {
   static bool check_mps;
   
   static std::atomic<bool> running;
+
+  static std::string train_profile;
   
   static bool use_shared_tensor;
   static bool use_shared_tensor_infer;
@@ -55,6 +57,8 @@ class Config {
   static bool ondemand_adjust;
 
   static double cuda_memory_pool_gb;
+
+  static std::string mempool_freelist_policy;
 
   static bool infer_raw_blob_alloc;
 
@@ -65,6 +69,9 @@ class Config {
   static std::string infer_model_config_path;
 
   static int train_mps_thread_percent;
+
+  static size_t max_cache_nbytes;
+
 
   // to avoid memory fragment cause OOM
   static double train_memory_over_predict_mb;

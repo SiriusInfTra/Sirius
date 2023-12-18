@@ -2,9 +2,8 @@
 #define COLSERVE_SHAPE_HELPER_H
 
 // #include <dlpack/dlpack.h>
+#include "../logging_as_glog.h"
 #include <ATen/Tensor.h>
-#include "../undef_log.h"
-#include <glog/logging.h>
 
 #include <vector>
 #include <cstdint>
@@ -31,7 +30,7 @@ inline void CheckMemoryBound(at::IntArrayRef size,
                              size_t storage_offset,
                              const TensorContainer::memory_data_t mdata) {
   size_t nbytes = ComputeStorageNbytes(size, stride, dtype, storage_offset);
-  CHECK_NE(mdata, nullptr);
+  CHECK(mdata != nullptr);
   CHECK_LE(nbytes, mdata->nbytes) << "CheckMemoryBound: Out of memory bound";
 }
 

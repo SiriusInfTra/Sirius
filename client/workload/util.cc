@@ -30,6 +30,7 @@ AppBase::AppBase(const std::string &name) : app{name} {
   app.add_option("--seed", seed, "random seed");
 
   app.add_option("--warmup", warmup, "warm up infer model");
+  app.add_option("--infer-timeline", infer_timeline, "path of infer timeline");
   app.add_option("--delay-after-warmup", delay_after_warmup, "trace file of infer workload");
 }
 

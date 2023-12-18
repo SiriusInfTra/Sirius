@@ -44,7 +44,8 @@ int main(int argc, char** argv) {
   std::string target = "localhost:" + app.port;
   colserve::workload::Workload workload(
       grpc::CreateChannel(target, grpc::InsecureChannelCredentials()),
-      std::chrono::seconds(app.duration)
+      std::chrono::seconds(app.duration),
+      app.infer_timeline
   );
   CHECK(workload.Hello());
 

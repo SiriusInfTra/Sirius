@@ -1,7 +1,14 @@
+#include "logging_as_glog.h"
 #include <pthread.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <chrono>
+#include <tvm/runtime/device_api.h>
+#include <tvm/runtime/c_runtime_api.h>
+#include <tvm/runtime/packed_func.h>
+#include <tvm/runtime/module.h>
+#include <tvm/runtime/registry.h>
+#include <tvm/runtime/logging.h>
 #include "model_infer_store.h"
 #include <glog/logging.h>
 
@@ -110,6 +117,9 @@ bool ModelTrainStore::Train() {
     args_str.push_back("colocate-l2");
   }
 
+  args_str.push_back("--train-profile");
+  args_str.push_back(Config::train_profile);
+
   while (Config::running) {
     if (LaunchTrain(job, args_str)) {
       break;
@@ -158,6 +168,7 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
       CHECK_NE(setenv("USE_SHARED_TENSOR", "1", 1), -1);
       CHECK_NE(setenv("SHARED_TENSOR_HAS_SERVER", "1", 1), -1);
       CHECK_NE(setenv("SHARED_TENSOR_POOL_GB", std::to_string(Config::cuda_memory_pool_gb).c_str(), 1), -1);
+      CHECK_NE(setenv("SHARED_TENSOR_POOL_FREELIST_POLICY", Config::mempool_freelist_policy.c_str(), 1), -1);
       // CHECK_NE(setenv("CUDA_LAUNCH_BLOCKING", "1", 1), -1);
     } else {
       CHECK_NE(setenv("USE_SHARED_TENSOR", "0", 1), -1);

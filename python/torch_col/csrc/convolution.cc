@@ -8,7 +8,6 @@
 #include "convolution.h"
 #include "utils.h"
 
-#include <undef_log.h>
 #include <glog/logging.h>
 
 namespace torch_col {

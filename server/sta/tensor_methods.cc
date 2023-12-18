@@ -1,3 +1,4 @@
+#include "../logging_as_glog.h"
 #include <ATen/native/TensorConversions.h>
 #include <cuda_runtime_api.h>
 
@@ -20,7 +21,7 @@ STensor RawNull(at::IntArrayRef size, DLDataType dtype) {
 uint64_t Empty(at::IntArrayRef size, at::MemoryFormat memory_format, DLDataType dtype, MemType mtype) {
   auto storage_nbytes = ComputeStorageNbytes(size, dtype);
   auto entry = CUDAMemPool::Get()->Alloc(storage_nbytes, mtype, false);
-  CHECK_NE(entry, nullptr);
+  CHECK(entry != nullptr);
   // std::stringstream ss;
   // ss << "Create empty size " << size << " nbytes " << storage_nbytes;
   // if (entry) {
@@ -51,7 +52,7 @@ uint64_t EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride,
                       DLDataType dtype, MemType mtype) {
   auto storage_nbytes = ComputeStorageNbytes(size, stride, dtype);
   auto entry = CUDAMemPool::Get()->Alloc(storage_nbytes, mtype, false);
-  CHECK_NE(entry, nullptr);
+  CHECK(entry != nullptr);
   // std::stringstream ss;
   // ss << "Create empty_strided size " << size << " stride " << stride << " nbytes " << storage_nbytes;
   // if (entry) {
@@ -238,7 +239,7 @@ void STensor::AssignMDataForNull(TensorContainer::memory_data_t mdata, bool chec
   if (check_memory_bound) {
     CheckMemoryBound(get()->shape_, get()->stride_, get()->tensor_.dtype, StorageOffset(), mdata);
   }
-  CHECK_NE(mdata, nullptr);
+  CHECK(mdata != nullptr);
   get()->mdata_ = mdata;
   get()->tensor_.data = mdata->addr;
   get()->is_null_ = false;

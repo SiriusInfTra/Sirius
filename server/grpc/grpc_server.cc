@@ -1,6 +1,6 @@
+#include "logging_as_glog.h"
 #include <thread>
-#include <pthread.h>
-
+#include <pthread.h> 
 #include "../model_infer_store.h"
 #include "grcp_server.h"
 #include "../model_train_store.h"

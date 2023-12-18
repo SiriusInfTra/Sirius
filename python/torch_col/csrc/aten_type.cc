@@ -12,6 +12,7 @@
 #include <sta/tensor_pool.h>
 #include <sta/tensor_methods.h>
 #include <sta/shape_helper.h>
+#include "sta/mempool.h"
 #include "tensor_impl.h"
 #include "dlpack_convert.h"
 #include "convolution.h"
@@ -19,6 +20,7 @@
 #include "override_ops/override_ops.h"
 
 #include <glog/logging.h>
+#include <string>
 
 
 namespace torch_col {
@@ -308,6 +310,11 @@ struct ColTensorInitializer {
     LOG(INFO) << "ColTensor Initialized";
     auto has_server_env = std::getenv("SHARED_TENSOR_HAS_SERVER");
     auto pool_size_env = std::getenv("SHARED_TENSOR_POOL_GB");
+    auto pool_freelist_policy_env = std::getenv("SHARED_TENSOR_POOL_FREELIST_POLICY");
+    std::string pool_freelist_policy_str = pool_freelist_policy_env ? 
+                                           std::string(pool_freelist_policy_env) :
+                                           "best-fit";
+    auto pool_freelist_policy = colserve::sta::getFreeListPolicy(pool_freelist_policy_str);
     bool has_server = has_server_env && std::string(has_server_env) == "1";
     double pool_gb = 12;
     if (!has_server && !pool_size_env) {
@@ -316,7 +323,8 @@ struct ColTensorInitializer {
       pool_gb = std::stod(pool_size_env);
     }
     size_t pool_nbytes = static_cast<size_t>(pool_gb * 1024 * 1024 * 1024);
-    colserve::sta::Init(pool_nbytes, !has_server);
+    colserve::sta::Init(pool_nbytes, !has_server, 
+                        false, pool_freelist_policy);
   }
 };
 

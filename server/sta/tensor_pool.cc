@@ -1,8 +1,8 @@
+#include "logging_as_glog.h"
 #include "tensor_pool.h"
 #include "cuda_allocator.h"
 #include "shape_helper.h"
 
-#include <glog/logging.h>
 
 namespace colserve {
 namespace sta {

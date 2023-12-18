@@ -1,3 +1,11 @@
+#include "logging_as_glog.h"
+#include <tvm/runtime/device_api.h>
+#include <tvm/runtime/c_runtime_api.h>
+#include <tvm/runtime/packed_func.h>
+#include <tvm/runtime/module.h>
+#include <tvm/runtime/registry.h>
+#include <tvm/runtime/logging.h>
+#include "sta/mempool.h"
 #include <iostream>
 #include <filesystem>
 #include <csignal>
@@ -14,6 +22,7 @@
 #include "grpc/grcp_server.h"
 #include "colserve.grpc.pb.h"
 #include "model_train_store.h"
+#include "cache.h"
 #include "controller.h"
 #include "profiler.h"
 #include "config.h"
@@ -44,6 +53,9 @@ void init_cli_options() {
       "use shared tensor allocator in train, default is 1");
   app.add_option("--cuda-memory-pool-gb", colserve::Config::cuda_memory_pool_gb,
       "cuda memory pool size in GB, default is 12");
+  app.add_option("--memory-pool-policy", colserve::Config::mempool_freelist_policy, 
+        "cuda memory pool freelist policy, default is best-fit.")
+        ->check(CLI::IsMember({"first-fit", "next-fit", "best-fit"}));
   app.add_option("-p,--port", port,
       "gRPC server port, default is 8080");
   app.add_option("--max-live-minute", max_live_minute,
@@ -62,6 +74,10 @@ void init_cli_options() {
       "colocate skip malloc, default is false");
   app.add_flag("--colocate-skip-loading", colserve::Config::colocate_config.skip_loading, 
       "colocate skip loading, default is false");
+  app.add_option("--train-profile", colserve::Config::train_profile, 
+    "train timeline path, default is train-timeline");
+  app.add_option("--max-cache-nbytes", colserve::Config::max_cache_nbytes, 
+    "max cache nbytes, default is 1*1024*1024*1024(1G).");
   app.add_option("--memory-pressure-mb", colserve::Config::memory_pressure_mb,
       "memory pressure in MB, default is 0");
   app.add_option("--ondemand-adjust", colserve::Config::ondemand_adjust,
@@ -127,18 +143,21 @@ int main(int argc, char *argv[]) {
   });
 
   CHECK_EQ(cuInit(0), CUDA_SUCCESS);
+  auto free_list_policy = colserve::sta::getFreeListPolicy(
+      colserve::Config::mempool_freelist_policy);
   if (colserve::Config::use_shared_tensor) {
     colserve::sta::Init(
       static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1024 * 1024 * 1024),
-      true);
+      true, false, free_list_policy);
   }
   colserve::Controller::Init();
   colserve::Profiler::Init(colserve::Config::profile_log_path);
+  colserve::GraphCache::Init(colserve::Config::max_cache_nbytes);
   colserve::ModelTrainStore::Init("train");
   colserve::ModelInferStore::Init("models");
   colserve::Profiler::Start();
 
-  if (colserve::Config::memory_pressure_mb > 0) {
+  if (colserve::Config::memory_pressure_mb > 0) { 
     size_t nbytes = static_cast<size_t>(colserve::Config::memory_pressure_mb * 1024 * 1024);
     CUDA_CALL(cudaMalloc(&memory_pressure_ptr, nbytes));
   }

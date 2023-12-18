@@ -4,7 +4,6 @@
 // #include <dlpack/dlpack.h>
 #include <ATen/TensorUtils.h>
 #include <c10/core/MemoryFormat.h>
-#include "undef_log.h"
 
 #include <iostream>
 #include <vector>

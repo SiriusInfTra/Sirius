@@ -25,6 +25,11 @@ class System:
         TaskSwitchL1 = "task-switch-l1"
         TaskSwitchL2 = "task-switch-l2"
         TaskSwitchL3 = "task-switch-l3"
+    
+    class MemoryPoolPolicy:
+        FirstFit = "first-fit"
+        NextFit = "next-fit"
+        BestFit = "best-fit"
 
     @dataclass
     class InferModelConfig:
@@ -51,9 +56,11 @@ class System:
 '''
 
     def __init__(self, mode: str, use_sta: bool, 
-                 cuda_memory_pool_gb: str=None,
+                 cuda_memory_pool_gb: str = None,
+                 memory_pool_policy: str = MemoryPoolPolicy.BestFit,
                  profile_log: str = "profile-log", 
                  server_log: str = "server-log", 
+                 train_profile:str = "train-profile", 
                  port: str = "18080",
                  infer_model_config: List[InferModelConfig] | InferModelConfig = None,
                  mps: bool = True,
@@ -61,6 +68,7 @@ class System:
                  train_mps_thread_percent: Optional[int] = None,
                  colocate_skip_malloc: bool = False,
                  colocate_skip_loading: bool = False,
+                 max_cache_nbytes: int = 0 * 1024 * 1024 * 1024,
                  memory_pressure_mb: str | float = None,
                  ondemand_adjust: bool = True,
                  train_memory_over_predict_mb: str | float = None,
@@ -68,8 +76,10 @@ class System:
         self.mode = mode
         self.use_sta = use_sta
         self.cuda_memory_pool_gb = cuda_memory_pool_gb
+        self.memory_pool_policy = memory_pool_policy
         self.profile_log = profile_log
         self.server_log = server_log
+        self.train_profile = train_profile
         self.port = str(int(port) + os.getuid() % 10)
         self.server:Optional[subprocess.Popen]= None
         self.log_dir:Optional[str] = None
@@ -87,6 +97,7 @@ class System:
         self.train_mps_thread_percent = train_mps_thread_percent
         self.colocate_skip_malloc = colocate_skip_malloc
         self.colocate_skip_loading = colocate_skip_loading
+        self.max_cache_nbytes = max_cache_nbytes
         self.memory_pressure_mb = memory_pressure_mb
         self.ondemand_adjust = ondemand_adjust
         self.train_memory_over_predict_mb = train_memory_over_predict_mb
@@ -95,6 +106,7 @@ class System:
             System._last_time_stamp = self.time_stamp
         else:
             self.time_stamp = System._last_time_stamp
+            
 
     def next_time_stamp(self):
         self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
@@ -114,6 +126,7 @@ class System:
         pathlib.Path(self.log_dir).mkdir(parents=True, exist_ok=True)
         server_log = f"{self.log_dir}/{self.server_log}.log"
         profile_log = f"{self.log_dir}/{self.profile_log}.log"
+        train_profile = f"{self.log_dir}/{self.train_profile}.csv"
 
         self.cmd_trace = []
         cmd = [
@@ -162,6 +175,9 @@ class System:
             cmd += ["--colocate-skip-malloc"]
         if self.colocate_skip_loading:
             cmd += ["--colocate-skip-loading"]
+
+        cmd += ['--train-profile', str(train_profile)]
+        cmd += ['--max-cache-nbytes', str(self.max_cache_nbytes)]
 
         if self.memory_pressure_mb:
             cmd += ["--memory-pressure-mb", str(self.memory_pressure_mb)]
@@ -223,6 +239,7 @@ class HyperWorkload:
                  workload_log:str = "workload-log", 
                  client_log:str = "client-log", 
                  trace_cfg:str = "trace-cfg",
+                 infer_timeline:str = "infer-timeline",
                  seed: Optional[int] = None, 
                  delay_before_infer: float = 0,
                  warmup: int = 0,
@@ -235,6 +252,7 @@ class HyperWorkload:
         self.train_workload: NoneType | TrainWorkload = None
         self.duration = duration
         self.workload_log = workload_log
+        self.infer_timeline = infer_timeline
         self.client_log = client_log
         self.trace_cfg = trace_cfg
         self.concurrency = concurrency
@@ -270,7 +288,7 @@ class HyperWorkload:
             trace_cfg = pathlib.Path(server.log_dir) / self.trace_cfg
             InferTraceDumper(self.infer_workloads, trace_cfg).dump()
             infer_trace_args += ["--infer-trace", str(trace_cfg)]
-
+        
         self._launch(server, "workload_launcher", infer_trace_args)
 
     def launch_busy_loop(self, server: System, infer_models: List[InferModel] = None):
@@ -315,8 +333,12 @@ class HyperWorkload:
             cmd += ["--delay-after-warmup", str(self.delay_after_warmup)]
 
         workload_log = pathlib.Path(server.log_dir) / self.workload_log
+
         cmd += ['--log', str(workload_log)]
         cmd += ['-v', '1']
+        
+        infer_timeline = pathlib.Path(server.log_dir) / self.infer_timeline
+        cmd += ['--infer-timeline', str(infer_timeline)]
 
         if self.show_result is not None:
             cmd += ['--show-result', str(self.show_result)]

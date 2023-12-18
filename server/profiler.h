@@ -5,6 +5,7 @@
 #include <chrono>
 #include <vector>
 #include <thread>
+#include <atomic>
 #include <mutex>
 #include <fstream>
 #include <unordered_map>
@@ -38,6 +39,7 @@ class Profiler {
   struct ResourceInfo {
     size_t infer_mem;
     size_t train_mem;
+    size_t train_all_mem;
     size_t gpu_used_mem;
   };
   struct InferInfo {
@@ -74,6 +76,8 @@ class Profiler {
     InferLoadParam,
 
     InferRealBatchSize,
+
+    InferModelLoad,
 
     NumPerfItem,
   };

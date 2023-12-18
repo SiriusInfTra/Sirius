@@ -55,6 +55,7 @@ void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_i
 
   LOG(INFO) << log_prefix.str() << "RequestInfer start";
   while(workload.running_) {
+    InferRecorder recorder(workload, model_);
     size_t slot = static_cast<size_t>(-1);
     while (slot == static_cast<size_t>(-1)) {
       std::unique_lock status_lock{slot_status_mutex_};
@@ -115,7 +116,7 @@ void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double
   for(auto start_point : start_points) {
     auto sleep_until_sys_clock = start_sys_clock + start_point * std::chrono::seconds(1);
     DLOG(INFO) << log_prefix.str() << "sleep until " << std::chrono::duration_cast<std::chrono::milliseconds>(sleep_until_sys_clock - start_sys_clock).count() << "ms."; 
-    
+    InferRecorder recorder(workload, model_);
     std::this_thread::sleep_until(sleep_until_sys_clock);
     CHECK(workload.running_) << log_prefix.str() << "Workload client is not running while request(start_point=" << start_point << "s) did not sent.";
     size_t slot;
