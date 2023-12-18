@@ -159,7 +159,7 @@ Profiler::Profiler(const std::string &profile_log_path)
     constexpr uint32_t max_info_cnt = 32;
     nvmlProcessInfo_t infos[32];
     while (Config::running) {
-      size_t infer_mem = 0, train_mem = 0, total_mem = 0;
+      size_t infer_mem = 0, train_mem = 0, train_all_mem = 0, total_mem = 0;
 
       if (!Config::use_shared_tensor) {
         uint32_t info_cnt = max_info_cnt;
@@ -177,19 +177,21 @@ Profiler::Profiler(const std::string &profile_log_path)
         infer_mem = 0;
         train_mem = 0;
 #endif
+        train_all_mem = train_mem;
         size_t free, total;
         CUDA_CALL(cudaMemGetInfo(&free, &total));
         total_mem = total - free;
       } else {
         infer_mem = sta::CUDAMemPool::InferMemUsage();
         train_mem = sta::CUDAMemPool::TrainMemUsage();
+        train_all_mem = sta::CUDAMemPool::TrainAllMemUsage();
         total_mem = static_cast<size_t>(Config::cuda_memory_pool_gb * 1024 * 1024 * 1024);
       }
 
       this->last_infer_mem_ = infer_mem;
       this->last_train_mem_ = train_mem;
       this->resource_info_.push_back({this->Passed(), 
-                                     {infer_mem, train_mem, total_mem}});
+                                     {infer_mem, train_mem, train_all_mem, total_mem}});
       // this->profile_log_ifs_ << this->Passed()
       //                        << " InferMem " << GetMemString(infer_mem)
       //                        << " TrainMem " << GetMemString(train_mem)
@@ -277,6 +279,7 @@ void Profiler::WriteLog() {
     ofs << std::get<0>(r) << ":"
         << " Infer " << GetMemString(std::get<1>(r).infer_mem)
         << " Train " << GetMemString(std::get<1>(r).train_mem)
+        << " TrainAll " << GetMemString(std::get<1>(r).train_all_mem)
         << " Total " << GetMemString(std::get<1>(r).gpu_used_mem)
         << std::endl;
   }

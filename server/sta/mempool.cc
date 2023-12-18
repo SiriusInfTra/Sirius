@@ -24,22 +24,52 @@
 
 namespace colserve::sta {
 
+std::ostream &operator<<(std::ostream &os, const MemType &mtype) {
+  switch (mtype) {
+    case MemType::kFree:
+      os << "MemType::kFree";
+      return os;
+    case MemType::kTrainLocalFree:
+      os << "MemType::kTrainLocalFree";
+      return os;
+    case MemType::kInfer:
+      os << "MemType::kInfer";
+      return os;
+    case MemType::kTrain:
+      os << "MemType::kTrain";
+      return os;
+    case MemType::kTrainAll:
+      os << "MemType::kTrainAll";
+      return os;
+    default:
+      LOG(FATAL) << "unkown MemType " << static_cast<size_t>(mtype);
+      return os;
+  }
+}
+
 void MemPool::Free(MemPoolEntry *entry) {
-  DLOG(INFO) << "[mempool] free " << entry->nbytes << ".";
-  stat_->at(static_cast<size_t>(entry->mtype)).fetch_sub(entry->nbytes, std::memory_order_relaxed);
   bip::scoped_lock locker(*mutex_);
   DCHECK(CheckPoolWithoutLock());
+  FreeWithoutLock(entry);
+}
+
+void MemPool::FreeWithoutLock(MemPoolEntry *entry) {
+  DLOG(INFO) << "[mempool] free " << entry->nbytes << ".";
+  stat_->at(static_cast<size_t>(entry->mtype)).fetch_sub(entry->nbytes, std::memory_order_relaxed);
+  if (entry->mtype == MemType::kTrainLocalFree) {
+    stat_->at(static_cast<size_t>(MemType::kTrainAll)).fetch_sub(entry->nbytes, std::memory_order_relaxed);
+  }
   auto *next = GetNextEntry(segment_, entry, mem_entry_list_->end());
   auto *prev = GetPrevEntry(segment_, entry, mem_entry_list_->begin());
-  auto next_free = next != nullptr && next->IsAvailableFree(entry->mtype);
-  auto prev_free = prev != nullptr && next->IsAvailableFree(entry->mtype);
+  auto next_free = next != nullptr && next->IsMergableFree(entry->mtype);
+  auto prev_free = prev != nullptr && prev->IsMergableFree(entry->mtype);
   if (next_free && prev_free) {
-    next->mtype = MemType::kMemTypeNum;
     freeblock_policy_->RemoveFreeBlock(next);
 
     size_t old_nbytes = prev->nbytes;
     prev->nbytes += entry->nbytes + next->nbytes;
     freeblock_policy_->NotifyUpdateFreeBlockNbytes(prev, old_nbytes);
+    stat_->at(static_cast<size_t>(prev->mtype)).fetch_add(entry->nbytes, std::memory_order_relaxed);
 
     RemoveMemPoolEntry(entry);
     RemoveMemPoolEntry(next);
@@ -47,20 +77,32 @@ void MemPool::Free(MemPoolEntry *entry) {
     entry->nbytes += next->nbytes;
     entry->SetAsFree();
     freeblock_policy_->AddFreeBlock(entry);
+    stat_->at(static_cast<size_t>(entry->mtype)).fetch_add(entry->nbytes, std::memory_order_relaxed);
 
-    next->mtype = MemType::kMemTypeNum;
     freeblock_policy_->RemoveFreeBlock(next);
     RemoveMemPoolEntry(next);
   } else if (prev_free) {
     size_t old_nbytes = prev->nbytes;
     prev->nbytes += entry->nbytes;
     freeblock_policy_->NotifyUpdateFreeBlockNbytes(prev, old_nbytes);
+    stat_->at(static_cast<size_t>(prev->mtype)).fetch_add(entry->nbytes, std::memory_order_relaxed);
 
     RemoveMemPoolEntry(entry);
   } else {
     entry->SetAsFree();
     freeblock_policy_->AddFreeBlock(entry);
+    stat_->at(static_cast<size_t>(entry->mtype)).fetch_add(entry->nbytes, std::memory_order_relaxed);
   }
+}
+
+void MemPool::FreeLocals(MemType mtype) {
+  CHECK(mtype == MemType::kTrainLocalFree);
+  bip::scoped_lock locker(*mutex_);
+  
+  DCHECK(CheckPoolWithoutLock());
+  freeblock_policy_->RemoveLocalFreeBlocks(mtype, [this](MemPoolEntry* entry) {
+    this->FreeWithoutLock(entry);
+  });
 }
 
 std::shared_ptr<PoolEntry>
@@ -173,7 +215,6 @@ MemPool::MemPool(MemPoolConfig config, bool cleanup, bool observe, FreeListPolic
         segment_.find_or_construct<CUDA_TYPE(cudaIpcMemHandle_t)>(
             "CudaMemHandle")();
     switch (policy_type) {
-
       case FreeListPolicyType::kNextFit:
         freeblock_policy_ = new NextFitPolicy(segment_);
         LOG(INFO) << "Init next-fit policy";
@@ -189,7 +230,6 @@ MemPool::MemPool(MemPoolConfig config, bool cleanup, bool observe, FreeListPolic
       default:
         LOG(FATAL) << "unknown policy_type: " << static_cast<int>(policy_type);
     }
-    freeblock_policy_ = new FirstFitPolicy(segment_);
     stat_ = segment_.find_or_construct<StatMap>("StatMap")();
   };
   segment_.atomic_func(atomic_init);
@@ -262,7 +302,7 @@ MemPool::CreateMemPoolEntry(std::ptrdiff_t addr_offset,
 
 std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
                                           MemType mtype) {
-  DLOG(INFO) << "[mempool] alloc " << nbytes << ".";
+  DLOG(INFO) << "[mempool] alloc " << detail::ByteDisplay(nbytes) << ".";
   if (nbytes == 0) { 
     return std::shared_ptr<PoolEntry>(new PoolEntry{nullptr, 0, mtype});
   }
@@ -274,22 +314,29 @@ std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
   auto *entry = freeblock_policy_->GetFreeBlock(nbytes, mtype);
   if (entry == nullptr) {
     DumpSummaryWithoutLock();
-    LOG(FATAL) << "[mempool] fail to alloc " << detail::ByteDisplay(nbytes) << ".";
+    LOG(FATAL) << "[mempool] fail to alloc " << mtype << " " << detail::ByteDisplay(nbytes) << ".";
   }
-  // CHECK(entry->mtype == MemType::kFree);
   CHECK(entry->IsAvailableFree(mtype));
-  entry->mtype = mtype;
   freeblock_policy_->RemoveFreeBlock(entry);
+  stat_->at(static_cast<size_t>(entry->mtype)).fetch_sub(nbytes, std::memory_order_relaxed);
+
+  auto free_mtype = entry->mtype;
+  entry->mtype = mtype;
+
+  if (mtype == MemType::kTrain && free_mtype == MemType::kFree) {
+    stat_->at(static_cast<size_t>(MemType::kTrainAll)).fetch_add(nbytes, std::memory_order_relaxed);
+  }
 
   if (entry->nbytes > nbytes) {
     auto insert_pos = entry->mem_entry_pos;
     ++insert_pos;
     auto *free_entry =
         CreateMemPoolEntry(entry->addr_offset + nbytes, entry->nbytes - nbytes,
-                           MemType::kFree, insert_pos);
+                           free_mtype, insert_pos);
     freeblock_policy_->AddFreeBlock(free_entry);
     entry->nbytes = nbytes;
   }
+  CHECK(entry->mtype == MemType::kInfer || entry->mtype == MemType::kTrain);
   return MakeSharedPtr(entry);
 }
 
@@ -314,7 +361,7 @@ MemPool::GetUsageWithoutLock() {
     }
     {
       auto& minNbytes = usages_mtype[UsageStat::kMinNBytes];
-      minNbytes = std::max(minNbytes, entry->nbytes);
+      minNbytes = std::min(minNbytes, entry->nbytes);
     }
     {
       auto& count = usages_mtype[UsageStat::kCount];
@@ -335,27 +382,34 @@ void MemPool::DumpSummaryWithoutLock() {
       {"infer", MemType::kInfer},
       {"train", MemType::kTrain}};
   auto usages = GetUsageWithoutLock();
-  std::cout << "now dump memory pool summary" << std::endl;
+  // std::cout << "now dump memory pool summary" << std::endl;
   LOG(INFO) << "---------- mempool summary ----------";
   for (auto&& [name, mtype] : mtype_list) {
     auto& usages_mtype = usages[mtype];
-    LOG(INFO) << name << " max: "
+    LOG(INFO) << name << " stat:";
+    LOG(INFO) << "\t max: "
               << detail::ByteDisplay(usages_mtype[UsageStat::kMaxNBytes]);
-    LOG(INFO) << name << " max: "
+    LOG(INFO) << "\t min: "
               << detail::ByteDisplay(usages_mtype[UsageStat::kMinNBytes]);
-    LOG(INFO) << name << " sum: "
+    LOG(INFO) << "\t sum: "
               << detail::ByteDisplay(usages_mtype[UsageStat::kTotalNBytes]);
-    LOG(INFO) << name << " cnt: "
+    LOG(INFO) << "\t cnt: "
               << usages_mtype[UsageStat::kCount];
     if (usages_mtype[UsageStat::kCount] == 0) { continue; }
-    LOG(INFO) << name << " avg: "
+    LOG(INFO) << "\t avg: "
               << detail::ByteDisplay(static_cast<size_t>(1.0 * usages_mtype[UsageStat::kTotalNBytes] /
                                      usages_mtype[UsageStat::kCount]));
   }
   google::FlushLogFiles(google::INFO);
 }
 
+void FreeListPolicy::InitMaster(MemPoolEntry *free_entry) {
+  std::memcpy(policy_name_->data(), policy_name_str_.c_str(), policy_name_str_.size());
+}
 
+void FreeListPolicy::InitSlave() {
+  CHECK_EQ(std::memcmp(policy_name_->data(), policy_name_str_.c_str(), policy_name_str_.size()), 0);
+}
 
 MemPoolEntry* BestFitPolicy::GetFreeBlock(size_t nbytes, MemType mtype) {
   CHECK(CheckGetFreeInput(nbytes, mtype));
@@ -376,8 +430,7 @@ MemPoolEntry* BestFitPolicy::GetFreeBlock(size_t nbytes, MemType mtype) {
 
 void BestFitPolicy::NotifyUpdateFreeBlockNbytes(MemPoolEntry* entry,
                                                 size_t old_nbytes) {
-  CHECK(entry->mtype == MemType::kFree || entry->mtype == MemType::kTrainLocalFree)
-      << "update not free entry: " << *entry << " in free table";
+  CHECK(entry->IsFree()) << "update not free entry: " << *entry << " in free table";
   auto free_entry_table = free_entry_tables_[static_cast<size_t>(entry->mtype)];
   free_entry_table->erase(entry->freetable_pos);
   entry->freetable_pos = free_entry_table->insert(
@@ -385,25 +438,27 @@ void BestFitPolicy::NotifyUpdateFreeBlockNbytes(MemPoolEntry* entry,
 }
 
 void BestFitPolicy::RemoveFreeBlock(MemPoolEntry* entry) {
-  // CHECK(entry->mtype != MemType::kFree)
-  CHECK(entry->mtype == MemType::kFree || entry->mtype == MemType::kTrainLocalFree)
-      << "remove free entry: " << *entry << " from free table";
+  CHECK(entry->IsFree()) << "remove free entry: " << *entry << " from free table";
   auto free_entry_table = free_entry_tables_[static_cast<size_t>(entry->mtype)];
   free_entry_table->erase(entry->freetable_pos);
 }
 
 void BestFitPolicy::AddFreeBlock(MemPoolEntry* entry) {
-  CHECK(entry->mtype == MemType::kFree || entry->mtype == MemType::kTrainLocalFree)
-      << "add not free entry: " << *entry << " to free table";
+  CHECK(entry->IsFree()) << "add not free entry: " << *entry << " to free table";
   auto free_entry_table = free_entry_tables_[static_cast<size_t>(entry->mtype)];
-  free_entry_table->insert(
+  entry->freetable_pos = free_entry_table->insert(
       std::make_pair(entry->nbytes, GetHandle(segment_, entry)));
 }
 
-void BestFitPolicy::ReleaseLocalFreeBlock(MemType mtype) {
+void BestFitPolicy::RemoveLocalFreeBlocks(MemType mtype, std::function<void(MemPoolEntry*)> fn) {
   CHECK(mtype == MemType::kTrainLocalFree);
   auto local_free_entry_table = free_entry_tables_[static_cast<size_t>(mtype)];
-  
+  for (auto iter = local_free_entry_table->cbegin(); 
+      iter != local_free_entry_table->cend(); iter++) {
+    auto* entry = GetEntry(segment_, iter->second);
+    fn(entry);
+  }
+  local_free_entry_table->clear();
 }
 
 void BestFitPolicy::CheckFreeList(const EntryListIterator& begin,
@@ -433,16 +488,23 @@ void BestFitPolicy::CheckFreeList(const EntryListIterator& begin,
 }
 
 void BestFitPolicy::InitMaster(MemPoolEntry* free_entry) {
+  FreeListPolicy::InitMaster(free_entry);
   AddFreeBlock(free_entry);
 }
 
 BestFitPolicy::BestFitPolicy(bip_shared_memory& segment)
     : FreeListPolicy(segment) {
+  policy_name_str_ = "BestFitPolicy";
   for (size_t i = 0; i < static_cast<size_t>(MemType::kMemTypeFreeNum); i++) {
     auto free_table_name = "FreeTable-" + std::to_string(i);
     free_entry_tables_[i] = segment.find_or_construct<EntrySizeTable>(free_table_name.c_str())(
         segment_.get_segment_manager());
   }
+}
+
+void NextFitPolicy::InitMaster(MemPoolEntry *free_entry) {
+  FreeListPolicy::InitMaster(free_entry);
+  free_entry->freelist_pos = freelist_->insert(freelist_->end(), GetHandle(segment_, free_entry));
 }
 
 void NextFitPolicy::NotifyUpdateFreeBlockNbytes(MemPoolEntry* entry,

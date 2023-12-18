@@ -51,7 +51,7 @@ inline double ByteToMB(size_t nbytes) {
 
 inline std::string ByteDisplay(size_t nbytes) {
   std::stringstream ss;
-  ss << static_cast<double>(nbytes) / 1024 / 1024 << "MB(" << nbytes << "bytes)";
+  ss << static_cast<double>(nbytes) / 1024 / 1024 << "MB (" << nbytes << " Bytes)";
   return ss.str();
 }
 } // namespace detail
@@ -82,6 +82,11 @@ enum class MemType {
   kInfer,
   kTrain,
   kMemTypeNum,
+
+  // used in stat
+  kTrainAll,
+  kMemTypeStatNum,
+
   /*
    * Due to the nature of PyTorch async kernel execution, 
    * the memory released by PyTorch Tensor may not be immediately available.
@@ -94,6 +99,7 @@ enum class MemType {
    */
 };
 
+std::ostream &operator<<(std::ostream &os, const MemType &mtype);
 
 enum class UsageStat {
   kMaxNBytes,
@@ -112,9 +118,11 @@ struct MemPoolEntry {
     EntrySizeTableIterator freetable_pos;
   };
 
+  inline bool IsMergableFree(MemType cur_mtype) const {
+    return cur_mtype == MemType::kTrain ? mtype == MemType::kTrainLocalFree : mtype == MemType::kFree;
+  }
   inline bool IsAvailableFree(MemType cur_mtype) const {
-    return mtype == MemType::kFree || 
-        cur_mtype == MemType::kTrain && mtype == MemType::kTrainLocalFree;
+    return mtype == MemType::kFree || (cur_mtype == MemType::kTrain && mtype == MemType::kTrainLocalFree);
   }
   inline bool IsFree() const {
     return mtype == MemType::kFree || mtype == MemType::kTrainLocalFree;
@@ -138,12 +146,12 @@ struct MemPoolConfig {
 };
 
 using StatValueType = std::atomic<size_t>;
-using StatMap = std::array<StatValueType, static_cast<size_t>(MemType::kMemTypeNum)>;
+using StatMap = std::array<StatValueType, static_cast<size_t>(MemType::kMemTypeStatNum)>;
 using RefCount = int;
 
 inline std::ostream &operator<<(std::ostream &os, const MemPoolEntry &entry) {
   os << "entry: {addr_offset=" << entry.addr_offset << ", nbytes=" << entry.nbytes
-    << ", mtype=" << static_cast<int>(entry.mtype) << "}";
+     << ", mtype=" << static_cast<int>(entry.mtype) << "}";
   return os;
 }
 
@@ -197,19 +205,24 @@ FreeListPolicyType getFreeListPolicy(const std::string& s);
 
 class FreeListPolicy {
 protected:
+  using PolicyName = std::array<char, 20>;
+
   const bip_shared_memory &segment_;
+  PolicyName *policy_name_;
+  std::string policy_name_str_{"FreeListPolicy"};
 
   virtual bool CheckGetFreeInput(size_t nbytes, MemType mtype) {
     return mtype == MemType::kInfer || mtype == MemType::kTrain;
   }
 public:
-  FreeListPolicy(bip_shared_memory &segment) : segment_(segment) {};
+  FreeListPolicy(bip_shared_memory &segment) : segment_(segment) {
+    policy_name_ = segment.find_or_construct<PolicyName>("PolicyName")();
+  };
 
   virtual ~FreeListPolicy() = default;
 
-  virtual void InitMaster(MemPoolEntry *free_entry) = 0;
-
-  virtual void InitSlave() = 0;
+  virtual void InitMaster(MemPoolEntry *free_entry);
+  virtual void InitSlave();
 
   virtual MemPoolEntry *GetFreeBlock(size_t nbytes, MemType mtype) = 0;
 
@@ -219,7 +232,7 @@ public:
 
   virtual void AddFreeBlock(MemPoolEntry *entry) = 0;
 
-  virtual void ReleaseLocalFreeBlock(MemType mtype) = 0;
+  virtual void RemoveLocalFreeBlocks(MemType mtype, std::function<void(MemPoolEntry*)> fn) = 0;
 
   virtual void CheckFreeList(const EntryListIterator &begin, const EntryListIterator &end) = 0;
 
@@ -237,8 +250,6 @@ class BestFitPolicy : public FreeListPolicy {
 
   void InitMaster(MemPoolEntry* free_entry) override;
 
-  void InitSlave() override {}
-
   MemPoolEntry* GetFreeBlock(size_t nbytes, MemType mtype) override;
 
   void NotifyUpdateFreeBlockNbytes(MemPoolEntry* entry,
@@ -248,20 +259,20 @@ class BestFitPolicy : public FreeListPolicy {
 
   void AddFreeBlock(MemPoolEntry* entry) override;
 
-  void ReleaseLocalFreeBlock(MemType mtype) override;
+  void RemoveLocalFreeBlocks(MemType mtype, std::function<void(MemPoolEntry*)> fn) override;
 
   void DumpFreeList(std::ostream& stream, const EntryListIterator& begin, const EntryListIterator& end) override {
-    stream << "start,len,allocated,next,prev,mtype" << std::endl;
+    stream << "start, len, allocated, next, prev, mtype" << std::endl;
     for (size_t i = 0; i < static_cast<size_t>(MemType::kMemTypeFreeNum); i++) {
       auto free_entry_table = free_entry_tables_[i];
       for (auto&& [nbytes, handle] : *free_entry_table) {
         auto* entry = GetEntry(segment_, handle);
         auto* prev = GetPrevEntry(segment_, entry, begin);
         auto* next = GetNextEntry(segment_, entry, end);
-        stream << entry->addr_offset << "," << entry->nbytes << ","
-              << static_cast<int>(entry->mtype) << ","
-              << (prev ? next->addr_offset : -1) << ","
-              << (prev ? prev->addr_offset : -1) << ","
+        stream << entry->addr_offset << "," << entry->nbytes << ", "
+              << static_cast<int>(entry->mtype) << ", "
+              << (prev ? next->addr_offset : -1) << ", "
+              << (prev ? prev->addr_offset : -1) << ", "
               << static_cast<unsigned>(entry->mtype) << std::endl;
       }
     }
@@ -278,43 +289,39 @@ class NextFitPolicy: public FreeListPolicy {
   EntryListIterator *freelist_pos_;
  public:
   NextFitPolicy(bip_shared_memory& segment): FreeListPolicy(segment) {
+    policy_name_str_ = "NextFitPolicy";
     freelist_ = segment.find_or_construct<EntryList>("FreeList")(segment.get_segment_manager());
     freelist_pos_ = segment.find_or_construct<EntryListIterator>("FreeListPos")();
   }
-
   ~NextFitPolicy() {}
 
-  void InitMaster(MemPoolEntry *free_entry) override {
-    free_entry->freelist_pos = freelist_->insert(freelist_->end(), GetHandle(segment_, free_entry));
-  }
+  void InitMaster(MemPoolEntry *free_entry) override;
  
-  void InitSlave() override {}
-
   MemPoolEntry* GetFreeBlock(size_t nbytes, MemType mtype) override {
     {
-    auto iter = *freelist_pos_;
-    while (iter != freelist_->cend()) {
-      auto *entry = GetEntry(segment_, *iter);
-      if (entry->nbytes >= nbytes) {
-        *freelist_pos_ = iter;
-        return entry;
+      auto iter = *freelist_pos_;
+      while (iter != freelist_->cend()) {
+        auto *entry = GetEntry(segment_, *iter);
+        if (entry->nbytes >= nbytes) {
+          *freelist_pos_ = iter;
+          return entry;
+        }
+        iter++;
       }
-      iter++;
     }
-  }
-  {
-    auto iter = freelist_->begin();
-    while (iter != *freelist_pos_) {
-      auto *entry = GetEntry(segment_, *iter);
-      if (entry->nbytes >= nbytes) {
-        *freelist_pos_ = iter;
-        return entry;
+    {
+      auto iter = freelist_->begin();
+      while (iter != *freelist_pos_) {
+        auto *entry = GetEntry(segment_, *iter);
+        if (entry->nbytes >= nbytes) {
+          *freelist_pos_ = iter;
+          return entry;
+        }
+        iter++;
       }
-      iter++;
     }
+    return nullptr;
   }
-  return nullptr;
- }
 
   void NotifyUpdateFreeBlockNbytes(MemPoolEntry* entry,
                                    size_t old_nbytes) override;
@@ -323,7 +330,7 @@ class NextFitPolicy: public FreeListPolicy {
 
   void RemoveFreeBlock(MemPoolEntry* entry) override;
 
-  void ReleaseLocalFreeBlock(MemType mtype) override {
+  void RemoveLocalFreeBlocks(MemType mtype, std::function<void(MemPoolEntry*)> fn) override {
     // TODO
   };
 
@@ -337,7 +344,9 @@ class NextFitPolicy: public FreeListPolicy {
 
 class FirstFitPolicy: public NextFitPolicy {
 public:
-  FirstFitPolicy(bip_shared_memory &segment): NextFitPolicy(segment) {}; 
+  FirstFitPolicy(bip_shared_memory &segment): NextFitPolicy(segment) {
+    policy_name_str_ = "FirstFitPolicy";
+  }; 
 
   ~FirstFitPolicy() {}
 
@@ -371,6 +380,7 @@ private:
                                    EntryListIterator insert_pos);
 
   void Free(MemPoolEntry *entry);
+  void FreeWithoutLock(MemPoolEntry *entry);
 
   std::shared_ptr<PoolEntry> MakeSharedPtr(MemPoolEntry *entry);
 
@@ -385,8 +395,6 @@ private:
 
   void CopyFromToInternel(void *dst_dev_ptr, void *src_dev_ptr, size_t nbytes);
 
-
-
  public:
   MemPool(MemPoolConfig config, bool cleanup, bool observe, FreeListPolicyType policy_type = FreeListPolicyType::kNextFit);
 
@@ -394,17 +402,13 @@ private:
 
   void CheckPool();
 
-
   std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes, MemType mtype);
+  void FreeLocals(MemType mtype);
 
   void CopyFromTo(std::shared_ptr<PoolEntry> src, std::shared_ptr<PoolEntry> dst);
 
-  inline size_t InferMemUsage() {
-    return stat_->at(static_cast<size_t>(MemType::kInfer)).load(std::memory_order_relaxed);
-  }
-  inline size_t TrainMemUsage() {
-    return stat_->at(static_cast<size_t>(MemType::kTrain)).load(std::memory_order_relaxed)
-        + stat_->at(static_cast<size_t>(MemType::kTrainLocalFree)).load(std::memory_order_relaxed);
+  inline size_t GetMemUsage(MemType mtype) {
+    return stat_->at(static_cast<size_t>(mtype)).load(std::memory_order_relaxed);
   }
 
   inline size_t PoolNbytes() {

@@ -125,16 +125,27 @@ CUDAMemPool::~CUDAMemPool() {
 // }
 
 size_t CUDAMemPool::InferMemUsage() {
-  return Get()->impl_->InferMemUsage();
+  return Get()->impl_->GetMemUsage(MemType::kInfer);
 }
 
 size_t CUDAMemPool::TrainMemUsage() {
-  return Get()->impl_->TrainMemUsage();
+  return Get()->impl_->GetMemUsage(MemType::kTrain);
+}
+
+size_t CUDAMemPool::TrainAllMemUsage() {
+  return Get()->impl_->GetMemUsage(MemType::kTrainAll);
 }
 
 size_t CUDAMemPool::PoolNbytes() {
   CHECK(cuda_mem_pool_ != nullptr);
   return Get()->impl_->PoolNbytes();
 }
+
+void CUDAMemPool::FreeTrainLocals() {
+  auto t0 = std::chrono::steady_clock::now();
+  Get()->impl_->FreeLocals(MemType::kTrainLocalFree);
+  auto t1 = std::chrono::steady_clock::now();
+}
+
 }  // namespace sta
 }

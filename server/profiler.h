@@ -39,6 +39,7 @@ class Profiler {
   struct ResourceInfo {
     size_t infer_mem;
     size_t train_mem;
+    size_t train_all_mem;
     size_t gpu_used_mem;
   };
   struct InferInfo {
