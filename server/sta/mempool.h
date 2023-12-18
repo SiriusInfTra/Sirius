@@ -285,42 +285,58 @@ class BestFitPolicy : public FreeListPolicy {
 
 class NextFitPolicy: public FreeListPolicy {
  protected:
-  EntryList *freelist_;
-  EntryListIterator *freelist_pos_;
+  EntryList *freelists_[static_cast<size_t>(MemType::kMemTypeFreeNum)];
+  EntryListIterator *freelist_poses_[static_cast<size_t>(MemType::kMemTypeFreeNum)];
  public:
   NextFitPolicy(bip_shared_memory& segment): FreeListPolicy(segment) {
     policy_name_str_ = "NextFitPolicy";
-    freelist_ = segment.find_or_construct<EntryList>("FreeList")(segment.get_segment_manager());
-    freelist_pos_ = segment.find_or_construct<EntryListIterator>("FreeListPos")();
+    for (size_t i = 0; i < static_cast<size_t>(MemType::kMemTypeFreeNum); i++) {
+      std::string free_list_name = "FreeList" + std::to_string(i);
+      std::string free_list_pos_name = "FreeListPos" + std::to_string(i);
+      freelists_[i] = segment.find_or_construct<EntryList>(free_list_name.c_str())(segment.get_segment_manager());
+      freelist_poses_[i] = segment.find_or_construct<EntryListIterator>(free_list_pos_name.c_str())();
+    }
   }
   ~NextFitPolicy() {}
 
   void InitMaster(MemPoolEntry *free_entry) override;
  
   MemPoolEntry* GetFreeBlock(size_t nbytes, MemType mtype) override {
-    {
-      auto iter = *freelist_pos_;
-      while (iter != freelist_->cend()) {
-        auto *entry = GetEntry(segment_, *iter);
-        if (entry->nbytes >= nbytes) {
-          *freelist_pos_ = iter;
-          return entry;
+    auto find_free_block = [this, nbytes](
+        EntryList* freelist, EntryListIterator* freelist_pos) -> MemPoolEntry* {
+      {
+        auto iter = *freelist_pos;
+        while (iter != freelist->cend()) {
+          auto *entry = GetEntry(this->segment_, *iter);
+          if (entry->nbytes >= nbytes) {
+            *freelist_pos = iter;
+            return entry;
+          }
+          iter++;
         }
-        iter++;
       }
-    }
-    {
-      auto iter = freelist_->begin();
-      while (iter != *freelist_pos_) {
-        auto *entry = GetEntry(segment_, *iter);
-        if (entry->nbytes >= nbytes) {
-          *freelist_pos_ = iter;
-          return entry;
+      {
+        auto iter = freelist->begin();
+        while (iter != *freelist_pos) {
+          auto *entry = GetEntry(this->segment_, *iter);
+          if (entry->nbytes >= nbytes) {
+            *freelist_pos = iter;
+            return entry;
+          }
+          iter++;
         }
-        iter++;
       }
+      return nullptr;
+    };
+    if (mtype == MemType::kTrain) {
+      auto entry = find_free_block(
+          freelists_[static_cast<size_t>(MemType::kTrainLocalFree)],
+          freelist_poses_[static_cast<size_t>(MemType::kTrainLocalFree)]);
+      if (entry != nullptr) return entry;
     }
-    return nullptr;
+    return find_free_block(
+        freelists_[static_cast<size_t>(MemType::kFree)],
+        freelist_poses_[static_cast<size_t>(MemType::kFree)]);
   }
 
   void NotifyUpdateFreeBlockNbytes(MemPoolEntry* entry,

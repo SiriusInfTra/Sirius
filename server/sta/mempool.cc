@@ -504,29 +504,33 @@ BestFitPolicy::BestFitPolicy(bip_shared_memory& segment)
 
 void NextFitPolicy::InitMaster(MemPoolEntry *free_entry) {
   FreeListPolicy::InitMaster(free_entry);
-  free_entry->freelist_pos = freelist_->insert(freelist_->end(), GetHandle(segment_, free_entry));
+  auto freelist = freelists_[static_cast<size_t>(free_entry->mtype)];
+  free_entry->freelist_pos = freelist->insert(freelist->end(), GetHandle(segment_, free_entry));
 }
 
 void NextFitPolicy::NotifyUpdateFreeBlockNbytes(MemPoolEntry* entry,
                                                 size_t old_nbytes) {
-  CHECK(entry->mtype == MemType::kFree)
+  CHECK(entry->IsFree())
       << "try update not free entry in freelist: " << *entry << ".";
 }
 
 void NextFitPolicy::AddFreeBlock(MemPoolEntry* entry) {
-  CHECK(entry->mtype == MemType::kFree)
+  CHECK(entry->IsFree())
       << "try add not free entry to freelist: " << *entry << ".";
+  auto freelist = freelists_[static_cast<size_t>(entry->mtype)];
   entry->freelist_pos =
-      freelist_->insert(freelist_->end(), GetHandle(segment_, entry));
+      freelist->insert(freelist->end(), GetHandle(segment_, entry));
 }
 
 void NextFitPolicy::RemoveFreeBlock(MemPoolEntry* entry) {
-  CHECK(entry->mtype != MemType::kFree)
+  CHECK(entry->IsFree())
       << "try to remove free entry from freelist: " << *entry << ".";
-  if (entry->freelist_pos == *freelist_pos_) {
-    *freelist_pos_ = freelist_->erase(entry->freelist_pos);
+  auto freelist = freelists_[static_cast<size_t>(entry->mtype)];
+  auto freelist_pos = freelist_poses_[static_cast<size_t>(entry->mtype)];
+  if (entry->freelist_pos == *freelist_pos) {
+    *freelist_pos = freelist->erase(entry->freelist_pos);
   } else {
-    freelist_->erase(entry->freelist_pos);
+    freelist->erase(entry->freelist_pos);
   }
 }
 
@@ -534,18 +538,21 @@ void NextFitPolicy::CheckFreeList(const EntryListIterator& begin,
                                   const EntryListIterator& end) {
   DLOG(INFO) << "Check freelist";
   std::unordered_set<std::ptrdiff_t> free_set;
-  for (auto iter = freelist_->cbegin(); iter != freelist_->cend(); iter++) {
-    auto* entry = GetEntry(segment_, *iter);
-    free_set.insert(entry->addr_offset);
-    CHECK(entry->mtype == MemType::kFree)
-        << "entry in freelist but not free: " << *entry << ".";
+  for (size_t i = 0; i < static_cast<size_t>(MemType::kMemTypeFreeNum); i++) {
+    auto freelist = freelists_[i];
+    for (auto iter = freelist->cbegin(); iter != freelist->cend(); iter++) {
+      auto* entry = GetEntry(segment_, *iter);
+      free_set.insert(entry->addr_offset);
+      CHECK(entry->mtype == static_cast<MemType>(i))
+          << "entry in freelist but not free: " << *entry << ".";
+    }
   }
 
   for (auto iter = begin; iter != end; iter++) {
     auto* entry = GetEntry(segment_, *iter);
-    if (entry->mtype == MemType::kFree &&
+    if (entry->IsFree() &&
         free_set.find(entry->addr_offset) == free_set.cend()) {
-      CHECK(entry->mtype == MemType::kFree)
+      CHECK(entry->IsFree())
           << "entry in free but not in free list: " << *entry << ".";
     }
   }
@@ -554,29 +561,41 @@ void NextFitPolicy::CheckFreeList(const EntryListIterator& begin,
 void NextFitPolicy::DumpFreeList(std::ostream& stream,
                                  const EntryListIterator& begin,
                                  const EntryListIterator& end) {
-  stream << "start,len,allocated,next,prev,mtype" << std::endl;
-  for (const auto& element : *freelist_) {
-    auto* entry = GetEntry(segment_, element);
-    auto* prev = GetPrevEntry(segment_, entry, begin);
-    auto* next = GetNextEntry(segment_, entry, end);
-    stream << entry->addr_offset << "," << entry->nbytes << ","
-           << static_cast<int>(entry->mtype) << ","
-           << (prev ? next->addr_offset : -1) << ","
-           << (prev ? prev->addr_offset : -1) << ","
-           << static_cast<unsigned>(entry->mtype) << std::endl;
+  stream << "start, len, allocated, next, prev, mtype" << std::endl;
+  for (size_t i = 0; i < static_cast<size_t>(MemType::kMemTypeFreeNum); i++) {
+    auto freelist = freelists_[i];
+    for (const auto& element : *freelist) {
+      auto* entry = GetEntry(segment_, element);
+      auto* prev = GetPrevEntry(segment_, entry, begin);
+      auto* next = GetNextEntry(segment_, entry, end);
+      stream << entry->addr_offset << ", " << entry->nbytes << ", "
+            << static_cast<int>(entry->mtype) << ", "
+            << (prev ? next->addr_offset : -1) << ", "
+            << (prev ? prev->addr_offset : -1) << ", "
+            << static_cast<unsigned>(entry->mtype) << std::endl;
+    }
   }
 }
 
 MemPoolEntry* FirstFitPolicy::GetFreeBlock(size_t nbytes, MemType mtype) {
-  for (auto handle : *freelist_) {
-    auto* entry = GetEntry(segment_, handle);
-    CHECK(entry->mtype == MemType::kFree)
-        << "not free entry in freelist: " << *entry << ".";
-    if (entry->nbytes >= nbytes) {
-      return entry;
+  auto find_free_block = [this, nbytes, mtype] (EntryList* freelist) -> MemPoolEntry* {
+    for (auto handle : *freelist) {
+      auto* entry = GetEntry(this->segment_, handle);
+      CHECK(entry->IsAvailableFree(mtype))
+          << "not free entry in freelist: " << *entry << ".";
+      if (entry->nbytes >= nbytes) {
+        return entry;
+      }
     }
+    return nullptr;
+  };
+
+  if (mtype == MemType::kTrain) {
+    auto* entry = find_free_block(
+        freelists_[static_cast<size_t>(MemType::kTrainLocalFree)]);
+    if (entry != nullptr) return entry;
   }
-  return nullptr;
+  return find_free_block(freelists_[static_cast<size_t>(MemType::kFree)]);
 }
 
 FreeListPolicyType getFreeListPolicy(const std::string& s) {
