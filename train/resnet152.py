@@ -315,8 +315,9 @@ def train(num_epoch=10, batch_size=256, mode='normal', train_profile: os.PathLik
             model.__class__.__name__,
             num_epoch * ori_batch_size, total_tried_batch, total_killed_batch, total_finished_batch))
     
-    with open(train_profile, 'w') as f:
-        pd.DataFrame(micro_batch_record_list).to_csv(f, index=None)
+    if train_profile is not None:
+        with open(train_profile, 'w') as f:
+            pd.DataFrame(micro_batch_record_list).to_csv(f, index=None)
 
 
 if __name__ == '__main__':
