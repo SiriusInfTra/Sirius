@@ -113,7 +113,7 @@ void Controller::MonitorTrain() {
     }
     if (cur_status.status == TrainStatus::kRunning 
         && train_status_.status != TrainStatus::kRunning) {
-      wait_train_cv_.notify_one();
+      wait_train_cv_.notify_all();
     }
     if (cur_status.status != train_status_.status) {
       LOG(INFO) << "[Controller] MonitorTrain: train status " 
@@ -126,7 +126,7 @@ uint64_t Controller::InterruptTrain() {
   static std::atomic<uint64_t> interrupt_cmd_id = 1;
   auto cmd_id = interrupt_cmd_id.fetch_add(1, std::memory_order_relaxed);
   if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
-    if (!IsTrainIdle()) {
+    if (train_status_.status == TrainStatus::kRunning) {
       // LOG(INFO) << "Controller: Put InterruptTrain";
       train_cmd_event_mq_->Put({cmd_id, static_cast<int>(Event::kInterruptTrain)});
     }
@@ -197,6 +197,7 @@ bool Controller::WaitColocateAdjustDone(uint64_t cmd_id) {
 }
 
 void Controller::InferRequestInc(size_t inc) {
+  std::unique_lock lock{infer_status_.mutex};
   infer_status_.num_requests += inc;
   infer_status_.status = InferStatus::kRunning;
   // LOG(INFO) << "num_req: " <<infer_status_.num_requests 
@@ -204,6 +205,7 @@ void Controller::InferRequestInc(size_t inc) {
 }
 
 void Controller::InferResponseInc(size_t inc) {
+  std::unique_lock lock{infer_status_.mutex};
   infer_status_.num_responses += inc;
   if (infer_status_.num_responses == infer_status_.num_requests) {
     infer_status_.status = InferStatus::kIdle;
@@ -215,7 +217,15 @@ void Controller::InferResponseInc(size_t inc) {
 }
 
 bool Controller::IsInferIdle() {
+  std::unique_lock lock{infer_status_.mutex};
   return infer_status_.status == InferStatus::kIdle;
+}
+
+void Controller::LogInferStatus() {
+  std::unique_lock lock{infer_status_.mutex};
+  LOG(INFO) << "[Controller] InferStatus: " << infer_status_.status
+            << " num_req: " << infer_status_.num_requests
+            << " num_resp: " << infer_status_.num_responses;
 }
 
 void Controller::TrainStart() {
