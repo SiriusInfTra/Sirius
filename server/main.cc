@@ -82,6 +82,8 @@ void init_cli_options() {
       "memory pressure in MB, default is 0");
   app.add_option("--ondemand-adjust", colserve::Config::ondemand_adjust,
       "ondemand adjust batch size, default is 1");
+  app.add_option("--pipeline-load", colserve::Config::pipeline_load,
+      "pipeline load, default is 1");
   app.add_option("--train-memory-over-predict-mb", colserve::Config::train_memory_over_predict_mb,
       "train memory over predict in MB, default is 2560");
 }

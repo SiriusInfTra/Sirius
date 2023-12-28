@@ -105,7 +105,7 @@ void Controller::MonitorTrain() {
       train_cmd_event_mq_->Clear();
       break;
     case Event::kReportBatchSize:
-      CHECK_EQ(train_status_.status, TrainStatus::kRunning);
+      CHECK(train_status_.status != TrainStatus::kIdle);
       ModelTrainStore::Get()->SetCurBatchSize(entry.value);
       break;
     default:

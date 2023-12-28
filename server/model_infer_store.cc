@@ -423,6 +423,9 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     if (Config::pipeline_load && first_exec) {
       double infer_exec_ms = graph_executor->ComputePipelineExecTime();
       double wait_load_ms = infer_ms - infer_exec_ms;
+      LOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") pipeline run "
+                << "infer_exec_ms=" << infer_exec_ms << " "
+                << "wait_load_ms=" << wait_load_ms;
       Profiler::Get()->RecordPerf(Profiler::PerfItem::InferExec, infer_exec_ms);
       Profiler::Get()->RecordPerf(Profiler::PerfItem::InferWaitPipelineLoadParam, wait_load_ms);
     } else {

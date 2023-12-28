@@ -130,7 +130,6 @@ void GraphExecutor::Run() {
 void GraphExecutor::PipelineRun() {
   using namespace ::tvm::runtime;
   CHECK(initialized_);
-  double wait_time = 0;
   DeviceAPI::Get(factory_.devices_[0])->SetStream(factory_.devices_[0], exec_stream_);
   for (size_t i = 0; i < op_execs_.size(); i++) {
     if (op_execs_[i]) {
@@ -158,7 +157,6 @@ void GraphExecutor::PipelineRun() {
     }
   }
   DeviceAPI::Get(factory_.devices_[0])->StreamSync(factory_.devices_[0], exec_stream_);
-  LOG(INFO) << "pipeline run wait "<< wait_time << "ms";
 }
 
 double GraphExecutor::ComputePipelineExecTime() {
