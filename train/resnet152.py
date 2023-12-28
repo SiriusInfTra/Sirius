@@ -27,22 +27,48 @@ class SwitchL1Exception(Exception):
 class SwitchHook:
     def __init__(self, mode) -> None:
         self.stub = torch_col.PySwitchStub()
+        self.grad_fn = []
         self.mode = mode
 
     def get_fwd_hook(self):
-        return self.get_hook()
+        def hook(module, input, output):
+            torch.cuda.synchronize()
+            self.grad_fn.append(output.grad_fn)
+            if self.stub.cmd == torch_col.Event.kInterruptTrain:
+                raise SwitchL1Exception("[Task Switch]")
+            elif self.stub.cmd == torch_col.Event.kResumeTrain:
+                self.stub.cmd = None
+        return hook
     
     def get_bwd_hook(self):
-        return self.get_hook()
-
-    def get_hook(self):
-        def hook(module, input, output):
+        def hook(module, grad_input, grad_output):
             torch.cuda.synchronize()
             if self.stub.cmd == torch_col.Event.kInterruptTrain:
                 raise SwitchL1Exception("[Task Switch]")
             elif self.stub.cmd == torch_col.Event.kResumeTrain:
                 self.stub.cmd = None
         return hook
+
+    def switch_l1(self):
+        print('Switch Hook switch_l1', flush=True)
+        for fn in self.grad_fn:
+            torch_col.release_grad_fn_saved_tensor(fn)
+        self.grad_fn = []
+        torch.cuda.empty_cache()
+        self.stub.try_interrupt_train_done()
+
+    def try_reply_interrupt(self):
+        self.stub.try_interrupt_train_done()
+
+
+    # def get_hook(self):
+    #     def hook(module, input, output):
+    #         torch.cuda.synchronize()
+    #         if self.stub.cmd == torch_col.Event.kInterruptTrain:
+    #             raise SwitchL1Exception("[Task Switch]")
+    #         elif self.stub.cmd == torch_col.Event.kResumeTrain:
+    #             self.stub.cmd = None
+    #     return hook
     
     def report_batch_size(self, batch_size):
         self.stub.report_batch_size(batch_size)
@@ -164,6 +190,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
                 elif self.mode == 'task-switch-l1':
                     assert self.hook is not None
                     while self.hook.stub.cmd == torch_col.Event.kInterruptTrain:
+                        self.hook.try_reply_interrupt()
                         time.sleep(1e-3)
                 # self.iter_idx += batch_size
                 if self.mode == 'normal' or self.mode == 'colocate-l2':
@@ -259,10 +286,11 @@ def train(num_epoch=10, batch_size=256, mode='normal', train_profile: os.PathLik
                 t0 = time.time()
                 torch.cuda.synchronize()
                 old_gpu_mem = gpu_mem() if not use_shared_tensor else torch_col.cuda_memory_pool_train_all_usage() / 1024 / 1024
-                torch.cuda.empty_cache()
                 t1 = time.time()
                 if isinstance(e, ColocateAdjustL1Exception):
                     hook.adjust_l1()
+                else:
+                    hook.switch_l1()
                 if not use_shared_tensor:
                     mem_info = f'gpu mem {old_gpu_mem:.1f} -> {gpu_mem():.1f}'
                 else:
