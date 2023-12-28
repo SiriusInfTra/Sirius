@@ -78,6 +78,8 @@ class Config {
 
   static double memory_pressure_mb;
 
+  static bool pipeline_load;
+
   static bool system_initialized;
 
   inline static bool IsSwitchMode() {

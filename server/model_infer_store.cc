@@ -126,6 +126,41 @@ void ModelInferStore::Init(const std::filesystem::path &infer_store_path) {
     model_rank++;
   }
 
+  if (Config::IsSwitchMode()) {
+    model_infer_store_->task_switch_control_.reset(new std::thread([&]() {
+      while (true) {
+        if (Controller::Get()->IsInferIdle()) {
+          std::condition_variable task_switch_cv;
+          std::unique_lock lock{model_infer_store_->task_switch_mutex_};
+          task_switch_cv.wait(lock, [&]() {
+            return model_infer_store_->task_switch_enter_cnt_ > 0 
+                && model_infer_store_->task_switch_control_cnter_ == 2;
+          });
+          while (Controller::Get()->IsInferIdle() && 
+              (model_infer_store_->task_switch_enter_cnt_ != model_infer_store_->task_switch_exit_cnt_)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          }
+          if (Controller::Get()->IsInferIdle()) {
+            model_infer_store_->task_switch_control_cnter_ = 0;
+            LOG(INFO) << "[ModelInferStore]: task switch to train";
+            std::condition_variable exited_cv;
+            exited_cv.wait(lock, [&]() {
+              return model_infer_store_->task_switch_enter_cnt_ == 0;
+            });
+          } else {
+            model_infer_store_->task_switch_control_cnter_ = 1;
+            LOG(INFO) << "[ModelInferStore]: cancel task switch";
+            std::condition_variable cancel_exit_cv;
+            cancel_exit_cv.wait(lock, [&]() {
+              return model_infer_store_->task_switch_exit_cnt_ == 0;
+            });
+          }
+          model_infer_store_->task_switch_control_cnter_ = 2;
+        }
+      }
+    }));
+  }
+
   LOG(INFO) << "ModelInferStore initialized";
 }
 
@@ -214,10 +249,11 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
     *worker_running_[i] = true;
     // infer_workers_.push_back(std::make_unique<std::thread>(&Model::Inference, this, &barrier));
     infer_workers_[i].reset(new std::thread{&Model::Inference, this, i, &barrier});
+    if (Config::IsSwitchMode()) pthread_barrier_wait(&barrier);
     pthread_barrier_wait(&barrier);
   }
 
-  if (Config::IsColocateMode()) {
+  if (Config::IsColocateMode() || Config::IsSwitchMode()) {
     job_monitor_.reset(new std::thread{&Model::MonitorJob, this});
   }
 }
@@ -263,18 +299,26 @@ void Model::InitMetaInfo() {
 
 bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
   LOG(INFO) << "Model " << name_ << " inference thread start";
+  if (Config::IsSwitchMode()) {
+    ModelInferStore::Get()->TaskSwitchEnter();
+    CHECK(barrier != nullptr);
+    pthread_barrier_wait(barrier);
+  }
   // auto graph_executor = graph_executor_factory_->CreateGraphExecutor();
   auto graph_executor = graph_executor_pool_[rank].get();
   GraphCache::Get()->InitGraphExecutor(name_, graph_executor);
 
-  if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
-    // graph_executor->ResetBufStorage();
-    graph_executor->ResetStorage();
+  // if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
+  //   // graph_executor->ResetBufStorage();
+  //   graph_executor->ResetStorage();
+  // }
+  if (Config::IsSwitchMode()) {
+    ModelInferStore::Get()->TaskSwitchEnter();
   }
   if (barrier != nullptr) pthread_barrier_wait(barrier);
 
+  bool first_exec = true;
   num_worker_.fetch_add(1, std::memory_order_relaxed);
-  bool task_switch_l3_cold_start = true;
   auto last_get_batch_time = std::chrono::steady_clock::now();
   while (true) {                                                    
     if (Config::IsColocateMode() && Profiler::MilliFrom(last_get_batch_time) >= scale_down_idle_time_) {
@@ -284,6 +328,18 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
         auto ok = num_worker_.compare_exchange_strong(num_worker, num_worker - 1,
             std::memory_order_relaxed);
         if (ok) break;
+      }
+    } else if (Config::IsSwitchMode() && Controller::Get()->IsInferIdle()) {
+      ModelInferStore::Get()->TaskSwitchPrepareExit();
+      std::condition_variable wait_exit_result_cv;
+      std::unique_lock lock{ModelInferStore::Get()->TaskSwitchMutex()};
+      wait_exit_result_cv.wait(lock, [&]() {
+        return ModelInferStore::Get()->TaskSwitchControlCnter() <= 1;
+      });
+      if (ModelInferStore::Get()->TaskSwitchControlCnter() == 1) { // not exit
+        ModelInferStore::Get()->TaskSwitchCancelExit();
+      } else {
+        break;
       }
     }
 
@@ -296,32 +352,32 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
 
     auto infer_begin = std::chrono::steady_clock::now();
 
-    double wait_train_stop_ms = -1;
-    if (Config::IsSwitchMode()) {
-      auto begin = std::chrono::steady_clock::now();
-      Controller::Get()->WaitTrainNotRunning();
-      wait_train_stop_ms = Profiler::MilliFrom(begin);
-      // DLOG(INFO) << "ModelInferStore: wait for train stop "
-      //            << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
-    }
+    // double wait_train_stop_ms = -1;
+    // if (Config::IsSwitchMode()) {
+    //   auto begin = std::chrono::steady_clock::now();
+    //   Controller::Get()->WaitTrainNotRunning();
+    //   wait_train_stop_ms = Profiler::MilliFrom(begin);
+    //   // DLOG(INFO) << "ModelInferStore: wait for train stop "
+    //   //            << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
+    // }
 
-    std::future<void> future;
-    if (Config::serve_mode == ServeMode::kTaskSwitchL3 && task_switch_l3_cold_start) {
-      // alloc_storage_();
-      auto t0 = std::chrono::steady_clock::now();
-      // graph_executor_factory_->AllocParamStorage();
-      // graph_executor->AllocBufStorage();
-      graph_executor->AllocStorage();
-      graph_executor->ReSetupDataEntry();
-      auto t1 = std::chrono::steady_clock::now();
-      LOG(INFO) << "[Inference]: Alloc Storage "
-                << std::chrono::duration<double, std::milli>(t1-t0).count();
+    // std::future<void> future;
+    // if (Config::serve_mode == ServeMode::kTaskSwitchL3 && task_switch_l3_cold_start) {
+    //   // alloc_storage_();
+    //   auto t0 = std::chrono::steady_clock::now();
+    //   // graph_executor_factory_->AllocParamStorage();
+    //   // graph_executor->AllocBufStorage();
+    //   graph_executor->AllocStorage();
+    //   graph_executor->ReSetupDataEntry();
+    //   auto t1 = std::chrono::steady_clock::now();
+    //   LOG(INFO) << "[Inference]: Alloc Storage "
+    //             << std::chrono::duration<double, std::milli>(t1-t0).count();
 
-      future = std::async(std::launch::async, 
-          &tvm::GraphExecutor::LoadParams, graph_executor, true, false);
-      task_switch_l3_cold_start = false;
-      // LOG(INFO) << "pipeline load param async " << std::chrono::duration<double, std::milli>(t1 - t0).count() << " ms";
-    }
+    //   future = std::async(std::launch::async, 
+    //       &tvm::GraphExecutor::LoadParams, graph_executor, true, false);
+    //   task_switch_l3_cold_start = false;
+    //   // LOG(INFO) << "pipeline load param async " << std::chrono::duration<double, std::milli>(t1 - t0).count() << " ms";
+    // }
 
     // tvm::runtime::NDArray input;
 
@@ -343,7 +399,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     double infer_ms;
     {
       auto begin = std::chrono::steady_clock::now();
-      if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
+      if (Config::pipeline_load && first_exec) {
         graph_executor->PipelineRun();
       } else {
         graph_executor->Run();
@@ -375,14 +431,21 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
        << "set_input_ms=" << set_input_ms << " "
        << "infer_ms=" << infer_ms << " "
        << "get_output_ms=" << get_output_ms;
-    if (wait_train_stop_ms != -1) {
-      ss << " wait_train_stop_ms=" << wait_train_stop_ms;
-    }
+    // if (wait_train_stop_ms != -1) {
+    //   ss << " wait_train_stop_ms=" << wait_train_stop_ms;
+    // }
     ss << " total_infer_ms=" << std::chrono::duration<double, std::milli>(infer_end - infer_begin).count();
     LOG(INFO) << ss.str();
 
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferSetInput, set_input_ms);
-    Profiler::Get()->RecordPerf(Profiler::PerfItem::InferExec, infer_ms);
+    if (Config::pipeline_load && first_exec) {
+      double infer_exec_ms = graph_executor->ComputePipelineExecTime();
+      double wait_load_ms = infer_ms - infer_exec_ms;
+      Profiler::Get()->RecordPerf(Profiler::PerfItem::InferExec, infer_exec_ms);
+      Profiler::Get()->RecordPerf(Profiler::PerfItem::InferWaitPipelineLoadParam, wait_load_ms);
+    } else {
+      Profiler::Get()->RecordPerf(Profiler::PerfItem::InferExec, infer_ms);
+    }
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferGetOutput, get_output_ms);
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferRealBatchSize, jobs.size());
     for (auto& job : jobs) {
@@ -391,16 +454,17 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
       auto data = job->GetInferData();
       data->GetResponder().Finish(data->GetResponse(), grpc::Status::OK, data);
     }
-
     Controller::Get()->InferResponseInc(jobs.size());
-    if (Config::serve_mode == ServeMode::kTaskSwitchL1 && Controller::Get()->IsInferIdle()) {
-      Controller::Get()->ResumeTrain();
-    } else if (Config::serve_mode == ServeMode::kTaskSwitchL3 && job_queue_.NumJobs() == 0) {
-      // graph_executor_factory_->ResetParamStorage();
-      // graph_executor->ResetBufStorage();
-      graph_executor->ResetStorage();
-      task_switch_l3_cold_start = true;
-    }
+    first_exec = false;
+
+    // if (Config::serve_mode == ServeMode::kTaskSwitchL1 && Controller::Get()->IsInferIdle()) {
+    //   Controller::Get()->ResumeTrain();
+    // } else if (Config::serve_mode == ServeMode::kTaskSwitchL3 && job_queue_.NumJobs() == 0) {
+    //   // graph_executor_factory_->ResetParamStorage();
+    //   // graph_executor->ResetBufStorage();
+    //   graph_executor->ResetStorage();
+    //   // task_switch_l3_cold_start = true;
+    // }
   }
 
   std::stringstream exit_log_ss;
@@ -411,6 +475,8 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     Controller::Get()->InferExit(
       (waited_trains_[rank] != -1 && waited_trains_[rank] == ModelTrainStore::Get()->GetTrainPid()) ? 3 : 0);
     exit_log_ss << ", waited train " << waited_trains_[rank] << ", current train pid " << ModelTrainStore::Get()->GetTrainPid();
+  } else if (Config::IsSwitchMode()) {
+    ModelInferStore::Get()->TaskSwitchExit();
   }
   *worker_running_[rank] = false;
   waited_trains_[rank] = static_cast<pid_t>(-1);
@@ -506,49 +572,66 @@ void Model::MonitorJob() {
       }
     }
 
-    auto queue_time = job_queue_.FirstJobQueueTime();
+    // auto queue_time = job_queue_.FirstJobQueueTime();
     auto queue_size = job_queue_.NumJobs();
     // if (queue_time >= scale_up_queue_time_) {
     if (queue_size > batch_size_ * num_worker_) {
       for (size_t i = 0; i < max_num_worker_; i++) {
         if (infer_workers_[i] == nullptr) {
-          auto t0 = std::chrono::steady_clock::now();
-          if (!Config::ondemand_adjust) {
-            pid_t infer_waited_train;
-            if (!Controller::Get()->IsTrainIdle()) {
-              infer_waited_train = ModelTrainStore::Get()->GetTrainPid();
-              auto id = Controller::Get()->ColocateAdjust(3);
-              if (!Config::colocate_config.skip_malloc) {
-                Controller::Get()->WaitColocateAdjustDone(id);
+          if (Config::IsColocateMode()) {
+            auto t0 = std::chrono::steady_clock::now();
+            if (!Config::ondemand_adjust) {
+              pid_t infer_waited_train;
+              if (!Controller::Get()->IsTrainIdle()) {
+                infer_waited_train = ModelTrainStore::Get()->GetTrainPid();
+                auto id = Controller::Get()->ColocateAdjust(3);
+                if (!Config::colocate_config.skip_malloc) {
+                  Controller::Get()->WaitColocateAdjustDone(id);
+                }
+                auto t1 = std::chrono::steady_clock::now();
+                LOG(INFO) << "[Inference]: Wait adjust train batch size before add infer "
+                          << std::chrono::duration<double, std::milli>(t1-t0).count() << " ms";
+                // PROFILE_END(TrainAdjust, 1);
+                Profiler::Get()->RecordEvent(Profiler::EventItem::TrainAdjustStart, t0);
+                Profiler::Get()->RecordEvent(Profiler::EventItem::TrainAdjustEnd, t1);
+                Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainAdjust, t0, t1);
+              } else {
+                infer_waited_train = -1;
+                LOG(INFO) << "[Inference]: add infer skip wait, train is idle";
               }
-              auto t1 = std::chrono::steady_clock::now();
-              LOG(INFO) << "[Inference]: Wait adjust train batch size before add infer "
-                        << std::chrono::duration<double, std::milli>(t1-t0).count() << " ms";
-              // PROFILE_END(TrainAdjust, 1);
-              Profiler::Get()->RecordEvent(Profiler::EventItem::TrainAdjustStart, t0);
-              Profiler::Get()->RecordEvent(Profiler::EventItem::TrainAdjustEnd, t1);
-              Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainAdjust, t0, t1);
-            } else {
-              infer_waited_train = -1;
-              LOG(INFO) << "[Inference]: add infer skip wait, train is idle";
+              waited_trains_[i] = infer_waited_train;
             }
-            waited_trains_[i] = infer_waited_train;
+          } else { // switch mode
+            std::unique_lock lock{ModelInferStore::Get()->TaskSwitchMutex()};
+            std::condition_variable cv;
+            cv.wait(lock, [&]() {
+              return ModelInferStore::Get()->TaskSwitchControlCnter() >= 2;
+            });
+            ModelInferStore::Get()->MutableTaskSwitchControlCnter().fetch_add(1, std::memory_order_relaxed);
+            lock.unlock();
+            auto begin = std::chrono::steady_clock::now();
+            Controller::Get()->WaitTrainNotRunning();
+            auto wait_train_stop_ms = Profiler::MilliFrom(begin);
+            // ModelInferStore::Get()->MutableTaskSwitchControlCnter().fetch_sub(1, std::memory_order_relaxed);
+            LOG(INFO) << "ModelInferStore: wait for train stop " << wait_train_stop_ms << " ms";
           }
-          
           pthread_barrier_t barrier;
           pthread_barrier_init(&barrier, nullptr, 2);
           *worker_running_[i] = true;
           infer_workers_[i].reset(new std::thread{&Model::Inference, this, i, &barrier});
+          if (Config::IsSwitchMode()) {
+            ModelInferStore::Get()->MutableTaskSwitchControlCnter().fetch_sub(1, std::memory_order_relaxed);
+          }
           pthread_barrier_wait(&barrier);
           Profiler::Get()->RecordEvent(Profiler::EventItem::AddInfer);
           LOG(INFO) << "[Model] " << name_ << " increase worker " << i;
-          std::this_thread::sleep_for(std::chrono::microseconds(500));
+          std::this_thread::sleep_for(std::chrono::milliseconds(5));
           break;
         }
       }
     }
     
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    std::this_thread::sleep_for(std::chrono::microseconds(500));
   }
 }
 

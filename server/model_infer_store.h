@@ -9,6 +9,7 @@
 #include <mutex>
 #include <optional>
 #include <cstdlib>
+#include <condition_variable>
 
 #include "tvm/graph_executor.h"
 // #include <dlpack/dlpack.h>
@@ -37,8 +38,22 @@ class ModelInferStore {
   Model* GetModel(const std::string &name);
   size_t NumJobs();
 
+  void TaskSwitchEnter() { task_switch_enter_cnt_++; }
+  void TaskSwitchExit() { task_switch_enter_cnt_--; task_switch_exit_cnt_--; }
+  void TaskSwitchPrepareExit() { task_switch_exit_cnt_++; }
+  void TaskSwitchCancelExit() { task_switch_exit_cnt_--; }
+  std::mutex &TaskSwitchMutex() { return task_switch_mutex_; }
+  const std::atomic<int> &TaskSwitchControlCnter() { return task_switch_control_cnter_; }
+  std::atomic<int> &MutableTaskSwitchControlCnter() { return task_switch_control_cnter_; }
+
  private:
   static std::unique_ptr<ModelInferStore> model_infer_store_;
+
+  std::mutex task_switch_mutex_;
+  std::atomic<int> task_switch_control_cnter_{2}; // 0: exit, 1: cancel exit, 2: no increase 3+: increasing
+  std::unique_ptr<std::thread> task_switch_control_;
+  
+  std::atomic<int> task_switch_enter_cnt_{0}, task_switch_exit_cnt_{0};
 
   std::unordered_map<std::string, std::unique_ptr<Model>> models_;
 };

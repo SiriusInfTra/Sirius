@@ -178,7 +178,7 @@ bool InferHandler::InferData::Process(bool ok) {
       
       auto model = ModelInferStore::Get()->GetModel(GetModelName());
       if (!model) {
-        LOG(WARNING) << "[Process InferData] Model " << GetModelName() << " not found";
+        LOG(FATAL) << "[Process InferData] Model " << GetModelName() << " not found";
         response_.set_result("model not found");
         responder_.Finish(response_, grpc::Status::CANCELLED, (void*)this);
       } else {

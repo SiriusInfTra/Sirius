@@ -54,6 +54,18 @@ GraphExecutor::GraphExecutor(GraphExecutorFactory &factory, size_t worker_id)
       ->CreateStream(factory_.devices_[0]);
 
   param_ready_.resize(GetNumOfNodes(), false);
+  param_ready_events_.resize(GetNumOfNodes());
+  for (size_t i = 0; i < param_ready_events_.size(); i++) {
+    CUDA_CALL(cudaEventCreate(&param_ready_events_[i]));
+  }
+  pipeline_op_exec_starts_.resize(op_execs_.size());
+  pipeline_op_exec_ends_.resize(op_execs_.size());
+  for (size_t i = 0; i < op_execs_.size(); i++) {
+    if (op_execs_[i]) {
+      CUDA_CALL(cudaEventCreate(&pipeline_op_exec_starts_[i]));
+      CUDA_CALL(cudaEventCreate(&pipeline_op_exec_ends_[i]));
+    }
+  }
   auto t1 = std::chrono::steady_clock::now();
   DLOG(INFO) << "[GraphExecutor] Create " 
              << std::chrono::duration<double, std::milli>(t1-t0).count() << "ms";
@@ -76,7 +88,7 @@ void GraphExecutor::Init() {
 
     PROFILE_START(InferLoadParam, 0);
     if (!Config::colocate_config.skip_loading) {
-      LoadParams(false, Config::colocate_config.skip_malloc);
+      LoadParams(Config::pipeline_load, Config::colocate_config.skip_malloc);
     }
     PROFILE_END(InferLoadParam, 0);
     
@@ -122,24 +134,43 @@ void GraphExecutor::PipelineRun() {
   DeviceAPI::Get(factory_.devices_[0])->SetStream(factory_.devices_[0], exec_stream_);
   for (size_t i = 0; i < op_execs_.size(); i++) {
     if (op_execs_[i]) {
-      auto t0 = std::chrono::steady_clock::now();
-      for (bool param_ready = false; !param_ready; ) {
-        param_ready = true;
-        for (auto nid : input_param_nid_[i]) {
-          if (!param_ready_[nid]) {
-            param_ready = false;
-            break;
-          }
-        }
-        std::this_thread::sleep_for(std::chrono::microseconds(10));
+      for (auto nid : input_param_nid_[i]) {
+        CUDA_CALL(cudaStreamWaitEvent((cudaStream_t)exec_stream_, param_ready_events_[nid]));
       }
-      auto t1 = std::chrono::steady_clock::now();
-      wait_time += std::chrono::duration<double, std::milli>(t1-t0).count();
+      CUDA_CALL(cudaEventRecord(pipeline_op_exec_starts_[i], (cudaStream_t)exec_stream_));
       op_execs_[i]();
-      DeviceAPI::Get(factory_.devices_[0])->StreamSync(factory_.devices_[0], exec_stream_);
+      CUDA_CALL(cudaEventRecord(pipeline_op_exec_ends_[i], (cudaStream_t)exec_stream_));
+      // auto t0 = std::chrono::steady_clock::now();
+      // for (bool param_ready = false; !param_ready; ) {
+      //   param_ready = true;
+      //   for (auto nid : input_param_nid_[i]) {
+      //     if (!param_ready_[nid]) {
+      //       param_ready = false;
+      //       break;
+      //     }
+      //   }
+      //   std::this_thread::sleep_for(std::chrono::microseconds(10));
+      // }
+      // auto t1 = std::chrono::steady_clock::now();
+      // wait_time += std::chrono::duration<double, std::milli>(t1-t0).count();
+      // op_execs_[i]();
+      // DeviceAPI::Get(factory_.devices_[0])->StreamSync(factory_.devices_[0], exec_stream_);
     }
   }
+  DeviceAPI::Get(factory_.devices_[0])->StreamSync(factory_.devices_[0], exec_stream_);
   LOG(INFO) << "pipeline run wait "<< wait_time << "ms";
+}
+
+double GraphExecutor::ComputePipelineExecTime() {
+  double ret = 0;
+  for (size_t i = 0; i < op_execs_.size(); i++) {
+    if (op_execs_[i]) {
+      float ms;
+      CUDA_CALL(cudaEventElapsedTime(&ms, pipeline_op_exec_starts_[i], pipeline_op_exec_ends_[i]));
+      ret += ms;
+    }
+  }
+  return ret;
 }
 
 const DLTensor* GraphExecutor::GetInput(int index) const {
@@ -326,9 +357,10 @@ void GraphExecutor::LoadParams(bool pipeline, bool force) {
       tvm::TVMArray::CopyFromTo(
         p.second.operator->(), storage_tensor.MutableDLTensor(), load_param_stream_);
       if (pipeline) {
-        ::tvm::runtime::DeviceAPI::Get(factory_.devices_[0])
-            ->StreamSync(factory_.devices_[0], load_param_stream_);
+        // ::tvm::runtime::DeviceAPI::Get(factory_.devices_[0])
+        //     ->StreamSync(factory_.devices_[0], load_param_stream_);
         param_ready_[p.first] = true;
+        CUDA_CALL(cudaEventRecord(param_ready_events_[p.first], (cudaStream_t)load_param_stream_));
       }
     }
   }

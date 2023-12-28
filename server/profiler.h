@@ -74,6 +74,7 @@ class Profiler {
     InferAllocStorage,
     InferAdjustAlloc,
     InferLoadParam,
+    InferWaitPipelineLoadParam,
 
     InferRealBatchSize,
 

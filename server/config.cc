@@ -40,6 +40,8 @@ size_t Config::max_cache_nbytes = 0 * 1024 * 1024 * 1024;
 
 double Config::memory_pressure_mb = 0;
 
+bool Config::pipeline_load = true;
+
 bool Config::system_initialized = false;
 
 }

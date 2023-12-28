@@ -45,6 +45,8 @@ class GraphExecutor {
     return exec_stream_;
   }
 
+  double ComputePipelineExecTime();
+
   // void ResetBufStorage();
   // void ResetParamStorage();
   // void AllocBufStorage();
@@ -112,6 +114,9 @@ class GraphExecutor {
 
   // std::map<uint32_t, bool> param_ready_;
   std::vector<bool> param_ready_;
+  std::vector<cudaEvent_t> param_ready_events_; // for pipeline
+  std::vector<cudaEvent_t> pipeline_op_exec_starts_, pipeline_op_exec_ends_;
+
 
   // void* blob_mem_{nullptr};
   std::shared_ptr<sta::CUDAMemPool::PoolEntry> blob_mem_{nullptr};
