@@ -19,6 +19,8 @@ bool Config::use_shared_tensor = true;
 bool Config::use_shared_tensor_infer = true;
 bool Config::use_shared_tensor_train = true;
 bool Config::ondemand_adjust = true;
+bool Config::better_alloc = true;
+size_t Config::better_alloc_threshold = 32 * 1024 * 1024;
 
 double Config::cuda_memory_pool_gb = 12;
 

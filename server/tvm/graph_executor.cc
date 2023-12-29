@@ -13,6 +13,7 @@
 
 #include "graph_executor.h"
 #include <sta/shape_helper.h>
+#include <sta/mempool.h>
 
 #include "../model_train_store.h"
 #include "../model_infer_store.h"
@@ -267,6 +268,9 @@ void GraphExecutor::ResetStorage() {
       auto tensor = sta::TensorPool::Get()->Tensor(s);
       tensor.DeallocToNull();
     }
+    if (Config::better_alloc) {
+      storage_group_.clear();
+    }
   } else {
     for (auto & e : raw_data_entry_) {
       e.DeallocToNull();
@@ -293,9 +297,39 @@ void GraphExecutor::AllocStorage() {
   using namespace ::tvm::runtime;
 
   if (Config::use_shared_tensor_infer) {
-    for (auto &s : storage_pool_) {
-      auto tensor = sta::TensorPool::Get()->Tensor(s);
-      tensor.AllocForNull(sta::MemType::kInfer, false);
+    if (!Config::better_alloc) {
+      for (auto &s : storage_pool_) {
+        auto tensor = sta::TensorPool::Get()->Tensor(s);
+        tensor.AllocForNull(sta::MemType::kInfer, false);
+      }
+    } else {
+      for (size_t i = 0; i < storage_pool_.size(); ) {
+        size_t total_nbytes = 0, off = 0;
+        size_t j = i;
+        for (; j < storage_pool_.size() && total_nbytes < Config::better_alloc_threshold; j++) {
+          auto s = storage_pool_[j];
+          auto tensor = sta::TensorPool::Get()->Tensor(s);
+          CHECK(tensor.IsNull());
+          auto aligned_nbytes = sta::ComputeStorageNbytes(
+              tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
+          total_nbytes += aligned_nbytes;
+        }
+        // LOG(INFO) << "better alloc " << sta::detail::ByteDisplay(total_nbytes) << " " << j << " "
+        //           << storage_pool_.size() << " " << Config::better_alloc_threshold;
+        auto mdata_group = sta::CUDAMemPool::Get()->Alloc(
+            total_nbytes, sta::MemType::kInfer, false);
+        for (; i < j; i++) {
+          auto s = storage_pool_[i];
+          auto tensor = sta::TensorPool::Get()->Tensor(s);
+          auto aligned_nbytes = sta::ComputeStorageNbytes(
+              tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
+          auto mdata = std::shared_ptr<sta::CUDAMemPool::PoolEntry>(
+              new sta::CUDAMemPool::PoolEntry{static_cast<char*>(mdata_group->addr) + off, aligned_nbytes});
+          tensor.AssignMDataForNull(mdata);
+          off += aligned_nbytes;
+        }
+        storage_group_.push_back(mdata_group);
+      }
     }
   } else if (Config::infer_raw_blob_alloc) {
     size_t total_nbytes = 0, off = 0;
@@ -684,17 +718,18 @@ void GraphExecutor::AllocStorageMaybeAdjust() {
   }
 
   PROFILE_START(InferAllocStorage, 0);
-  if (Config::use_shared_tensor_infer) {
-    for (size_t sid = 0; sid < storage_pool_.size(); sid++) {
-      auto &s = storage_pool_[sid];
-      auto tensor = sta::TensorPool::Get()->Tensor(s);
-      tensor.AllocForNull(sta::MemType::kInfer, false);
-    }
-  } else {
-    for (auto &s : raw_storage_pool_) {
-      s.AllocForNull(sta::MemType::kInfer, true);
-    }
-  }
+  AllocStorage();
+  // if (Config::use_shared_tensor_infer) {
+  //   for (size_t sid = 0; sid < storage_pool_.size(); sid++) {
+  //     auto &s = storage_pool_[sid];
+  //     auto tensor = sta::TensorPool::Get()->Tensor(s);
+  //     tensor.AllocForNull(sta::MemType::kInfer, false);
+  //   }
+  // } else {
+  //   for (auto &s : raw_storage_pool_) {
+  //     s.AllocForNull(sta::MemType::kInfer, true);
+  //   }
+  // }
   PROFILE_END(InferAllocStorage, 0);
 
   // TODO: consider fwd/bwd

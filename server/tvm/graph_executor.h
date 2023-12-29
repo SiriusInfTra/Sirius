@@ -120,6 +120,9 @@ class GraphExecutor {
 
   // void* blob_mem_{nullptr};
   std::shared_ptr<sta::CUDAMemPool::PoolEntry> blob_mem_{nullptr};
+
+  // better alloc to avoid fragmentation
+  std::vector<std::shared_ptr<sta::CUDAMemPool::PoolEntry>> storage_group_;
   
   TVMStreamHandle exec_stream_;
   TVMStreamHandle load_param_stream_;

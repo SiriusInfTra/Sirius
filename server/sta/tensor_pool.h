@@ -5,6 +5,7 @@
 
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 // #include <dlpack/dlpack.h>
 #include <vector>
 #include <optional>
@@ -106,6 +107,8 @@ class STensor : public std::shared_ptr<TensorContainer> {
   void AllocForNull(MemType mtype, bool raw_alloc);
   void AssignMDataForNull(TensorContainer::memory_data_t mdata, bool check_memory_bound = false);
   void DeallocToNull();
+  void DeallocToDummy();
+  void Rearrange();
 
   inline size_t Version() const {
     return get()->stensor_version_;
@@ -149,13 +152,24 @@ class TensorPool {
   STensor Tensor(uint64_t handle);
   const STensor CTensor(uint64_t handle);
   
+  void SetTrainModelAllocating(bool train_model_allocating) { train_model_allocating_ = train_model_allocating; }
+  void AddTrainIntermediateTensor(uint64_t handle);
+  void ClearTrainIntermediateTensor();
+  void ReleaseTrainIntermediateTensorMemory();
+  void RearrangeTrainMemory();
+
  private:
   static std::unique_ptr<TensorPool> tensor_pool_;
 
   std::mutex mutex_;
   std::atomic<uint64_t> handle_counter_;
   std::unordered_map<uint64_t, STensor> tensor_by_handle_;
+
+  bool train_model_allocating_{false};
+  std::unordered_set<uint64_t> train_model_tensor_handles_;
   
+  std::vector<uint64_t> train_intermediate_tensor_handles_;
+  std::unordered_set<void*> train_intermediate_tensor_memory_;
 };
 
 }
