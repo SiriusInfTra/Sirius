@@ -3,10 +3,6 @@
 
 #include "torch_helper.h"
 
-#include <undef_log.h>
-#include <glog/logging.h>
-
-
 namespace torch_col {
 
 void ReleaseGradFnSavedTensor(PyObject* py_grad_fn) {

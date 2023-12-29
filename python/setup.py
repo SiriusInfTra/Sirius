@@ -55,7 +55,7 @@ def config_extension():
             "./torch_col",
             f"{cuda_root}/include",
         ],
-        libraries=["rt", "sta", "torch_col", "torch_col_tensor"],
+        libraries=["rt", "sta", "torch_col"],
         library_dirs=[
             "../build",
             '../build/python'
@@ -64,7 +64,25 @@ def config_extension():
         extra_compile_args=["-std=c++17", "-DPY_EXTENSION_LOGGING=\"logging.h\""],
     )
 
-    return cythonize(cython_ext)
+    sta_ext = Extension(
+        name="torch_col._C_sta",
+        sources=[
+            "./torch_col/sta.pyx",
+        ],
+        language="c++",
+        include_dirs=[
+            "../",
+            "./torch_col",
+        ],
+        libraries=["sta", "torch_col", "torch_col_tensor"],
+        library_dirs=[
+            "../build",
+            '../build/python'
+        ],
+        extra_compile_args=["-std=c++17"],
+    )
+
+    return cythonize([cython_ext, sta_ext])
 
 setup(
     name="torch_col",

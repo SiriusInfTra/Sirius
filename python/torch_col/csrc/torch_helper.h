@@ -7,6 +7,7 @@ namespace torch_col {
 
 void ReleaseGradFnSavedTensor(PyObject* grad_fn);
 
+
 }
 
 #endif
