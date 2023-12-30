@@ -71,6 +71,7 @@ class System:
                  max_cache_nbytes: int = 0 * 1024 * 1024 * 1024,
                  memory_pressure_mb: str | float = None,
                  ondemand_adjust: bool = True,
+                 pipeline_load: bool = True,
                  train_memory_over_predict_mb: str | float = None,
                  keep_last_time_stamp: bool = False) -> None:
         self.mode = mode
@@ -100,6 +101,7 @@ class System:
         self.max_cache_nbytes = max_cache_nbytes
         self.memory_pressure_mb = memory_pressure_mb
         self.ondemand_adjust = ondemand_adjust
+        self.pipeline_load = pipeline_load
         self.train_memory_over_predict_mb = train_memory_over_predict_mb
         if System._last_time_stamp is None or not keep_last_time_stamp:
             self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
@@ -186,6 +188,11 @@ class System:
             cmd += ["--ondemand-adjust", "1"]
         else:
             cmd += ["--ondemand-adjust", "0"]
+
+        if self.pipeline_load:
+            cmd += ["--pipeline-load", "1"]
+        else:
+            cmd += ["--pipeline-load", "0"]        
 
         if self.train_memory_over_predict_mb:
             cmd += ["--train-memory-over-predict-mb", str(self.train_memory_over_predict_mb)]
