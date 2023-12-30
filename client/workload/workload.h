@@ -50,11 +50,11 @@ class InferWorker {
               Workload &workload)
       : model_(model), concurrency_(concurrency), set_request_fn_(set_request_fn) {
     for (size_t i = 0; i < concurrency; i++) {
-      slots_.emplace_back();
+      slots_.emplace_back(std::make_shared<InferSlot>());
       status_slots_id_[InferReqStatus::kReady].insert(i);
     }
     for (auto &slot : slots_) {
-      set_request_fn(slot.request_);
+      set_request_fn(slot->request_);
     }
   }
 
@@ -101,7 +101,7 @@ private:
 
   std::mutex slot_status_mutex_;
   std::shared_mutex slot_mutex_;
-  std::vector<InferSlot> slots_;
+  std::vector<std::shared_ptr<InferSlot>> slots_;
   std::unordered_set<size_t> status_slots_id_[InferReqStatus::kNumStatus];
 
   std::function<void(InferRequest&)> set_request_fn_;
@@ -151,8 +151,8 @@ class Workload {
 
   void Run() {
     LOG(INFO) << "Workload start ...";
-    ready_promise_.set_value();
     running_ = true;
+    ready_promise_.set_value();
     run_btime_ = std::chrono::steady_clock::now();
     std::this_thread::sleep_for(duration_);
     LOG(INFO) << "Workload timeout ...";

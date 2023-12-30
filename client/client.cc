@@ -3,7 +3,7 @@
 #include <chrono>
 #include <fstream>
 #include <glog/logging.h>
-
+#include <numeric>
 
 #include "colserve.grpc.pb.h"
 

@@ -62,7 +62,7 @@ void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_i
       if (status_slots_id_[InferReqStatus::kReady].empty()) {
         std::shared_lock slot_lock{slot_mutex_};
         for (auto s : status_slots_id_[InferReqStatus::kDone]) {
-          if (std::chrono::steady_clock::now() >= slots_[s].req_status_.ready_time_) {
+          if (std::chrono::steady_clock::now() >= slots_[s]->req_status_.ready_time_) {
             slot = s;
             status_slots_id_[InferReqStatus::kDone].erase(slot);
             status_slots_id_[InferReqStatus::kWait].insert(slot);
@@ -78,11 +78,11 @@ void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_i
     }
     {
       std::shared_lock slot_lock{slot_mutex_};
-      slots_[slot].req_status_.status_ = InferReqStatus::kWait;
-      slots_[slot].req_status_.request_time_ = std::chrono::steady_clock::now();
-      slots_[slot].rpc_context_ = std::make_unique<grpc::ClientContext>();
-      slots_[slot].rpc_ = workload.stub_->AsyncInference(slots_[slot].rpc_context_.get(), slots_[slot].request_, &cq_);
-      slots_[slot].rpc_->Finish(&slots_[slot].result_, &slots_[slot].rpc_status_, (void*)slot);
+      slots_[slot]->req_status_.status_ = InferReqStatus::kWait;
+      slots_[slot]->req_status_.request_time_ = std::chrono::steady_clock::now();
+      slots_[slot]->rpc_context_ = std::make_unique<grpc::ClientContext>();
+      slots_[slot]->rpc_ = workload.stub_->AsyncInference(slots_[slot]->rpc_context_.get(), slots_[slot]->request_, &cq_);
+      slots_[slot]->rpc_->Finish(&slots_[slot]->result_, &slots_[slot]->rpc_status_, (void*)slot);
     }
   }
   LOG(INFO) << log_prefix.str() << "RequestInfer stop";
@@ -125,8 +125,9 @@ void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double
       if (status_slots_id_[InferReqStatus::kReady].empty()) {
         std::unique_lock slot_lock{slot_mutex_};
         slot = slots_.size();
-        slots_.emplace_back();
-        set_request_fn_(slots_.back().request_);
+        auto infer_slot = std::make_shared<InferSlot>();
+        set_request_fn_(infer_slot->request_);
+        slots_.emplace_back(infer_slot);
         status_slots_id_[InferReqStatus::kWait].insert(slot);
       } else {
         auto it = status_slots_id_[InferReqStatus::kReady].begin();
@@ -137,12 +138,12 @@ void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double
     }
     {
       std::shared_lock slot_lock{slot_mutex_};
-      CHECK_EQ(slots_[slot].req_status_.status_, InferReqStatus::kReady);
-      slots_[slot].req_status_.status_ = InferReqStatus::kWait;
-      slots_[slot].req_status_.request_time_ = std::chrono::steady_clock::now();
-      slots_[slot].rpc_context_ = std::make_unique<grpc::ClientContext>();
-      slots_[slot].rpc_ = workload.stub_->AsyncInference(slots_[slot].rpc_context_.get(), slots_[slot].request_, &cq_);
-      slots_[slot].rpc_->Finish(&slots_[slot].result_, &slots_[slot].rpc_status_, (void*)slot);
+      CHECK_EQ(slots_[slot]->req_status_.status_, InferReqStatus::kReady);
+      slots_[slot]->req_status_.status_ = InferReqStatus::kWait;
+      slots_[slot]->req_status_.request_time_ = std::chrono::steady_clock::now();
+      slots_[slot]->rpc_context_ = std::make_unique<grpc::ClientContext>();
+      slots_[slot]->rpc_ = workload.stub_->AsyncInference(slots_[slot]->rpc_context_.get(), slots_[slot]->request_, &cq_);
+      slots_[slot]->rpc_->Finish(&slots_[slot]->result_, &slots_[slot]->rpc_status_, (void*)slot);
     }
     // for (; i < concurrency_; i++) {
     //   CHECK_NE(request_status_[i].status_, InferReqStatus::kDone);
@@ -202,8 +203,8 @@ void InferWorker::FetchInferResult(Workload &workload,
     {
       std::unique_lock status_lock{slot_status_mutex_};
       std::shared_lock slot_lock{slot_mutex_};
-      CHECK(slots_[slot].rpc_status_.ok()) << " slot " << slot << ": " 
-                                           << slots_[slot].rpc_status_.error_code() << " " << slots_[slot].rpc_status_.error_message();
+      CHECK(slots_[slot]->rpc_status_.ok()) << " slot " << slot << ": " 
+                                           << slots_[slot]->rpc_status_.error_code() << " " << slots_[slot]->rpc_status_.error_message();
       CHECK(status_slots_id_[InferReqStatus::kWait].count(slot)) << " " << slot << " " << status_slots_id_[InferReqStatus::kWait].size();
     }
     auto response_time = std::chrono::steady_clock::now();
@@ -211,26 +212,26 @@ void InferWorker::FetchInferResult(Workload &workload,
 
     {
       std::shared_lock slot_lock{slot_mutex_};
-      auto latency = std::chrono::duration<double, std::milli>(response_time - slots_[slot].req_status_.request_time_).count();
-      records_.push_back({latency, slots_[slot].req_status_.request_time_, response_time});
+      auto latency = std::chrono::duration<double, std::milli>(response_time - slots_[slot]->req_status_.request_time_).count();
+      records_.push_back({latency, slots_[slot]->req_status_.request_time_, response_time});
       if (show_result > 0) { // check outputs
         std::stringstream ss;
-        size_t numel = slots_[slot].result_.outputs(0).data().size() / sizeof(float);
-        ss << "request " << slot << " model " << slots_[slot].request_.model() << " numel " << numel
+        size_t numel = slots_[slot]->result_.outputs(0).data().size() / sizeof(float);
+        ss << "request " << slot << " model " << slots_[slot]->request_.model() << " numel " << numel
           << " result[:" << show_result << "] : ";
         for (size_t j = 0; j < numel && j < show_result; j++) {
-          ss << reinterpret_cast<const float*>(slots_[slot].result_.outputs(0).data().data())[j] << " ";
+          ss << reinterpret_cast<const float*>(slots_[slot]->result_.outputs(0).data().data())[j] << " ";
         }
         ss << "\n";
         std::cout << ss.str();
       } else if (show_result < 0) {
         std::stringstream ss;
-        size_t numel = slots_[slot].result_.outputs(0).data().size() / sizeof(float);
-        ss << "request " << slot << " model " << slots_[slot].request_.model() << " numel " << numel
+        size_t numel = slots_[slot]->result_.outputs(0).data().size() / sizeof(float);
+        ss << "request " << slot << " model " << slots_[slot]->request_.model() << " numel " << numel
           << " result[" << show_result << ":] : ";
         size_t j = std::max(0L, static_cast<int64_t>(numel) + show_result);
         for (; j < numel; j++) {
-          ss << reinterpret_cast<const float*>(slots_[slot].result_.outputs(0).data().data())[j] << " ";
+          ss << reinterpret_cast<const float*>(slots_[slot]->result_.outputs(0).data().data())[j] << " ";
         }
         ss << "\n";
         std::cout << ss.str();
@@ -240,14 +241,14 @@ void InferWorker::FetchInferResult(Workload &workload,
       std::unique_lock status_lock{slot_status_mutex_};
       std::shared_lock slot_lock{slot_mutex_};
       if (interval_fn == nullptr) {
-        slots_[slot].req_status_.ready_time_ = std::chrono::steady_clock::now();
-        slots_[slot].req_status_.status_ = InferReqStatus::kReady;
+        slots_[slot]->req_status_.ready_time_ = std::chrono::steady_clock::now();
+        slots_[slot]->req_status_.status_ = InferReqStatus::kReady;
         status_slots_id_[InferReqStatus::kWait].erase(slot);
         status_slots_id_[InferReqStatus::kReady].insert(slot);
       } else {
-        slots_[slot].req_status_.ready_time_ = std::chrono::steady_clock::now() + 
+        slots_[slot]->req_status_.ready_time_ = std::chrono::steady_clock::now() + 
             std::chrono::duration_cast<time_point_t::duration>(interval_fn(slot));
-        slots_[slot].req_status_.status_ = InferReqStatus::kDone;
+        slots_[slot]->req_status_.status_ = InferReqStatus::kDone;
         status_slots_id_[InferReqStatus::kWait].erase(slot);
         status_slots_id_[InferReqStatus::kDone].insert(slot);
       }
