@@ -23,6 +23,7 @@ endif()
 
 add_library(torch_col_tensor SHARED
   torch_col/csrc/tensor_impl.cc
+  torch_col/csrc/sta_helper.cc
   torch_col/csrc/convolution.cc
   torch_col/csrc/cudnn/cudnn_custom.cc
   torch_col/csrc/cudnn/ConvShared.cpp
@@ -84,4 +85,6 @@ add_custom_command(
     torch_col sta torch_col_tensor
     "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/torch_col.pxd"
     "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/torch_col.pyx"
+    "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/sta.pyx"
+    "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/__init__.py"
 )

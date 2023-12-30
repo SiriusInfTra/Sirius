@@ -33,6 +33,7 @@ class Controller {
   void InferRequestInc(size_t inc=1);
   void InferResponseInc(size_t inc=1);
   bool IsInferIdle();
+  void LogInferStatus();
 
   void TrainStart();
   void TrainEnd();
@@ -73,6 +74,7 @@ class Controller {
     } status{kIdle};
     size_t num_requests{0};
     size_t num_responses{0};
+    std::mutex mutex;
   };
 
   struct TrainStatus {

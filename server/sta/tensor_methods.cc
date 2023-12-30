@@ -254,5 +254,28 @@ void STensor::DeallocToNull() {
   this->UpdateVersion();
 }
 
+void STensor::DeallocToDummy() {
+  if (get()->tensor_.data == (void*)-1) {
+    return;
+  }
+  get()->tensor_.data = (void*)-1;
+  auto nbytes = get()->mdata_->nbytes;
+  auto mtype = get()->mdata_->mtype;
+  get()->mdata_ = std::shared_ptr<PoolEntry>(new PoolEntry{(void*)-1, nbytes, mtype});
+  this->UpdateVersion();
+}
+
+void STensor::Rearrange() {
+  if (IsNull() || (get()->tensor_.data == (void*)-1)) {
+    return; // null/dummy tensor
+  }
+  auto new_mdata = CUDAMemPool::Get()->Alloc(
+    get()->mdata_->nbytes, get()->mdata_->mtype, false);
+  CUDAMemPool::Get()->CopyFromTo(get()->mdata_, new_mdata);
+  get()->mdata_ = new_mdata;
+  get()->tensor_.data = new_mdata->addr;
+  this->UpdateVersion();
+}
+
 }
 }

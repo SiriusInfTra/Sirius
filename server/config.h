@@ -53,6 +53,8 @@ class Config {
   static bool use_shared_tensor;
   static bool use_shared_tensor_infer;
   static bool use_shared_tensor_train;
+  static bool better_alloc;
+  static size_t better_alloc_threshold;
 
   static bool ondemand_adjust;
 
@@ -77,6 +79,8 @@ class Config {
   static double train_memory_over_predict_mb;
 
   static double memory_pressure_mb;
+
+  static bool pipeline_load;
 
   static bool system_initialized;
 

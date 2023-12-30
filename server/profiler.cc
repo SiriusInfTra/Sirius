@@ -50,6 +50,7 @@ std::ostream& operator<<(std::ostream &os, Profiler::PerfItem item) {
     LOG_ITEM(Profiler::PerfItem, InferAllocStorage)
     LOG_ITEM(Profiler::PerfItem, InferAdjustAlloc)
     LOG_ITEM(Profiler::PerfItem, InferLoadParam)
+    LOG_ITEM(Profiler::PerfItem, InferWaitPipelineLoadParam)
 
     LOG_ITEM(Profiler::PerfItem, InferRealBatchSize)
     LOG_ITEM(Profiler::PerfItem, InferModelLoad)

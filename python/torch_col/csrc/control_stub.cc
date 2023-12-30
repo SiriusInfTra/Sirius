@@ -18,15 +18,23 @@ SwitchStub::SwitchStub() {
       bool succ = cmd_event_mq_->TimedGet(data, 1000);
       if (succ) {
         if (data.event == static_cast<int>(Event::kInterruptTrain)) {
-          cmd_ = static_cast<int>(Event::kInterruptTrain);
-          LOG(INFO) << "[SwitchStub] Interrupt train";
-          status_event_mq_->Put({0, static_cast<int>(Event::kInterruptTrainDone)});
+          cmd_id_ = data.id;
+          if (cmd_ == static_cast<int>(Event::kInterruptTrain)) {
+            last_reply_cmd_id_ = cmd_id_;
+            status_event_mq_->Put({cmd_id_, static_cast<int>(Event::kInterruptTrainDone)});
+            cmd_id_ = 0;
+            LOG(INFO) << "[SwitchStub] already interrupting train, done";
+          } else {
+            cmd_ = static_cast<int>(Event::kInterruptTrain);
+            LOG(INFO) << "[SwitchStub] Interrupt train";
+          }
+          // status_event_mq_->Put({0, static_cast<int>(Event::kInterruptTrainDone)});
         } else if (data.event == static_cast<int>(Event::kResumeTrain)) {
           cmd_ = static_cast<int>(Event::kResumeTrain);
           LOG(INFO) << "[SwitchStub] Resume train";
           status_event_mq_->Put({0, static_cast<int>(Event::kResumeTrainDone)});
         } else {
-          LOG(WARNING) << "[SwitchStub] Unknown command: " << data.event;
+          LOG(FATAL) << "[SwitchStub] Unknown command: " << data.event;
         }
       } else {
         // LOG(INFO) << "[SwitchStub] No command";
@@ -46,6 +54,15 @@ void SwitchStub::TrainStart() {
 
 void SwitchStub::TrainEnd() {
   status_event_mq_->Put({0, static_cast<int>(Event::kTrainEnd)});
+}
+
+void SwitchStub::TryInterruptTrainDone() {
+  if (cmd_id_ > last_reply_cmd_id_) {
+    last_reply_cmd_id_ = cmd_id_;
+    status_event_mq_->Put({cmd_id_, static_cast<int>(Event::kInterruptTrainDone)});
+    cmd_id_ = 0;
+    LOG(INFO) << "[SwitchStub] Interrupt train done";
+  }
 }
 
 int SwitchStub::Cmd() {
@@ -90,7 +107,7 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
             }
           }
         } else {
-          LOG(WARNING) << "[ColocateStub] Unknown command: " << data.event;
+          LOG(FATAL) << "[ColocateStub] Unknown command: " << data.event;
         }
       } else {
         // LOG(INFO) << "[ColocateStub] No command";

@@ -408,8 +408,10 @@ private:
   GetUsageWithoutLock();
 
   void DumpSummaryWithoutLock();
+  void DumpBlockListWithoutLock();
 
   void CopyFromToInternel(void *dst_dev_ptr, void *src_dev_ptr, size_t nbytes);
+
 
  public:
   MemPool(MemPoolConfig config, bool cleanup, bool observe, FreeListPolicyType policy_type = FreeListPolicyType::kNextFit);

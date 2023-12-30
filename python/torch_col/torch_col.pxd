@@ -20,7 +20,7 @@ cdef extern from "<sta/cuda_allocator.h>" namespace "colserve::sta":
 
 
 cdef extern from "<csrc/torch_helper.h>" namespace "torch_col":
-    cpdef void ReleaseGradFnSavedTensor(PyObject* function)
+    cdef void ReleaseGradFnSavedTensor(PyObject* function)
 
 
 cdef extern from "<csrc/control_stub.h>" namespace "colserve":
@@ -46,6 +46,7 @@ cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
         void Stop()
         void TrainStart()
         void TrainEnd()
+        void TryInterruptTrainDone()
         void ReportBatchSize(int)
 
     cdef cppclass ColocateStub:

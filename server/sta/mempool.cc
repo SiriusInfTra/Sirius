@@ -1,8 +1,10 @@
 #include "mempool.h"
 #include <glog/logging.h>
 #include <initializer_list>
+#include <ios>
 #include <iostream>
 #include <tuple>
+#include <fstream>
 
 #ifdef NO_CUDA
 
@@ -314,6 +316,7 @@ std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
   auto *entry = freeblock_policy_->GetFreeBlock(nbytes, mtype);
   if (entry == nullptr) {
     DumpSummaryWithoutLock();
+    // DumpBlockListWithoutLock(); // TODO: buggy?
     LOG(FATAL) << "[mempool] fail to alloc " << mtype << " " << detail::ByteDisplay(nbytes) << ".";
   }
   CHECK(entry->IsAvailableFree(mtype));
@@ -403,12 +406,32 @@ void MemPool::DumpSummaryWithoutLock() {
   google::FlushLogFiles(google::INFO);
 }
 
+void MemPool::DumpBlockListWithoutLock() {
+  // std::fstream stream{"mempool-blks", std::ios_base::out | std::ios_base::trunc};
+  std::ofstream stream{"mempool-blks"};
+  std::cout << "---------- dump whole mempool (all) ----------" << std::endl;
+  stream << "start,len,mtype,next,prev,mtype" << std::endl;
+  for(const auto & element : *mem_entry_list_) {
+    auto *entry = GetEntry(segment_, element);
+    auto *prev = GetPrevEntry(segment_, entry, mem_entry_list_->begin());
+    auto *next = GetNextEntry(segment_, entry, mem_entry_list_->end());
+    stream << entry->addr_offset << "," 
+           << entry->nbytes << ","
+           << static_cast<int>(entry->mtype) << ","
+           << (prev ? next->addr_offset : -1) << "," 
+           << (prev ? prev->addr_offset : -1) << ","
+           << static_cast<unsigned>(entry->mtype) << std::endl;
+  }
+  stream.close();
+}
+
 void FreeListPolicy::InitMaster(MemPoolEntry *free_entry) {
   std::memcpy(policy_name_->data(), policy_name_str_.c_str(), policy_name_str_.size());
 }
 
 void FreeListPolicy::InitSlave() {
-  CHECK_EQ(std::memcmp(policy_name_->data(), policy_name_str_.c_str(), policy_name_str_.size()), 0);
+  CHECK_EQ(std::memcmp(policy_name_->data(), policy_name_str_.c_str(), policy_name_str_.size()), 0)
+    << "policy name mismatch: " << policy_name_str_ << " vs " << policy_name_->data();
 }
 
 MemPoolEntry* BestFitPolicy::GetFreeBlock(size_t nbytes, MemType mtype) {

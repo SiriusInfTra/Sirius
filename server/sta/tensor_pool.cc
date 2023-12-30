@@ -147,6 +147,9 @@ uint64_t TensorPool::Insert(STensor tensor) {
   std::unique_lock lock{mutex_};
   auto handle = handle_counter_.fetch_add(1, std::memory_order_relaxed);
   tensor_by_handle_.emplace(handle, tensor);
+  if (train_model_allocating_) {
+    train_model_tensor_handles_.insert(handle);
+  }
   return handle;
 } 
 
@@ -179,6 +182,47 @@ const STensor TensorPool::CTensor(uint64_t handle) {
   return Tensor(handle);
 }
 
+void TensorPool::AddTrainIntermediateTensor(uint64_t handle) {
+  std::unique_lock lock{mutex_};
+  auto it = tensor_by_handle_.find(handle);
+  // CHECK(tensor_by_handle_.count(handle)) << "TensorPool: handle " << handle << " not found";
+  CHECK(it != tensor_by_handle_.end()) << "TensorPool: handle " << handle << " not found";
+  train_intermediate_tensor_handles_.push_back(handle);
+  train_intermediate_tensor_memory_.insert(it->second.MData()->addr);
+}
+
+void TensorPool::ClearTrainIntermediateTensor() {
+  std::unique_lock lock{mutex_};
+  train_intermediate_tensor_handles_.clear();
+  train_intermediate_tensor_memory_.clear();
+}
+
+void TensorPool::ReleaseTrainIntermediateTensorMemory() {
+  std::unique_lock lock{mutex_};
+  auto t0 = std::chrono::steady_clock::now();
+  for (auto it : tensor_by_handle_) {
+    if (train_model_tensor_handles_.count(it.first)) continue; // skip model parameters
+    if (train_intermediate_tensor_memory_.count(it.second.MData()->addr)) {
+      DLOG(INFO) << "ReleaseTrainIntermediateTensorMemory: " << it.first << " " << it.second.MData()->addr;
+      it.second.DeallocToDummy();
+    }
+  }
+  auto t1 = std::chrono::steady_clock::now();
+  LOG(INFO) << "ReleaseTrainIntermediateTensorMemory: " 
+            << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << " ms";
+}
+
+void TensorPool::RearrangeTrainMemory() {
+  std::unique_lock lock{mutex_};
+  auto t0 = std::chrono::steady_clock::now();
+  for (auto it : tensor_by_handle_) {
+    if (train_model_tensor_handles_.count(it.first)) continue; // skip model parameters
+    it.second.Rearrange();
+  }
+  auto t1 = std::chrono::steady_clock::now();
+  LOG(INFO) << "RearrangeTrainMemory: " 
+            << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << " ms";
+}
 
 }
 }
