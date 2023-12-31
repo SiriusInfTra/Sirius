@@ -45,6 +45,6 @@ if use_shared_tensor():
     from ._C_sta import *
 
 
-from .util import MemoryPool, TrainMode
-from .hook import register_saved_tensor_hook, SwitchHook, SwitchL1Exception
+from .util import MemoryPool, TrainMode, EventManager
+from .hook import register_saved_tensor_hook, HookMode, DummyHook, SwitchHook, SwitchL1Exception
     
