@@ -46,5 +46,6 @@ if use_shared_tensor():
 
 
 from .util import MemoryPool, TrainMode, EventManager
-from .hook import register_saved_tensor_hook, HookMode, DummyHook, SwitchHook, SwitchL1Exception
+from .hook import register_saved_tensor_hook, HookMode, DummyHook,\
+      SwitchHook, SwitchL1Exception, ColocateHook, ColocateAdjustL1Exception
     
