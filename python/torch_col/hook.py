@@ -197,11 +197,16 @@ class SwitchHook(HookABC):
 
     def switch_l1(self):
         # decouple kill batch and reclaim memory
+        t0 = time.time()
         for fn in self._grad_fn:
             torch_col.release_grad_fn_saved_tensor(fn)
         self._grad_fn = []
+        old_gpu_mem = MemoryPool.get_memory_usage()
         MemoryPool.empty_cache()
+        cur_gpu_mem = MemoryPool.get_memory_usage()
         self.try_reply_interrupt()
+        t1 = time.time()
+        print(f'[Switch L1 {(t1-t0)*1e3:.1f}] target batch_size: {self.target_batch_size}, memory usage: {old_gpu_mem:.2f}GB -> {cur_gpu_mem:.2f}GB.', flush=True)
 
     def try_reply_interrupt(self):
         self._stub.try_interrupt_train_done()
@@ -257,7 +262,7 @@ class ColocateHook(HookABC):
                 def fwd_hook(module, input, output):
                     with EventManager.record_duration_event('sync_fwd'):
                         torch.cuda.current_stream().synchronize()
-                        if torch_col.sta_release_saved_tensor_v1():
+                        if torch_col.release_saved_tensor_v1():
                             self._grad_fn.append(output.grad_fn)
                         if self._stub.cmd == torch_col.Event.kColocateAdjustL1:
                             raise ColocateAdjustL1Exception('[Adjust SYNC FWD]')
@@ -269,7 +274,7 @@ class ColocateHook(HookABC):
             case HookMode.XSCHED_SYNC:
                 def fwd_hook(module, input, output):
                     with EventManager.record_duration_event('xsched_sync_fwd'):
-                        if torch_col.sta_release_saved_tensor_v1():
+                        if torch_col.release_saved_tensor_v1():
                             self._grad_fn.append(output.grad_fn)
                         if self._stub.cmd == torch_col.Event.kColocateAdjustL1:
                             xsched.kill_batch()
@@ -282,6 +287,8 @@ class ColocateHook(HookABC):
             case _:
                 raise RuntimeError(f"Unsupported hook_mode: {self.hook_mode.name}")
         HookABC.register_fbward_hook(module, fwd_hook, bwd_hook)
+        if torch_col.release_saved_tensor_v2():
+            torch_col.register_saved_tensor_hook()
     
     
     # def async_adjust_mem(self):
@@ -315,7 +322,8 @@ class ColocateHook(HookABC):
 
     def adjust_l1(self):
         # decouple kill batch and reclaim memory
-        if torch_col.sta_release_saved_tensor_v1():
+        t0 = time.time()
+        if torch_col.release_saved_tensor_v1():
             for fn in self._grad_fn:
                 torch_col.release_grad_fn_saved_tensor(fn)
             self._grad_fn = []
@@ -326,7 +334,8 @@ class ColocateHook(HookABC):
         MemoryPool.empty_cache()
         self._stub.adjust_l1_done()
         cur_gpu_mem = MemoryPool.get_memory_usage()
-        print(f'[Adjust] target batch_size: {self.target_batch_size}, memory usage: {old_gpu_mem:.2f}GB -> {cur_gpu_mem:.2f}GB.')
+        t1 = time.time()
+        print(f'[Adjust L1 {(t1-t0)*1e3:.1f} ms] target batch_size: {self.target_batch_size}, memory usage: {old_gpu_mem:.2f}GB -> {cur_gpu_mem:.2f}GB.', flush=True)
 
 
     def report_batch_size(self, batch_size):

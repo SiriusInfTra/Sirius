@@ -69,9 +69,10 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
                 output = model(images)
                 loss = criterion(output, targets)
                 loss.backward()
-                event = EventManager.record_event('optimizer_step', event)
+                event = EventManager.record_event('optimizer_step')
                 with hook.steps_no_interrupt():
                     optimizer.step()
+                event = EventManager.record_event('', event)
                 # finished_time += time.time() - micro_batch_begin
                 finished_batch += 1
                 total_finished_batch += 1
@@ -89,8 +90,10 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
                 torch.cuda.current_stream().synchronize()
                 batch_event.tag = 'finish'
                 train_dataset.next_batch()
-
             EventManager.record_event('', batch_event)
+            if hook_mode.use_xsched():
+                from torch_col import xsched
+                xsched.initial_kill_batch(epoch, i)
         EventManager.record_event('', epoch_event)
         scheduler.step()
 
