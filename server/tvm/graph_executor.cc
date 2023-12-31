@@ -661,13 +661,15 @@ void GraphExecutor::AllocStorageMaybeAdjust() {
       // LOG(INFO) << "[GraphExecutor] AllocStorageMaybeAdjust: model " << this->factory_.model_rank_ 
       //           << " begin wait train pid " << wait_train_pid;
       this->factory_.infer_model_->SetWaitTrainPid(this->infer_model_worker_id_, wait_train_pid);
-      LOG(INFO) << "[GraphExecutor] AllocStorageMaybeAdjust: model " << this->factory_.model_rank_ 
-                << " wait train pid " << wait_train_pid;
 
       PROFILE_START(TrainAdjust, 0);
       auto cmd_id = Controller::Get()->ColocateAdjust(3);
       Controller::Get()->WaitColocateAdjustDone(cmd_id);
       PROFILE_END(TrainAdjust, 0);
+      LOG(INFO) << "[GraphExecutor] AllocStorageMaybeAdjust: model " << this->factory_.model_rank_ 
+                << " wait adjust " << PROFILE_DURATRION(TrainAdjust, 0)
+                << " wait train pid " << wait_train_pid;
+                
     } else {
       LOG(INFO) << "[GraphExecutor] AllocStorageMaybeAdjust: model "<< this->factory_.model_rank_ << " train idle";
     }
