@@ -14,3 +14,6 @@
 	path = third_party/cudnn_frontend
 	url = https://github.com/NVIDIA/cudnn-frontend
 	branch = 43709ab # v0.6.2
+[submodule "third_party/xsched"]
+	path = third_party/xsched
+	url = git@ipads.se.sjtu.edu.cn:infer-train/xsched.git
