@@ -19,6 +19,7 @@ models/*/
 
 *.egg-info/
 python/torch_col/torch_col.cpp
+python/torch_col/sta.cpp
 dist/
 
 *.code-workspace

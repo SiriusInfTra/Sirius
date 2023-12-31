@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <iostream>
+#include <filesystem>
 
 namespace colserve {
 
@@ -41,6 +42,7 @@ struct ColocateConfig {
 class Config {
  public:
   static ServeMode serve_mode;
+  static std::filesystem::path binary_directory;
 
   static ColocateConfig colocate_config;
 
@@ -49,7 +51,9 @@ class Config {
   static std::atomic<bool> running;
 
   static std::string train_profile;
-  
+
+  static bool use_xsched;
+
   static bool use_shared_tensor;
   static bool use_shared_tensor_infer;
   static bool use_shared_tensor_train;

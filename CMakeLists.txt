@@ -182,5 +182,6 @@ add_executable(busy_loop_launcher
 target_link_libraries(busy_loop_launcher grpc++ proto glog::glog CLI11::CLI11)
 
 
+include(cmake/xsched.cmake)
 
 add_subdirectory(python)

@@ -74,6 +74,8 @@ void init_cli_options() {
       "colocate skip malloc, default is false");
   app.add_flag("--colocate-skip-loading", colserve::Config::colocate_config.skip_loading, 
       "colocate skip loading, default is false");
+  app.add_option("--use-xsched", colserve::Config::use_xsched, 
+      "use xsched, default is false");
   app.add_option("--train-profile", colserve::Config::train_profile, 
     "train timeline path, default is train-timeline");
   app.add_option("--max-cache-nbytes", colserve::Config::max_cache_nbytes, 
@@ -123,7 +125,7 @@ void init_config() {
 }
 
 void Shutdown(int sig) {
-  LOG(INFO) << "SIGINT received, shutting down...";
+  LOG(INFO) <<"signal " <<  strsignal(sig) << " received, shutting down...";
   colserve::Config::running = false;
   colserve::ModelInferStore::Shutdown();
   colserve::ModelTrainStore::Shutdown();
@@ -133,6 +135,7 @@ void Shutdown(int sig) {
 
 int main(int argc, char *argv[]) {
   google::InitGoogleLogging(argv[0]);
+  colserve::Config::binary_directory = std::filesystem::path(argv[0]).parent_path();
 
   init_cli_options();
   CLI11_PARSE(app, argc, argv);

@@ -10,6 +10,8 @@
 #include <server/controller.h>
 // #include "../../server/controller.h"
 
+extern int KillBatchOnRecv;
+
 namespace torch_col {
 using namespace colserve;
 
@@ -43,14 +45,18 @@ class SwitchStub {
   void TrainEnd();
   void TryInterruptTrainDone();
   void ReportBatchSize(int batch_size);
+  void StepsNoInteruptBegin();
+  void StepsNoInteruptEnd();
 
  private:
   bool running_{true};
   int cmd_{-1};
   uint64_t cmd_id_;
   uint64_t last_reply_cmd_id_;
+  bool exec_step_{false};
   std::unique_ptr<MemoryQueue<CtrlMsgEntry>> cmd_event_mq_, status_event_mq_;
   // std::mutex cmd_mutex_; TODO: avoid concurrent cmd access
+  std::mutex mutex_;
   std::unique_ptr<std::thread> thread_;
 };
 
@@ -66,12 +72,17 @@ class ColocateStub {
   void TrainEnd();
   double PassedTimeFromSetCmd();
   void ReportBatchSize(int batch_size);
+  void StepsNoInteruptBegin();
+  void StepsNoInteruptEnd();
 
  private:
   bool running_{true};
   int cmd_{-1};
   uint64_t cmd_id_;
   int target_bs_, current_bs_;
+  std::mutex mutex_;
+  std::mutex step_mutex_;
+  bool exec_step_{false};
 
   std::chrono::time_point<std::chrono::steady_clock> set_cmd_time_;
   std::unique_ptr<MemoryQueue<CtrlMsgEntry>> cmd_event_mq_, status_event_mq_; // adjust_event_mq_;

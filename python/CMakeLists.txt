@@ -60,8 +60,14 @@ add_library(torch_col SHARED
   torch_col/csrc/init.cc
 )
 
+add_dependencies(torch_col xsched_lib)
+
 target_include_directories(torch_col PRIVATE "../")
-target_link_libraries(torch_col PRIVATE torch_col_tensor)
+# target_include_directories(torch_col PRIVATE "/disk2/$ENV{USER}/xsched/output/include") 
+# target_link_directories(torch_col PRIVATE "/disk2/$ENV{USER}/xsched/output/lib")
+target_include_directories(torch_col PRIVATE ${CMAKE_BINARY_DIR}/xsched/include)
+target_link_directories(torch_col PRIVATE ${CMAKE_BINARY_DIR}/xsched/lib)
+target_link_libraries(torch_col PRIVATE torch_col_tensor PySched middleware)
 add_definitions(-DNO_TVM)
 
 # build python ext
@@ -76,6 +82,7 @@ else()
   set(PYTHON_EXECUTABLE ${CONDA_PREFIX}/bin/python)
 endif()
 
+file(GLOB TORCH_COL_PYTHON_FILES "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/*.py")
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/torch_col.egg-info
   COMMAND BUILD_DIR=${CMAKE_BINARY_DIR} ${PYTHON_EXECUTABLE}
@@ -86,5 +93,5 @@ add_custom_command(
     "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/torch_col.pxd"
     "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/torch_col.pyx"
     "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/sta.pyx"
-    "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/__init__.py"
+    ${TORCH_COL_PYTHON_FILES}
 )

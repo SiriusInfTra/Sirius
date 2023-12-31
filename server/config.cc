@@ -4,6 +4,8 @@ namespace colserve {
 
 ServeMode Config::serve_mode = ServeMode::kNormal;
 
+std::filesystem::path Config::binary_directory;
+
 ColocateConfig Config::colocate_config = {
   .skip_malloc = false,
   .skip_loading = false,
@@ -11,9 +13,11 @@ ColocateConfig Config::colocate_config = {
 
 bool Config::check_mps = true;
 
-std::atomic<bool> Config::running = true;
+std::atomic<bool> Config::running{true};
 
 std::string Config::train_profile = "train-profile";
+
+bool Config::use_xsched = false;
 
 bool Config::use_shared_tensor = true;
 bool Config::use_shared_tensor_infer = true;

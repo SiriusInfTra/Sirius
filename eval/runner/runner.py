@@ -64,6 +64,7 @@ class System:
                  port: str = "18080",
                  infer_model_config: List[InferModelConfig] | InferModelConfig = None,
                  mps: bool = True,
+                 use_xsched: bool = False,
                  infer_blob_alloc: bool = False,
                  train_mps_thread_percent: Optional[int] = None,
                  colocate_skip_malloc: bool = False,
@@ -108,6 +109,9 @@ class System:
             System._last_time_stamp = self.time_stamp
         else:
             self.time_stamp = System._last_time_stamp
+        if use_xsched and not (self.mode in {System.ServerMode.ColocateL1, System.ServerMode.TaskSwitchL1}):
+            raise RuntimeError('xsched is only available for ColocateL1 and TaskSwitchL1')
+        self.use_xsched = use_xsched
             
 
     def next_time_stamp(self):
@@ -196,6 +200,10 @@ class System:
 
         if self.train_memory_over_predict_mb:
             cmd += ["--train-memory-over-predict-mb", str(self.train_memory_over_predict_mb)]
+        if self.use_xsched:
+            cmd += ["--use-xsched", "1"]
+        else:
+            cmd += ["--use-xsched", "0"]
 
         self.cmd_trace.append(" ".join(cmd))
         print("\n---------------------------\n")

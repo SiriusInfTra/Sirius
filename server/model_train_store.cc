@@ -117,6 +117,14 @@ bool ModelTrainStore::Train() {
     args_str.push_back("colocate-l2");
   }
 
+  if (Config::use_xsched) {
+    args_str.push_back("--use-xsched");
+    args_str.push_back("1");
+  } else {
+    args_str.push_back("--use-xsched");
+    args_str.push_back("0");
+  }
+
   args_str.push_back("--train-profile");
   args_str.push_back(Config::train_profile);
 
@@ -162,6 +170,15 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
     if (Config::capture_train_log) {
       close(from_child_pipe[0]);
       dup2(from_child_pipe[1], STDOUT_FILENO);
+    }
+    if (Config::use_xsched) {
+      std::string xsched_path = (Config::binary_directory / "xsched").string();
+      std::string xsched_lib_path = xsched_path + "/lib";
+      // std::string xsched_preload_path = xsched_path + "lib/libinstrument_sm70.so";
+      
+      CHECK_NE(setenv("LD_LIBRARY_PATH", xsched_lib_path.c_str(), 1), -1);
+      // CHECK_NE(setenv("LD_PRELOAD", xsched_preload_path.c_str(), 1), -1);
+      LOG(INFO) << "[ModelTrainStore]: enable xsched.";
     }
 
     if (Config::use_shared_tensor_train) {

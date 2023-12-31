@@ -13,7 +13,7 @@ def cuda_memory_pool_train_usage():
 
 
 def cuda_memory_pool_train_all_usage():
-    return  CUDAMemPool.TrainAllMemUsage()
+    return CUDAMemPool.TrainAllMemUsage()
 
 
 def cuda_memory_pool_free_train_local():
@@ -32,6 +32,14 @@ def release_grad_fn_saved_tensor(grad_fn):
 cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
     cpdef void DumpMempoolFreeList(string filename)
     cpdef void DumpMempoolBlockList(string filename)
+
+
+cdef extern from "<csrc/control_stub.h>":
+    cdef int KillBatchOnRecv
+
+def kill_batch_on_recv():
+    global KillBatchOnRecv
+    return KillBatchOnRecv
 
 
 cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
@@ -146,6 +154,11 @@ cdef class PyColocateStub:
     def report_batch_size(self, batch_size):
         self._stub.ReportBatchSize(batch_size)
 
+    def StepsNoInteruptBegin(self):
+        self._stub.StepsNoInteruptBegin()
+
+    def StepsNoInteruptEnd(self):
+        self._stub.StepsNoInteruptEnd()
 
     def __dealloc__(self):
         del self._stub

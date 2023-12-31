@@ -1,8 +1,18 @@
 __use_shared_tensor = 0
+__sta_release_saved_tensor_by_grad_fn = 0
+__sta_release_saved_tensor_by_tagging = 1
 
 def use_shared_tensor():
     global __use_shared_tensor
     return __use_shared_tensor
+
+def sta_release_saved_tensor_v1():
+    global __sta_release_saved_tensor_by_grad_fn
+    return __sta_release_saved_tensor_by_grad_fn
+
+def sta_release_saved_tensor_v2():
+    global __sta_release_saved_tensor_by_tagging
+    return __sta_release_saved_tensor_by_tagging
 
 def __setup_coltensor():
     import torch
@@ -33,5 +43,8 @@ if use_shared_tensor():
     ctypes.CDLL(os.path.join(lib_path, 'libtorch_col_tensor.so'), ctypes.RTLD_GLOBAL)
     __setup_coltensor()
     from ._C_sta import *
-    
+
+
+from .util import MemoryPool, TrainMode
+from .hook import register_saved_tensor_hook, SwitchHook, SwitchL1Exception
     
