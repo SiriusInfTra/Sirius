@@ -55,7 +55,7 @@ void MemPool::Free(MemPoolEntry *entry) {
   FreeWithoutLock(entry);
 }
 
-void MemPool::FreeWithoutLock(MemPoolEntry *entry) {
+MemPoolEntry* MemPool::FreeWithoutLock(MemPoolEntry *entry) {
   DLOG(INFO) << "[mempool] free " << entry->nbytes << ".";
   stat_->at(static_cast<size_t>(entry->mtype)).fetch_sub(entry->nbytes, std::memory_order_relaxed);
   if (entry->mtype == MemType::kTrainLocalFree) {
@@ -75,14 +75,17 @@ void MemPool::FreeWithoutLock(MemPoolEntry *entry) {
 
     RemoveMemPoolEntry(entry);
     RemoveMemPoolEntry(next);
+    return prev;
   } else if (next_free) {
+    auto old_entry_nbytes = entry->nbytes;
     entry->nbytes += next->nbytes;
     entry->SetAsFree();
     freeblock_policy_->AddFreeBlock(entry);
-    stat_->at(static_cast<size_t>(entry->mtype)).fetch_add(entry->nbytes, std::memory_order_relaxed);
+    stat_->at(static_cast<size_t>(entry->mtype)).fetch_add(old_entry_nbytes, std::memory_order_relaxed);
 
     freeblock_policy_->RemoveFreeBlock(next);
     RemoveMemPoolEntry(next);
+    return entry;
   } else if (prev_free) {
     size_t old_nbytes = prev->nbytes;
     prev->nbytes += entry->nbytes;
@@ -90,10 +93,12 @@ void MemPool::FreeWithoutLock(MemPoolEntry *entry) {
     stat_->at(static_cast<size_t>(prev->mtype)).fetch_add(entry->nbytes, std::memory_order_relaxed);
 
     RemoveMemPoolEntry(entry);
+    return prev;
   } else {
     entry->SetAsFree();
     freeblock_policy_->AddFreeBlock(entry);
     stat_->at(static_cast<size_t>(entry->mtype)).fetch_add(entry->nbytes, std::memory_order_relaxed);
+    return entry;
   }
 }
 
@@ -244,6 +249,7 @@ MemPool::MemPool(MemPoolConfig config, bool cleanup, bool observe, FreeListPolic
     auto *entry = CreateMemPoolEntry(0, config_.cuda_memory_size,
                                      MemType::kFree, mem_entry_list_->end());
     freeblock_policy_->InitMaster(entry);
+    stat_->at(static_cast<size_t>(MemType::kFree)).fetch_add(config_.cuda_memory_size, std::memory_order_relaxed);
     CUDA_CALL(cudaSetDevice(config_.cuda_device));
     CUDA_CALL(cudaMalloc(reinterpret_cast<void **>(&mem_pool_base_ptr_),
                          config_.cuda_memory_size));
@@ -302,6 +308,7 @@ MemPool::CreateMemPoolEntry(std::ptrdiff_t addr_offset,
   return entry;
 }
 
+#if 0
 std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
                                           MemType mtype) {
   DLOG(INFO) << "[mempool] alloc " << detail::ByteDisplay(nbytes) << ".";
@@ -309,11 +316,11 @@ std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
     return std::shared_ptr<PoolEntry>(new PoolEntry{nullptr, 0, mtype});
   }
   // nbytes = (nbytes + 1023) / 1024 * 1024;
+  auto t0 = std::chrono::steady_clock::now();
   nbytes = detail::GetAlignedNbytes(nbytes);
-  stat_->at(static_cast<size_t>(mtype)).fetch_add(nbytes, std::memory_order_relaxed);
   bip::scoped_lock locker(*mutex_);
   DCHECK(CheckPoolWithoutLock());
-  auto *entry = freeblock_policy_->GetFreeBlock(nbytes, mtype);
+  auto *entry = freeblock_policy_->GetFreeBlock(nbytes, mtype, true, true);
   if (entry == nullptr) {
     DumpSummaryWithoutLock();
     // DumpBlockListWithoutLock(); // TODO: buggy?
@@ -321,6 +328,7 @@ std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
   }
   CHECK(entry->IsAvailableFree(mtype));
   freeblock_policy_->RemoveFreeBlock(entry);
+  stat_->at(static_cast<size_t>(mtype)).fetch_add(nbytes, std::memory_order_relaxed);
   stat_->at(static_cast<size_t>(entry->mtype)).fetch_sub(nbytes, std::memory_order_relaxed);
 
   auto free_mtype = entry->mtype;
@@ -340,8 +348,117 @@ std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
     entry->nbytes = nbytes;
   }
   CHECK(entry->mtype == MemType::kInfer || entry->mtype == MemType::kTrain);
+  auto t1 = std::chrono::steady_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0);
+  // if (duration.count() > 50) {
+  //   LOG(WARNING) << "[mempool] alloc " << mtype << " " << detail::ByteDisplay(nbytes) << " " << duration.count() << " us.";
+  // }
   return MakeSharedPtr(entry);
 }
+
+// TODO: check if this is buggy
+#else
+std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
+                                          MemType mtype) {
+  DLOG(INFO) << "[mempool] alloc " << detail::ByteDisplay(nbytes) << ".";
+  if (nbytes == 0) { 
+    return std::shared_ptr<PoolEntry>(new PoolEntry{nullptr, 0, mtype});
+  }
+  auto t0 = std::chrono::steady_clock::now();
+  nbytes = detail::GetAlignedNbytes(nbytes);
+  bip::scoped_lock locker(*mutex_);
+  DCHECK(CheckPoolWithoutLock());
+  MemPoolEntry *entry = nullptr;
+  bool train_over_threshold = false;
+  size_t alloc_nbytes = nbytes;
+  if (mtype == MemType::kTrain) {
+    entry = freeblock_policy_->GetFreeBlock(alloc_nbytes, mtype, true, false);
+    if (entry == nullptr) { // try to find in global
+      alloc_nbytes = detail::GetAlignedNbytes(nbytes, detail::train_alloc_threshold);
+      entry = freeblock_policy_->GetFreeBlock(alloc_nbytes, mtype, false, true);
+      if (entry == nullptr) { // fail, fallback to smaller alignment
+        alloc_nbytes = detail::GetAlignedNbytes(nbytes, detail::train_alloc_threshold_small);
+        entry = freeblock_policy_->GetFreeBlock(alloc_nbytes, mtype, false, true);
+      }
+      train_over_threshold = alloc_nbytes > nbytes;
+    }
+  } else { // infer
+    entry = freeblock_policy_->GetFreeBlock(alloc_nbytes, mtype, true, true);
+  }
+  if (entry == nullptr) {
+    DumpSummaryWithoutLock();
+    // DumpBlockListWithoutLock(); // TODO: buggy?
+    LOG(FATAL) << "[mempool] fail to alloc " << mtype << " " << detail::ByteDisplay(alloc_nbytes) << ".";
+  }
+  CHECK(entry->IsAvailableFree(mtype));
+  freeblock_policy_->RemoveFreeBlock(entry);
+  stat_->at(static_cast<size_t>(mtype)).fetch_add(alloc_nbytes, std::memory_order_relaxed);
+  stat_->at(static_cast<size_t>(entry->mtype)).fetch_sub(alloc_nbytes, std::memory_order_relaxed);
+
+  auto free_mtype = entry->mtype;
+  entry->mtype = mtype;
+
+  if (mtype == MemType::kTrain && free_mtype == MemType::kFree) {
+    stat_->at(static_cast<size_t>(MemType::kTrainAll)).fetch_add(alloc_nbytes, std::memory_order_relaxed);
+  }
+
+  auto split_free_entry = [this] (MemPoolEntry *entry, size_t alloc_nbytes, MemType free_mtype) {
+    if (entry->nbytes <= alloc_nbytes) { return; }
+#if 0
+    if (mtype == MemType::kInfer) {
+      auto insert_pos = entry->mem_entry_pos;
+      ++insert_pos;
+      auto *free_entry =
+          CreateMemPoolEntry(entry->addr_offset + nbytes, entry->nbytes - alloc_nbytes,
+                            free_mtype, insert_pos);
+      freeblock_policy_->AddFreeBlock(free_entry);
+      entry->nbytes = alloc_nbytes;
+    } else { // kTrain
+      auto insert_pos = entry->mem_entry_pos;
+      auto free_entry =
+          CreateMemPoolEntry(entry->addr_offset, entry->nbytes - alloc_nbytes,
+                             free_mtype, insert_pos);
+      freeblock_policy_->AddFreeBlock(free_entry);
+      entry->addr_offset += entry->nbytes - alloc_nbytes;
+      entry->nbytes = alloc_nbytes;
+    }
+#else
+    auto insert_pos = entry->mem_entry_pos;
+    ++insert_pos;
+    auto *free_entry =
+        CreateMemPoolEntry(entry->addr_offset + alloc_nbytes, entry->nbytes - alloc_nbytes,
+                           free_mtype, insert_pos);
+    freeblock_policy_->AddFreeBlock(free_entry);
+    entry->nbytes = alloc_nbytes;
+#endif
+  };
+
+  split_free_entry(entry, alloc_nbytes, free_mtype);
+  CHECK(entry->mtype == MemType::kInfer || entry->mtype == MemType::kTrain);
+  if (train_over_threshold) {
+    FreeWithoutLock(entry); // free in local
+    entry = freeblock_policy_->GetFreeBlock(nbytes, mtype, true, false);
+    if (entry == nullptr) {
+      DumpSummaryWithoutLock();
+      LOG(FATAL) << "[mempool] " << detail::ByteDisplay(nbytes) << " should be find."; 
+    }
+    freeblock_policy_->RemoveFreeBlock(entry);
+    auto free_mtype = entry->mtype;
+    entry->mtype = mtype;
+    stat_->at(static_cast<size_t>(mtype)).fetch_add(nbytes, std::memory_order_relaxed);
+    stat_->at(static_cast<size_t>(free_mtype)).fetch_sub(nbytes, std::memory_order_relaxed);
+    split_free_entry(entry, nbytes, free_mtype);
+  }
+  auto t1 = std::chrono::steady_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0);
+  if (duration.count() > 50) {
+    LOG(WARNING) << "[mempool] alloc " << mtype <<  " " << train_over_threshold << " "
+                 << detail::ByteDisplay(nbytes) << " " << duration.count() << " us.";
+  }
+
+  return MakeSharedPtr(entry);
+}
+#endif
 
 void MemPool::CopyFromTo(std::shared_ptr<PoolEntry> src,
                          std::shared_ptr<PoolEntry> dst) {
@@ -434,22 +551,43 @@ void FreeListPolicy::InitSlave() {
     << "policy name mismatch: " << policy_name_str_ << " vs " << policy_name_->data();
 }
 
-MemPoolEntry* BestFitPolicy::GetFreeBlock(size_t nbytes, MemType mtype) {
+MemPoolEntry* BestFitPolicy::GetFreeBlock(size_t nbytes, MemType mtype, bool local, bool global) {
   CHECK(CheckGetFreeInput(nbytes, mtype));
-  if (mtype == MemType::kTrain) {
+  if (mtype == MemType::kTrain && local) {
     auto iter = free_entry_tables_[static_cast<size_t>(MemType::kTrainLocalFree)]
         ->lower_bound(nbytes);
     if (iter != free_entry_tables_[static_cast<size_t>(MemType::kTrainLocalFree)]->cend()) {
       return GetEntry(segment_, iter->second);
     }
   }
-  auto iter = free_entry_tables_[static_cast<size_t>(MemType::kFree)]
-      ->lower_bound(nbytes);
-  if (iter != free_entry_tables_[static_cast<size_t>(MemType::kFree)]->cend()) {
-    return GetEntry(segment_, iter->second);
+  if (global) {
+    auto iter = free_entry_tables_[static_cast<size_t>(MemType::kFree)]
+        ->lower_bound(nbytes);
+    if (iter != free_entry_tables_[static_cast<size_t>(MemType::kFree)]->cend()) {
+      return GetEntry(segment_, iter->second);
+    }
   }
   return nullptr;
 }
+
+MemPoolEntry* BestFitPolicy::GetFreeBlockByMerge(size_t nbytes, MemType mtype, EntryList* mem_entry_list) {
+  CHECK(mtype == MemType::kTrain);
+  auto free_entry_table = free_entry_tables_[static_cast<size_t>(MemType::kTrainLocalFree)];
+  for (auto it = free_entry_table->rbegin(); it != free_entry_table->rend(); it++) {
+    auto* entry = GetEntry(segment_, it->second);
+    auto prev_entry = GetPrevEntry(segment_, entry, mem_entry_list->begin());
+    auto next_entry = GetNextEntry(segment_, entry, mem_entry_list->end());
+    auto prev_free = prev_entry != nullptr && prev_entry->mtype == MemType::kFree;
+    auto next_free = next_entry != nullptr && next_entry->mtype == MemType::kFree;
+    auto prev_nbytes = prev_free ? prev_entry->nbytes : 0;
+    auto next_nbytes = next_free ? next_entry->nbytes : 0;
+    if (prev_nbytes + next_nbytes + entry->nbytes >= nbytes) {
+      return entry;
+    }
+  }
+  return nullptr;
+}
+
 
 void BestFitPolicy::NotifyUpdateFreeBlockNbytes(MemPoolEntry* entry,
                                                 size_t old_nbytes) {
@@ -600,7 +738,7 @@ void NextFitPolicy::DumpFreeList(std::ostream& stream,
   }
 }
 
-MemPoolEntry* FirstFitPolicy::GetFreeBlock(size_t nbytes, MemType mtype) {
+MemPoolEntry* FirstFitPolicy::GetFreeBlock(size_t nbytes, MemType mtype, bool local, bool global) {
   auto find_free_block = [this, nbytes, mtype] (EntryList* freelist) -> MemPoolEntry* {
     for (auto handle : *freelist) {
       auto* entry = GetEntry(this->segment_, handle);
@@ -613,11 +751,12 @@ MemPoolEntry* FirstFitPolicy::GetFreeBlock(size_t nbytes, MemType mtype) {
     return nullptr;
   };
 
-  if (mtype == MemType::kTrain) {
+  if (mtype == MemType::kTrain && local) {
     auto* entry = find_free_block(
         freelists_[static_cast<size_t>(MemType::kTrainLocalFree)]);
     if (entry != nullptr) return entry;
   }
+  if (!global) return nullptr;
   return find_free_block(freelists_[static_cast<size_t>(MemType::kFree)]);
 }
 

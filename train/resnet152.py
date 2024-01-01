@@ -69,8 +69,8 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
                 output = model(images)
                 loss = criterion(output, targets)
                 loss.backward()
-                event = EventManager.record_event('optimizer_step')
                 with hook.steps_no_interrupt():
+                    event = EventManager.record_event('optimizer_step')
                     optimizer.step()
                 event = EventManager.record_event('', event)
                 # finished_time += time.time() - micro_batch_begin
@@ -85,7 +85,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
                 with EventManager.record_duration_event(f'batch_exception_{epoch:02d}_{i:03d}_{len(images):02d}'):
                     # cuda has alreadly synced
                     hook.release_and_reply()
-                    print(f'[Adjust] batch_size: {len(images)} -> {train_dataset.batch_size}.')
+                    print(f'[{e}] batch_size: {len(images)} -> {train_dataset.batch_size}.')
             else:
                 torch.cuda.current_stream().synchronize()
                 batch_event.tag = 'finish'

@@ -20,6 +20,17 @@ def cuda_memory_pool_free_train_local():
     CUDAMemPool.FreeTrainLocals()
 
 
+def cuda_memory_pool_train_alloc_ms(reset = False):
+    ms = CUDAMemPool.TrainAllocMs()
+    if reset:
+        CUDAMemPool.ResetTrainAllocMs()
+    return ms
+
+
+def cuda_memory_pool_reset_train_alloc_ms():
+    CUDAMemPool.ResetTrainAllocMs()
+
+
 cdef extern from "<csrc/unix_time.h>" namespace "torch_col":
     cpdef long get_unix_timestamp()
 

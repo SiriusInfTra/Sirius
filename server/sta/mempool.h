@@ -22,6 +22,8 @@
 #include <memory>
 #include <thread>
 #include <utility>
+#include <iostream>
+#include <iomanip>
 
 #include <cuda_runtime_api.h>
 
@@ -41,9 +43,15 @@ namespace colserve {
 namespace sta {
 namespace detail {
 constexpr size_t alignment = 1024;
+constexpr size_t train_alloc_threshold = 512 * 1024 * 1024;
+constexpr size_t train_alloc_threshold_small = 16 * 1024 * 1024;
 inline size_t GetAlignedNbytes(size_t nbytes) {
   static_assert((alignment & (alignment - 1)) == 0, "alignment must be power of 2");
   return (nbytes + (alignment - 1)) & (~(alignment - 1));
+}
+inline size_t GetAlignedNbytes(size_t nbytes, size_t alignment_) {
+  assert((alignment_ & (alignment_ - 1)) == 0);
+  return (nbytes + (alignment_ - 1)) & (~(alignment_ - 1));
 }
 inline double ByteToMB(size_t nbytes) {
   return static_cast<double>(nbytes) / 1024 / 1024;
@@ -51,7 +59,8 @@ inline double ByteToMB(size_t nbytes) {
 
 inline std::string ByteDisplay(size_t nbytes) {
   std::stringstream ss;
-  ss << static_cast<double>(nbytes) / 1024 / 1024 << "MB (" << nbytes << " Bytes)";
+  ss << std::fixed << std::setprecision(2)
+     << static_cast<double>(nbytes) / 1024 / 1024 << "MB (" << nbytes << " Bytes)";
   return ss.str();
 }
 } // namespace detail
@@ -224,7 +233,10 @@ public:
   virtual void InitMaster(MemPoolEntry *free_entry);
   virtual void InitSlave();
 
-  virtual MemPoolEntry *GetFreeBlock(size_t nbytes, MemType mtype) = 0;
+  virtual MemPoolEntry *GetFreeBlock(size_t nbytes, MemType mtype, bool local, bool global) = 0;
+  virtual MemPoolEntry* GetFreeBlockByMerge(size_t nbytes, MemType mtype, EntryList* mem_entry_list) {
+    return nullptr;
+  }
 
   virtual void NotifyUpdateFreeBlockNbytes(MemPoolEntry *entry, size_t old_nbytes) = 0;
 
@@ -250,7 +262,8 @@ class BestFitPolicy : public FreeListPolicy {
 
   void InitMaster(MemPoolEntry* free_entry) override;
 
-  MemPoolEntry* GetFreeBlock(size_t nbytes, MemType mtype) override;
+  MemPoolEntry* GetFreeBlock(size_t nbytes, MemType mtype, bool local, bool global) override;
+  MemPoolEntry* GetFreeBlockByMerge(size_t nbytes, MemType mtype, EntryList* mem_entry_list) override;
 
   void NotifyUpdateFreeBlockNbytes(MemPoolEntry* entry,
                                    size_t old_nbytes) override;
@@ -301,7 +314,7 @@ class NextFitPolicy: public FreeListPolicy {
 
   void InitMaster(MemPoolEntry *free_entry) override;
  
-  MemPoolEntry* GetFreeBlock(size_t nbytes, MemType mtype) override {
+  MemPoolEntry* GetFreeBlock(size_t nbytes, MemType mtype, bool local, bool global) override {
     auto find_free_block = [this, nbytes](
         EntryList* freelist, EntryListIterator* freelist_pos) -> MemPoolEntry* {
       {
@@ -328,15 +341,19 @@ class NextFitPolicy: public FreeListPolicy {
       }
       return nullptr;
     };
-    if (mtype == MemType::kTrain) {
+    if (mtype == MemType::kTrain && local) {
       auto entry = find_free_block(
           freelists_[static_cast<size_t>(MemType::kTrainLocalFree)],
           freelist_poses_[static_cast<size_t>(MemType::kTrainLocalFree)]);
       if (entry != nullptr) return entry;
     }
-    return find_free_block(
-        freelists_[static_cast<size_t>(MemType::kFree)],
-        freelist_poses_[static_cast<size_t>(MemType::kFree)]);
+    if (global) {
+      return find_free_block(
+          freelists_[static_cast<size_t>(MemType::kFree)],
+          freelist_poses_[static_cast<size_t>(MemType::kFree)]);
+    } else {
+      return nullptr;
+    }
   }
 
   void NotifyUpdateFreeBlockNbytes(MemPoolEntry* entry,
@@ -366,7 +383,7 @@ public:
 
   ~FirstFitPolicy() {}
 
-  MemPoolEntry* GetFreeBlock(size_t nbytes, MemType mtype) override;
+  MemPoolEntry* GetFreeBlock(size_t nbytes, MemType mtype, bool local, bool global) override;
 };
 
 class MemPool {
@@ -396,7 +413,7 @@ private:
                                    EntryListIterator insert_pos);
 
   void Free(MemPoolEntry *entry);
-  void FreeWithoutLock(MemPoolEntry *entry);
+  MemPoolEntry* FreeWithoutLock(MemPoolEntry *entry);
 
   std::shared_ptr<PoolEntry> MakeSharedPtr(MemPoolEntry *entry);
 

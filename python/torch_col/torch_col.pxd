@@ -18,6 +18,12 @@ cdef extern from "<sta/cuda_allocator.h>" namespace "colserve::sta":
         @staticmethod
         void FreeTrainLocals()
 
+        @staticmethod
+        size_t TrainAllocMs()
+
+        @staticmethod
+        void ResetTrainAllocMs()
+
 
 cdef extern from "<csrc/torch_helper.h>" namespace "torch_col":
     cdef void ReleaseGradFnSavedTensor(PyObject* function)

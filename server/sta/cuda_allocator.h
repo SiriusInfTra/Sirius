@@ -37,6 +37,9 @@ class CUDAMemPool {
   static size_t PoolNbytes();
   static void FreeTrainLocals();
 
+  static double TrainAllocMs() { return 1.0 * cuda_mem_pool_->train_alloc_us_.load(std::memory_order_relaxed) / 1000; }
+  static void ResetTrainAllocMs() { cuda_mem_pool_->train_alloc_us_.store(0, std::memory_order_relaxed); }
+
   static std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes, MemType mtype);
 
   CUDAMemPool(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy);
@@ -53,6 +56,8 @@ class CUDAMemPool {
  private:
   static std::unique_ptr<CUDAMemPool> cuda_mem_pool_;
   MemPool *impl_;
+
+  std::atomic<size_t> train_alloc_us_;
 };
 
 

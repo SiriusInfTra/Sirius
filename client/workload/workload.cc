@@ -345,6 +345,7 @@ void TrainWorker::RequestTrain(Workload &workload) {
     // latency_.push_back(std::chrono::duration<double, std::milli>(end - begin).count());
     records_.push_back(
         {std::chrono::duration<double, std::milli>(end - begin).count(), begin, end});
+    break;
   }
   LOG(INFO) << log_prefix.str() << "RequestTrain stop";
 }

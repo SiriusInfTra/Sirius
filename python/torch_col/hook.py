@@ -236,7 +236,7 @@ class ColocateHook(HookABC):
 
     @contextlib.contextmanager
     def steps_no_interrupt(self):
-        # before critical section, we need to make queued kernel as less as possible    
+        # before critical section, we need to make queued kernel as less as possible
         if self.hook_mode.use_xsched():
             while xsched.get_xqueue_size() != 0:
                 if self._stub.cmd == torch_col.Event.kColocateAdjustL1:
@@ -279,11 +279,13 @@ class ColocateHook(HookABC):
                         if self._stub.cmd == torch_col.Event.kColocateAdjustL1:
                             xsched.kill_batch()
                             raise ColocateAdjustL1Exception('[Adjust XSCHED_SYNC BWD]')
+                        # torch_col.cuda_memory_pool_reset_train_alloc_ms()
                 def bwd_hook(module, grad_input, grad_output):
                     with EventManager.record_duration_event('xsched_sync_bwd'):
                         if self._stub.cmd == torch_col.Event.kColocateAdjustL1:
                             xsched.kill_batch()
                             raise ColocateAdjustL1Exception('[Adjust XSCHED_SYNC BWD]')
+                        # torch_col.cuda_memory_pool_reset_train_alloc_ms()
             case _:
                 raise RuntimeError(f"Unsupported hook_mode: {self.hook_mode.name}")
         HookABC.register_fbward_hook(module, fwd_hook, bwd_hook)
@@ -322,6 +324,7 @@ class ColocateHook(HookABC):
 
     def adjust_l1(self):
         # decouple kill batch and reclaim memory
+        # print(f'[Adjust L1] train alloc cost {torch_col.cuda_memory_pool_train_alloc_ms()}ms', flush=True)
         t0 = time.time()
         if torch_col.release_saved_tensor_v1():
             for fn in self._grad_fn:

@@ -312,6 +312,7 @@ void GraphExecutor::AllocStorage() {
           CHECK(tensor.IsNull());
           auto aligned_nbytes = sta::ComputeStorageNbytes(
               tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
+          aligned_nbytes = sta::detail::GetAlignedNbytes(aligned_nbytes);
           total_nbytes += aligned_nbytes;
         }
         // LOG(INFO) << "better alloc " << sta::detail::ByteDisplay(total_nbytes) << " " << j << " "
@@ -323,6 +324,7 @@ void GraphExecutor::AllocStorage() {
           auto tensor = sta::TensorPool::Get()->Tensor(s);
           auto aligned_nbytes = sta::ComputeStorageNbytes(
               tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
+          aligned_nbytes = sta::detail::GetAlignedNbytes(aligned_nbytes);
           auto mdata = std::shared_ptr<sta::CUDAMemPool::PoolEntry>(
               new sta::CUDAMemPool::PoolEntry{static_cast<char*>(mdata_group->addr) + off, aligned_nbytes});
           tensor.AssignMDataForNull(mdata);
@@ -688,7 +690,7 @@ void GraphExecutor::AllocStorageMaybeAdjust() {
   if (!Controller::Get()->IsTrainIdle()) {
     if (Config::use_shared_tensor_train) {
       free_memory_mb = sta::detail::ByteToMB(sta::CUDAMemPool::PoolNbytes() - sta::CUDAMemPool::InferMemUsage());
-      free_memory_mb -= std::max(sta::detail::ByteToMB(sta::CUDAMemPool::TrainMemUsage()),
+      free_memory_mb -= std::max(sta::detail::ByteToMB(sta::CUDAMemPool::TrainAllMemUsage()),
                                  ModelTrainStore::Get()->PredictMemUsageMB()) + Config::train_memory_over_predict_mb;
     } else {
       auto [free, total] = Profiler::GetGPUMemInfo();

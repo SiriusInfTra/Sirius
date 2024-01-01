@@ -108,11 +108,12 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
       CtrlMsgEntry data;
       bool succ = cmd_event_mq_->TimedGet(data, 1000);
       if (succ) {
-        std::unique_lock locker{mutex_};
         if (data.event == static_cast<int>(Event::kColocateAdjustL1)
             || data.event == static_cast<int>(Event::kColocateAdjustL2)) {
+          std::unique_lock locker{mutex_};
           this->target_bs_ -= data.value;
-          LOG(INFO) << "[ColocateStub] Adjust batch size, target " << this->target_bs_ << " timestamp: " << torch_col::get_unix_timestamp();
+          LOG(INFO) << "[ColocateStub] Adjust batch size, target " << this->target_bs_ << " timestamp: " << torch_col::get_unix_timestamp()
+                    << " malloc_ms " << colserve::sta::CUDAMemPool::TrainAllocMs();
           CHECK_LT(this->target_bs_, this->current_bs_);
           if (KillBatchOnRecv) {
             // TODO: better cancel kernel launch
@@ -172,9 +173,10 @@ void ColocateStub::ColocateAdjustL1Done() {
     status_event_mq_->Put({cmd_id_, static_cast<int>(Event::kColocateAdjustL1Done)});
     cmd_ = -1;
     cmd_id_ = 0;
-    // SetBlockCudaCalls_v2(false);
+    SetBlockCudaCalls_v2(false);
     // colserve::sta::CUDAMemPool::EnableTrainAlloc();
-    LOG(INFO) << "[ColocateStub] Adjust L1 done, timestamp: " << torch_col::get_unix_timestamp();
+    LOG(INFO) << "[ColocateStub] Adjust L1 done, timestamp: " << torch_col::get_unix_timestamp()
+              << " train_alloc_ms " << colserve::sta::CUDAMemPool::TrainAllocMs();
   }
 }
 

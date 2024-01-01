@@ -21,12 +21,12 @@ def initial_kill_batch(epoch, batch, stream: Optional[Stream] = None):
         num_cmds = __pysched_dll.AbortStream(handle)
         stream.synchronize()
         t2 = torch_col.get_unix_timestamp()
-        print(f'kill batch cost {t2 - t1} ms, num_cmds={num_cmds}')
+        print(f'initial_kill_batch cost {t2 - t1} ms, num_cmds={num_cmds}')
 
 
 def kill_batch(stream: Optional[Stream] = None):
-    if torch_col.kill_batch_on_recv():
-        return
+    # if torch_col.kill_batch_on_recv():
+    #     return
     t1 = torch_col.get_unix_timestamp()
     if stream is None:
         stream = torch.cuda.current_stream()

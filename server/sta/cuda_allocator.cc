@@ -41,10 +41,15 @@ CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool cleanup, bool observe, FreeLis
 
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(
     std::size_t nbytes, MemType mtype, bool allow_nullptr) {
+  auto t0 = std::chrono::steady_clock::now();
   auto ret = impl_->Alloc(nbytes, mtype);
   if (!allow_nullptr && ret == nullptr) {
     impl_->DumpSummary();
     LOG(FATAL) << "request size " << nbytes << " byte ( " << detail::ByteToMB(nbytes) << " mb )"  << " out of free gpu memory";
+  }
+  auto t1 = std::chrono::steady_clock::now();
+  if (mtype == MemType::kTrain) {
+    train_alloc_us_.fetch_add(std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count());
   }
   return ret;
 }
