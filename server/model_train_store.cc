@@ -104,17 +104,35 @@ bool ModelTrainStore::Train() {
     for (i = j + 1; i < args.size() && args[i] == ' '; i++);
   }
   if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
-    args_str.push_back("--mode");
+    args_str.push_back("--train-mode");
     args_str.push_back("task-switch-l1");
   } else if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
-    args_str.push_back("--mode");
+    args_str.push_back("--train-mode");
     args_str.push_back("task-switch-l3");
   } else if (Config::serve_mode == ServeMode::kColocateL1) {
-    args_str.push_back("--mode");
+    args_str.push_back("--train-mode");
     args_str.push_back("colocate-l1");
   } else if (Config::serve_mode == ServeMode::kColocateL2) {
-    args_str.push_back("--mode");
+    args_str.push_back("--train-mode");
     args_str.push_back("colocate-l2");
+  } else if (Config::serve_mode == ServeMode::kNormal) {
+    args_str.push_back("--train-mode");
+    args_str.push_back("normal");
+  } else {
+    LOG(FATAL) << "Unsupported serve mode: " << static_cast<int>(Config::serve_mode);
+  }
+
+  if (Config::serve_mode == ServeMode::kColocateL1 || Config::serve_mode == ServeMode::kTaskSwitchL1) {
+    if (Config::use_xsched) {
+      args_str.push_back("--hook-mode");
+      args_str.push_back("xsched-sync");
+    } else {
+      args_str.push_back("--hook-mode");
+      args_str.push_back("sync");
+    }
+  } else {
+    args_str.push_back("--hook-mode");
+    args_str.push_back("none");
   }
 
   if (Config::use_xsched) {

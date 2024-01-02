@@ -26,6 +26,7 @@ namespace colserve {
 enum class ServeMode {
   kNormal,        // infer/train contention
 
+  kTaskSwitchL0,  // task switch w/ memory pressure
   kTaskSwitchL1,  // switch infer/train, drop mini-batch
   kTaskSwitchL2,  // switch infer/train, drop epoch
   kTaskSwitchL3,  // switch infer/train, drop training (i.e. pipeswitch)

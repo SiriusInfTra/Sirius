@@ -59,7 +59,8 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
             batch_event = EventManager.record_event(f'batch_{epoch:02d}_{i:03d}_{len(images):02d}')
             images:torch.Tensor = images.to('cuda:0', non_blocking=True)
             targets:torch.Tensor = targets.to('cuda:0', non_blocking=True)
-            torch_col.clear_saved_tensor()
+            if torch_col.use_shared_tensor():
+                torch_col.clear_saved_tensor()
             # micro_batch_size = random.randint(1, batch_size)
             # print(micro_batch_size)
             try:
@@ -122,7 +123,6 @@ def main():
     parser = argparse.ArgumentParser('Train Resnet')    
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--num-epoch', type=int, default=15)
-    parser.add_argument('--mode', type=str) 
     parser.add_argument('--train-mode', type=str, default=TrainMode.COLOCATE_L1.value, choices=train_mode_value)
     parser.add_argument('--train-profile', type=str, default='train-profile.csv')
     parser.add_argument('--hook-mode', default=HookMode.XSCHED_SYNC.value, choices=hook_mode_value)
