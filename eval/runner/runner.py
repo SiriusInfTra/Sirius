@@ -208,7 +208,7 @@ class System:
         self.cmd_trace.append(" ".join(cmd))
         print("\n---------------------------\n")
         print(" ".join(cmd))
-        print(f"  --> [server-log] {server_log}  |  [profile] {self.profile_log}\n")
+        print(f"  --> [server-log] {server_log}  |  [profile] {self.log_dir}/{self.profile_log}\n")
 
         with open(server_log, "w") as log_file:
             self.server = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
