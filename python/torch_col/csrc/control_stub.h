@@ -33,6 +33,8 @@ enum class Event {
   kColocateAdjustL1,
   kColocateAdjustL2,
   kInferExit, // train adjust back
+
+  kNumEvent,
 };
 
 class SwitchStub {

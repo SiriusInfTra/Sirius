@@ -63,6 +63,8 @@ class Controller {
     kColocateAdjustL1,
     kColocateAdjustL2,
     kInferExit, // train adjust back
+
+    kNumEvent,
   };
 
  private:

@@ -142,6 +142,7 @@ bool ModelTrainStore::Train() {
 }
 
 bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::string> &args_str) {
+  std::stringstream extra_env_ss;
   std::stringstream ss;
   char* argv[args_str.size() + 1];
   for (size_t i = 0; i < args_str.size(); i++) {
@@ -177,6 +178,7 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
       // std::string xsched_preload_path = xsched_path + "lib/libinstrument_sm70.so";
       
       CHECK_NE(setenv("LD_LIBRARY_PATH", xsched_lib_path.c_str(), 1), -1);
+      extra_env_ss << "LD_LIBRARY_PATH=" << xsched_lib_path << " ";
       // CHECK_NE(setenv("LD_PRELOAD", xsched_preload_path.c_str(), 1), -1);
       LOG(INFO) << "[ModelTrainStore]: enable xsched.";
     }
@@ -186,12 +188,18 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
       CHECK_NE(setenv("SHARED_TENSOR_HAS_SERVER", "1", 1), -1);
       CHECK_NE(setenv("SHARED_TENSOR_POOL_GB", std::to_string(Config::cuda_memory_pool_gb).c_str(), 1), -1);
       CHECK_NE(setenv("SHARED_TENSOR_POOL_FREELIST_POLICY", Config::mempool_freelist_policy.c_str(), 1), -1);
+      extra_env_ss << "USE_SHARED_TENSOR=1"
+                   << " SHARED_TENSOR_HAS_SERVER=1"
+                   << " SHARED_TENSOR_POOL_GB=" << Config::cuda_memory_pool_gb
+                   << " SHARED_TENSOR_POOL_FREELIST_POLICY=" << Config::mempool_freelist_policy << " ";
       // CHECK_NE(setenv("CUDA_LAUNCH_BLOCKING", "1", 1), -1);
     } else {
       CHECK_NE(setenv("USE_SHARED_TENSOR", "0", 1), -1);
+      extra_env_ss << "USE_SHARED_TENSOR=0 ";
     }
     if (Config::train_mps_thread_percent >= 0 && Config::train_mps_thread_percent <= 100) {
       CHECK_NE(setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", std::to_string(Config::train_mps_thread_percent).c_str(), 1), -1);
+      extra_env_ss << "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE=" << Config::train_mps_thread_percent << " ";
       LOG(INFO) << "[ModelTrainStore]: set CUDA_MPS_ACTIVE_THREAD_PERCENTAGE to " << Config::train_mps_thread_percent;
     }
 
@@ -207,7 +215,7 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
     // train_running_ = true;
     // Controller::Get()->TrainStart();
     LOG(INFO) << "ModelTrainStore: " << "Train " << job << " ( "
-              << ss.str() << "), pid " << pid;
+              << extra_env_ss.str() << " " << ss.str() << "), pid " << pid;
   }
 
   if (Config::capture_train_log) {

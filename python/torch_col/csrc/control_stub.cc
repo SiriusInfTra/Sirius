@@ -7,7 +7,7 @@
 #include "sta/mempool_sampler.h"
 #include <PySched.h>
 
-int KillBatchOnRecv = 0;
+int KillBatchOnRecv = 1;
 
 namespace torch_col {
 
@@ -87,12 +87,12 @@ void SwitchStub::ReportBatchSize(int batch_size) {
 }
 
 void SwitchStub::StepsNoInteruptBegin() {
-  std::unique_lock lock{mutex_};
+  // std::unique_lock lock{mutex_};/
   exec_step_ = true;
 }
 
 void SwitchStub::StepsNoInteruptEnd() {
-  std::unique_lock lock{mutex_};
+  // std::unique_lock lock{mutex_};
   exec_step_ = false;
 }
 
@@ -118,9 +118,9 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
                     << " malloc_ms " << colserve::sta::CUDAMemPool::TrainAllocMs();
           CHECK_LT(this->target_bs_, this->current_bs_);
 
-          {
-            AbortStream(0);
-          }
+          // {
+          //   AbortStream(0);
+          // }
           if (KillBatchOnRecv) {
             // TODO: better cancel kernel launch
             std::unique_lock step_lock{step_mutex_};
@@ -181,7 +181,7 @@ void ColocateStub::ColocateAdjustL1Done() {
     status_event_mq_->Put({cmd_id_, static_cast<int>(Event::kColocateAdjustL1Done)});
     cmd_ = -1;
     cmd_id_ = 0;
-    // SetBlockCudaCalls_v2(false);
+    SetBlockCudaCalls_v2(false);
     // colserve::sta::CUDAMemPool::EnableTrainAlloc();
     LOG(INFO) << "[ColocateStub] Adjust L1 done, timestamp: " << torch_col::get_unix_timestamp()
               << " train_alloc_ms " << colserve::sta::CUDAMemPool::TrainAllocMs();
@@ -228,13 +228,13 @@ void DumpMempoolBlockList(std::string filename) {
 }
 
 void ColocateStub::StepsNoInteruptBegin() {
-  std::unique_lock lock{mutex_};
+  // std::unique_lock lock{mutex_};
   step_mutex_.lock();
   exec_step_ = true;
 }
 
 void ColocateStub::StepsNoInteruptEnd() {
-  std::unique_lock lock{mutex_};
+  // std::unique_lock lock{mutex_};
   exec_step_ = false;
   step_mutex_.unlock();
 }

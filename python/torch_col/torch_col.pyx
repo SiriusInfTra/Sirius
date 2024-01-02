@@ -62,20 +62,39 @@ cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
         kResumeTrainDone,
         kColocateAdjustL1Done,
         kColocateAdjustL2Done,
+        
+        kReportBatchSize,
 
-        # cmd 
+        # cmd event: switch mode
         kInterruptTrain,
         kResumeTrain,
+        # cmd event: colocate mode
         kColocateAdjustL1,
         kColocateAdjustL2,
-        kInferExit,
+        kInferExit, # train adjust back
 
+        kNumEvent,
 
 cdef class PyCtrlMsgEntry:
     cdef CtrlMsgEntry _entry
     
     def __cinit__(self, unsigned long long id, Event cmd, int value):
         self._entry = CtrlMsgEntry(id, int(cmd), value)
+
+    @property
+    def event(self):
+        return Event(self._entry.event)
+
+    @property
+    def id(self):
+        return self._entry.id
+
+    @property
+    def value(self):
+        return self._entry.value
+
+    def __repr__(self):
+        return "PyCtrlMsgEntry(id={}, event={}, value={})".format(self.id, str(self.event), self.value)
 
 
 cdef class PyMemoryQueue:
@@ -88,7 +107,7 @@ cdef class PyMemoryQueue:
         self._queue.Put(entry._entry)
 
     def timed_get(self, size_t timeout_ms):
-        x = PyCtrlMsgEntry(0, -1)
+        x = PyCtrlMsgEntry(0, Event.kNumEvent, -1)
         if self._queue.TimedGet(x._entry, timeout_ms):
             return x
         else:
