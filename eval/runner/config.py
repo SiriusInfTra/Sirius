@@ -34,7 +34,7 @@ def mps_thread_percent(percent):
 def um_mps(percent):
     set_mps_thread_percent(percent)
     os.environ['TORCH_UNIFIED_MEMORY'] = "1"
-    os.eventfd['STA_RAW_ALLOC_UNIFIED_MEMORY'] = "1"
+    os.environ['STA_RAW_ALLOC_UNIFIED_MEMORY'] = "1"
     yield
     unset_mps_thread_percent()
     os.environ.pop('TORCH_UNIFIED_MEMORY', None)
