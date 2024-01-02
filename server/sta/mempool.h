@@ -44,7 +44,7 @@ namespace sta {
 namespace detail {
 constexpr size_t alignment = 1024;
 constexpr size_t train_alloc_threshold = 512 * 1024 * 1024;
-constexpr size_t train_alloc_threshold_small = 16 * 1024 * 1024;
+constexpr size_t train_alloc_threshold_small = 32 * 1024 * 1024;
 inline size_t GetAlignedNbytes(size_t nbytes) {
   static_assert((alignment & (alignment - 1)) == 0, "alignment must be power of 2");
   return (nbytes + (alignment - 1)) & (~(alignment - 1));
@@ -131,10 +131,10 @@ struct MemPoolEntry {
     return cur_mtype == MemType::kTrain ? mtype == MemType::kTrainLocalFree : mtype == MemType::kFree;
   }
   inline bool IsAvailableFree(MemType cur_mtype) const {
-    return mtype == MemType::kFree || (cur_mtype == MemType::kTrain && mtype == MemType::kTrainLocalFree);
+    return (mtype == MemType::kFree) || (cur_mtype == MemType::kTrain && mtype == MemType::kTrainLocalFree);
   }
   inline bool IsFree() const {
-    return mtype == MemType::kFree || mtype == MemType::kTrainLocalFree;
+    return (mtype == MemType::kFree) || (mtype == MemType::kTrainLocalFree);
   }
   inline void SetAsFree() {
     mtype = mtype == MemType::kTrain ? MemType::kTrainLocalFree : MemType::kFree;

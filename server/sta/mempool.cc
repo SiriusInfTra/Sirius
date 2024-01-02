@@ -364,12 +364,13 @@ std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
   if (nbytes == 0) { 
     return std::shared_ptr<PoolEntry>(new PoolEntry{nullptr, 0, mtype});
   }
-  auto t0 = std::chrono::steady_clock::now();
+  // auto t0 = std::chrono::steady_clock::now();
   nbytes = detail::GetAlignedNbytes(nbytes);
   bip::scoped_lock locker(*mutex_);
   DCHECK(CheckPoolWithoutLock());
   MemPoolEntry *entry = nullptr;
   bool train_over_threshold = false;
+  bool alloc_by_merge = false;
   size_t alloc_nbytes = nbytes;
   if (mtype == MemType::kTrain) {
     entry = freeblock_policy_->GetFreeBlock(alloc_nbytes, mtype, true, false);
@@ -380,6 +381,18 @@ std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
         alloc_nbytes = detail::GetAlignedNbytes(nbytes, detail::train_alloc_threshold_small);
         entry = freeblock_policy_->GetFreeBlock(alloc_nbytes, mtype, false, true);
       }
+      if (entry == nullptr) { // merge local with global
+        auto merge_entry = freeblock_policy_->GetFreeBlockByMerge(alloc_nbytes, mtype, mem_entry_list_);
+        if (merge_entry != nullptr) {
+          alloc_by_merge = true;
+          freeblock_policy_->RemoveFreeBlock(merge_entry);
+          // LOG(INFO) << "[mempool] merge local with global " << detail::ByteDisplay(alloc_nbytes) << ".";
+          entry = FreeWithoutLock(merge_entry);
+          CHECK(entry->mtype == MemType::kFree && entry->nbytes >= alloc_nbytes)
+            << "entry: " << entry->mtype << " nbytes " << entry->nbytes << " alloc_nbytes " << alloc_nbytes;
+          alloc_nbytes = entry->nbytes;
+        }
+      }
       train_over_threshold = alloc_nbytes > nbytes;
     }
   } else { // infer
@@ -387,10 +400,15 @@ std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
   }
   if (entry == nullptr) {
     DumpSummaryWithoutLock();
-    // DumpBlockListWithoutLock(); // TODO: buggy?
+    DumpBlockListWithoutLock(); // TODO: buggy?
     LOG(FATAL) << "[mempool] fail to alloc " << mtype << " " << detail::ByteDisplay(alloc_nbytes) << ".";
   }
-  CHECK(entry->IsAvailableFree(mtype));
+
+  CHECK(entry->IsAvailableFree(mtype)) << " " << entry << " mtype " << mtype << " entry->mtype " << entry->mtype;
+  // if (train_over_threshold && entry) {
+  //   LOG(INFO) << "[mempool] alloc " << mtype << " " << detail::ByteDisplay(alloc_nbytes) << " "
+  //             << entry << " " << entry->mtype;
+  // }
   freeblock_policy_->RemoveFreeBlock(entry);
   stat_->at(static_cast<size_t>(mtype)).fetch_add(alloc_nbytes, std::memory_order_relaxed);
   stat_->at(static_cast<size_t>(entry->mtype)).fetch_sub(alloc_nbytes, std::memory_order_relaxed);
@@ -402,14 +420,14 @@ std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
     stat_->at(static_cast<size_t>(MemType::kTrainAll)).fetch_add(alloc_nbytes, std::memory_order_relaxed);
   }
 
-  auto split_free_entry = [this] (MemPoolEntry *entry, size_t alloc_nbytes, MemType free_mtype) {
+  auto split_free_entry = [this, mtype] (MemPoolEntry *entry, size_t alloc_nbytes, MemType free_mtype) {
     if (entry->nbytes <= alloc_nbytes) { return; }
 #if 0
     if (mtype == MemType::kInfer) {
       auto insert_pos = entry->mem_entry_pos;
       ++insert_pos;
       auto *free_entry =
-          CreateMemPoolEntry(entry->addr_offset + nbytes, entry->nbytes - alloc_nbytes,
+          CreateMemPoolEntry(entry->addr_offset + alloc_nbytes, entry->nbytes - alloc_nbytes,
                             free_mtype, insert_pos);
       freeblock_policy_->AddFreeBlock(free_entry);
       entry->nbytes = alloc_nbytes;
@@ -435,7 +453,7 @@ std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
 
   split_free_entry(entry, alloc_nbytes, free_mtype);
   CHECK(entry->mtype == MemType::kInfer || entry->mtype == MemType::kTrain);
-  if (train_over_threshold) {
+  if (train_over_threshold && !alloc_by_merge) {
     FreeWithoutLock(entry); // free in local
     entry = freeblock_policy_->GetFreeBlock(nbytes, mtype, true, false);
     if (entry == nullptr) {
@@ -449,12 +467,12 @@ std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
     stat_->at(static_cast<size_t>(free_mtype)).fetch_sub(nbytes, std::memory_order_relaxed);
     split_free_entry(entry, nbytes, free_mtype);
   }
-  auto t1 = std::chrono::steady_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0);
-  if (duration.count() > 50) {
-    LOG(WARNING) << "[mempool] alloc " << mtype <<  " " << train_over_threshold << " "
-                 << detail::ByteDisplay(nbytes) << " " << duration.count() << " us.";
-  }
+  // auto t1 = std::chrono::steady_clock::now();
+  // auto duration = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0);
+  // if (duration.count() > 50) {
+  //   LOG(WARNING) << "[mempool] alloc " << mtype <<  " " << train_over_threshold << " "
+  //                << detail::ByteDisplay(nbytes) << " " << duration.count() << " us.";
+  // }
 
   return MakeSharedPtr(entry);
 }
@@ -528,14 +546,14 @@ void MemPool::DumpBlockListWithoutLock() {
   std::ofstream stream{"mempool-blks"};
   std::cout << "---------- dump whole mempool (all) ----------" << std::endl;
   stream << "start,len,mtype,next,prev,mtype" << std::endl;
-  for(const auto & element : *mem_entry_list_) {
-    auto *entry = GetEntry(segment_, element);
+  for(auto it = mem_entry_list_->begin(); it != mem_entry_list_->end(); ++it) {
+    auto *entry = GetEntry(segment_, *it);
     auto *prev = GetPrevEntry(segment_, entry, mem_entry_list_->begin());
     auto *next = GetNextEntry(segment_, entry, mem_entry_list_->end());
     stream << entry->addr_offset << "," 
            << entry->nbytes << ","
            << static_cast<int>(entry->mtype) << ","
-           << (prev ? next->addr_offset : -1) << "," 
+           << (next ? next->addr_offset : -1) << "," 
            << (prev ? prev->addr_offset : -1) << ","
            << static_cast<unsigned>(entry->mtype) << std::endl;
   }
@@ -582,6 +600,8 @@ MemPoolEntry* BestFitPolicy::GetFreeBlockByMerge(size_t nbytes, MemType mtype, E
     auto prev_nbytes = prev_free ? prev_entry->nbytes : 0;
     auto next_nbytes = next_free ? next_entry->nbytes : 0;
     if (prev_nbytes + next_nbytes + entry->nbytes >= nbytes) {
+      LOG(INFO) << " GetFreeBlockByMerge " << detail::ByteDisplay(prev_nbytes + next_nbytes + entry->nbytes)
+                << " " << detail::ByteDisplay(nbytes);
       return entry;
     }
   }
