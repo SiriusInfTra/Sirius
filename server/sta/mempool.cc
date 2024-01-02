@@ -538,6 +538,12 @@ void MemPool::DumpSummaryWithoutLock() {
               << detail::ByteDisplay(static_cast<size_t>(1.0 * usages_mtype[UsageStat::kTotalNBytes] /
                                      usages_mtype[UsageStat::kCount]));
   }
+  LOG(INFO) << "Free: " << detail::ByteDisplay(GetMemUsage(MemType::kFree));
+  LOG(INFO) << "TrainLocalFree: " << detail::ByteDisplay(GetMemUsage(MemType::kTrainLocalFree));
+
+  LOG(INFO) << "Infer: " << detail::ByteDisplay(GetMemUsage(MemType::kInfer));
+  LOG(INFO) << "Train: " << detail::ByteDisplay(GetMemUsage(MemType::kTrain));
+  LOG(INFO) << "TrainAll: " << detail::ByteDisplay(GetMemUsage(MemType::kTrainAll));
   google::FlushLogFiles(google::INFO);
 }
 

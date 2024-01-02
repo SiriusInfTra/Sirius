@@ -43,7 +43,7 @@ namespace colserve {
 namespace sta {
 namespace detail {
 constexpr size_t alignment = 1024;
-constexpr size_t train_alloc_threshold = 512 * 1024 * 1024;
+constexpr size_t train_alloc_threshold = 256 * 1024 * 1024;
 constexpr size_t train_alloc_threshold_small = 32 * 1024 * 1024;
 inline size_t GetAlignedNbytes(size_t nbytes) {
   static_assert((alignment & (alignment - 1)) == 0, "alignment must be power of 2");
