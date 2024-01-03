@@ -284,7 +284,7 @@ class BestFitPolicy : public FreeListPolicy {
         auto* next = GetNextEntry(segment_, entry, end);
         stream << entry->addr_offset << "," << entry->nbytes << ", "
               << static_cast<int>(entry->mtype) << ", "
-              << (prev ? next->addr_offset : -1) << ", "
+              << (next ? next->addr_offset : -1) << ", "
               << (prev ? prev->addr_offset : -1) << ", "
               << static_cast<unsigned>(entry->mtype) << std::endl;
       }
@@ -453,6 +453,11 @@ private:
   inline void DumpSummary() {
     bip::scoped_lock locker(*mutex_);
     DumpSummaryWithoutLock();
+  }
+
+  inline void DumpBlockList() {
+    bip::scoped_lock locker(*mutex_);
+    DumpBlockListWithoutLock();
   }
 
   inline std::unordered_map<MemType, std::unordered_map<UsageStat, size_t>> GetUsage() {

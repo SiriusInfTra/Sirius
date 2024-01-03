@@ -152,5 +152,9 @@ void CUDAMemPool::FreeTrainLocals() {
   auto t1 = std::chrono::steady_clock::now();
 }
 
+void CUDAMemPool::DumpDumpBlockList() {
+  Get()->impl_->DumpBlockList();
+}
+
 }  // namespace sta
 }
