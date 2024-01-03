@@ -74,7 +74,7 @@ class System:
                  ondemand_adjust: bool = True,
                  pipeline_load: bool = True,
                  train_memory_over_predict_mb: str | float = None,
-                 keep_last_time_stamp: bool = False) -> None:
+                 keep_last_time_stamp: bool = True) -> None:
         self.mode = mode
         self.use_sta = use_sta
         self.cuda_memory_pool_gb = cuda_memory_pool_gb
