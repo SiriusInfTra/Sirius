@@ -3,6 +3,7 @@
 
 #include <unordered_map>
 #include <memory>
+#include <atomic>
 
 #include <sta/tensor_methods.h>
 #include <sta/tensor_pool.h>
@@ -44,8 +45,6 @@ class GraphExecutor {
     CHECK_EQ(initialized_, true);
     return exec_stream_;
   }
-
-  double ComputePipelineExecTime();
 
   // void ResetBufStorage();
   // void ResetParamStorage();
@@ -113,16 +112,21 @@ class GraphExecutor {
                                             output_cpu_pin_bufs_;
 
   // std::map<uint32_t, bool> param_ready_;
-  std::vector<bool> param_ready_;
+  std::vector<std::unique_ptr<std::atomic<bool>>> param_ready_;
   std::vector<cudaEvent_t> param_ready_events_; // for pipeline
-  std::vector<cudaEvent_t> pipeline_op_exec_starts_, pipeline_op_exec_ends_;
+  std::vector<uint32_t> param_ready_event_ids_; // for group param pipeline
+  // std::vector<cudaEvent_t> pipeline_op_exec_starts_, pipeline_op_exec_ends_;
 
+  std::future<void> load_params_future_;
 
   // void* blob_mem_{nullptr};
   std::shared_ptr<sta::CUDAMemPool::PoolEntry> blob_mem_{nullptr};
 
   // better alloc to avoid fragmentation
   std::vector<std::shared_ptr<sta::CUDAMemPool::PoolEntry>> storage_group_;
+
+  // [ param storage group, [param ids ...] ]
+  std::vector<std::pair<TVMArray, std::vector<uint32_t>>> param_storage_group_;
   
   TVMStreamHandle exec_stream_;
   TVMStreamHandle load_param_stream_;

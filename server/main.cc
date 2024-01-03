@@ -122,6 +122,12 @@ void init_config() {
   if (cfg::colocate_config.skip_loading && !cfg::colocate_config.skip_malloc) {
     LOG(FATAL) << "skip loading must be used with skip malloc";
   } 
+
+  if (cfg::use_shared_tensor) {
+    if (cfg::group_param_load && !cfg::better_alloc) {
+      LOG(FATAL) << "group param load must be used with better alloc";
+    }
+  }
 }
 
 void Shutdown(int sig) {

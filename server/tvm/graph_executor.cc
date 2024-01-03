@@ -54,19 +54,53 @@ GraphExecutor::GraphExecutor(GraphExecutorFactory &factory, size_t worker_id)
   load_param_stream_ = DeviceAPI::Get(factory_.devices_[0])
       ->CreateStream(factory_.devices_[0]);
 
-  param_ready_.resize(GetNumOfNodes(), false);
+  param_ready_.resize(GetNumOfNodes());
+  for (size_t i = 0; i < param_ready_.size(); i++) {
+    param_ready_[i] = std::make_unique<std::atomic<bool>>(false);
+  }
   param_ready_events_.resize(GetNumOfNodes());
+  param_ready_event_ids_.resize(GetNumOfNodes(), static_cast<uint32_t>(-1));
   for (size_t i = 0; i < param_ready_events_.size(); i++) {
     CUDA_CALL(cudaEventCreate(&param_ready_events_[i]));
   }
-  pipeline_op_exec_starts_.resize(op_execs_.size());
-  pipeline_op_exec_ends_.resize(op_execs_.size());
-  for (size_t i = 0; i < op_execs_.size(); i++) {
-    if (op_execs_[i]) {
-      CUDA_CALL(cudaEventCreate(&pipeline_op_exec_starts_[i]));
-      CUDA_CALL(cudaEventCreate(&pipeline_op_exec_ends_[i]));
+  // pipeline_op_exec_starts_.resize(op_execs_.size());
+  // pipeline_op_exec_ends_.resize(op_execs_.size());
+  // for (size_t i = 0; i < op_execs_.size(); i++) {
+  //   if (op_execs_[i]) {
+  //     CUDA_CALL(cudaEventCreate(&pipeline_op_exec_starts_[i]));
+  //     CUDA_CALL(cudaEventCreate(&pipeline_op_exec_ends_[i]));
+  //   }
+  // }
+
+  if (Config::group_param_load) {
+    for (auto sit = factory_.params_.begin(); sit != factory_.params_.end(); ) {
+      size_t total_nbytes = 0, off = 0;
+      std::vector<uint32_t> param_ids;
+      auto eit = sit;
+      for (; eit != factory_.params_.end() && total_nbytes < Config::group_param_load_threshold; eit++) {
+        auto &p = *eit;
+        auto aligned_nbytes = sta::detail::GetAlignedNbytes(GetDataSize(*p.second.operator->()));
+        total_nbytes += aligned_nbytes;
+        param_ids.push_back(p.first);
+        param_ready_event_ids_[p.first] = param_storage_group_.size();
+      }
+      auto param_group = TVMArray::Empty(ShapeTuple({static_cast<int64_t>(total_nbytes)}),
+         DLDataType{kDLInt, 8, 1}, DLDevice{kDLCUDAHost, 0});
+      for (; sit != eit; sit++) {
+        auto &p = *sit;
+        std::memcpy(static_cast<char*>(param_group->data) + off, p.second->data,
+          GetDataSize(*p.second.operator->()));
+        auto aligned_nbytes = sta::detail::GetAlignedNbytes(GetDataSize(*p.second.operator->()));
+        off += aligned_nbytes;
+      }
+      this->param_storage_group_.push_back(std::make_pair(param_group, param_ids));
+    }
+  } else {
+    for (auto &p : factory_.params_) {
+      param_ready_event_ids_[p.first] = p.first;
     }
   }
+
   auto t1 = std::chrono::steady_clock::now();
   DLOG(INFO) << "[GraphExecutor] Create " 
              << std::chrono::duration<double, std::milli>(t1-t0).count() << "ms";
@@ -87,11 +121,21 @@ void GraphExecutor::Init() {
     if (!Config::colocate_config.skip_malloc)
       ReSetupDataEntry();
 
-    PROFILE_START(InferLoadParam, 0);
-    if (!Config::colocate_config.skip_loading) {
-      LoadParams(Config::pipeline_load, Config::colocate_config.skip_malloc);
+    if (!Config::pipeline_load) {
+      PROFILE_START(InferLoadParam, 0);
+      if (!Config::colocate_config.skip_loading) {
+        LoadParams(Config::pipeline_load, Config::colocate_config.skip_malloc);
+      }
+      PROFILE_END(InferLoadParam, 0);
+    } else {
+      load_params_future_ = std::async(std::launch::async, [this]() {
+        PROFILE_START(InferLoadParam, 0);
+        if (!Config::colocate_config.skip_loading) {
+          LoadParams(Config::pipeline_load, Config::colocate_config.skip_malloc);
+        }
+        PROFILE_END(InferLoadParam, 0);
+      });
     }
-    PROFILE_END(InferLoadParam, 0);
     
     initialized_ = true;
   }
@@ -131,15 +175,38 @@ void GraphExecutor::Run() {
 void GraphExecutor::PipelineRun() {
   using namespace ::tvm::runtime;
   CHECK(initialized_);
+  // double wait_load_ms = 0;
+  // double wait_ms = 0;
+  // double record_exec_ms = 0;
+
+  auto begin = Profiler::Now();
   DeviceAPI::Get(factory_.devices_[0])->SetStream(factory_.devices_[0], exec_stream_);
   for (size_t i = 0; i < op_execs_.size(); i++) {
     if (op_execs_[i]) {
-      for (auto nid : input_param_nid_[i]) {
-        CUDA_CALL(cudaStreamWaitEvent((cudaStream_t)exec_stream_, param_ready_events_[nid]));
+      auto t0 = Profiler::Now();
+      // 1. wait load begin
+      for (bool param_ready = false; !param_ready; ) {
+        param_ready = true;
+        for (auto nid : input_param_nid_[i]) {
+          if (!param_ready_[nid]->load()) {
+            param_ready = false;
+            break;
+          }
+        }
+        std::this_thread::sleep_for(std::chrono::microseconds(1));
       }
-      CUDA_CALL(cudaEventRecord(pipeline_op_exec_starts_[i], (cudaStream_t)exec_stream_));
+      // wait_load_ms += Profiler::MilliFrom(t0);
+
+      // auto t1 = Profiler::Now();
+      // 2. wait load finish
+      for (auto nid : input_param_nid_[i]) {
+        auto event_id = param_ready_event_ids_[nid];
+        CHECK(event_id != -1);
+        CUDA_CALL(cudaStreamWaitEvent((cudaStream_t)exec_stream_, param_ready_events_[event_id]));
+      }
+      // wait_ms += Profiler::MilliFrom(t1);
+
       op_execs_[i]();
-      CUDA_CALL(cudaEventRecord(pipeline_op_exec_ends_[i], (cudaStream_t)exec_stream_));
       // auto t0 = std::chrono::steady_clock::now();
       // for (bool param_ready = false; !param_ready; ) {
       //   param_ready = true;
@@ -158,19 +225,21 @@ void GraphExecutor::PipelineRun() {
     }
   }
   DeviceAPI::Get(factory_.devices_[0])->StreamSync(factory_.devices_[0], exec_stream_);
+  // LOG(INFO) << "wait_load_ms " << wait_load_ms << " wait_ms " << wait_ms << " record_exec_ms " << record_exec_ms
+  //           << " tot " << Profiler::MilliFrom(begin);
 }
 
-double GraphExecutor::ComputePipelineExecTime() {
-  double ret = 0;
-  for (size_t i = 0; i < op_execs_.size(); i++) {
-    if (op_execs_[i]) {
-      float ms;
-      CUDA_CALL(cudaEventElapsedTime(&ms, pipeline_op_exec_starts_[i], pipeline_op_exec_ends_[i]));
-      ret += ms;
-    }
-  }
-  return ret;
-}
+// double GraphExecutor::ComputePipelineExecTime() {
+//   double ret = 0;
+//   for (size_t i = 0; i < op_execs_.size(); i++) {
+//     if (op_execs_[i]) {
+//       float ms;
+//       CUDA_CALL(cudaEventElapsedTime(&ms, pipeline_op_exec_starts_[i], pipeline_op_exec_ends_[i]));
+//       ret += ms;
+//     }
+//   }
+//   return ret;
+// }
 
 const DLTensor* GraphExecutor::GetInput(int index) const {
   CHECK(initialized_);
@@ -257,7 +326,7 @@ uint32_t GraphExecutor::GetOutputIndex(const std::string &name) const {
 void GraphExecutor::ResetStorage() {
   using namespace ::tvm::runtime;
   for (auto &p : factory_.params_) {
-    param_ready_[p.first] = false;
+    param_ready_[p.first]->store(false);
   }
   if (Config::use_shared_tensor_infer) {
     for (auto &e : data_entry_) {
@@ -296,6 +365,28 @@ void GraphExecutor::ResetStorage() {
 void GraphExecutor::AllocStorage() {
   using namespace ::tvm::runtime;
 
+  auto get_storage_alloc_order = [this] () -> std::vector<uint32_t> {
+    std::vector<uint32_t> storage_alloc_order;
+    if (Config::group_param_load) {
+      std::vector<bool> storage_record(storage_pool_.size(), false);
+      for (auto & p : factory_.params_) {
+        auto sid = factory_.attrs_.storage_id[p.first];
+        storage_alloc_order.push_back(sid);
+        storage_record[sid] = true;
+      }
+      for (size_t i = 0; i < storage_pool_.size(); i++) {
+        if (!storage_record[i]) {
+          storage_alloc_order.push_back(i);
+        }
+      }
+    } else {
+      for (size_t i = 0; i < storage_pool_.size(); i++) {
+        storage_alloc_order.push_back(i);
+      }
+    }
+    return storage_alloc_order;
+  };
+
   if (Config::use_shared_tensor_infer) {
     if (!Config::better_alloc) {
       for (auto &s : storage_pool_) {
@@ -303,11 +394,12 @@ void GraphExecutor::AllocStorage() {
         tensor.AllocForNull(sta::MemType::kInfer, false);
       }
     } else {
-      for (size_t i = 0; i < storage_pool_.size(); ) {
+      auto storage_alloc_order = get_storage_alloc_order();
+      for (size_t i = 0; i < storage_alloc_order.size(); ) {
         size_t total_nbytes = 0, off = 0;
         size_t j = i;
-        for (; j < storage_pool_.size() && total_nbytes < Config::better_alloc_threshold; j++) {
-          auto s = storage_pool_[j];
+        for (; j < storage_alloc_order.size() && total_nbytes < Config::better_alloc_threshold; j++) {
+          auto s = storage_pool_[storage_alloc_order[j]];
           auto tensor = sta::TensorPool::Get()->Tensor(s);
           CHECK(tensor.IsNull());
           auto aligned_nbytes = sta::ComputeStorageNbytes(
@@ -320,7 +412,7 @@ void GraphExecutor::AllocStorage() {
         auto mdata_group = sta::CUDAMemPool::Get()->Alloc(
             total_nbytes, sta::MemType::kInfer, false);
         for (; i < j; i++) {
-          auto s = storage_pool_[i];
+          auto s = storage_pool_[storage_alloc_order[i]];
           auto tensor = sta::TensorPool::Get()->Tensor(s);
           auto aligned_nbytes = sta::ComputeStorageNbytes(
               tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
@@ -374,35 +466,83 @@ void GraphExecutor::AllocStorage() {
 }
 
 void GraphExecutor::LoadParams(bool pipeline, bool force) {
+  using namespace ::tvm::runtime;
   if (force) {
     for (auto &p : factory_.params_)
-      param_ready_[p.first] = false;
+      param_ready_[p.first]->store(false);
   }
 
-  for (auto &p : factory_.params_) {
-    auto sid = factory_.attrs_.storage_id[p.first];
-    if (!param_ready_[p.first]) {
-      sta::STensor storage_tensor;
-      if (Config::use_shared_tensor_infer) {
-        storage_tensor = sta::TensorPool::Get()->Tensor(storage_pool_[sid]);
-      } else {
-        storage_tensor = raw_storage_pool_[sid];
-      }
-      tvm::TVMArray::CopyFromTo(
-        p.second.operator->(), storage_tensor.MutableDLTensor(), load_param_stream_);
-      if (pipeline) {
-        // ::tvm::runtime::DeviceAPI::Get(factory_.devices_[0])
-        //     ->StreamSync(factory_.devices_[0], load_param_stream_);
-        param_ready_[p.first] = true;
-        CUDA_CALL(cudaEventRecord(param_ready_events_[p.first], (cudaStream_t)load_param_stream_));
+  if (!Config::group_param_load) {
+    for (auto &p : factory_.params_) {
+      auto sid = factory_.attrs_.storage_id[p.first];
+      if (!param_ready_[p.first]->load()) {
+        sta::STensor storage_tensor;
+        if (Config::use_shared_tensor_infer) {
+          storage_tensor = sta::TensorPool::Get()->Tensor(storage_pool_[sid]);
+        } else {
+          storage_tensor = raw_storage_pool_[sid];
+        }
+        tvm::TVMArray::CopyFromTo(
+          p.second.operator->(), storage_tensor.MutableDLTensor(), load_param_stream_);
+        if (pipeline) {
+          // ::tvm::runtime::DeviceAPI::Get(factory_.devices_[0])
+          //     ->StreamSync(factory_.devices_[0], load_param_stream_);
+          param_ready_[p.first]->store(true);
+          CHECK(param_ready_event_ids_[p.first] == p.first);
+          CUDA_CALL(cudaEventRecord(param_ready_events_[p.first], (cudaStream_t)load_param_stream_));
+        }
       }
     }
+  } else {
+    // double api_1_ms = 0;
+    // double api_2_ms = 0;
+    // auto t_b = Profiler::Now();
+
+    size_t sg_id = 0;
+    size_t sg_off = 0;
+    auto storage_group = storage_group_[sg_id++];
+    for (size_t pg_id = 0; pg_id < param_storage_group_.size(); pg_id++) {
+      auto & pg = param_storage_group_[pg_id];
+      auto & param_group = pg.first;
+      auto param_group_nbytes = static_cast<size_t>(param_group->shape[0]);
+      auto & param_ids = pg.second;
+      for (size_t pg_off = 0; pg_off < param_group_nbytes; ) {
+        auto load_nbytes = std::min(param_group_nbytes - pg_off, storage_group->nbytes - sg_off);
+        // auto t0 = Profiler::Now();
+        CUDA_CALL(cudaSetDevice(factory_.devices_[0].device_id));
+        CUDA_CALL(cudaMemcpyAsync(
+            static_cast<char*>(storage_group->addr) + sg_off,
+            static_cast<char*>(param_group->data) + pg_off,
+            load_nbytes, cudaMemcpyDefault, (cudaStream_t)load_param_stream_));
+        // api_1_ms += Profiler::MilliFrom(t0);
+        CHECK(param_ready_event_ids_[param_ids[0]] == pg_id);
+        // auto t1 = Profiler::Now();
+        CUDA_CALL(cudaEventRecord(param_ready_events_[param_ids[0]], (cudaStream_t)load_param_stream_));
+        // api_2_ms += Profiler::MilliFrom(t1);
+        sg_off += load_nbytes;
+        pg_off += load_nbytes;
+        if (sg_off == storage_group->nbytes) {
+          CHECK(sg_id < storage_group_.size());
+          storage_group = storage_group_[sg_id++]; sg_off = 0;
+        }
+      }
+      if (pipeline) {
+        for (auto & pid : param_ids) {
+          param_ready_[pid]->store(true);
+        }
+      }
+    }
+    // auto tot_ms = Profiler::MilliFrom(t_b);
+    // LOG(INFO) << "Load Params" << " api_1_ms " << api_1_ms << " api_2_ms " << api_2_ms << " tot_ms " << tot_ms;
   }
+
+  // because we load params in async thread in pipeline mode,
+  // it's ok to sync to calculate loading time
+  ::tvm::runtime::DeviceAPI::Get(factory_.devices_[0])
+      ->StreamSync(factory_.devices_[0], load_param_stream_);
   if (!pipeline) {
-    ::tvm::runtime::DeviceAPI::Get(factory_.devices_[0])
-        ->StreamSync(factory_.devices_[0], load_param_stream_);
     for (auto &p : factory_.params_)
-      param_ready_[p.first] = true;
+      param_ready_[p.first]->store(true);
   }
 }
 

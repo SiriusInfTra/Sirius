@@ -61,6 +61,9 @@ class Config {
   static bool better_alloc;
   static size_t better_alloc_threshold;
 
+  static bool group_param_load;
+  static size_t group_param_load_threshold;
+
   static bool ondemand_adjust;
 
   static double cuda_memory_pool_gb;

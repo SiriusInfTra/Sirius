@@ -543,7 +543,7 @@ void MemPool::DumpSummaryWithoutLock() {
 
   LOG(INFO) << "Infer: " << detail::ByteDisplay(GetMemUsage(MemType::kInfer));
   LOG(INFO) << "Train: " << detail::ByteDisplay(GetMemUsage(MemType::kTrain));
-  LOG(INFO) << "TrainAll: " << detail::ByteDisplay(GetMemUsage(MemType::kTrainAll));
+  LOG(INFO) << "TrainAll: " << detail::ByteDisplay(GetMemUsage(MemType::kTrainAll)); 
   google::FlushLogFiles(google::INFO);
 }
 

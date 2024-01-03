@@ -260,7 +260,8 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
       LOG(INFO) << "[ModelTrainStore]: " << job << " is killed, restart";
       return false;
     } else {
-      LOG(FATAL) << "[ModelTrainStore]: " << job << " failed, signal is " << strsignal(signal);
+      LOG(FATAL) << "[ModelTrainStore]: " << job << " failed, signal is " << strsignal(signal)
+                 << " cur_batch_size " << cur_batch_size_ << " predict memory " << PredictMemUsageMB() << "MB";
       return false;
     }
   } else {

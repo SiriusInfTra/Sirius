@@ -3,6 +3,7 @@
 #include "../logging_as_glog.h"
 #include <iostream>
 #include <map>
+#include <future>
 
 
 #include <dlpack/dlpack.h>
