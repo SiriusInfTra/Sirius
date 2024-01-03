@@ -27,7 +27,7 @@ def run(system: System, workload: Workload, num_worker: int, tag: str):
                   infer_model_config=infer_model_config)
     workload.launch_workload(system)
     system.stop()
-    time.sleep(1)
+    time.sleep(5)
 
 
 if run_colsys:
