@@ -65,14 +65,15 @@ if args.train_all:
 
 fig, ax = plt.subplots()
 infer_mem, train_mem = map(np.array, [infer_mem, train_mem])
-invert_train_mem = total_mem - train_mem 
+# invert_train_mem = total_mem - train_mem
+infer_train_mem = infer_mem + train_mem
 
 
 ax.plot(timeline, infer_mem, label='Infer', linewidth=0.2)
 ax.fill_between(timeline, 0, infer_mem, alpha=0.3)
 
-ax.plot(timeline, invert_train_mem, label='Train', linewidth=0.2)
-ax.fill_between(timeline, invert_train_mem, total_mem, alpha=0.3)
+ax.plot(timeline, infer_train_mem, label='Train', linewidth=0.2)
+ax.fill_between(timeline, infer_mem, infer_train_mem, alpha=0.3)
 
 if args.event:
     ax.vlines([t for t, e in events], 0.0, total_mem, color='black', linewidth=0.5, linestyles='dashed')
