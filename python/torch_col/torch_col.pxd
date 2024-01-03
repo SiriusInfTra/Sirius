@@ -54,6 +54,8 @@ cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
         void TrainEnd()
         void TryInterruptTrainDone()
         void ReportBatchSize(int)
+        void StepsNoInteruptBegin()
+        void StepsNoInteruptEnd()
 
     cdef cppclass ColocateStub:
         ColocateStub(int) except +

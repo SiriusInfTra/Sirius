@@ -99,6 +99,7 @@ void CommonHandler::SetupCallData() {
   };
   auto exec_warmpup_done = [this](
       CommonData<EmptyRequest, EmptyResult>* data) {
+    LOG(INFO) << "[Common Data]: WarmupDone";
     Profiler::Get()->Clear();
     data->responder_.Finish(data->response_, grpc::Status::OK, (void*)data);
   };

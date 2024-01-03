@@ -137,6 +137,12 @@ cdef class PySwitchStub:
 
     def report_batch_size(self, batch_size):
         self._stub.ReportBatchSize(batch_size)
+    
+    def StepsNoInteruptBegin(self):
+        self._stub.StepsNoInteruptBegin()
+
+    def StepsNoInteruptEnd(self):
+        self._stub.StepsNoInteruptEnd()
 
     @property
     def cmd(self):

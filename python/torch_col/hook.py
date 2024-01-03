@@ -51,7 +51,7 @@ class HookABC(abc.ABC):
     def release_and_reply(self):
         if self.train_mode.is_colocate():
             return self.adjust()
-        if self.trian_mode.is_taskswitch():
+        if self.train_mode.is_taskswitch():
             return self.switch()
         pass
     
@@ -64,6 +64,14 @@ class HookABC(abc.ABC):
     def target_batch_size(self):
         pass
     
+    @abc.abstractmethod
+    def train_start(self):
+        pass
+
+    @abc.abstractmethod
+    def train_end(self):
+        pass
+
     @abc.abstractmethod
     def stop(self):
         pass
@@ -118,6 +126,8 @@ class SwitchHook(HookABC):
         if self.train_mode == TrainMode.TASKSWITCH_L0:
             return
         HookABC.register_fbward_hook(module, self.get_fwd_hook(), self.get_bwd_hook())
+        if torch_col.release_saved_tensor_v2():
+            torch_col.register_saved_tensor_hook()
 
     def get_fwd_hook(self):
         # def hook(module, input, output):
@@ -132,7 +142,8 @@ class SwitchHook(HookABC):
                 if self.train_mode == TrainMode.TASKSWITCH_L1:
                     def hook(module, input, output):
                         torch.cuda.synchronize()
-                        self._grad_fn.append(output.grad_fn)
+                        if torch_col.release_saved_tensor_v1():
+                            self._grad_fn.append(output.grad_fn)
                         if self._stub.cmd == torch_col.Event.kInterruptTrain:
                             raise SwitchL1Exception("[Task Switch SYNC FWD]")
                         elif self._stub.cmd == torch_col.Event.kResumeTrain:
@@ -142,7 +153,8 @@ class SwitchHook(HookABC):
             case HookMode.XSCHED_SYNC:
                 if self.train_mode == TrainMode.TASKSWITCH_L1:
                     def hook(module, input, output):
-                        self._grad_fn.append(output.grad_fn)
+                        if torch_col.release_saved_tensor_v1():
+                            self._grad_fn.append(output.grad_fn)
                         if self._stub.cmd == torch_col.Event.kInterruptTrain:
                             xsched.kill_batch()
                             raise ColocateAdjustL1Exception("[Task Switch XSCHED_SYNC FWD]")
@@ -198,9 +210,12 @@ class SwitchHook(HookABC):
     def switch_l1(self):
         # decouple kill batch and reclaim memory
         t0 = time.time()
-        for fn in self._grad_fn:
-            torch_col.release_grad_fn_saved_tensor(fn)
-        self._grad_fn = []
+        if torch_col.release_saved_tensor_v1():
+            for fn in self._grad_fn:
+                torch_col.release_grad_fn_saved_tensor(fn)
+            self._grad_fn = []
+        else:
+            torch_col.release_saved_tensor_memory()
         old_gpu_mem = MemoryPool.get_memory_usage()
         MemoryPool.empty_cache()
         cur_gpu_mem = MemoryPool.get_memory_usage()
@@ -218,6 +233,12 @@ class SwitchHook(HookABC):
     def report_batch_size(self, batch_size):
         self._stub.report_batch_size(batch_size)
     
+    def train_start(self):
+        self._stub.train_start()
+
+    def train_end(self):
+        return self._stub.train_end()
+
     def stop(self):
         self._stub.stop()
 
@@ -347,6 +368,12 @@ class ColocateHook(HookABC):
     @property
     def target_batch_size(self):
         return self._stub.target_batch_size
+    
+    def train_start(self):
+        self._stub.train_start()
+
+    def train_end(self):
+        self._stub.train_end()
 
     def stop(self):
         self._stub.stop()
@@ -373,6 +400,15 @@ class DummyHook(HookABC):
     @property
     def target_batch_size(self):
         return self.batch_size
+    
+    def train_start(self):
+        pass
+
+    def train_end(self):
+        pass
+    
+    def stop(self):
+        pass
 
 
 def get_hook(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size: int):
