@@ -40,7 +40,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
     total_tried_batch = 0
 
     model.train()
-    hook._stub.train_start()
+    hook.train_start()
     if torch_col.use_shared_tensor():
         torch_col.tag_model_end()
 
@@ -113,7 +113,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
             model.__class__.__name__,
             num_epoch * batch_size, total_tried_batch, total_killed_batch, total_finished_batch))
     
-    hook._stub.train_end()
+    hook.train_end()
     hook.stop()
 
 
