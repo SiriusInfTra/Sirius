@@ -90,6 +90,21 @@ void CommonHandler::SetupCallData() {
   new CommonData<EmptyRequest, ServerStatus>{0, "GetServerStatus", service_, cq_,
                                              register_get_server_status,
                                              exec_get_server_status};
+
+  auto register_warmup_done = [this](
+      CommonData<EmptyRequest, EmptyResult>* data) {
+    this->service_->RequestWarmupDone(
+        &data->ctx_, &data->request_, &data->responder_, 
+        data->cq_, data->cq_, (void*)data);
+  };
+  auto exec_warmpup_done = [this](
+      CommonData<EmptyRequest, EmptyResult>* data) {
+    Profiler::Get()->Clear();
+    data->responder_.Finish(data->response_, grpc::Status::OK, (void*)data);
+  };
+  new CommonData<EmptyRequest, EmptyResult>{0, "WarmupDone", service_, cq_,
+                                            register_warmup_done,
+                                            exec_warmpup_done};
 }
 
 void InferHandler::Start() {
