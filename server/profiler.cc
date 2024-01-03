@@ -52,6 +52,8 @@ std::ostream& operator<<(std::ostream &os, Profiler::PerfItem item) {
     LOG_ITEM(Profiler::PerfItem, InferLoadParam)
     LOG_ITEM(Profiler::PerfItem, InferPipelineExec)
 
+    LOG_ITEM(Profiler::PerfItem, InferNumModelOnSwitch)
+
     LOG_ITEM(Profiler::PerfItem, InferRealBatchSize)
     LOG_ITEM(Profiler::PerfItem, InferModelLoad)
   default:

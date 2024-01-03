@@ -51,6 +51,7 @@ class ModelInferStore {
     kExit = 0,
     kCancelExit = 1,
     kPrepareExit = 2, 
+    
     kNotAddWorker = 3,
     kAddWorker = 4,
   };

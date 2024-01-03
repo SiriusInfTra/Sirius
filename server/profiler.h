@@ -76,6 +76,8 @@ class Profiler {
     InferLoadParam,
     InferPipelineExec,
 
+    InferNumModelOnSwitch,
+
     InferRealBatchSize,
 
     InferModelLoad,
@@ -90,6 +92,21 @@ class Profiler {
   void RecordEvent(EventItem item, time_point_t tp);
   void RecordPerf(PerfItem item, double value);
   void RecordPerf(PerfItem item, time_point_t start, time_point_t end);
+
+  void Clear() {
+    {
+      std::unique_lock lock{infer_info_mut_};
+      infer_info_.clear();
+    }
+    {
+      std::unique_lock lock{event_info_mut_};
+      event_info_.clear();
+    }
+    {
+      std::unique_lock lock{perf_info_mut_};
+      perf_info_.clear();
+    }
+  }
   
   friend std::ostream& operator<<(std::ostream &os, EventItem item);
   friend std::ostream& operator<<(std::ostream &os, PerfItem item);

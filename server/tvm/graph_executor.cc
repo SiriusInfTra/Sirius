@@ -108,14 +108,14 @@ GraphExecutor::GraphExecutor(GraphExecutorFactory &factory, size_t worker_id)
 
 void GraphExecutor::Init() {
   if (!initialized_) {   
-    if (!Config::ondemand_adjust) {
+    if (Config::IsColocateMode() && Config::ondemand_adjust) {
+      PROFILE_START(InferAdjustAlloc, 0);
+      if (!Config::colocate_config.skip_malloc) AllocStorageMaybeAdjust();
+      PROFILE_END(InferAdjustAlloc, 0);
+    } else {
       PROFILE_START(InferAllocStorage, 0);
       if (!Config::colocate_config.skip_malloc) AllocStorage();
       PROFILE_END(InferAllocStorage, 0);
-    } else {
-      PROFILE_START(InferAdjustAlloc, 0);
-      AllocStorageMaybeAdjust();
-      PROFILE_END(InferAdjustAlloc, 0);
     }
     
     if (!Config::colocate_config.skip_malloc)

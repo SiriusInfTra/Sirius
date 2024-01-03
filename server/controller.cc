@@ -228,6 +228,15 @@ void Controller::LogInferStatus() {
             << " num_resp: " << infer_status_.num_responses;
 }
 
+std::string Controller::GetInferStatusStr() {
+  std::stringstream ss;
+  std::unique_lock lock{infer_status_.mutex};
+  ss << "InferStatus: " << infer_status_.status
+     << " num_req: " << infer_status_.num_requests
+     << " num_resp: " << infer_status_.num_responses;
+  return ss.str();
+}
+
 void Controller::TrainStart() {
   // LOG(INFO) << "Controller Put TrainStart";
   train_status_event_mq_->Put({0, static_cast<int>(Event::kTrainStart)});

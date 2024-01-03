@@ -148,12 +148,13 @@ void ModelInferStore::Init(const std::filesystem::path &infer_store_path) {
           // let all infer enter task switch prepare exit stage
           pthread_barrier_wait(&model_infer_store_->task_switch_barrier);
           auto wait_task_exit_cnt = Profiler::Get()->MilliFrom(t0);
-          LOG(INFO) << "[ModelInferStore]: wait for inference threads " << wait_task_exit_cnt << " ms";
+          LOG(INFO) << "[ModelInferStore] [Task Switch]: wait for inference threads " << wait_task_exit_cnt << " ms";
           if (Controller::Get()->IsInferIdle()) {
             model_infer_store_->task_switch_control_cnter_ = static_cast<int>(ModelInferStore::TaskSwitchStatus::kExit);
+            Profiler::Get()->RecordPerf(Profiler::PerfItem::InferNumModelOnSwitch, model_infer_store_->task_switch_enter_cnt_);
             // all infer know result
             pthread_barrier_wait(&model_infer_store_->task_switch_barrier);
-            LOG(INFO) << "[ModelInferStore]: task switch to train";
+            LOG(INFO) << "[ModelInferStore] [Task Switch]: task switch to train | " << Controller::Get()->GetInferStatusStr();
             // all infer do task switch
             pthread_barrier_wait(&model_infer_store_->task_switch_barrier);
             Controller::Get()->ResumeTrain();
@@ -163,7 +164,7 @@ void ModelInferStore::Init(const std::filesystem::path &infer_store_path) {
             pthread_barrier_wait(&model_infer_store_->task_switch_barrier);
             // all infer cancel task switch
             pthread_barrier_wait(&model_infer_store_->task_switch_barrier); 
-            LOG(INFO) << "[ModelInferStore]: task switch cancel exit";
+            LOG(INFO) << "[ModelInferStore] [Task Switch]: task switch cancel exit | " << Controller::Get()->GetInferStatusStr();
           }
           model_infer_store_->task_switch_control_cnter_ = static_cast<int>(ModelInferStore::TaskSwitchStatus::kNotAddWorker);
           model_infer_store_->task_switch_cv.notify_all();
@@ -355,7 +356,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     }
 
     // TODO dynamic batching
-    auto jobs = job_queue_.GetBatch(batch_size_, 10, 5);
+    auto jobs = job_queue_.GetBatch(batch_size_, 10, 10);
     if (jobs.empty())
       continue;
     last_get_batch_time = std::chrono::steady_clock::now();

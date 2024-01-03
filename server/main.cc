@@ -127,6 +127,8 @@ void init_config() {
     if (cfg::group_param_load && !cfg::better_alloc) {
       LOG(FATAL) << "group param load must be used with better alloc";
     }
+  } else {
+    cfg::group_param_load = false;
   }
 }
 
