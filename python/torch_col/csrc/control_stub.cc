@@ -63,14 +63,17 @@ void SwitchStub::TrainEnd() {
   status_event_mq_->Put({0, static_cast<int>(Event::kTrainEnd)});
 }
 
-void SwitchStub::TryInterruptTrainDone() {
+bool SwitchStub::TryInterruptTrainDone() {
   std::unique_lock locker{mutex_};
+  // LOG(INFO) << "TryInterruptTrainDone " << cmd_id_ << " " << last_reply_cmd_id_; 
   if (cmd_id_ > last_reply_cmd_id_) {
     last_reply_cmd_id_ = cmd_id_;
     status_event_mq_->Put({cmd_id_, static_cast<int>(Event::kInterruptTrainDone)});
     cmd_id_ = 0;
     LOG(INFO) << "[SwitchStub] Interrupt train done";
+    return true;
   }
+  return false;
 }
 
 int SwitchStub::Cmd() {

@@ -2,12 +2,14 @@ from runner import *
 
 set_global_seed(42)
 
-run_colsys = True
-run_um_mps = False
-run_task_switch = False
-run_infer_only = False
+use_time_stamp = True
 
-def sawtooth(rps, infer_only=False):
+run_colsys = True
+run_um_mps = True
+run_task_switch = True
+run_infer_only = True
+
+def sawtooth(rps, infer_only=True):
     workload = HyperWorkload(concurrency=2048, duration=140, delay_before_infer=30,
                             warmup=5, delay_after_warmup=5)
     InferModel.reset_model_cnt()
@@ -21,11 +23,11 @@ def sawtooth(rps, infer_only=False):
 
 def run(system: System, workload: Workload, num_worker: int, tag: str):
     infer_model_config = System.InferModelConfig("resnet152[32]", "resnet152-b1", 1, num_worker)
-    system.launch("overall-sawtooth", tag, time_stamp=False,
+    system.launch("overall-sawtooth", tag, time_stamp=use_time_stamp,
                   infer_model_config=infer_model_config)
     workload.launch_workload(system)
     system.stop()
-    time.sleep(1)
+    time.sleep(5)
 
 
 if run_colsys:
@@ -36,7 +38,7 @@ if run_colsys:
                         cuda_memory_pool_gb="14", ondemand_adjust=True, train_memory_over_predict_mb=2000,
                         train_mps_thread_percent=40)
         run(system, workload, 0, "colsys-heavy")
-    # colsys light
+    # # colsys light
     with mps_thread_percent(30):
         workload = sawtooth(rps=10, infer_only=False)
         system = System(mode=System.ServerMode.ColocateL1, use_sta=True, mps=True, use_xsched=True, 
@@ -63,23 +65,27 @@ if run_um_mps:
 if run_task_switch:
     # task switch heavy
     workload = sawtooth(rps=100, infer_only=False)
-    system = System(mode=System.ServerMode.TaskSwitchL1, use_sta=False, mps=False, use_xsched=False)
+    system = System(mode=System.ServerMode.TaskSwitchL1, use_sta=True, mps=False, use_xsched=False,
+                    cuda_memory_pool_gb="13", train_memory_over_predict_mb=2000)
     run(system, workload, 0, "task-switch-heavy")
     # task switch light
     workload = sawtooth(rps=10, infer_only=False)
-    system = System(mode=System.ServerMode.TaskSwitchL1, use_sta=False, mps=False, use_xsched=False)
+    system = System(mode=System.ServerMode.TaskSwitchL1, use_sta=True, mps=False, use_xsched=False,
+                    cuda_memory_pool_gb="13", train_memory_over_predict_mb=2000)
     run(system, workload, 0, "task-switch-light")
 
 
 if run_infer_only:
     # infer only heavy
-    workload = sawtooth(rps=100, infer_only=True)
-    system = System(mode=System.ServerMode.Normal, use_sta=False, mps=False, use_xsched=False)
-    run(system, workload, 1, "infer-only-heavy")
-    # infer only light
-    workload = sawtooth(rps=10, infer_only=True)
-    system = System(mode=System.ServerMode.Normal, use_sta=False, mps=False, use_xsched=False)
-    run(system, workload, 1, "infer-only-light")
+    with mps_thread_percent(60):
+        workload = sawtooth(rps=100, infer_only=True)
+        system = System(mode=System.ServerMode.Normal, use_sta=False, mps=False, use_xsched=False)
+        run(system, workload, 1, "infer-only-heavy")
+    with mps_thread_percent(30):
+        # infer only light
+        workload = sawtooth(rps=10, infer_only=True)
+        system = System(mode=System.ServerMode.Normal, use_sta=False, mps=False, use_xsched=False)
+        run(system, workload, 1, "infer-only-light")
 
 
 

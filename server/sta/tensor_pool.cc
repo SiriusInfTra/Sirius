@@ -208,8 +208,8 @@ void TensorPool::ReleaseTrainIntermediateTensorMemory() {
     }
   }
   auto t1 = std::chrono::steady_clock::now();
-  LOG(INFO) << "ReleaseTrainIntermediateTensorMemory: " 
-            << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << " ms";
+  // LOG(INFO) << "ReleaseTrainIntermediateTensorMemory: " 
+  //           << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << " ms";
 }
 
 void TensorPool::RearrangeTrainMemory() {

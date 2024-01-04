@@ -26,6 +26,9 @@ bool Config::ondemand_adjust = true;
 bool Config::better_alloc = true;
 size_t Config::better_alloc_threshold = 128 * 1024 * 1024;
 
+bool Config::group_param_load = true;
+size_t Config::group_param_load_threshold = 16 * 1024 * 1024;
+
 double Config::cuda_memory_pool_gb = 12;
 
 std::string Config::mempool_freelist_policy= "best-fit";
@@ -47,6 +50,8 @@ size_t Config::max_cache_nbytes = 0 * 1024 * 1024 * 1024;
 double Config::memory_pressure_mb = 0;
 
 bool Config::pipeline_load = true;
+
+double Config::task_switch_delay_ms = 5;
 
 bool Config::system_initialized = false;
 

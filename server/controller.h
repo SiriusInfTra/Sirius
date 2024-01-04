@@ -34,6 +34,7 @@ class Controller {
   void InferResponseInc(size_t inc=1);
   bool IsInferIdle();
   void LogInferStatus();
+  std::string GetInferStatusStr();
 
   void TrainStart();
   void TrainEnd();

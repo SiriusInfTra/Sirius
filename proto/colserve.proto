@@ -3,6 +3,8 @@ syntax = "proto3";
 service ColServe {
     rpc GetServerStatus(EmptyRequest) returns (ServerStatus) {}
 
+    rpc WarmupDone(EmptyRequest) returns (EmptyResult) {}
+
     rpc Shutdown(EmptyRequest) returns (EmptyRequest) {}
 
     rpc Inference(InferRequest) returns (InferResult) {}
@@ -11,6 +13,8 @@ service ColServe {
 }
 
 message EmptyRequest {}
+
+message EmptyResult {}
 
 message ServerStatus {
     string status = 1;

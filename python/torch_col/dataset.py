@@ -69,6 +69,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
                 elif self.hook.train_mode == TrainMode.TASKSWITCH_L1:
                     assert self.hook is not None
                     while self.hook._stub.cmd == torch_col.Event.kInterruptTrain:
+                        self.hook.switch()
                         time.sleep(1e-3)
                 # self.iter_idx += batch_size
                 if self.hook.train_mode == TrainMode.NORMAL or self.hook.train_mode == TrainMode.COLOCATE_L2:

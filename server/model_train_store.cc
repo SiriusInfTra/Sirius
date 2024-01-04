@@ -105,10 +105,10 @@ bool ModelTrainStore::Train() {
   }
   if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
     args_str.push_back("--train-mode");
-    args_str.push_back("task-switch-l1");
+    args_str.push_back("taskswitch-l1");
   } else if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
     args_str.push_back("--train-mode");
-    args_str.push_back("task-switch-l3");
+    args_str.push_back("taskswitch-l3");
   } else if (Config::serve_mode == ServeMode::kColocateL1) {
     args_str.push_back("--train-mode");
     args_str.push_back("colocate-l1");
@@ -221,6 +221,8 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
       LOG(INFO) << "[ModelTrainStore]: set CUDA_MPS_ACTIVE_THREAD_PERCENTAGE to " << Config::train_mps_thread_percent;
     }
 
+    LOG(INFO) << "[ModelTrainStore]: " << "Train " << job << " ( "
+              << extra_env_ss.str() << " " << ss.str() << ")";
     auto err = execvp("python", argv);
     // auto err = execvp("nsys", argv);
     perror("execvp");
@@ -231,9 +233,7 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
       close(from_child_pipe[1]);
     }
     // train_running_ = true;
-    // Controller::Get()->TrainStart();
-    LOG(INFO) << "ModelTrainStore: " << "Train " << job << " ( "
-              << extra_env_ss.str() << " " << ss.str() << "), pid " << pid;
+    LOG(INFO) << "[ModelTrainStore]: " << "Train " << job << " pid " << pid;
   }
 
   if (Config::capture_train_log) {
@@ -260,7 +260,8 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
       LOG(INFO) << "[ModelTrainStore]: " << job << " is killed, restart";
       return false;
     } else {
-      LOG(FATAL) << "[ModelTrainStore]: " << job << " failed, signal is " << strsignal(signal);
+      LOG(FATAL) << "[ModelTrainStore]: " << job << " failed, signal is " << strsignal(signal)
+                 << " cur_batch_size " << cur_batch_size_ << " predict memory " << PredictMemUsageMB() << "MB";
       return false;
     }
   } else {

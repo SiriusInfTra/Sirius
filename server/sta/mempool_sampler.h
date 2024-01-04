@@ -35,7 +35,7 @@ public:
       stream << entry->addr_offset << "," 
         << entry->nbytes << ","
         << static_cast<int>(entry->mtype) << ","
-        << (prev ? next->addr_offset : -1) << "," 
+        << (next ? next->addr_offset : -1) << "," 
         << (prev ? prev->addr_offset : -1) << ","
         << static_cast<unsigned>(entry->mtype) << std::endl;
     }

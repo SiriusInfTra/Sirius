@@ -36,6 +36,7 @@ class CUDAMemPool {
   static size_t FreeMemUsage();
   static size_t PoolNbytes();
   static void FreeTrainLocals();
+  static void DumpDumpBlockList();
 
   static double TrainAllocMs() { return 1.0 * cuda_mem_pool_->train_alloc_us_.load(std::memory_order_relaxed) / 1000; }
   static void ResetTrainAllocMs() { cuda_mem_pool_->train_alloc_us_.store(0, std::memory_order_relaxed); }

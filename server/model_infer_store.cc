@@ -147,13 +147,19 @@ void ModelInferStore::Init(const std::filesystem::path &infer_store_path) {
 
           // let all infer enter task switch prepare exit stage
           pthread_barrier_wait(&model_infer_store_->task_switch_barrier);
-          auto wait_task_exit_cnt = Profiler::Get()->MilliFrom(t0);
-          LOG(INFO) << "[ModelInferStore]: wait for inference threads " << wait_task_exit_cnt << " ms";
+          auto wait_task_exit_ms = Profiler::Get()->MilliFrom(t0);
+          LOG(INFO) << "[ModelInferStore] [Task Switch]: wait for inference threads " << wait_task_exit_ms << " ms "
+                    << " wait up to " << Config::task_switch_delay_ms << " ms";
+          if (wait_task_exit_ms < Config::task_switch_delay_ms) {
+            auto delay_us = static_cast<int>((Config::task_switch_delay_ms - wait_task_exit_ms) * 1000);
+            std::this_thread::sleep_for(std::chrono::microseconds(delay_us));
+          }
           if (Controller::Get()->IsInferIdle()) {
             model_infer_store_->task_switch_control_cnter_ = static_cast<int>(ModelInferStore::TaskSwitchStatus::kExit);
+            Profiler::Get()->RecordPerf(Profiler::PerfItem::InferNumModelOnSwitch, model_infer_store_->task_switch_enter_cnt_);
             // all infer know result
             pthread_barrier_wait(&model_infer_store_->task_switch_barrier);
-            LOG(INFO) << "[ModelInferStore]: task switch to train";
+            LOG(INFO) << "[ModelInferStore] [Task Switch]: task switch to train | " << Controller::Get()->GetInferStatusStr();
             // all infer do task switch
             pthread_barrier_wait(&model_infer_store_->task_switch_barrier);
             Controller::Get()->ResumeTrain();
@@ -163,7 +169,7 @@ void ModelInferStore::Init(const std::filesystem::path &infer_store_path) {
             pthread_barrier_wait(&model_infer_store_->task_switch_barrier);
             // all infer cancel task switch
             pthread_barrier_wait(&model_infer_store_->task_switch_barrier); 
-            LOG(INFO) << "[ModelInferStore]: task switch cancel exit";
+            LOG(INFO) << "[ModelInferStore] [Task Switch]: task switch cancel exit | " << Controller::Get()->GetInferStatusStr();
           }
           model_infer_store_->task_switch_control_cnter_ = static_cast<int>(ModelInferStore::TaskSwitchStatus::kNotAddWorker);
           model_infer_store_->task_switch_cv.notify_all();
@@ -355,7 +361,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     }
 
     // TODO dynamic batching
-    auto jobs = job_queue_.GetBatch(batch_size_, 10, 5);
+    auto jobs = job_queue_.GetBatch(batch_size_, 10, 10);
     if (jobs.empty())
       continue;
     last_get_batch_time = std::chrono::steady_clock::now();
@@ -411,7 +417,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     ss << std::fixed << std::setprecision(2)
        << "[Model Inference]: " << name_ << " (rank " << rank << ") "
        << "set_input_ms=" << set_input_ms << " "
-       << "infer_ms=" << infer_ms << " "
+       << (Config::pipeline_load && first_exec ? "pipeline_exec infer_ms= " : "infer_ms=") << infer_ms << " "
        << "get_output_ms=" << get_output_ms;
     // if (wait_train_stop_ms != -1) {
     //   ss << " wait_train_stop_ms=" << wait_train_stop_ms;
@@ -421,13 +427,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
 
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferSetInput, set_input_ms);
     if (Config::pipeline_load && first_exec) {
-      double infer_exec_ms = graph_executor->ComputePipelineExecTime();
-      double wait_load_ms = infer_ms - infer_exec_ms;
-      LOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") pipeline run "
-                << "infer_exec_ms=" << infer_exec_ms << " "
-                << "wait_load_ms=" << wait_load_ms;
-      Profiler::Get()->RecordPerf(Profiler::PerfItem::InferExec, infer_exec_ms);
-      Profiler::Get()->RecordPerf(Profiler::PerfItem::InferWaitPipelineLoadParam, wait_load_ms);
+      Profiler::Get()->RecordPerf(Profiler::PerfItem::InferPipelineExec, infer_ms);
     } else {
       Profiler::Get()->RecordPerf(Profiler::PerfItem::InferExec, infer_ms);
     }
