@@ -65,11 +65,13 @@ if run_um_mps:
 if run_task_switch:
     # task switch heavy
     workload = sawtooth(rps=100, infer_only=False)
-    system = System(mode=System.ServerMode.TaskSwitchL1, use_sta=True, mps=False, use_xsched=False)
+    system = System(mode=System.ServerMode.TaskSwitchL1, use_sta=True, mps=False, use_xsched=False,
+                    cuda_memory_pool_gb="13", train_memory_over_predict_mb=2000)
     run(system, workload, 0, "task-switch-heavy")
     # task switch light
     workload = sawtooth(rps=10, infer_only=False)
-    system = System(mode=System.ServerMode.TaskSwitchL1, use_sta=True, mps=False, use_xsched=False)
+    system = System(mode=System.ServerMode.TaskSwitchL1, use_sta=True, mps=False, use_xsched=False,
+                    cuda_memory_pool_gb="13", train_memory_over_predict_mb=2000)
     run(system, workload, 0, "task-switch-light")
 
 
