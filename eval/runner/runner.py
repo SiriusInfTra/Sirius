@@ -239,7 +239,18 @@ class System:
         ]))
         with open(f'{self.log_dir}/cmd-trace', 'w') as f:
             f.write("\n\n".join(self.cmd_trace))
+        self.exit_log_dir = self.log_dir                                                                                                                               
         self.log_dir = None
+    
+    def draw_memory_usage(self):
+        cmd = f'python util/profile/memory_trace.py  -l {self.exit_log_dir}/trace-cfg  -o {self.exit_log_dir}'
+        print(f'execute {cmd}')
+        os.system(cmd)
+    
+    def draw_trace_cfg(self):
+        cmd = f'python util/profile/trace_cfg.py  -t {self.exit_log_dir}/trace-cfg  -o {self.exit_log_dir}'
+        print(f'execute {cmd}')
+        os.system(cmd)
 
     def quit_mps(self):
         quit_mps = subprocess.run([

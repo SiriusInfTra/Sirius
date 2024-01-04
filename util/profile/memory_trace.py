@@ -90,5 +90,5 @@ ax.set_xlim(0,
 
 ax.set_xlabel("Time (ms)", fontsize=14)
 ax.set_ylabel("GPU Memory (MB)",fontsize=14)
-
+plt.legend()
 plt.savefig(f'{outdir}/memory-trace.svg')

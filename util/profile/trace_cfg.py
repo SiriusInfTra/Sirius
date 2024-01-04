@@ -1,5 +1,12 @@
 import matplotlib.pyplot as plt
 import argparse
+import os
+import math
+from typing import NamedTuple
+
+class TraceRecord(NamedTuple):
+    timepoint: float
+    model_id: str
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-t', '--trace', type=str, required=True)
@@ -9,7 +16,7 @@ args = parser.parse_args()
 trace = args.trace
 outdir = args.outdir
 
-trace_list = []
+trace_list = [] # (start_point, model_id)
 with open(trace, 'r') as f:
     lines = f.readlines()
     start = False
@@ -21,13 +28,30 @@ with open(trace, 'r') as f:
                 start = True
         else:
             start_point, model_id = l.strip().split(',')
-            trace_list.append((float(start_point), model_id))
+            trace_list.append(TraceRecord(float(start_point), model_id))
 
-start_points = [x[0] for x in trace_list]
+max_time = int(math.ceil(max(
+    map(lambda trace_record: trace_record.timepoint, trace_list
+))))
+num_models = [0 for _ in range(max_time)]
+num_types_s = [set() for _ in range(max_time)]
+for timepoint, model_id in trace_list:
+    num_models[int(timepoint)] += 1
+    num_types_s[int(timepoint)].add(model_id)
+num_types = [len(s) for s in num_types_s]
+timepoints = list(range(max_time))
 
 # print(start_points)
 
-fig,ax = plt.subplots()
-ax.hist(start_points, bins=range(0, int(max(start_points)+0.5), 1))
+ax = plt.subplot(211)
+ax.bar(timepoints, num_models, color='C0', label='rps')
+# ax.set_xlabel('time(s)')
+ax.set_ylabel('rps')
 
-plt.savefig(outdir + '/trace.svg')
+ax = plt.subplot(212)
+ax.bar(timepoints, num_types, color='C1', label='num model')
+ax.set_xlabel('time(s)')
+ax.set_ylabel('num_model')
+# plt.legend()
+
+plt.savefig(os.path.join(outdir, 'trace.svg'))
