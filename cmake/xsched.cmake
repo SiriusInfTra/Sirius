@@ -25,6 +25,7 @@ add_custom_target(xsched_lib ALL
     ${CMAKE_BINARY_DIR}/third_party/xsched/scheduler/libscheduler.so
     ${CMAKE_BINARY_DIR}/third_party/xsched/xpreempt/libxpreempt.so
 )
+add_dependencies(xsched_lib middleware scheduler xpreempt PySched)
 
 # add_custom_command(
 #     OUTPUT ${CMAKE_BINARY_DIR}/__xsched_install
