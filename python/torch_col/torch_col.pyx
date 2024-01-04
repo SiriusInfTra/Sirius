@@ -133,7 +133,7 @@ cdef class PySwitchStub:
         self._stub.Stop()
 
     def try_interrupt_train_done(self):
-        self._stub.TryInterruptTrainDone()
+        return self._stub.TryInterruptTrainDone()
 
     def report_batch_size(self, batch_size):
         self._stub.ReportBatchSize(batch_size)

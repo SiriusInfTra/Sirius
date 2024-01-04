@@ -113,6 +113,10 @@ void init_config() {
       colserve::Config::use_shared_tensor_train && colserve::Config::use_shared_tensor;
 
   if (!cfg::IsColocateMode()) {
+    cfg::ondemand_adjust = false;
+  }
+
+  if (!cfg::IsColocateMode()) {
     if (cfg::colocate_config.skip_malloc || cfg::colocate_config.skip_loading) {
       LOG(WARNING) << "ignore colocate skip malloc and loading in non-colocating mode";
     }
@@ -130,6 +134,18 @@ void init_config() {
   } else {
     cfg::group_param_load = false;
   }
+
+  std::cerr << "cfg::serve_mode=" << static_cast<int>(cfg::serve_mode) << std::endl
+            << "cfg::use_shared_tensor=" << cfg::use_shared_tensor << std::endl
+            << "cfg::use_shared_tensor_infer=" << cfg::use_shared_tensor_infer << std::endl
+            << "cfg::use_shared_tensor_train=" << cfg::use_shared_tensor_train << std::endl
+            << "cfg::ondemand_adjust=" << cfg::ondemand_adjust << std::endl
+            << "cfg::better_alloc=" << cfg::better_alloc << std::endl
+            << "cfg::group_param_load=" << cfg::group_param_load << std::endl
+            << "cfg::pipeline_load=" << cfg::pipeline_load << std::endl 
+            << "cfg::colocate_config.skip_malloc=" << cfg::colocate_config.skip_malloc << std::endl
+            << "cfg::colocate_config.skip_loading=" << cfg::colocate_config.skip_loading << std::endl;
+
 }
 
 void Shutdown(int sig) {

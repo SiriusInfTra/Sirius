@@ -51,6 +51,8 @@ double Config::memory_pressure_mb = 0;
 
 bool Config::pipeline_load = true;
 
+double Config::task_switch_delay_ms = 5;
+
 bool Config::system_initialized = false;
 
 }

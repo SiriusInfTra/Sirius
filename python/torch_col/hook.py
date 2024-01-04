@@ -219,12 +219,13 @@ class SwitchHook(HookABC):
         old_gpu_mem = MemoryPool.get_memory_usage()
         MemoryPool.empty_cache()
         cur_gpu_mem = MemoryPool.get_memory_usage()
-        self.try_reply_interrupt()
+        succ = self.try_reply_interrupt()
         t1 = time.time()
-        print(f'[Switch L1 {(t1-t0)*1e3:.1f}] target batch_size: {self.target_batch_size}, memory usage: {old_gpu_mem:.2f}GB -> {cur_gpu_mem:.2f}GB.', flush=True)
+        if succ:
+            print(f'[Switch L1 {(t1-t0)*1e3:.1f} ms] target batch_size: {self.target_batch_size}, memory usage: {old_gpu_mem:.2f}GB -> {cur_gpu_mem:.2f}GB.', flush=True)
 
     def try_reply_interrupt(self):
-        self._stub.try_interrupt_train_done()
+        return self._stub.try_interrupt_train_done()
 
     @property
     def target_batch_size(self):

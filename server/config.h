@@ -82,6 +82,8 @@ class Config {
 
   static size_t max_cache_nbytes;
 
+  static double task_switch_delay_ms;
+
 
   // to avoid memory fragment cause OOM
   static double train_memory_over_predict_mb;

@@ -45,7 +45,7 @@ class SwitchStub {
   void Cmd(int cmd);
   void TrainStart();
   void TrainEnd();
-  void TryInterruptTrainDone();
+  bool TryInterruptTrainDone();
   void ReportBatchSize(int batch_size);
   void StepsNoInteruptBegin();
   void StepsNoInteruptEnd();
@@ -53,8 +53,8 @@ class SwitchStub {
  private:
   bool running_{true};
   int cmd_{-1};
-  uint64_t cmd_id_;
-  uint64_t last_reply_cmd_id_;
+  uint64_t cmd_id_{0};
+  uint64_t last_reply_cmd_id_{0};
   bool exec_step_{false};
   std::unique_ptr<MemoryQueue<CtrlMsgEntry>> cmd_event_mq_, status_event_mq_;
   // std::mutex cmd_mutex_; TODO: avoid concurrent cmd access
@@ -80,7 +80,7 @@ class ColocateStub {
  private:
   bool running_{true};
   int cmd_{-1};
-  uint64_t cmd_id_;
+  uint64_t cmd_id_{0};
   int target_bs_, current_bs_;
   std::mutex mutex_;
   std::mutex step_mutex_;

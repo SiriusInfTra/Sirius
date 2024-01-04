@@ -147,8 +147,13 @@ void ModelInferStore::Init(const std::filesystem::path &infer_store_path) {
 
           // let all infer enter task switch prepare exit stage
           pthread_barrier_wait(&model_infer_store_->task_switch_barrier);
-          auto wait_task_exit_cnt = Profiler::Get()->MilliFrom(t0);
-          LOG(INFO) << "[ModelInferStore] [Task Switch]: wait for inference threads " << wait_task_exit_cnt << " ms";
+          auto wait_task_exit_ms = Profiler::Get()->MilliFrom(t0);
+          LOG(INFO) << "[ModelInferStore] [Task Switch]: wait for inference threads " << wait_task_exit_ms << " ms "
+                    << " wait up to " << Config::task_switch_delay_ms << " ms";
+          if (wait_task_exit_ms < Config::task_switch_delay_ms) {
+            auto delay_us = static_cast<int>((Config::task_switch_delay_ms - wait_task_exit_ms) * 1000);
+            std::this_thread::sleep_for(std::chrono::microseconds(delay_us));
+          }
           if (Controller::Get()->IsInferIdle()) {
             model_infer_store_->task_switch_control_cnter_ = static_cast<int>(ModelInferStore::TaskSwitchStatus::kExit);
             Profiler::Get()->RecordPerf(Profiler::PerfItem::InferNumModelOnSwitch, model_infer_store_->task_switch_enter_cnt_);

@@ -233,9 +233,6 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
       close(from_child_pipe[1]);
     }
     // train_running_ = true;
-    // Controller::Get()->TrainStart();
-    // LOG(INFO) << "[ModelTrainStore]: " << "Train " << job << " ( "
-    //           << extra_env_ss.str() << " " << ss.str() << "), pid " << pid;
     LOG(INFO) << "[ModelTrainStore]: " << "Train " << job << " pid " << pid;
   }
 

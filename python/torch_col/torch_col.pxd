@@ -52,7 +52,7 @@ cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
         void Stop()
         void TrainStart()
         void TrainEnd()
-        void TryInterruptTrainDone()
+        bint TryInterruptTrainDone()
         void ReportBatchSize(int)
         void StepsNoInteruptBegin()
         void StepsNoInteruptEnd()
