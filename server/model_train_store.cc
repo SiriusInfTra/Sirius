@@ -60,7 +60,7 @@ bool ModelTrainStore::AddJob(network::TrainHandler::TrainData* data) {
 }
 
 double ModelTrainStore::PredictMemUsageMB() {
-  if (train_pid_ == -1 || cur_batch_size_ <= 0) {
+  if (cur_batch_size_ <= 0) {
     return 0;
   } else {
     if (cur_model_name_ == "resnet152") {
@@ -250,7 +250,7 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
   int status;
   waitpid(pid, &status, 0);
   train_pid_ = -1;
-  cur_batch_size_ = -1;
+  // cur_batch_size_ = -1;
   Controller::Get()->TrainEnd(); // double check train end
   
   // LOG(INFO) << "signaled " << WIFSIGNALED(status) << " " << WTERMSIG(status);
