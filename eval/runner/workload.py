@@ -10,6 +10,12 @@ from numpy.random import RandomState, MT19937, SeedSequence
 from .config import get_global_seed
 
 class InferModel:
+    ResNet152 = "resnet152"
+    ResNet50 = "resnet50"
+    DenseNet161 = "densenet161"
+    InceptionV3 = "inception_v3"
+    DistilBertBase = "distilbert_base"
+
     model_cnt = 0
 
     def __init__(self, model_name: str) -> None:
@@ -230,7 +236,22 @@ class DynamicPoissonInferWorkload(RandomInferWorkload):
             trace_record.extend(PoissonInferWorkload.poisson_func_freq(
                 poisson_params, infer_model, self.rs))
         return trace_record
-
+    
+    @classmethod
+    def get_dynamic_poisson_params(cls, simple_poisson_params: dict[InferModel, list[tuple]]) -> list[tuple[InferModel, list[PoissonParam]]]:
+        poisson_params = []
+        for infer_model, req_dist in simple_poisson_params.items():
+            if isinstance(infer_model, str):
+                infer_model = InferModel(infer_model)
+            if not isinstance(req_dist, list):
+                req_dist = [req_dist]
+            cur_poisson_param = []
+            for start_point, num_req in req_dist:
+                if len(cur_poisson_param) == 0 and start_point != 0:
+                    cur_poisson_param.append(PoissonParam(0, 0))
+                cur_poisson_param.append(PoissonParam(start_point, num_req))
+            poisson_params.append((infer_model, cur_poisson_param))
+        return poisson_params
 
 class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
     def __init__(self, 

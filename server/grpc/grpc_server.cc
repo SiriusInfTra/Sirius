@@ -141,6 +141,8 @@ DLDataType InferHandler::InferData::GetInputDType(size_t i) {
     return DLDataType{kDLFloat, 32, 1};
   } else if (request_.inputs(i).dtype() == "int8") {
     return DLDataType{kDLInt, 8, 1};
+  } else if (request_.inputs(i).dtype() == "int64") {
+    return DLDataType{kDLInt, 64, 1};
   } else {
     LOG(FATAL) << "InferData: " << "Unknown input dtype " << request_.inputs(i).dtype();
   }

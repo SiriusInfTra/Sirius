@@ -21,9 +21,9 @@ namespace colserve {
 
 namespace {
 std::vector<std::string> ParseModelName(const std::string &model) {
-  std::regex r{"([a-zA-Z0-9]+)(\\[([0-9]+)\\])?"};
+  std::regex r{"([a-zA-Z0-9_]+)(\\[([0-9]+)\\])?"};
   std::smatch match;
-  CHECK(std::regex_match(model, match, r));
+  CHECK(std::regex_match(model, match, r)) << "model name " << model << " not match";
   CHECK_EQ(match.size(), 4);
   if (match[3].str().empty()) {
     return {match[1].str()};

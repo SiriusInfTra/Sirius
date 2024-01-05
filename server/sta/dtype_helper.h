@@ -9,7 +9,7 @@ namespace colserve {
 namespace sta {
 
 inline size_t GetDataTypeNbytes(const DLDataType &dtype) {
-  return dtype.bits >> 3;
+  return ((dtype.bits + 7) >> 3);
 }
 
 std::ostream & operator<<(std::ostream &os, const DLDataType &dtype);

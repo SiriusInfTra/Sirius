@@ -95,7 +95,8 @@ void TensorContainer::SetTensor(TensorContainer::memory_data_t mdata,
     .shape = shape_.data(),
     .strides = stride_.data(),
     .byte_offset = storage_offset.has_value() ? 
-                   storage_offset.value() * (dtype.bits >> 3) : old_byte_offset
+                   storage_offset.value() * GetDataTypeNbytes(dtype) : old_byte_offset
+                  //  storage_offset.value() * (dtype.bits >> 3) : old_byte_offset
   };
 }
 

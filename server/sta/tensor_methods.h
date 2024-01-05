@@ -10,6 +10,7 @@
 
 #include "tensor_pool.h"
 #include "dlpack.h"
+#include "dtype_helper.h"
 
 
 namespace colserve {

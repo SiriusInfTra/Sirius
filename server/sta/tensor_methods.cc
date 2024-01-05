@@ -74,8 +74,10 @@ uint64_t EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride,
 
 uint64_t ViewDtype(uint64_t handle, DLDataType dtype) {
   auto tensor = TensorPool::Get()->CTensor(handle);
-  int64_t self_elem_size = tensor->dtype.bits >> 3;
-  int64_t new_elem_size = dtype.bits >> 3;
+  // int64_t self_elem_size = tensor->dtype.bits >> 3;
+  // int64_t new_elem_size = dtype.bits >> 3;
+  int64_t self_elem_size = GetDataTypeNbytes(tensor->dtype);
+  int64_t new_elem_size = GetDataTypeNbytes(dtype);
   CHECK(!tensor.IsNull());
   if (self_elem_size == new_elem_size) {
     return TensorPool::Get()->Insert(STensor(tensor.MData(), tensor.ShapeVec(), tensor.StrideVec(), dtype, tensor.StorageOffset()));
@@ -126,7 +128,8 @@ uint64_t ViewShapeDtype(uint64_t handle, at::IntArrayRef size, DLDataType dtype)
 
 STensor RawViewShapeDtype(const STensor tensor, at::IntArrayRef size, DLDataType dtype) {
   auto new_stride = ComputeStrides(size);
-  int64_t new_elem_size = dtype.bits >> 3;
+  // int64_t new_elem_size = dtype.bits >> 3;
+  int64_t new_elem_size = sta::GetDataTypeNbytes(dtype);
   auto bytes_offset = tensor->byte_offset;
   CHECK_EQ(bytes_offset % new_elem_size, 0);
   auto new_storage_offset = bytes_offset / new_elem_size;

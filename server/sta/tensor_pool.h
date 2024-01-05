@@ -14,6 +14,7 @@
 #include <ATen/Tensor.h>
 #include "dlpack.h"
 #include "cuda_allocator.h"
+#include "dtype_helper.h"
 
 namespace colserve {
 namespace sta {
@@ -83,7 +84,8 @@ class STensor : public std::shared_ptr<TensorContainer> {
     return at::IntArrayRef(get()->stride_);
   }
   inline int64_t StorageOffset() const {
-    return get()->tensor_.byte_offset / (get()->tensor_.dtype.bits >> 3);
+    // return get()->tensor_.byte_offset / (get()->tensor_.dtype.bits >> 3);
+    return get()->tensor_.byte_offset / GetDataTypeNbytes(get()->tensor_.dtype);
   }
  
   inline void SetByteOffset(int64_t byte_offset) {
@@ -94,7 +96,8 @@ class STensor : public std::shared_ptr<TensorContainer> {
  
   inline void SetStorageOffset(int64_t storage_offset) {
     auto & tensor = get()->tensor_;
-    tensor.byte_offset = storage_offset * (tensor.dtype.bits >> 3);
+    // tensor.byte_offset = storage_offset * (tensor.dtype.bits >> 3);
+    tensor.byte_offset = storage_offset * GetDataTypeNbytes(tensor.dtype);
     UpdateVersion();
   }
  

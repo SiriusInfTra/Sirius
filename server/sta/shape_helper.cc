@@ -13,7 +13,8 @@ size_t ComputeStorageNbytes(at::IntArrayRef size,
     if (s == 0) return 0;
     result *= s;
   }
-  return (result + storage_offset) * (dtype.bits >> 3);
+  // return (result + storage_offset) * (dtype.bits >> 3);
+  return (result + storage_offset) * GetDataTypeNbytes(dtype);
 }
 
 size_t ComputeStorageNbytes(at::IntArrayRef size, 
@@ -27,7 +28,8 @@ size_t ComputeStorageNbytes(at::IntArrayRef size,
     size_t stride_size = stride[i] * (size[i] - 1);
     result += stride_size;
   }
-  return result * (dtype.bits >> 3);
+  // return result * (dtype.bits >> 3);
+  return result * GetDataTypeNbytes(dtype);
 }
 
 }
