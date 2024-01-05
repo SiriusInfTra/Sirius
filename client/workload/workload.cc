@@ -413,8 +413,13 @@ bool Workload::Hello() {
 std::function<void(InferRequest&)> Workload::GetSetRequestFn(const std::string &model) {
   if (model.find("mnist") != std::string::npos) {
     return SetMnistRequestFn(model);
-  } else if (model.find("resnet") != std::string::npos) {
+  } else if (model.find("resnet") != std::string::npos
+      || model.find("vgg") != std::string::npos
+      || model.find("densenet") != std::string::npos
+      || model.find("inception") != std::string::npos) {
     return SetResnetRequestFn(model);
+  } else if (model.find("bert") != std::string::npos) {
+    return SetBertRequestFn(model);
   } else {
     LOG(FATAL) << "unable to find SetRequestFn for " << model;
   }
@@ -464,6 +469,34 @@ std::function<void(InferRequest&)> Workload::SetResnetRequestFn(const std::strin
     i++;
   };
   return set_resnet_request_fn;
+}
+
+std::function<void(InferRequest&)> Workload::SetBertRequestFn(const std::string &model) {
+  static std::vector<std::string> bert_input_datas;
+  static std::vector<std::string> bert_mask_datas;
+  if (bert_input_datas.empty()) {
+    for (size_t i = 0; i < 1; i++) {
+      bert_input_datas.push_back(ReadInput("data/bert/input-" + std::to_string(i) + ".bin"));
+      bert_mask_datas.push_back(ReadInput("data/bert/mask-" + std::to_string(i) + ".bin"));
+    }
+  }
+  
+  auto set_bert_request_fn = [&](InferRequest &request) {
+    static uint32_t i = 0;
+    request.set_model(model);
+    request.add_inputs();
+    request.mutable_inputs(0)->set_dtype("int64");
+    request.mutable_inputs(0)->add_shape(1);
+    request.mutable_inputs(0)->add_shape(128);
+    request.mutable_inputs(0)->set_data(bert_input_datas[0]);
+    request.add_inputs();
+    request.mutable_inputs(1)->set_dtype("int64");
+    request.mutable_inputs(1)->add_shape(1);
+    request.mutable_inputs(1)->add_shape(128);
+    request.mutable_inputs(1)->set_data(bert_mask_datas[0]);
+    i++;
+  };
+  return set_bert_request_fn;
 }
 
 void Workload::InferBusyLoop(const std::string &model, size_t concurrency, 
