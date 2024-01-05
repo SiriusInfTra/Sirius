@@ -37,12 +37,12 @@ def get_onnx():
     #NOTE Generate new trace
     model = DistilBertModel.from_pretrained("distilbert-base-uncased")
     print(dummy_input)
-    torch.onnx.export(model, dummy_input, f"{tmp_dir}/distilbert-base.onnx", verbose=True,
+    torch.onnx.export(model, dummy_input, f"{tmp_dir}/distilbert_base.onnx", verbose=True,
                       input_names=["input_ids", "attention_mask"], output_names=["output"], export_params=True,
                       dynamic_axes={'input_ids':[0], 'attention_mask':[0], 'output':[0]})
 
 def tvm_compile():
-    onnx_model = onnx.load('{}/distilbert-base.onnx'.format(tmp_dir))
+    onnx_model = onnx.load('{}/distilbert_base.onnx'.format(tmp_dir))
     shape_dict = {'input_ids' : [1, token_len], 'attention_mask':[1, token_len]}
     mod_bert, params_bert = relay.frontend.from_onnx(onnx_model, shape_dict)
     
@@ -50,12 +50,12 @@ def tvm_compile():
     with tvm.transform.PassContext(opt_level=3):
         executor_factory = relay.build(mod_bert, target='cuda', executor=Executor("graph"), params=params_bert)
     
-    model_store_path = f'{model_store}/distilbert-base-b{batch_size}'
+    model_store_path = f'{model_store}/distilbert_base-b{batch_size}'
     lib_name = "mod.so"
     graph_module_name = "mod.json"
     params_name = "mod.params"
 
-    executor_factory.get_lib().export_library(f'{lib_name}')
+    executor_factory.get_lib().export_library(f'{model_store_path}/{lib_name}')
     pathlib.Path(model_store_path).mkdir(parents=True, exist_ok=True)
     with open(f'{model_store_path}/{graph_module_name}', "w") as graph_file:
         graph_file.write(executor_factory.get_graph_json())
