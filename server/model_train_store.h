@@ -29,8 +29,13 @@ class ModelTrainStore {
   bool AddJob(network::TrainHandler::TrainData* data);
   pid_t GetTrainPid() { return train_pid_; }
 
-  void SetCurBatchSize(int bs) { cur_batch_size_ = bs; }
+  void SetCurBatchSize(int bs) {
+    cur_batch_size_ = bs; 
+    if (first_batch_) {target_batch_size_ = bs; first_batch_ = false; }
+  }
   int GetCurBatchSize() { return cur_batch_size_; }
+  int GetTargetBatchSize() { return target_batch_size_; }
+  void AddTargetBatchSize(int delta_bs) { if (!first_batch_)  target_batch_size_ += delta_bs; }
 
   double PredictMemUsageMB();
 
@@ -45,6 +50,8 @@ class ModelTrainStore {
 
   pid_t train_pid_{-1};
   int cur_batch_size_{-1};
+  int target_batch_size_{-1};
+  bool first_batch_{true};
   std::string cur_model_name_;
 
   // model -> train code path

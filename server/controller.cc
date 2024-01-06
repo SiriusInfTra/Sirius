@@ -158,6 +158,7 @@ uint64_t Controller::ColocateAdjust(size_t batch_size) {
     } else if (Config::serve_mode == ServeMode::kColocateL2) {
       train_cmd_event_mq_->Put({cmd_id, static_cast<int>(Event::kColocateAdjustL2), static_cast<int>(batch_size)});
     }
+    ModelTrainStore::Get()->AddTargetBatchSize(-batch_size);
   }
   return cmd_id;
 }
@@ -168,6 +169,7 @@ uint64_t Controller::InferExit(size_t batch_size) {
   if (!IsTrainIdle()) {
     if (Config::IsColocateMode()) {
       train_cmd_event_mq_->Put({cmd_id, static_cast<int>(Event::kInferExit), static_cast<int>(batch_size)});
+      ModelTrainStore::Get()->AddTargetBatchSize(batch_size);
     }
   }
   return cmd_id;

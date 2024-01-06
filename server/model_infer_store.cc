@@ -245,8 +245,9 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
   }
 
   // config infer scaling
-  scale_up_queue_time_ = 200;
-  scale_down_idle_time_ = 3000;
+  scale_up_queue_time_ = 200; // no used
+  scale_down_idle_time_ = Config::infer_model_max_idle_ms;
+  warmup_ = Config::has_warmup;
   // max_num_worker_ = 5;
   infer_workers_.resize(max_num_worker_);
   worker_running_.resize(max_num_worker_);
@@ -336,7 +337,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
   auto last_get_batch_time = std::chrono::steady_clock::now();
   LOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") start inference";
   while (true) {                                                    
-    if (Config::IsColocateMode() && Profiler::MilliFrom(last_get_batch_time) >= scale_down_idle_time_) {
+    if (Config::IsColocateMode() && Profiler::MilliFrom(last_get_batch_time) >= GetMaxIdleTime()) {
       uint32_t num_worker = num_worker_;
       if (num_worker - 0 > 0) { /* check if num_worker reduce */
         // LOG(INFO) << "num_worker " << num_worker;
@@ -459,6 +460,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
   }
   *worker_running_[rank] = false;
   waited_trains_[rank] = static_cast<pid_t>(-1);
+  warmup_ = false;
 
   LOG(INFO) << exit_log_ss.str();
   return true;

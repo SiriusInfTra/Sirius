@@ -119,7 +119,16 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
                     << "  current " << this->current_bs_
                     << " timestamp: " << torch_col::get_unix_timestamp()
                     << " malloc_ms " << colserve::sta::CUDAMemPool::TrainAllocMs();
-          CHECK_LT(this->target_bs_, this->current_bs_);
+          // CHECK_LT(this->target_bs_, this->current_bs_);
+          if (this->target_bs_ > this->current_bs_) {
+            LOG(INFO) << "[ColocateStub] skip satisfied adjust, reply adjust immediately";
+            if (data.event == static_cast<int>(Event::kColocateAdjustL1)) {
+              status_event_mq_->Put({data.id, static_cast<int>(Event::kColocateAdjustL1Done)});
+            } else if (data.event == static_cast<int>(Event::kColocateAdjustL2)) {
+              status_event_mq_->Put({data.id, static_cast<int>(Event::kColocateAdjustL2Done)});
+            }
+            continue;
+          }
 
           // {
           //   AbortStream(0);
@@ -145,14 +154,14 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
           LOG(INFO) << "[ColocateStub] Infer Exit adjust back to " << this->target_bs_ 
                     << " current " << this->current_bs_
                     << " timestamp: " << torch_col::get_unix_timestamp();;
-          CHECK_LE(this->target_bs_, this->current_bs_);
-          if (this->target_bs_ == this->current_bs_) {
-            if (cmd_ == static_cast<int>(Event::kColocateAdjustL1)) {
-              this->ColocateAdjustL1Done();
-            } else if (cmd_ == static_cast<int>(Event::kColocateAdjustL2)) {
-              this->ColocateAdjustL2Done();
-            }
-          }
+          // CHECK_LE(this->target_bs_, this->current_bs_);
+          // if (this->target_bs_ == this->current_bs_) {
+          //   if (cmd_ == static_cast<int>(Event::kColocateAdjustL1)) {
+          //     this->ColocateAdjustL1Done();
+          //   } else if (cmd_ == static_cast<int>(Event::kColocateAdjustL2)) {
+          //     this->ColocateAdjustL2Done();
+          //   }
+          // }
         } else {
           LOG(FATAL) << "[ColocateStub] Unknown command: " << data.event;
         }
@@ -216,6 +225,7 @@ double ColocateStub::PassedTimeFromSetCmd() {
 
 void ColocateStub::ReportBatchSize(int batch_size) {
   char *has_server_env = std::getenv("COLOCATE_HAS_SERVER");
+  current_bs_ = batch_size;
   bool has_server = has_server_env == nullptr ? true : (std::string(has_server_env) == "1");
   if (has_server) {
     status_event_mq_->Put({0, static_cast<int>(Event::kReportBatchSize), batch_size});
