@@ -84,13 +84,15 @@ class Config {
 
   static double task_switch_delay_ms;
 
-
   // to avoid memory fragment cause OOM
   static double train_memory_over_predict_mb;
 
   static double memory_pressure_mb;
 
   static bool pipeline_load;
+
+  static bool has_warmup;
+  static double infer_model_max_idle_ms;
 
   static bool system_initialized;
 
