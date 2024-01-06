@@ -75,6 +75,7 @@ class System:
                  pipeline_load: bool = True,
                  train_memory_over_predict_mb: str | float = None,
                  infer_model_max_idle_ms : Optional[int] = None,
+                 has_warmup: bool = False,
                  keep_last_time_stamp: bool = True) -> None:
         self.mode = mode
         self.use_sta = use_sta
@@ -106,6 +107,7 @@ class System:
         self.pipeline_load = pipeline_load
         self.train_memory_over_predict_mb = train_memory_over_predict_mb
         self.infer_model_max_idle_ms = infer_model_max_idle_ms
+        self.has_warmup = has_warmup
         if System._last_time_stamp is None or not keep_last_time_stamp:
             self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
             System._last_time_stamp = self.time_stamp
@@ -204,6 +206,10 @@ class System:
             cmd += ["--train-memory-over-predict-mb", str(self.train_memory_over_predict_mb)]
         if self.infer_model_max_idle_ms:
             cmd += ["--infer-model-max-idle-ms", str(self.infer_model_max_idle_ms)]
+        if self.has_warmup:
+            cmd += ["--has-warmup", "1"]
+        else:
+            cmd += ["--has-warmup", "0"]
         if self.use_xsched:
             cmd += ["--use-xsched", "1"]
         else:
