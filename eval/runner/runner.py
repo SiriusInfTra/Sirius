@@ -74,6 +74,7 @@ class System:
                  ondemand_adjust: bool = True,
                  pipeline_load: bool = True,
                  train_memory_over_predict_mb: str | float = None,
+                 infer_model_max_idle_ms : Optional[int] = None,
                  keep_last_time_stamp: bool = True) -> None:
         self.mode = mode
         self.use_sta = use_sta
@@ -104,6 +105,7 @@ class System:
         self.ondemand_adjust = ondemand_adjust
         self.pipeline_load = pipeline_load
         self.train_memory_over_predict_mb = train_memory_over_predict_mb
+        self.infer_model_max_idle_ms = infer_model_max_idle_ms
         if System._last_time_stamp is None or not keep_last_time_stamp:
             self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
             System._last_time_stamp = self.time_stamp
@@ -200,6 +202,8 @@ class System:
 
         if self.train_memory_over_predict_mb:
             cmd += ["--train-memory-over-predict-mb", str(self.train_memory_over_predict_mb)]
+        if self.infer_model_max_idle_ms:
+            cmd += ["--infer-model-max-idle-ms", str(self.infer_model_max_idle_ms)]
         if self.use_xsched:
             cmd += ["--use-xsched", "1"]
         else:
@@ -243,7 +247,7 @@ class System:
         self.log_dir = None
     
     def draw_memory_usage(self):
-        cmd = f'python util/profile/memory_trace.py  -l {self.exit_log_dir}/trace-cfg  -o {self.exit_log_dir}'
+        cmd = f'python util/profile/memory_trace.py  -l {self.exit_log_dir}/profile-log.log  -o {self.exit_log_dir}'
         print(f'execute {cmd}')
         os.system(cmd)
     
