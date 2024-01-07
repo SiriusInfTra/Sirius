@@ -260,7 +260,7 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
                  interval_sec: float | int,
                  duration: Optional[float | int] = None,
                  period_num: Optional[int] = None,
-                 rps_fn = None,
+                 rps_fn = None, # post process rps, Fn(i, rps) -> rps
                  seed: Optional[int] = None) -> None:
         super().__init__(None, None, seed)
         if duration is None and period_num is None:
