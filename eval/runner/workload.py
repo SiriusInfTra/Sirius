@@ -268,8 +268,9 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
         if duration is not None and period_num is not None:
             raise Exception("duration and period_num cannot be both specified")
         if period_num is None:
-            period_num = int(duration / interval_sec)
-            self.duration = period_num * interval_sec
+            period_num = int(duration / interval_sec + 0.5)
+            self.duration = duration
+            # self.duration = period_num * interval_sec
         if duration is None:
             self.duration = period_num * interval_sec
         poisson_params = [[] for _ in range(len(model_list))]

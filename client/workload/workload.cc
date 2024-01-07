@@ -62,7 +62,7 @@ void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_i
 
   LOG(INFO) << log_prefix.str() << "RequestInfer start";
   while(workload.running_) {
-    InferRecorder recorder(workload, model_);
+    // InferRecorder recorder(workload, model_);
     size_t slot = static_cast<size_t>(-1);
     while (slot == static_cast<size_t>(-1)) {
       std::unique_lock status_lock{slot_status_mutex_};
@@ -87,6 +87,7 @@ void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_i
       std::shared_lock slot_lock{slot_mutex_};
       slots_[slot]->req_status_.status_ = InferReqStatus::kWait;
       slots_[slot]->req_status_.request_time_ = std::chrono::steady_clock::now();
+      slots_[slot]->req_status_.time_stamp_ = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
       slots_[slot]->rpc_context_ = std::make_unique<grpc::ClientContext>();
       slots_[slot]->rpc_ = workload.stub_->AsyncInference(slots_[slot]->rpc_context_.get(), slots_[slot]->request_, &cq_);
       slots_[slot]->rpc_->Finish(&slots_[slot]->result_, &slots_[slot]->rpc_status_, (void*)slot);
@@ -123,7 +124,7 @@ void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double
   for(auto start_point : start_points) {
     auto sleep_until_sys_clock = start_sys_clock + start_point * std::chrono::seconds(1);
     DLOG(INFO) << log_prefix.str() << "sleep until " << std::chrono::duration_cast<std::chrono::milliseconds>(sleep_until_sys_clock - start_sys_clock).count() << "ms."; 
-    InferRecorder recorder(workload, model_);
+    // InferRecorder recorder(workload, model_);
     std::this_thread::sleep_until(sleep_until_sys_clock);
     CHECK(workload.running_) << log_prefix.str() << "Workload client is not running while request(start_point=" << start_point << "s) did not sent.";
     size_t slot;
@@ -148,6 +149,7 @@ void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double
       CHECK_EQ(slots_[slot]->req_status_.status_, InferReqStatus::kReady);
       slots_[slot]->req_status_.status_ = InferReqStatus::kWait;
       slots_[slot]->req_status_.request_time_ = std::chrono::steady_clock::now();
+      slots_[slot]->req_status_.time_stamp_ = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
       slots_[slot]->rpc_context_ = std::make_unique<grpc::ClientContext>();
       slots_[slot]->rpc_ = workload.stub_->AsyncInference(slots_[slot]->rpc_context_.get(), slots_[slot]->request_, &cq_);
       slots_[slot]->rpc_->Finish(&slots_[slot]->result_, &slots_[slot]->rpc_status_, (void*)slot);
@@ -220,7 +222,9 @@ void InferWorker::FetchInferResult(Workload &workload,
     {
       std::shared_lock slot_lock{slot_mutex_};
       auto latency = std::chrono::duration<double, std::milli>(response_time - slots_[slot]->req_status_.request_time_).count();
-      records_.push_back({latency, slots_[slot]->req_status_.request_time_, response_time});
+      records_.push_back({slots_[slot]->request_.model(), latency, 
+                         slots_[slot]->req_status_.time_stamp_, GetTimeStamp(), 
+                         slots_[slot]->req_status_.request_time_, response_time});
       if (show_result > 0) { // check outputs
         std::stringstream ss;
         size_t numel = slots_[slot]->result_.outputs(0).data().size() / sizeof(float);
@@ -265,11 +269,12 @@ void InferWorker::FetchInferResult(Workload &workload,
 }
 
 void InferWorker::Report(Workload &workload, int verbose, std::ostream &os) {
-  if (records_.empty()) {
+  auto records = GetRecord(workload);
+  if (records.empty()) {
     os << "[InferWorker TRACE " << model_ << "] no inference record" << std::endl;
     return;
   }
-  std::sort(records_.begin(), records_.end(), [](const Record &a, const Record &b) {
+  std::sort(records.begin(), records.end(), [](const Record &a, const Record &b) {
     return a.latency_ < b.latency_;
   });
   std::vector<std::vector<std::string>> table;
@@ -279,19 +284,19 @@ void InferWorker::Report(Workload &workload, int verbose, std::ostream &os) {
     return ss.str();
   };
 
-  auto ltc_avg = std::accumulate(records_.begin(), records_.end(), 0, 
+  auto ltc_avg = std::accumulate(records.begin(), records.end(), 0, 
       [] (double acc, const Record &record) {
         return acc + record.latency_;
-      }) / records_.size();
+      }) / records.size();
   
-  table.push_back({"cnt: " + std::to_string(records_.size()), 
+  table.push_back({"cnt: " + std::to_string(records.size()), 
                     "ltc.avg: " + f64_to_string(ltc_avg),
-                    "ltc.max: " + f64_to_string(records_.back().latency_),
-                    "thpt: " + f64_to_string(ComputeThpt(records_)) + "r/s"});
+                    "ltc.max: " + f64_to_string(records.back().latency_),
+                    "thpt: " + f64_to_string(ComputeThpt(records)) + "r/s"});
   for (int i = 99; i > 0;) {
     std::vector<std::string> row;
     for (int j = 0; j < 4 && i > 0; j++) {
-      row.push_back("p" + std::to_string(i) + ": " + f64_to_string(records_[records_.size() * i / 100].latency_));
+      row.push_back("p" + std::to_string(i) + ": " + f64_to_string(records[records.size() * i / 100].latency_));
       if (i == 99) {
         i -= 4;
       } else {
@@ -322,16 +327,34 @@ void InferWorker::Report(Workload &workload, int verbose, std::ostream &os) {
   os << std::string(total_width, '=') << std::endl;
 
   if (verbose) {
-    std::sort(records_.begin(), records_.end(), [](const Record &a, const Record &b) {
+    std::sort(records.begin(), records.end(), [](const Record &a, const Record &b) {
       return a.request_time_ < b.request_time_;
     });
-    os << "[InferWorker TRACE " << model_ << "] request_time(ms), response_time(ms), latency(ms)" << std::endl;
-    for (auto &record : records_) {
+    os << "[InferWorker TRACE " << model_ << "] start_time_stamp, end_time_stamp, request_time(ms), response_time(ms), latency(ms)" << std::endl;
+    for (auto &record : records) {
       os << std::fixed << std::setprecision(1)
+         << record.start_time_stamp_ << ", " << record.end_time_stamp_ << ", "
          << std::chrono::duration<double, std::milli>(record.request_time_ - workload.run_btime_).count() << ", "
          << std::chrono::duration<double, std::milli>(record.response_time_ - workload.run_btime_).count() << ", "
          << record.latency_ << std::endl;
     }
+  }
+}
+
+const std::vector<Record> InferWorker::GetRecord(Workload &workload) const {
+  if (records_.empty()) {
+    return records_;
+  }
+  if (workload.delay_before_profile_ > 0) {
+    std::vector<Record> records;
+    for (auto &record : records_) {
+      if (record.start_time_stamp_ > workload.start_time_stamp_ + static_cast<long>(workload.delay_before_profile_ * 1000)) {
+        records.push_back(record);
+      }
+    }
+    return records;
+  } else {
+    return records_;
   }
 }
 
@@ -344,14 +367,16 @@ void TrainWorker::RequestTrain(Workload &workload) {
   LOG(INFO) << log_prefix.str() << "RequestTrain start";
   while (workload.running_) {
     auto begin = std::chrono::steady_clock::now();
+    auto start_time_stamp = GetTimeStamp();
     LOG(INFO) << log_prefix.str() << "RequestTrain send";
     grpc::ClientContext context;
     grpc::Status status = workload.stub_->Train(&context, request_, &train_result_);
     CHECK(status.ok());
+    auto end_time_stamp = GetTimeStamp();
     auto end = std::chrono::steady_clock::now();
     // latency_.push_back(std::chrono::duration<double, std::milli>(end - begin).count());
     records_.push_back(
-        {std::chrono::duration<double, std::milli>(end - begin).count(), begin, end});
+        {model_, std::chrono::duration<double, std::milli>(end - begin).count(), start_time_stamp, end_time_stamp, begin, end});
     break;
   }
   LOG(INFO) << log_prefix.str() << "RequestTrain stop";
@@ -376,9 +401,10 @@ void TrainWorker::Report(Workload &workload, int verbose, std::ostream &os) {
     std::sort(records_.begin(), records_.end(), [](const Record &a, const Record &b) {
       return a.request_time_ < b.request_time_;
     });
-    os << "[TrainWorker TRACE " << model_ << "] request_time(ms), response_time(ms), latency(ms)" << std::endl;
+    os << "[TrainWorker TRACE " << model_ << "] start_time_stamp, end_time_stamp, request_time(ms), response_time(ms), latency(ms)" << std::endl;
     for (auto &record : records_) {
       os << std::fixed << std::setprecision(1)
+         << record.start_time_stamp_ << ", " << record.end_time_stamp_ << ", "
          << std::chrono::duration<double, std::milli>(record.request_time_ - workload.run_btime_).count() << ", "
          << std::chrono::duration<double, std::milli>(record.response_time_ - workload.run_btime_).count() << ", "
          << record.latency_ << std::endl;
@@ -408,6 +434,20 @@ bool Workload::Hello() {
     LOG(FATAL) << "Query Server Status Failed " << status.error_message() << "|" << status.error_details();
     return false;
   }
+}
+
+bool Workload::ReportTimeStampToServer() {
+  TimeStampRequest request;
+  EmptyResult result;
+  request.set_time_stamp(start_time_stamp_);
+  request.set_delay_before_profile(delay_before_profile_);
+
+  grpc::ClientContext context;
+  grpc::CompletionQueue cq;
+  grpc::Status status = stub_->ReportStartTimeStamp(&context, request, &result);
+  CHECK(status.ok()) << "ReportTimeStampToServer Failed " << status.error_message() << "|" << status.error_details();
+  LOG(INFO) << "ReportTimeStampToServer " << start_time_stamp_;
+  return true;
 }
 
 std::function<void(InferRequest&)> Workload::GetSetRequestFn(const std::string &model) {
@@ -554,11 +594,21 @@ void Workload::Report(int verbose, std::ostream &os) {
 void Workload::InferOverallReport(std::ostream &os) {
   std::vector<Record> all_records;
   for (auto &worker : infer_workers_) {
-    all_records.insert(all_records.end(), worker->GetRecord().begin(), worker->GetRecord().end());
+    auto records = worker->GetRecord(*this);
+    all_records.insert(all_records.end(), records.begin(), records.end());
   }
   if (all_records.empty()) {
     os << "[Workload TRACE OVERALL] no inference record" << std::endl;
     return;
+  }
+  { // recored time line
+    auto records_copy = all_records;
+    std::sort(records_copy.begin(), records_copy.end(), [](const Record &a, const Record &b) {
+      return a.start_time_stamp_ < b.start_time_stamp_;
+    });
+    for (auto &record : records_copy) {
+      timeline_handle_ << record.model_name_ << "," << record.start_time_stamp_ << ","  << record.end_time_stamp_ << "\n";
+    }
   }
   auto ltc_avg = std::accumulate(all_records.begin(), all_records.end(), 0.0, 
       [](double acc, const Record &record) {
@@ -572,7 +622,7 @@ void Workload::InferOverallReport(std::ostream &os) {
   auto ltc_min = all_records.front().latency_;
   auto ltc_max = all_records.back().latency_;
 
-  os << "[Infer Overall]\n"
+  os << "[Infer Overall] start time stamp " << start_time_stamp_ << "\n"
      << "cnt " << all_records.size() 
      << std::fixed << std::setprecision(1)
      << " ltc_avg " << ltc_avg << " ltc min " << ltc_min 

@@ -32,6 +32,7 @@ AppBase::AppBase(const std::string &name) : app{name} {
   app.add_option("--warmup", warmup, "warm up infer model");
   app.add_option("--infer-timeline", infer_timeline, "path of infer timeline");
   app.add_option("--delay-after-warmup", delay_after_warmup, "trace file of infer workload");
+  app.add_option("--delay-before-profile", delay_before_profile, "trace file of infer workload");
 }
 
 uint64_t AppBase::seed = static_cast<uint64_t>(-1);

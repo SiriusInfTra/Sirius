@@ -6,14 +6,14 @@ use_time_stamp = True
 
 def azure(rps, infer_only=False):
     workload = HyperWorkload(concurrency=2048, duration=140, delay_before_infer=30,
-                            warmup=5, delay_after_warmup=5)
+                            warmup=5, delay_after_warmup=5, delay_before_profile=5)
     InferModel.reset_model_cnt()
     if not infer_only:
         workload.set_train_workload(train_workload=TrainWorkload('resnet', 15, 96))
     workload.set_infer_workloads(AzureInferWorkload(
         AzureInferWorkload.TRACE_D01,
         model_list=InferModel.get_model_list("resnet152", 36),
-        max_request_sec=rps, interval_sec=1, period_num=60, func_num=16 * 1000, 
+        max_request_sec=rps, interval_sec=1, period_num=65, func_num=16 * 1000, 
     ))
     
     return workload
@@ -30,6 +30,8 @@ def run(system: System, workload: HyperWorkload, num_worker: int, tag: str):
     system.draw_trace_cfg()
 
 
+# for max_idle_ms in [3000]:
+# for max_idle_ms in [10000, 1000*1000]:
 for max_idle_ms in [500, 1000, 2000, 4000, 5000, 8000, 10000, 1000*1000]:
     with mps_thread_percent(60):
         workload = azure(rps=100, infer_only=False)

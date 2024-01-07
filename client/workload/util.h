@@ -14,6 +14,10 @@ namespace workload {
 
 std::string ReadInput(const std::string &data_path);
 
+inline long GetTimeStamp() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
 struct InferModel {
   std::string model_name;
   // std::string type;
@@ -35,12 +39,13 @@ class AppBase {
   std::string port;
   bool enable_train{true}, enable_infer{true};
   std::set<std::string> train_models;
-  double delay_before_infer;
+  double delay_before_infer{0};
   int duration{10}, concurrency{10};
   int num_epoch{1}, batch_size{1};
 
   int warmup{10};
-  double delay_after_warmup{0};
+  double delay_after_warmup{0}; // second
+  double delay_before_profile{0}; // second, should include delay_before_info
 
   std::string log;
   int verbose{0};
