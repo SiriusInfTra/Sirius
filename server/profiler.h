@@ -20,6 +20,9 @@ class Profiler {
   static std::pair<size_t, size_t> GetGPUMemInfo();
   static size_t GetLastInferMem();
   static size_t GetLastTrainMem();
+  static long GetTimeStamp() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+  }
 
 
   static void Init(const std::string &profile_log_path);
@@ -107,6 +110,8 @@ class Profiler {
       perf_info_.clear();
     }
   }
+
+  void SetWorkloadStartTimeStamp(long ts, double delay_before_profile);
   
   friend std::ostream& operator<<(std::ostream &os, EventItem item);
   friend std::ostream& operator<<(std::ostream &os, PerfItem item);
@@ -120,13 +125,16 @@ class Profiler {
   std::string profile_log_path_;
 
   std::vector<InferInfo> infer_info_;
-  std::vector<std::tuple<double, ResourceInfo>> resource_info_;
-  std::vector<std::tuple<double, EventItem>> event_info_;
-  std::unordered_map<int, std::vector<double>> perf_info_;
+  std::vector<std::tuple<double, long, ResourceInfo>> resource_info_; // pass, time stamp, resource info
+  std::vector<std::tuple<double, long, EventItem>> event_info_; // pass, time stamp, event
+  std::unordered_map<int, std::vector<std::tuple<long, double>>> perf_info_; // item -> [time stamp, value]
   std::mutex infer_info_mut_, event_info_mut_, perf_info_mut_;
 
   size_t last_infer_mem_;
   size_t last_train_mem_;
+
+  long workload_start_time_stamp_{0};
+  double delay_before_profile_{0};
 
   std::unique_ptr<std::thread> thread_;
 };

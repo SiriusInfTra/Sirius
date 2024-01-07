@@ -91,6 +91,7 @@ void CommonHandler::SetupCallData() {
                                              register_get_server_status,
                                              exec_get_server_status};
 
+
   auto register_warmup_done = [this](
       CommonData<EmptyRequest, EmptyResult>* data) {
     this->service_->RequestWarmupDone(
@@ -106,6 +107,22 @@ void CommonHandler::SetupCallData() {
   new CommonData<EmptyRequest, EmptyResult>{0, "WarmupDone", service_, cq_,
                                             register_warmup_done,
                                             exec_warmpup_done};
+
+
+  auto register_report_time_stamp_done = [this](
+      CommonData<TimeStampRequest, EmptyResult>* data) {
+    this->service_->RequestReportStartTimeStamp(
+        &data->ctx_, &data->request_, &data->responder_, 
+        data->cq_, data->cq_, (void*)data);
+  };
+  auto exec_report_time_stamp_done = [this](
+      CommonData<TimeStampRequest, EmptyResult>* data) {
+    Profiler::Get()->SetWorkloadStartTimeStamp(data->request_.time_stamp(), data->request_.delay_before_profile());
+    data->responder_.Finish(data->response_, grpc::Status::OK, (void*)data);
+  };
+  new CommonData<TimeStampRequest, EmptyResult>{0, "ReportTimeStampDone", service_, cq_,
+                                            register_report_time_stamp_done,
+                                            exec_report_time_stamp_done};
 }
 
 void InferHandler::Start() {

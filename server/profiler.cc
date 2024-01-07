@@ -193,8 +193,8 @@ Profiler::Profiler(const std::string &profile_log_path)
 
       this->last_infer_mem_ = infer_mem;
       this->last_train_mem_ = train_mem;
-      this->resource_info_.push_back({this->Passed(), 
-                                     {infer_mem, train_mem, train_all_mem, total_mem}});
+      this->resource_info_.push_back({this->Passed(), Profiler::GetTimeStamp(),
+                                     ResourceInfo{infer_mem, train_mem, train_all_mem, total_mem}});
       // this->profile_log_ifs_ << this->Passed()
       //                        << " InferMem " << GetMemString(infer_mem)
       //                        << " TrainMem " << GetMemString(train_mem)
@@ -212,24 +212,29 @@ Profiler::~Profiler() {
 void Profiler::RecordEvent(EventItem item) {
   auto passed = Passed();
   std::unique_lock lock{event_info_mut_};
-  event_info_.push_back({passed, item});
+  event_info_.push_back({passed, Profiler::GetTimeStamp(), item});
 }
 
 void Profiler::RecordEvent(EventItem item, Profiler::time_point_t tp) {
   auto passed = std::chrono::duration<double, std::milli>(tp - stp_).count();
   std::unique_lock lock{event_info_mut_};
-  event_info_.push_back({passed, item});
+  event_info_.push_back({passed, Profiler::GetTimeStamp(), item});
 }
 
 void Profiler::RecordPerf(PerfItem item, double value) {
   auto key = static_cast<int>(item);
   std::unique_lock lock{perf_info_mut_};
-  perf_info_[key].push_back(value);
+  perf_info_[key].push_back({Profiler::GetTimeStamp(), value});
 }
 
 void Profiler::RecordPerf(PerfItem item, Profiler::time_point_t start, Profiler::time_point_t end) {
   auto value = std::chrono::duration<double, std::milli>(end - start).count();
   RecordPerf(item, value);
+}
+
+void Profiler::SetWorkloadStartTimeStamp(long ts, double delay_before_profile) {
+  workload_start_time_stamp_ = ts;
+  delay_before_profile_ = delay_before_profile;
 }
 
 double Profiler::Passed() {
@@ -240,19 +245,32 @@ double Profiler::Passed() {
 void Profiler::WriteLog() {
   std::ofstream ofs{profile_log_path_};
   
-  ofs << "[Perf Info]" << std::endl;
+  ofs << "[Perf Info] workload start time stamp " << workload_start_time_stamp_ << " delay before profile " << delay_before_profile_ << std::endl;
   for (auto &it : perf_info_) {
-    auto max = *std::max_element(it.second.begin(), it.second.end());
-    auto min = *std::min_element(it.second.begin(), it.second.end());
-    auto sum = std::accumulate(it.second.begin(), it.second.end(), 0.0);
-    double avg = -1;
-    if (it.second.size() > 0) {
-      avg = 1.0 * sum / it.second.size();
+    auto item = static_cast<Profiler::PerfItem>(it.first);
+    std::vector<double> item_perf_info;
+    for (auto &p : it.second) {
+      auto time_stamp = std::get<0>(p);
+      auto value = std::get<1>(p);
+      if (time_stamp > workload_start_time_stamp_ + static_cast<long>(delay_before_profile_ * 1000)) {
+        item_perf_info.push_back(value);
+      }
     }
-    auto sorted = it.second;
+    if (item_perf_info.empty()) {
+      ofs << item << ": no record after workload start profile time stamp" << std::endl;
+      continue;
+    }
+    auto max = *std::max_element(item_perf_info.begin(), item_perf_info.end());
+    auto min = *std::min_element(item_perf_info.begin(), item_perf_info.end());
+    auto sum = std::accumulate(item_perf_info.begin(), item_perf_info.end(), 0.0);
+    double avg = -1;
+    if (item_perf_info.size() > 0) {
+      avg = 1.0 * sum / item_perf_info.size();
+    }
+    auto sorted = item_perf_info;
     sort(sorted.begin(), sorted.end());
     ofs << static_cast<PerfItem>(it.first) << std::fixed << std::setprecision(1) << ":"
-        << " avg " << avg << " max " << max << " min " << min << " cnt " << it.second.size() << " |"
+        << " avg " << avg << " max " << max << " min " << min << " cnt " << item_perf_info.size() << " |"
         << " p99 " << sorted[int(0.99 * sorted.size())]
         << " p95 " << sorted[int(0.95 * sorted.size())]
         << " p90 " << sorted[int(0.90 * sorted.size())]
@@ -273,17 +291,19 @@ void Profiler::WriteLog() {
   ofs << "[Event Info]" << std::endl;
   for (auto &e : event_info_) {
     ofs << std::get<0>(e) << ": "
-        << std::get<1>(e) << std::endl;
+        << std::get<1>(e) << ": "
+        << std::get<2>(e) << std::endl;
   }
   ofs << std::endl;
   
   ofs << "[Memory Info]" << std::endl;
   for (auto &r : resource_info_) {
-    ofs << std::get<0>(r) << ":"
-        << " Infer " << GetMemString(std::get<1>(r).infer_mem)
-        << " Train " << GetMemString(std::get<1>(r).train_mem)
-        << " TrainAll " << GetMemString(std::get<1>(r).train_all_mem)
-        << " Total " << GetMemString(std::get<1>(r).gpu_used_mem)
+    ofs << std::get<0>(r) << ": " 
+        << std::get<1>(r) << ":"
+        << " Infer " << GetMemString(std::get<2>(r).infer_mem)
+        << " Train " << GetMemString(std::get<2>(r).train_mem)
+        << " TrainAll " << GetMemString(std::get<2>(r).train_all_mem)
+        << " Total " << GetMemString(std::get<2>(r).gpu_used_mem)
         << std::endl;
   }
   ofs << std::endl;

@@ -12,6 +12,7 @@ def eval_throughput(train_timeline: pd.DataFrame, infer_timeline: pd.DataFrame):
     infer_end = np.max(infer_timeline.end_time)
     col_mask = np.logical_and(train_timeline.start_time >= infer_begin, train_timeline.end_time <= infer_end)
     col_finished_mask = np.logical_and(col_mask, train_timeline.finished == True)
+    col_cancel_mask = np.logical_and(col_mask, train_timeline.finished == False)
     num_image = np.sum(train_timeline.batch_size[col_finished_mask])
     elapsed_time = np.max(train_timeline.end_time[col_mask]) - np.min(train_timeline.start_time[col_mask])
     real_thpt = num_image / elapsed_time * 1000
@@ -20,7 +21,11 @@ def eval_throughput(train_timeline: pd.DataFrame, infer_timeline: pd.DataFrame):
     avg_batch_size = np.mean(train_timeline.batch_size[col_finished_mask])
     num_finished_batch = np.sum(train_timeline.finished[col_mask])
     num_canceled_batch = np.sum(train_timeline.finished[col_mask] == False)
-    return ideal_thpt, real_thpt, avg_batch_time, avg_batch_size, num_finished_batch, num_canceled_batch
+    finished_computing_time = np.sum(train_timeline.duration[col_finished_mask])
+    canceled_computing_time = np.sum(train_timeline.duration[col_cancel_mask])
+    waste_pct = canceled_computing_time / (finished_computing_time + canceled_computing_time) * 100
+    return ideal_thpt, real_thpt, avg_batch_time, avg_batch_size, \
+        num_finished_batch, num_canceled_batch, waste_pct
 
 def read_dataframe(log_dir: Path, train_timeline_name: str, infer_timeline_name: str, require: bool = False) -> Optional[tuple[pd.DataFrame, pd.DataFrame]]:
     train_timeline = log_dir / f"{train_timeline_name}"
@@ -61,13 +66,15 @@ def main():
         for sub_log_dir in sorted(filter(lambda file_or_dir: file_or_dir.is_dir(), log_dir.iterdir()), key=lambda must_dir: str(must_dir)):
             try:
                 df = read_dataframe(sub_log_dir, train_timeline_name, infer_timeline_name, require=True)
-                ideal_thpt, real_thpt, avg_batch_time, avg_batch_size, num_finished_batch, num_canceled_batch = eval_throughput(*df)
-                print(f"[{sub_log_dir.name}] thpt: {real_thpt:.2f} / {ideal_thpt:.2f} it/sec, avg_batch_time {avg_batch_time:.1f}, avg_batch_size {avg_batch_size:.1f}, num_finished {num_finished_batch} num_cancel {num_canceled_batch}\n")
+                ideal_thpt, real_thpt, avg_batch_time, avg_batch_size, num_finished_batch, num_canceled_batch, waste_pct = eval_throughput(*df)
+                print(f"[{sub_log_dir.name}] thpt: {real_thpt:.2f} / {ideal_thpt:.2f} it/sec, avg_batch_time {avg_batch_time:.1f}, avg_batch_size {avg_batch_size:.1f}, \
+num_finished {num_finished_batch} num_cancel {num_canceled_batch} waste_pct {waste_pct:.1f}\n")
             except Exception as e:
                 print(f"[{sub_log_dir.name}] {e}\n")
     else:    
-        ideal_thpt, real_thpt, avg_batch_time, avg_batch_size, num_finished_batch, num_canceled_batch = eval_throughput(*df)
-        print(f"[{log_dir.name}] thpt: {real_thpt:.2f} / {ideal_thpt:.2f} it/sec, avg_batch_time {avg_batch_time:.1f}, avg_batch_size {avg_batch_size:.1f}, num_finished {num_finished_batch} num_cancel {num_canceled_batch}\n")
+        ideal_thpt, real_thpt, avg_batch_time, avg_batch_size, num_finished_batch, num_canceled_batch, waste_pct = eval_throughput(*df)
+        print(f"[{log_dir.name}] thpt: {real_thpt:.2f} / {ideal_thpt:.2f} it/sec, avg_batch_time {avg_batch_time:.1f}, avg_batch_size {avg_batch_size:.1f}, \
+num_finished {num_finished_batch} num_cancel {num_canceled_batch}, waste_pct {waste_pct:.1f}\n")
     
 if __name__ == "__main__":
     main()
