@@ -81,12 +81,12 @@ if run_infer_only:
     # infer only heavy
     with mps_thread_percent(60):
         workload = sawtooth(rps=100, infer_only=True)
-        system = System(mode=System.ServerMode.Normal, use_sta=False, mps=False, use_xsched=False)
+        system = System(mode=System.ServerMode.Normal, use_sta=False, mps=True, use_xsched=False)
         run(system, workload, 1, "infer-only-heavy")
     with mps_thread_percent(30):
         # infer only light
         workload = sawtooth(rps=10, infer_only=True)
-        system = System(mode=System.ServerMode.Normal, use_sta=False, mps=False, use_xsched=False)
+        system = System(mode=System.ServerMode.Normal, use_sta=False, mps=True, use_xsched=False)
         run(system, workload, 1, "infer-only-light")
 
 
