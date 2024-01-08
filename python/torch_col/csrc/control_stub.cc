@@ -130,10 +130,8 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
             continue;
           }
 
-          // {
-          //   AbortStream(0);
-          // }
-          if (KillBatchOnRecv) {
+          // only used for colocate l1
+          if (KillBatchOnRecv && data.event == static_cast<int>(Event::kColocateAdjustL1)) {
             // TODO: better cancel kernel launch
             std::unique_lock step_lock{step_mutex_};
             auto t1 = torch_col::get_unix_timestamp();
@@ -206,7 +204,7 @@ void ColocateStub::ColocateAdjustL2Done() {
     status_event_mq_->Put({cmd_id_, static_cast<int>(Event::kColocateAdjustL2Done)});
     cmd_ = -1;
     cmd_id_ = 0;
-    LOG(INFO) << "[ColocateStub] Adjust L2 done";
+    LOG(INFO) << "[ColocateStub] Adjust L2 done, timestamp: " << torch_col::get_unix_timestamp();
   }
 }
 

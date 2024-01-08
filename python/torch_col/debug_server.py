@@ -20,6 +20,14 @@ class DebugServer:
         cmd_id = self._cmd_ids[torch_col.Event.kColocateAdjustL1]
         self._cmd_mq.put(torch_col.PyCtrlMsgEntry(cmd_id, torch_col.Event.kColocateAdjustL1, batch_size))
 
+    def colocate_l2(self, batch_size: int):
+        if torch_col.Event.kColocateAdjustL2 not in self._cmd_ids:
+            self._cmd_ids[torch_col.Event.kColocateAdjustL2] = 1
+        else:
+            self._cmd_ids[torch_col.Event.kColocateAdjustL2] += 1
+        cmd_id = self._cmd_ids[torch_col.Event.kColocateAdjustL2]
+        self._cmd_mq.put(torch_col.PyCtrlMsgEntry(cmd_id, torch_col.Event.kColocateAdjustL2, batch_size))
+
     def infer_exit(self, batch_size: int):
         if torch_col.Event.kInferExit not in self._cmd_ids:
             self._cmd_ids[torch_col.Event.kInferExit] = 1
