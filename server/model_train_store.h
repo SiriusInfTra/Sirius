@@ -9,6 +9,7 @@
 #include <queue>
 #include <mutex>
 #include <future>
+#include <atomic>
 
 #include "grpc/grcp_server.h"
 #include "job_queue.h"
@@ -34,8 +35,10 @@ class ModelTrainStore {
     if (first_batch_) {target_batch_size_ = bs; first_batch_ = false; }
   }
   int GetCurBatchSize() { return cur_batch_size_; }
-  int GetTargetBatchSize() { return target_batch_size_; }
-  void AddTargetBatchSize(int delta_bs) { if (!first_batch_)  target_batch_size_ += delta_bs; }
+  int GetTargetBatchSize() { return target_batch_size_.load(std::memory_order_relaxed); }
+  void AddTargetBatchSize(int delta_bs) { 
+    if (!first_batch_)  target_batch_size_.fetch_add(delta_bs, std::memory_order_relaxed);
+  }
 
   double PredictMemUsageMB();
 
@@ -50,7 +53,7 @@ class ModelTrainStore {
 
   pid_t train_pid_{-1};
   int cur_batch_size_{-1};
-  int target_batch_size_{-1};
+  std::atomic<int> target_batch_size_{-1};
   bool first_batch_{true};
   std::string cur_model_name_;
 
