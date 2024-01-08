@@ -41,14 +41,14 @@ if run_colsys:
         workload = sawtooth(rps=100, infer_only=False)
         system = System(mode=System.ServerMode.ColocateL1, use_sta=True, mps=True, use_xsched=True, 
                         cuda_memory_pool_gb="13.5", ondemand_adjust=True, train_memory_over_predict_mb=1500,
-                        train_mps_thread_percent=40)
+                        train_mps_thread_percent=40, infer_model_max_idle_ms=4000)
         run(system, workload, 0, "colsys-heavy")
     # # colsys light
     with mps_thread_percent(30):
         workload = sawtooth(rps=10, infer_only=False)
         system = System(mode=System.ServerMode.ColocateL1, use_sta=True, mps=True, use_xsched=True, 
                         cuda_memory_pool_gb="13.5", ondemand_adjust=True, train_memory_over_predict_mb=1500,
-                        train_mps_thread_percent=70)
+                        train_mps_thread_percent=70, infer_model_max_idle_ms=4000)
         run(system, workload, 0, "colsys-light")
 
 

@@ -5,24 +5,25 @@ set_global_seed(42)
 use_time_stamp = True
 
 run_colsys = True
+run_strawman = True
 run_um_mps = True
 run_task_switch = True
 run_infer_only = True
 
 def smooth(rps, infer_only=True):
     workload = HyperWorkload(concurrency=2048, duration=140, delay_before_infer=30,
-                            warmup=5, delay_after_warmup=5)
+                            warmup=5, delay_after_warmup=5, delay_before_profile=5)
     InferModel.reset_model_cnt()
     if not infer_only:
         workload.set_train_workload(train_workload=TrainWorkload('resnet', 15, 96))
     workload.set_infer_workloads(MicrobenchmarkInferWorkload(
-        model_list=InferModel.get_model_list("resnet152", 32),
-        max_request_sec=rps, interval_sec=1, duration=60
+        model_list=InferModel.get_model_list("resnet152", num_model=36),
+        max_request_sec=rps, interval_sec=1, duration=65
     ))
     return workload
 
 def run(system: System, workload: HyperWorkload, num_worker: int, tag: str):
-    infer_model_config = System.InferModelConfig("resnet152[32]", "resnet152-b1", 1, num_worker)
+    infer_model_config = System.InferModelConfig("resnet152[36]", "resnet152-b1", 1, num_worker)
     system.launch("overall-smooth", tag, time_stamp=use_time_stamp,
                   infer_model_config=infer_model_config)
     workload.launch_workload(system)
@@ -37,16 +38,27 @@ if run_colsys:
     with mps_thread_percent(60):
         workload = smooth(rps=100, infer_only=False)
         system = System(mode=System.ServerMode.ColocateL1, use_sta=True, mps=True, use_xsched=True, 
-                        cuda_memory_pool_gb="14", ondemand_adjust=True, train_memory_over_predict_mb=2000,
+                        cuda_memory_pool_gb="13.5", ondemand_adjust=True, train_memory_over_predict_mb=1500, 
+                        has_warmup=True, infer_model_max_idle_ms=4000,
                         train_mps_thread_percent=40)
         run(system, workload, 0, "colsys-heavy")
     # # colsys light
     with mps_thread_percent(30):
         workload = smooth(rps=10, infer_only=False)
         system = System(mode=System.ServerMode.ColocateL1, use_sta=True, mps=True, use_xsched=True, 
-                        cuda_memory_pool_gb="14", ondemand_adjust=True, train_memory_over_predict_mb=2000,
+                        cuda_memory_pool_gb="13.5", ondemand_adjust=True, train_memory_over_predict_mb=1500,
+                        has_warmup=True, infer_model_max_idle_ms=4000,
                         train_mps_thread_percent=70)
         run(system, workload, 0, "colsys-light")
+
+if run_strawman:
+    with mps_thread_percent(60):
+        workload = smooth(rps=100, infer_only=False)
+        system = System(mode=System.ServerMode.ColocateL2, use_sta=False, mps=True, use_xsched=False,
+                        ondemand_adjust=True, train_memory_over_predict_mb=1000,
+                        has_warmup=True, infer_model_max_idle_ms=4000,
+                        train_mps_thread_percent=40)
+        run(system, workload, 0, "strawman-heavy")
 
 
 if run_um_mps:
@@ -68,12 +80,12 @@ if run_task_switch:
     # task switch heavy
     workload = smooth(rps=100, infer_only=False)
     system = System(mode=System.ServerMode.TaskSwitchL1, use_sta=True, mps=False, use_xsched=False,
-                    cuda_memory_pool_gb="13", train_memory_over_predict_mb=2000)
+                    cuda_memory_pool_gb="13", train_memory_over_predict_mb=1500)
     run(system, workload, 0, "task-switch-heavy")
     # task switch light
     workload = smooth(rps=10, infer_only=False)
     system = System(mode=System.ServerMode.TaskSwitchL1, use_sta=True, mps=False, use_xsched=False,
-                    cuda_memory_pool_gb="13", train_memory_over_predict_mb=2000)
+                    cuda_memory_pool_gb="13", train_memory_over_predict_mb=1500)
     run(system, workload, 0, "task-switch-light")
 
 
