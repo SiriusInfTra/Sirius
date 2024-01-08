@@ -47,7 +47,9 @@ std::ostream& operator<<(std::ostream &os, Profiler::PerfItem item) {
     LOG_ITEM(Profiler::PerfItem, InferGetOutput)
 
     LOG_ITEM(Profiler::PerfItem, TrainAdjust)
+    LOG_ITEM(Profiler::PerfItem, TrainFirstAdjust)
     LOG_ITEM(Profiler::PerfItem, InferAllocStorage)
+    LOG_ITEM(Profiler::PerfItem, InferWaitBeforeEnterAlloc)
     LOG_ITEM(Profiler::PerfItem, InferAdjustAlloc)
     LOG_ITEM(Profiler::PerfItem, InferLoadParam)
     LOG_ITEM(Profiler::PerfItem, InferPipelineExec)

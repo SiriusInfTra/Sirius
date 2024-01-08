@@ -64,7 +64,11 @@ double ModelTrainStore::PredictMemUsageMB() {
     return 0;
   } else {
     if (cur_model_name_ == "resnet152") {
-      return target_batch_size_ * 145;
+      if (Config::use_shared_tensor_train) {
+        return target_batch_size_ * 145;
+      } else {
+        return target_batch_size_ * 125 + 3512; // 3512 is 3.43 GB, GPU memory usage after empty torch internal cache
+      }
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }

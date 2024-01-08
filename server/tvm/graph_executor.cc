@@ -796,7 +796,7 @@ void GraphExecutor::AllocStorageMaybeAdjust() {
 
   bool adjusted = false;
 
-  auto adjust_train_batch_size = [this, &adjusted]() {
+  auto adjust_train_batch_size = [this, &adjusted](bool first_adjust) {
     if (adjusted) return;
     if (!Controller::Get()->IsTrainIdle()) {
       auto wait_train_pid = ModelTrainStore::Get()->GetTrainPid();
@@ -808,6 +808,9 @@ void GraphExecutor::AllocStorageMaybeAdjust() {
       auto cmd_id = Controller::Get()->ColocateAdjust(3);
       Controller::Get()->WaitColocateAdjustDone(cmd_id);
       PROFILE_END(TrainAdjust, 0);
+      if (first_adjust) {
+        Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, PROFILE_DURATRION(TrainAdjust, 0));        
+      }
       LOG(INFO) << "[GraphExecutor] AllocStorageMaybeAdjust: model " << this->factory_.model_rank_ 
                 << " wait adjust " << PROFILE_DURATRION(TrainAdjust, 0)
                 << " wait train pid " << wait_train_pid;
@@ -821,9 +824,11 @@ void GraphExecutor::AllocStorageMaybeAdjust() {
   // ensure sequential inference allocation  
   if (!Controller::Get()->TryEnterInferModelAlloc(factory_.model_rank_)) {
     if (Controller::Get()->HasFlyingColocateAdjust()) {
-      adjust_train_batch_size();
+      adjust_train_batch_size(false);
     }
+    auto _t0 = Profiler::Now();
     Controller::Get()->EnterInferModelAlloc(factory_.model_rank_);
+    Profiler::Get()->RecordPerf(Profiler::PerfItem::InferWaitBeforeEnterAlloc, Profiler::MilliFrom(_t0));
   }
 
   double free_memory_mb;
@@ -831,17 +836,20 @@ void GraphExecutor::AllocStorageMaybeAdjust() {
     if (Config::use_shared_tensor_train) {
       free_memory_mb = sta::detail::ByteToMB(sta::CUDAMemPool::PoolNbytes() - sta::CUDAMemPool::InferMemUsage());
       free_memory_mb -= std::max(sta::detail::ByteToMB(sta::CUDAMemPool::TrainAllMemUsage()),
-                                 ModelTrainStore::Get()->PredictMemUsageMB()) + Config::train_memory_over_predict_mb;
+                                 ModelTrainStore::Get()->PredictMemUsageMB());
+      free_memory_mb -= Config::train_memory_over_predict_mb;
     } else {
       auto [free, total] = Profiler::GetGPUMemInfo();
       auto infer_memory_mb = sta::detail::ByteToMB(Profiler::GetLastInferMem());
       auto train_memory_mb = std::max(sta::detail::ByteToMB(Profiler::GetLastTrainMem()),
                                             ModelTrainStore::Get()->PredictMemUsageMB());
+      train_memory_mb += Config::train_memory_over_predict_mb;
       free_memory_mb = std::min(sta::detail::ByteToMB(free), 
                                 sta::detail::ByteToMB(total) - infer_memory_mb - train_memory_mb);
-      free_memory_mb -= Config::train_memory_over_predict_mb; 
-      DLOG(INFO) << "free " << sta::detail::ByteToMB(free) << " total " << sta::detail::ByteToMB(total)
-                << " infer memory " << infer_memory_mb << " train memory " << train_memory_mb
+      // free_memory_mb -= Config::train_memory_over_predict_mb;
+      LOG(INFO) << "free " << sta::detail::ByteToMB(free) << " total " << sta::detail::ByteToMB(total)
+                << " infer memory " << infer_memory_mb << " train memory " << train_memory_mb 
+                << " predict train memory " << ModelTrainStore::Get()->PredictMemUsageMB()
                 << " free memory " << free_memory_mb;
     }
   }
@@ -858,7 +866,7 @@ void GraphExecutor::AllocStorageMaybeAdjust() {
   }
 
   if (sta::detail::ByteToMB(total_storage_nbytes) > free_memory_mb) {
-    adjust_train_batch_size();
+    adjust_train_batch_size(true);
   }
 
   PROFILE_START(InferAllocStorage, 0);

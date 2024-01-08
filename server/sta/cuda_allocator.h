@@ -38,8 +38,14 @@ class CUDAMemPool {
   static void FreeTrainLocals();
   static void DumpDumpBlockList();
 
-  static double TrainAllocMs() { return 1.0 * cuda_mem_pool_->train_alloc_us_.load(std::memory_order_relaxed) / 1000; }
-  static void ResetTrainAllocMs() { cuda_mem_pool_->train_alloc_us_.store(0, std::memory_order_relaxed); }
+  static double TrainAllocMs() { 
+    if (cuda_mem_pool_ == nullptr) return 0.0;
+    return 1.0 * cuda_mem_pool_->train_alloc_us_.load(std::memory_order_relaxed) / 1000; 
+  }
+  static void ResetTrainAllocMs() { 
+    if (cuda_mem_pool_ == nullptr) return;
+    cuda_mem_pool_->train_alloc_us_.store(0, std::memory_order_relaxed); 
+  }
 
   static std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes, MemType mtype);
 
