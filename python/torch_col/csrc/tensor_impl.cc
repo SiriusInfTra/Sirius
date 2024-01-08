@@ -24,7 +24,8 @@ ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data)
   storage_ = at::Storage{{}, mdata ? mdata->nbytes : 0, 
       c10::DataPtr{mdata ? mdata->addr : nullptr, 
       c10::Device{c10::DeviceType::CUDA, static_cast<c10::DeviceIndex>(tensor->device.device_id)}}};
-  storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
+  // storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
+  storage_offset_ = tensor->byte_offset / sta::GetDataTypeNbytes(tensor->dtype);
   // set_sizes_and_strides(tensor.Shape(), tensor.Stride());
   UpdateSize();
   UpdateVersion();
@@ -43,7 +44,8 @@ ColTensorImpl::ColTensorImpl(std::shared_ptr<Data> data,
   // LOG(INFO) << "ColTensorImpl w/ storage" << std::endl;
   set_sizes_strides_policy(SizesStridesPolicy::CustomSizes);
   storage_ = storage;
-  storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
+  // storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
+  storage_offset_ = tensor->byte_offset / sta::GetDataTypeNbytes(tensor->dtype);
   // UpdateSize();
   UpdateSize();
   UpdateVersion();
@@ -158,15 +160,16 @@ void ColTensorImpl::UpdateStorage() {
         nullptr, c10::Device{c10::DeviceType::CUDA, static_cast<c10::DeviceIndex>(tensor->device.device_id)}});
     storage_.set_nbytes(0);
   }
-  storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
+  // storage_offset_ = tensor->byte_offset / (tensor->dtype.bits >> 3);
+  storage_offset_ = tensor->byte_offset / sta::GetDataTypeNbytes(tensor->dtype);
 
   if (storage_.data() != nullptr) {
     CHECK(sta::CUDAMemPool::Get()->CheckAddr(storage_.data()));
     CHECK(sta::CUDAMemPool::Get()->CheckAddr(static_cast<char*>(storage_.data()) + storage_.nbytes()));
   }
 
-  DCHECK(!tensor.ComputeContiguous() || tensor.ComputeNumel() * (tensor->dtype.bits >> 3) <= storage_.nbytes())
-    << "numel: " << tensor.ComputeNumel() << " dtype: " << (tensor->dtype.bits >> 3) 
+  DCHECK(!tensor.ComputeContiguous() || tensor.ComputeNumel() * (sta::GetDataTypeNbytes(tensor->dtype)) <= storage_.nbytes())
+    << "numel: " << tensor.ComputeNumel() << " dtype: " << sta::GetDataTypeNbytes(tensor->dtype) 
     << " storage: " << storage_.nbytes() << " size " << tensor.Shape() 
     << " handle " << data_->handle << " mdata->nbytes " << mdata->nbytes;
 

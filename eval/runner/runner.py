@@ -74,6 +74,8 @@ class System:
                  ondemand_adjust: bool = True,
                  pipeline_load: bool = True,
                  train_memory_over_predict_mb: str | float = None,
+                 infer_model_max_idle_ms : Optional[int] = None,
+                 has_warmup: bool = False,
                  keep_last_time_stamp: bool = True) -> None:
         self.mode = mode
         self.use_sta = use_sta
@@ -104,6 +106,8 @@ class System:
         self.ondemand_adjust = ondemand_adjust
         self.pipeline_load = pipeline_load
         self.train_memory_over_predict_mb = train_memory_over_predict_mb
+        self.infer_model_max_idle_ms = infer_model_max_idle_ms
+        self.has_warmup = has_warmup
         if System._last_time_stamp is None or not keep_last_time_stamp:
             self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
             System._last_time_stamp = self.time_stamp
@@ -200,6 +204,14 @@ class System:
 
         if self.train_memory_over_predict_mb:
             cmd += ["--train-memory-over-predict-mb", str(self.train_memory_over_predict_mb)]
+        if self.infer_model_max_idle_ms:
+            cmd += ["--infer-model-max-idle-ms", str(self.infer_model_max_idle_ms)]
+
+        if self.has_warmup:
+            cmd += ["--has-warmup", "1"]
+        else:
+            cmd += ["--has-warmup", "0"]
+        
         if self.use_xsched:
             cmd += ["--use-xsched", "1"]
         else:
@@ -243,7 +255,7 @@ class System:
         self.log_dir = None
     
     def draw_memory_usage(self):
-        cmd = f'python util/profile/memory_trace.py  -l {self.exit_log_dir}/trace-cfg  -o {self.exit_log_dir}'
+        cmd = f'python util/profile/memory_trace.py  -l {self.exit_log_dir}/profile-log.log  -o {self.exit_log_dir}'
         print(f'execute {cmd}')
         os.system(cmd)
     
@@ -271,6 +283,7 @@ class HyperWorkload:
                  delay_before_infer: float = 0,
                  warmup: int = 0,
                  delay_after_warmup: Optional[float] = None,
+                 delay_before_profile: Optional[float] = None, # delay before start profiling infer, note different between cpp and py
                  show_result: Optional[int] = None) -> None:
         self.enable_infer = True
         self.enable_train = True
@@ -290,6 +303,10 @@ class HyperWorkload:
         self.delay_before_infer = delay_before_infer
         self.warmup = warmup
         self.delay_after_warmup = delay_after_warmup
+        if delay_before_profile is None:
+            self.delay_before_profile = delay_before_profile
+        else:
+            self.delay_before_profile = delay_before_profile + delay_before_infer
         self.show_result = show_result
 
     def set_infer_workloads(self, *infer_workloads: InferWorkloadBase):
@@ -358,6 +375,9 @@ class HyperWorkload:
         cmd += ["--warmup", str(self.warmup)]
         if self.warmup > 0 and self.delay_after_warmup is not None:
             cmd += ["--delay-after-warmup", str(self.delay_after_warmup)]
+
+        if self.delay_before_profile is not None:
+            cmd += ['--delay-before-profile', str(self.delay_before_profile)]
 
         workload_log = pathlib.Path(server.log_dir) / self.workload_log
 

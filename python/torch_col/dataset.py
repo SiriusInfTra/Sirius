@@ -49,6 +49,8 @@ class CustomeDynamicBatchDataset(IterableDataset):
         assert self.last_batch_size is not None
         self.iter_idx += self.last_batch_size
         self.last_batch_size = None
+        if torch_col.use_shared_tensor():
+            torch_col.MemoryPool.empty_cache() # to avoid memory fragmentation
 
     def __iter__(self) -> Iterator:
         worker_info = get_worker_info()
@@ -64,7 +66,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
                         self.hook.report_batch_size(batch_size)
                         time.sleep(1e-3)
                         if self.hook._stub.cmd == torch_col.Event.kColocateAdjustL1 or self.hook._stub.cmd == torch_col.Event.kColocateAdjustL2:
-                            self.hook.reply_adjust()
+                            self.hook.release_and_reply()
                         batch_size = min(self.batch_size, self.size - self.iter_idx)
                 elif self.hook.train_mode == TrainMode.TASKSWITCH_L1:
                     assert self.hook is not None

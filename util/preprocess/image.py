@@ -5,6 +5,7 @@ import sys
 img = sys.argv[1]
 out = sys.argv[2]
 
+
 resized_img = Image.open(img).resize((224,224))
 img_data = np.asarray(resized_img).astype('float32')
 img_data = np.transpose(img_data, (2, 0, 1))

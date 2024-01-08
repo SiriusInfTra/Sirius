@@ -413,9 +413,9 @@ class DummyHook(HookABC):
 
 
 def get_hook(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size: int):
-    if train_mode == TrainMode.NORMAL:
+    if train_mode == TrainMode.NORMAL or train_mode == TrainMode.COLOCATE_L2:
         return DummyHook(train_mode, hook_mode, num_epoch, batch_size)
-    elif train_mode.is_colocate():
+    elif train_mode == TrainMode.COLOCATE_L1:
         return ColocateHook(train_mode, hook_mode, num_epoch, batch_size)
     elif train_mode.is_taskswitch():
         return SwitchHook(train_mode, hook_mode, num_epoch, batch_size)

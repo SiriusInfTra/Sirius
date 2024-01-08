@@ -91,6 +91,12 @@ class Model {
                 const std::vector<std::shared_ptr<Job>> &jobs);
   bool GetOutput(tvm::GraphExecutor &graph_executor, 
                  size_t idx, const std::string &output_id, const std::vector<std::shared_ptr<Job>> &jobs);
+  inline double GetMaxIdleTime() { 
+    if (warmup_) {
+      return 3000; // a default dummy value
+    }
+    return scale_down_idle_time_; 
+  }
   void MonitorJob();
   
   std::string name_;
@@ -104,6 +110,7 @@ class Model {
   // infer scaling
   double scale_up_queue_time_;  // ms
   double scale_down_idle_time_; // ms
+  bool warmup_;
   uint32_t max_num_worker_;
   std::atomic<uint32_t> num_worker_;
   std::vector<std::unique_ptr<std::atomic<bool>>> worker_running_;

@@ -60,11 +60,11 @@ bool ModelTrainStore::AddJob(network::TrainHandler::TrainData* data) {
 }
 
 double ModelTrainStore::PredictMemUsageMB() {
-  if (cur_batch_size_ <= 0) {
+  if (target_batch_size_ <= 0) {
     return 0;
   } else {
     if (cur_model_name_ == "resnet152") {
-      return cur_batch_size_ * 145;
+      return target_batch_size_ * 145;
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
@@ -250,6 +250,8 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
   int status;
   waitpid(pid, &status, 0);
   train_pid_ = -1;
+  first_batch_ = false;
+  target_batch_size_ = -1;
   // cur_batch_size_ = -1;
   Controller::Get()->TrainEnd(); // double check train end
   

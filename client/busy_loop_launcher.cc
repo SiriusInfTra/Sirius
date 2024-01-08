@@ -45,6 +45,7 @@ int main(int argc, char** argv) {
   colserve::workload::Workload workload(
       grpc::CreateChannel(target, grpc::InsecureChannelCredentials()),
       std::chrono::seconds(app.duration),
+      app.delay_before_profile,
       app.infer_timeline
   );
   CHECK(workload.Hello());

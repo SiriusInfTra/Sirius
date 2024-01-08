@@ -24,7 +24,7 @@ bool Config::use_shared_tensor_infer = true;
 bool Config::use_shared_tensor_train = true;
 bool Config::ondemand_adjust = true;
 bool Config::better_alloc = true;
-size_t Config::better_alloc_threshold = 128 * 1024 * 1024;
+size_t Config::better_alloc_threshold = 64 * 1024 * 1024;
 
 bool Config::group_param_load = true;
 size_t Config::group_param_load_threshold = 16 * 1024 * 1024;
@@ -52,6 +52,9 @@ double Config::memory_pressure_mb = 0;
 bool Config::pipeline_load = true;
 
 double Config::task_switch_delay_ms = 5;
+
+bool Config::has_warmup = false;
+double Config::infer_model_max_idle_ms = 3000;
 
 bool Config::system_initialized = false;
 

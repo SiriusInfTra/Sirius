@@ -88,6 +88,10 @@ void init_cli_options() {
       "pipeline load, default is 1");
   app.add_option("--train-memory-over-predict-mb", colserve::Config::train_memory_over_predict_mb,
       "train memory over predict in MB, default is 2560");
+  app.add_option("--infer-model-max-idle-ms", colserve::Config::infer_model_max_idle_ms,
+      "infer model max idle in ms, default is 3000");
+  app.add_option("--has-warmup", colserve::Config::has_warmup,
+      "has warmup, default is 0");
 }
 
 void init_config() {
@@ -142,7 +146,8 @@ void init_config() {
             << "cfg::ondemand_adjust=" << cfg::ondemand_adjust << std::endl
             << "cfg::better_alloc=" << cfg::better_alloc << std::endl
             << "cfg::group_param_load=" << cfg::group_param_load << std::endl
-            << "cfg::pipeline_load=" << cfg::pipeline_load << std::endl 
+            << "cfg::pipeline_load=" << cfg::pipeline_load << std::endl
+            << "cfg::has_warmup=" << cfg::has_warmup << std::endl
             << "cfg::colocate_config.skip_malloc=" << cfg::colocate_config.skip_malloc << std::endl
             << "cfg::colocate_config.skip_loading=" << cfg::colocate_config.skip_loading << std::endl;
 
