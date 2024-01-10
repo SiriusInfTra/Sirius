@@ -237,10 +237,12 @@ class MemoryQueue {
 
 
   std::string GetShmName(size_t version) {
+    auto *gpu_id = std::getenv("CUDA_VISIBLE_DEVICES");
+    CHECK(gpu_id != nullptr);
     if (version == static_cast<size_t>(-1)) {
-      return "colserve-mq-" + std::to_string(getuid()) + "-" + name_;
+      return "colserve-mq-" + std::to_string(getuid()) + "-" + name_ + "-" + gpu_id;
     } else {
-      return "colserve-mq-" + std::to_string(getuid()) + "-" + name_ + "-" + std::to_string(version);
+      return "colserve-mq-" + std::to_string(getuid()) + "-" + name_ + "-" + gpu_id + "-" + std::to_string(version);
     }
   }
   void Lock() {

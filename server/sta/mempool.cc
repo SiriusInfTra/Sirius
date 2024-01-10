@@ -197,12 +197,14 @@ void MemPool::CopyFromToInternel(void *dst_dev_ptr, void *src_dev_ptr,
 
 MemPool::MemPool(MemPoolConfig config, bool cleanup, bool observe, FreeListPolicyType policy_type)
     : config_(std::move(config)), mem_pool_base_ptr_(nullptr), observe_(observe) {
+  auto *gpu_id = std::getenv("CUDA_VISIBLE_DEVICES");
+  CHECK(gpu_id != nullptr);
   if (std::getenv("USER") != nullptr) {
     config_.shared_memory_name =
-        config_.shared_memory_name + "_" + std::getenv("USER");
+        config_.shared_memory_name + "_" + std::getenv("USER") + "-" + gpu_id;
   } else {
     config_.shared_memory_name =
-        config_.shared_memory_name + "_" + std::to_string(getuid());
+        config_.shared_memory_name + "_" + std::to_string(getuid()) + "-" + gpu_id;
   }
   if (cleanup) {
     bip::shared_memory_object::remove(config_.shared_memory_name.c_str());
