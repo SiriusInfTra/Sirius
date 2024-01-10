@@ -8,6 +8,9 @@ import numpy as np
 import torch
 from transformers import DistilBertTokenizer, DistilBertModel
 import tempfile
+from tvm.driver import tvmc
+import tarfile
+
 
 model_store = "models"
 tmp_dir = tempfile.gettempdir()
@@ -17,7 +20,7 @@ enc = DistilBertTokenizer.from_pretrained("distilbert-base-uncased")
 
 #NOTE max token len is 512!
 batch_size = 1
-token_len = 128
+token_len = 64
 pesudo_text = np.random.randint(101, enc.vocab_size - 1000, token_len) # in case out of bound
 pesudo_text[0] = 101 # [CLS]
 pesudo_text[-1] = 102 # [SEP]
@@ -42,18 +45,29 @@ def get_onnx():
                       input_names=["input_ids", "attention_mask"], output_names=["output"], export_params=True,)
 
 def tvm_compile():
-    onnx_model = onnx.load('{}/distilbert_base.onnx'.format(tmp_dir))
     shape_dict = {'input_ids' : [1, token_len], 'attention_mask':[1, token_len]}
-    mod_bert, params_bert = relay.frontend.from_onnx(onnx_model, shape_dict)
+    tvmc_model = tvmc.load(f"{tmp_dir}/distilbert_base.onnx", 
+                            shape_dict=shape_dict)
+
+    tune_records = "util/prepare_model_store/distilbert-tune.json"
+    tvmc.compile(tvmc_model=tvmc_model, target='cuda', package_path=f"{tmp_dir}/distilbert_base-tvm.tar", tuning_records=tune_records)
+
+    model_store_path = f'{model_store}/distilbert_base-b{batch_size}' 
+    pathlib.Path(model_store_path).mkdir(parents=True, exist_ok=True)
+    tarfile.open(f"{tmp_dir}/distilbert_base-tvm.tar").extractall(model_store_path)
+
+
+    # onnx_model = onnx.load('{}/distilbert_base.onnx'.format(tmp_dir))
+    # mod_bert, params_bert = relay.frontend.from_onnx(onnx_model, shape_dict)
     
-    # compile module
-    with tvm.transform.PassContext(opt_level=3):
-        executor_factory = relay.build(mod_bert, target='cuda', executor=Executor("graph"), params=params_bert)
+    # # compile module
+    # with tvm.transform.PassContext(opt_level=3):
+    #     executor_factory = relay.build(mod_bert, target='cuda', executor=Executor("graph"), params=params_bert)
     
-    model_store_path = f'{model_store}/distilbert_base-b{batch_size}'
-    lib_name = "mod.so"
-    graph_module_name = "mod.json"
-    params_name = "mod.params"
+    # model_store_path = f'{model_store}/distilbert_base-b{batch_size}'
+    # lib_name = "mod.so"
+    # graph_module_name = "mod.json"
+    # params_name = "mod.params"
 
     # executor_factory.get_lib().export_library(f'{model_store_path}/{lib_name}')
     # pathlib.Path(model_store_path).mkdir(parents=True, exist_ok=True)
