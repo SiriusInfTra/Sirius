@@ -36,8 +36,7 @@ def get_onnx():
     model = BertModel.from_pretrained("bert-base-uncased")
     print(dummy_input)
     torch.onnx.export(model, dummy_input, f"{tmp_dir}/bert-base.onnx", verbose=True,
-                      input_names=["input_ids", "attention_mask"], output_names=["output"], export_params=True,
-                      dynamic_axes={'input_ids':[0], 'attention_mask':[0], 'output':[0]})
+                      input_names=["input_ids", "attention_mask"], output_names=["output"], export_params=True)
 
 def tvm_compile():
     onnx_model = onnx.load('{}/bert-base.onnx'.format(tmp_dir))

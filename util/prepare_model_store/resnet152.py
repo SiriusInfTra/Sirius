@@ -13,8 +13,7 @@ tmp_dir = tempfile.gettempdir()
 resnet152 = models.resnet152(weights=models.ResNet152_Weights.DEFAULT).eval()
 torch.onnx.export(resnet152, torch.rand(batch_size, 3, 224, 224), 
                   f"{tmp_dir}/resnet152.onnx", verbose=True,
-                  input_names=["input"], output_names=["output"], export_params=True,
-                  dynamic_axes={'input':[0], 'output':[0]})
+                  input_names=["input"], output_names=["output"], export_params=True)
 
 # tvmc compile --target "cuda" \
 #   --input-shape "input:[x,3,224,224]" --output resnet152.tar resnet152.onnx

@@ -13,8 +13,7 @@ tmp_dir = tempfile.gettempdir()
 densenet161 = models.densenet161(weights=models.DenseNet161_Weights.DEFAULT).eval()
 torch.onnx.export(densenet161, torch.rand(batch_size, 3, 224, 224), 
                   f"{tmp_dir}/densenet161.onnx", verbose=True,
-                  input_names=["input"], output_names=["output"], export_params=True,
-                  dynamic_axes={'input':[0], 'output':[0]})
+                  input_names=["input"], output_names=["output"], export_params=True)
 
 # tvmc compile --target "cuda" \
 #   --input-shape "input:[x,3,224,224]" --output resnet50.tar resnet50.onnx

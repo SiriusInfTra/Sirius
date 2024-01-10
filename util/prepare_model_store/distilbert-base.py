@@ -31,6 +31,7 @@ segments_tensors = torch.tensor([segments_ids])
 dummy_input = tuple([tokens_tensor, segments_tensors])
 # end global
 
+
 print(f"### {enc.vocab_size}")
 
 def get_onnx():
@@ -38,8 +39,7 @@ def get_onnx():
     model = DistilBertModel.from_pretrained("distilbert-base-uncased")
     print(dummy_input)
     torch.onnx.export(model, dummy_input, f"{tmp_dir}/distilbert_base.onnx", verbose=True,
-                      input_names=["input_ids", "attention_mask"], output_names=["output"], export_params=True,
-                      dynamic_axes={'input_ids':[0], 'attention_mask':[0], 'output':[0]})
+                      input_names=["input_ids", "attention_mask"], output_names=["output"], export_params=True,)
 
 def tvm_compile():
     onnx_model = onnx.load('{}/distilbert_base.onnx'.format(tmp_dir))
@@ -55,12 +55,12 @@ def tvm_compile():
     graph_module_name = "mod.json"
     params_name = "mod.params"
 
-    executor_factory.get_lib().export_library(f'{model_store_path}/{lib_name}')
-    pathlib.Path(model_store_path).mkdir(parents=True, exist_ok=True)
-    with open(f'{model_store_path}/{graph_module_name}', "w") as graph_file:
-        graph_file.write(executor_factory.get_graph_json())
-    with open(f'{model_store_path}/{params_name}', "wb") as params_file:
-        params_file.write(relay.save_param_dict(executor_factory.get_params()))
+    # executor_factory.get_lib().export_library(f'{model_store_path}/{lib_name}')
+    # pathlib.Path(model_store_path).mkdir(parents=True, exist_ok=True)
+    # with open(f'{model_store_path}/{graph_module_name}', "w") as graph_file:
+    #     graph_file.write(executor_factory.get_graph_json())
+    # with open(f'{model_store_path}/{params_name}', "wb") as params_file:
+    #     params_file.write(relay.save_param_dict(executor_factory.get_params()))
 
 
 if __name__ == '__main__':
