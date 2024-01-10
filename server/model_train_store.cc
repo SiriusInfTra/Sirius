@@ -255,7 +255,7 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
   waitpid(pid, &status, 0);
   train_pid_ = -1;
   first_batch_ = false;
-  target_batch_size_ = -1;
+  // target_batch_size_ = -1;
   // cur_batch_size_ = -1;
   Controller::Get()->TrainEnd(); // double check train end
   
@@ -266,7 +266,7 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
       LOG(INFO) << "[ModelTrainStore]: " << job << " is killed, restart";
       return false;
     } else {
-      LOG(FATAL) << "[ModelTrainStore]: " << job << " failed, signal is " << strsignal(signal)
+      LOG(FATAL) << "[ModelTrainStore]: " << job << " failed, signal is " << strsignal(signal) << " target_batch_size " << target_batch_size_
                  << " cur_batch_size " << cur_batch_size_ << " predict memory " << PredictMemUsageMB() << "MB";
       return false;
     }

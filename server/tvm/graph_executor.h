@@ -12,6 +12,7 @@
 #include "graph_executor_factory.h"
 
 #include "glog/logging.h"
+#include "sta/mempool.h"
 
 namespace colserve {
 namespace tvm {
@@ -75,6 +76,12 @@ class GraphExecutor {
 
   size_t GetStorageSize() const {
     return param_storage_size_ + buffer_storage_size_;
+  }
+
+  size_t GetAdjustBatchSize() const {
+    size_t size_mega = sta::detail::ByteToMB(GetStorageSize());
+    /* reserve 30MB, 145MB per batch */
+    return (size_mega + 144 + 30) / 145; 
   }
 
  private:

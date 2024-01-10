@@ -483,7 +483,7 @@ bool Model::SetInput(tvm::GraphExecutor &graph_executor,
 
   // tvm::runtime::NDArray input_arr = get_input_(input_id, device_);
   auto input_dev = graph_executor.GetInput(input_id);
-  CHECK(sta::DLDataTypeEqual(input_dev->dtype, input_dtype)) << "input dtype mismatch";
+  CHECK(sta::DLDataTypeEqual(input_dev->dtype, input_dtype)) << "input dtype mismatch " << (int)input_dev->dtype.bits << " vs " << (int)input_dtype.bits;
 
   auto copy_batch_input_fn = [&jobs](size_t idx, void* data) {
     size_t offset = 0;
@@ -565,7 +565,7 @@ void Model::MonitorJob() {
               pid_t infer_waited_train;
               if (!Controller::Get()->IsTrainIdle()) {
                 infer_waited_train = ModelTrainStore::Get()->GetTrainPid();
-                auto id = Controller::Get()->ColocateAdjust(3);
+                auto id = Controller::Get()->ColocateAdjust(graph_executor_pool_.front()->GetAdjustBatchSize());
                 if (!Config::colocate_config.skip_malloc) {
                   Controller::Get()->WaitColocateAdjustDone(id);
                 }
