@@ -450,7 +450,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
   GraphCache::Get()->DeInitGraphExecutor(name_, graph_executor);
   if (Config::IsColocateMode()) {
     Controller::Get()->InferExit(
-      (waited_trains_[rank] != -1 && waited_trains_[rank] == ModelTrainStore::Get()->GetTrainPid()) ? 3 : 0);
+      (waited_trains_[rank] != -1 && waited_trains_[rank] == ModelTrainStore::Get()->GetTrainPid()) ? graph_executor_pool_.front()->GetAdjustBatchSize() : 0);
     exit_log_ss << ", waited train " << waited_trains_[rank] << ", current train pid " << ModelTrainStore::Get()->GetTrainPid();
   } else if (Config::IsSwitchMode()) {
     ModelInferStore::Get()->TaskSwitchExit();

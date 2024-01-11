@@ -214,6 +214,7 @@ void GraphExecutorFactory::LoadParams(const std::string &params_file) {
     // The data_entry is allocated on device, NDArray.load always load the array into CPU.
     TVMArray temp;
     temp.Load(strm);
+
     CHECK(input_map_.count(names[i])) << "cannot find " << names[i] <<  " in model parameter"; 
     auto it = node_map_.find(names[i]);
     // LOG(INFO) << "find param in input_map " << it->first << " " << it->second;

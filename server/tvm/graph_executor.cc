@@ -175,9 +175,9 @@ void GraphExecutor::Run() {
 void GraphExecutor::PipelineRun() {
   using namespace ::tvm::runtime;
   CHECK(initialized_);
-  // double wait_load_ms = 0;
-  // double wait_ms = 0;
-  // double record_exec_ms = 0;
+  double wait_load_ms = 0;
+  double wait_ms = 0;
+  double record_exec_ms = 0;
 
   auto begin = Profiler::Now();
   DeviceAPI::Get(factory_.devices_[0])->SetStream(factory_.devices_[0], exec_stream_);
@@ -193,18 +193,18 @@ void GraphExecutor::PipelineRun() {
             break;
           }
         }
-        std::this_thread::sleep_for(std::chrono::microseconds(1));
+        // std::this_thread::sleep_for(std::chrono::microseconds(1));
       }
-      // wait_load_ms += Profiler::MilliFrom(t0);
+      wait_load_ms += Profiler::MilliFrom(t0);
 
-      // auto t1 = Profiler::Now();
+      auto t1 = Profiler::Now();
       // 2. wait load finish
       for (auto nid : input_param_nid_[i]) {
         auto event_id = param_ready_event_ids_[nid];
         CHECK(event_id != -1);
         CUDA_CALL(cudaStreamWaitEvent((cudaStream_t)exec_stream_, param_ready_events_[event_id]));
       }
-      // wait_ms += Profiler::MilliFrom(t1);
+      wait_ms += Profiler::MilliFrom(t1);
 
       op_execs_[i]();
       // auto t0 = std::chrono::steady_clock::now();
@@ -225,8 +225,8 @@ void GraphExecutor::PipelineRun() {
     }
   }
   DeviceAPI::Get(factory_.devices_[0])->StreamSync(factory_.devices_[0], exec_stream_);
-  // LOG(INFO) << "wait_load_ms " << wait_load_ms << " wait_ms " << wait_ms << " record_exec_ms " << record_exec_ms
-  //           << " tot " << Profiler::MilliFrom(begin);
+  LOG(INFO) << "wait_load_ms " << wait_load_ms << " wait_ms " << wait_ms << " record_exec_ms " << record_exec_ms
+            << " tot " << Profiler::MilliFrom(begin);
 }
 
 // double GraphExecutor::ComputePipelineExecTime() {
@@ -805,7 +805,7 @@ void GraphExecutor::AllocStorageMaybeAdjust() {
       this->factory_.infer_model_->SetWaitTrainPid(this->infer_model_worker_id_, wait_train_pid);
 
       PROFILE_START(TrainAdjust, 0);
-      auto cmd_id = Controller::Get()->ColocateAdjust(3);
+      auto cmd_id = Controller::Get()->ColocateAdjust(GetAdjustBatchSize());
       Controller::Get()->WaitColocateAdjustDone(cmd_id);
       PROFILE_END(TrainAdjust, 0);
       if (first_adjust) {
