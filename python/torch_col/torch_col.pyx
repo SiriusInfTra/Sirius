@@ -33,6 +33,15 @@ def cuda_memory_pool_reset_train_alloc_ms():
 
 cdef extern from "<csrc/unix_time.h>" namespace "torch_col":
     cpdef long get_unix_timestamp()
+    cpdef long get_unix_timestamp_us()
+
+
+def get_adjust_request_time_stamp():
+    return StubProfiler.GetAdjustRequestTimeStamp()
+
+
+def get_adjust_done_time_stamp():
+    return StubProfiler.GetAdjustDoneTimeStamp()
 
 
 def release_grad_fn_saved_tensor(grad_fn):

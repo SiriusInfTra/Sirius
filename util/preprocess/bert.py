@@ -3,7 +3,7 @@ import numpy as np
 
 vocab_size = 30522
 
-token_len = 128
+token_len = 64
 pesudo_text = np.random.randint(101, vocab_size - 1000, token_len) # in case out of bound
 pesudo_text[0] = 101 # [CLS]
 pesudo_text[-1] = 102 # [SEP]

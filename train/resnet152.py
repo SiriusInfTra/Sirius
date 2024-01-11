@@ -143,7 +143,7 @@ def main():
         print("CUDA Stream create without xsched.")
     with torch.cuda.stream(stream):
         train(train_mode, hook_mode, num_epoch, batch_size)
-    EventManager.dump(args.train_profile)
+    EventManager.dump(args.train_profile, train_mode)
 
 
 if __name__ == '__main__':

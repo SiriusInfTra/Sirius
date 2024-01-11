@@ -5,4 +5,8 @@ inline auto get_unix_timestamp() {
   return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
+inline auto get_unix_timestamp_us() {
+  return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
 }

@@ -13,6 +13,10 @@ namespace torch_col {
 
 using namespace colserve;
 
+std::vector<long> StubProfiler::adjust_request_time_stamp_;
+std::vector<long> StubProfiler::adjsut_done_time_stamp_;
+std::mutex StubProfiler::mutex_;
+
 SwitchStub::SwitchStub() {
   cmd_event_mq_ = std::make_unique<MemoryQueue<CtrlMsgEntry>>("cmd-ctrl", false);
   status_event_mq_ = std::make_unique<MemoryQueue<CtrlMsgEntry>>("status-ctrl", false);
@@ -120,7 +124,7 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
                     << " timestamp: " << torch_col::get_unix_timestamp()
                     << " malloc_ms " << colserve::sta::CUDAMemPool::TrainAllocMs();
           // CHECK_LT(this->target_bs_, this->current_bs_);
-          if (this->target_bs_ > this->current_bs_) {
+          if (this->target_bs_ >= this->current_bs_) {
             LOG(INFO) << "[ColocateStub] skip satisfied adjust, reply adjust immediately";
             if (data.event == static_cast<int>(Event::kColocateAdjustL1)) {
               status_event_mq_->Put({data.id, static_cast<int>(Event::kColocateAdjustL1Done)});
@@ -147,6 +151,7 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
           cmd_ = data.event;
           cmd_id_ = data.id;
           set_cmd_time_ = std::chrono::steady_clock::now();
+          StubProfiler::RecordAdjustRequest();
         } else if (data.event == static_cast<int>(Event::kInferExit)) {
           this->target_bs_ += data.value;
           LOG(INFO) << "[ColocateStub] Infer Exit adjust back to " << this->target_bs_ 
@@ -193,6 +198,7 @@ void ColocateStub::ColocateAdjustL1Done() {
     cmd_id_ = 0;
     SetBlockCudaCalls_v2(false);
     // colserve::sta::CUDAMemPool::EnableTrainAlloc();
+    StubProfiler::RecordAdjustDone();
     LOG(INFO) << "[ColocateStub] Adjust L1 done, timestamp: " << torch_col::get_unix_timestamp()
               << " train_alloc_ms " << colserve::sta::CUDAMemPool::TrainAllocMs();
   }
@@ -204,6 +210,7 @@ void ColocateStub::ColocateAdjustL2Done() {
     status_event_mq_->Put({cmd_id_, static_cast<int>(Event::kColocateAdjustL2Done)});
     cmd_ = -1;
     cmd_id_ = 0;
+    StubProfiler::RecordAdjustDone();
     LOG(INFO) << "[ColocateStub] Adjust L2 done, timestamp: " << torch_col::get_unix_timestamp();
   }
 }
@@ -231,13 +238,6 @@ void ColocateStub::ReportBatchSize(int batch_size) {
  
 }
 
-void DumpMempoolFreeList(std::string filename) {
-  colserve::sta::DumpMempoolFreeList(filename);
-}
-void DumpMempoolBlockList(std::string filename) {
-    colserve::sta::DumpMempoolBlockList(filename);
-}
-
 void ColocateStub::StepsNoInteruptBegin() {
   // std::unique_lock lock{mutex_};
   step_mutex_.lock();
@@ -249,4 +249,22 @@ void ColocateStub::StepsNoInteruptEnd() {
   exec_step_ = false;
   step_mutex_.unlock();
 }
+
+void StubProfiler::RecordAdjustRequest() {
+  std::unique_lock lock{StubProfiler::mutex_};
+  StubProfiler::adjust_request_time_stamp_.push_back(torch_col::get_unix_timestamp_us());
+}
+
+void StubProfiler::RecordAdjustDone() {
+  std::unique_lock lock{StubProfiler::mutex_};
+  StubProfiler::adjsut_done_time_stamp_.push_back(torch_col::get_unix_timestamp_us());
+}
+
+void DumpMempoolFreeList(std::string filename) {
+  colserve::sta::DumpMempoolFreeList(filename);
+}
+void DumpMempoolBlockList(std::string filename) {
+    colserve::sta::DumpMempoolBlockList(filename);
+}
+
 }  // namespace torch_col
