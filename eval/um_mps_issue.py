@@ -41,19 +41,19 @@ def run(system: System, hyper_workload:HyperWorkload, num_model:int, req_per_sec
 
 
 system = System(mode=System.ServerMode.Normal, use_sta=False, mps=True, train_mps_thread_percent=40)
-workload = HyperWorkload(concurrency=1, duration=30, delay_before_infer=30)
+hyper_workload = HyperWorkload(concurrency=1, duration=30, delay_before_infer=30)
 
-run(system, workload, 1, 4, "ideal")
-run(system, workload, 2, 4, "ideal")
-run(system, workload, 4, 4, "ideal")
-run(system, workload, 8, 4, "ideal")
-run(system, workload, 16, 4, "ideal")
+run(system, hyper_workload, 1, 4, "ideal")
+run(system, hyper_workload, 2, 4, "ideal")
+run(system, hyper_workload, 4, 4, "ideal")
+run(system, hyper_workload, 8, 4, "ideal")
+run(system, hyper_workload, 16, 4, "ideal")
 
 os.environ["TORCH_UNIFIED_MEMORY"] = "1"
 os.environ["STA_RAW_ALLOC_UNIFIED_MEMORY"] = "1"
 with MemoryPressure(4975):
-    run(system, workload, 1, 4, "mempres")
-    run(system, workload, 2, 4, "mempres")
-    run(system, workload, 4, 4, "mempres")
-    run(system, workload, 8, 4, "mempres")
-    run(system, workload, 16, 4, "mempres")
+    run(system, hyper_workload, 1, 4, "mempres")
+    run(system, hyper_workload, 2, 4, "mempres")
+    run(system, hyper_workload, 4, 4, "mempres")
+    run(system, hyper_workload, 8, 4, "mempres")
+    run(system, hyper_workload, 16, 4, "mempres")

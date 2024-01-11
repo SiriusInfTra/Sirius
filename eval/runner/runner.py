@@ -11,7 +11,7 @@ from typing import List, Dict, Optional
 from types import NoneType
 from dataclasses import dataclass
 
-from .workload import InferWorkloadBase, TrainWorkload, InferTraceDumper, InferModel, RandomInferWorkload
+from .hyper_workload import InferWorkloadBase, TrainWorkload, InferTraceDumper, InferModel, RandomInferWorkload
 from .config import get_global_seed
 
 

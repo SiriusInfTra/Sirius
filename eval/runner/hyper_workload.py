@@ -41,7 +41,26 @@ class InferModel:
         for i in range(1, num_model):
             ret.append(InferModel(f"{model_name}-{i}"))
         return ret
-
+    
+    @classmethod
+    def get_multi_model(cls, model_name_list: list[str], total_model: int, num_worker: int):
+        num_model_list = [total_model // len(model_name_list) for _ in model_name_list]
+        for i in range(total_model % len(model_name_list)):
+            num_model_list[i] += 1
+        
+        client_model_list = []
+        server_model_config = []
+        for model_name, num_model in zip(model_name_list, num_model_list):
+            client_model_list.extend(cls.get_model_list(model_name, num_model))
+            server_model_config.append(
+                f'''{model_name}[{num_model}]
+    path {model_name.lower()}-b1
+    device cuda
+    batch-size 1
+    num-worker {num_worker}
+    max-worker 1
+                ''')
+        return client_model_list, server_model_config
 
 class TraceRecord(NamedTuple):
     start_point: float
@@ -277,6 +296,7 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
         num_model_to_requests = []
         for i in range(period_num):
             # first select a few models to send requests
+            print(f"!!!!!!!!! {len(model_list) + 1}")
             num_model = self.rs.randint(1, len(model_list) + 1)
             num_request = self.rs.uniform(0, max_request_sec)
             if rps_fn is not None:

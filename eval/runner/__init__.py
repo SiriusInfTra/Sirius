@@ -31,5 +31,5 @@ print('CUDA_VISIBLE_DEVICES={}, CUDA_MPS_PIPE_DIRECTORY={}'.format(
 
 from .config import get_global_seed, set_global_seed, set_mps_thread_percent, unset_mps_thread_percent, mps_thread_percent, um_mps
 from .runner import *
-from .workload import *
+from .hyper_workload import *
 
