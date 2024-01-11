@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <thread>
+#include <mutex>
 
 // #include <block_queue.h>
 // #include <controller.h>
@@ -89,6 +90,27 @@ class ColocateStub {
   std::chrono::time_point<std::chrono::steady_clock> set_cmd_time_;
   std::unique_ptr<MemoryQueue<CtrlMsgEntry>> cmd_event_mq_, status_event_mq_; // adjust_event_mq_;
   std::unique_ptr<std::thread> thread_;
+};
+
+class StubProfiler {
+ public:
+  static std::vector<long> GetAdjustRequestTimeStamp() {
+    std::unique_lock lock{StubProfiler::mutex_};
+    return adjust_request_time_stamp_;
+  }
+
+  static std::vector<long> GetAdjustDoneTimeStamp() {
+    std::unique_lock lock{StubProfiler::mutex_};
+    return adjsut_done_time_stamp_;
+  }
+
+  static void RecordAdjustRequest();
+  static void RecordAdjustDone();
+
+ private:
+  static std::vector<long> adjust_request_time_stamp_;
+  static std::vector<long> adjsut_done_time_stamp_;
+  static std::mutex mutex_;
 };
 
 void DumpMempoolFreeList(std::string filename);

@@ -357,28 +357,30 @@ class ColocateHook(HookABC):
         # decouple kill batch and reclaim memory
         # print(f'[Adjust L1] train alloc cost {torch_col.cuda_memory_pool_train_alloc_ms()}ms', flush=True)
         t0 = time.time()
-        if torch_col.release_saved_tensor_v1():
-            for fn in self._grad_fn:
-                torch_col.release_grad_fn_saved_tensor(fn)
-            self._grad_fn = []
-        else:
-            torch_col.release_saved_tensor_memory()
-        
-        old_gpu_mem = MemoryPool.get_memory_usage()
-        MemoryPool.empty_cache()
-        self._stub.adjust_l1_done()
-        cur_gpu_mem = MemoryPool.get_memory_usage()
+        with EventManager.record_duration_event('adjust_l1'):
+            if torch_col.release_saved_tensor_v1():
+                for fn in self._grad_fn:
+                    torch_col.release_grad_fn_saved_tensor(fn)
+                self._grad_fn = []
+            else:
+                torch_col.release_saved_tensor_memory()
+            
+            old_gpu_mem = MemoryPool.get_memory_usage()
+            MemoryPool.empty_cache()
+            self._stub.adjust_l1_done()
+            cur_gpu_mem = MemoryPool.get_memory_usage()
         t1 = time.time()
-        print(f'[Adjust L1 {(t1-t0)*1e3:.1f} ms] target batch_size: {self.target_batch_size}, memory usage: {old_gpu_mem:.2f}GB -> {cur_gpu_mem:.2f}GB.', flush=True)
+        print(f'[{torch_col.get_unix_timestamp_us()/1000}] [Adjust L1 {(t1-t0)*1e3:.1f} ms] target batch_size: {self.target_batch_size}, memory usage: {old_gpu_mem:.2f}GB -> {cur_gpu_mem:.2f}GB.', flush=True)
 
     def adjust_l2(self):
         t0 = time.time()
-        old_gpu_mem = MemoryPool.get_memory_usage()
-        MemoryPool.empty_cache()
-        self._stub.adjust_l2_done()
-        cur_gpu_mem = MemoryPool.get_memory_usage()
+        with EventManager.record_duration_event('adjust_l2'):
+            old_gpu_mem = MemoryPool.get_memory_usage()
+            MemoryPool.empty_cache()
+            self._stub.adjust_l2_done()
+            cur_gpu_mem = MemoryPool.get_memory_usage()
         t1 = time.time()
-        print(f'[Adjust L2 {(t1-t0)*1e3:.1f} ms] target batch_size: {self.target_batch_size}, memory usage: {old_gpu_mem:.2f}GB -> {cur_gpu_mem:.2f}GB.', flush=True)
+        print(f'[{torch_col.get_unix_timestamp_us()/1000}] [Adjust L2 {(t1-t0)*1e3:.1f} ms] target batch_size: {self.target_batch_size}, memory usage: {old_gpu_mem:.2f}GB -> {cur_gpu_mem:.2f}GB.', flush=True)
 
     def report_batch_size(self, batch_size):
         self._stub.report_batch_size(batch_size)

@@ -1,6 +1,7 @@
 # distutils: language = c++
 
 from libcpp.string cimport string
+from libcpp.vector cimport vector
 from cpython.ref cimport PyObject
 
     
@@ -69,3 +70,10 @@ cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
         void ReportBatchSize(int)
         void StepsNoInteruptBegin()
         void StepsNoInteruptEnd()
+
+    cdef cppclass StubProfiler:
+        @staticmethod
+        vector[long] GetAdjustRequestTimeStamp()
+        
+        @staticmethod
+        vector[long] GetAdjustDoneTimeStamp()

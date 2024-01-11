@@ -31,8 +31,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
     def next_batch(self):
         if self.hook.train_mode == TrainMode.COLOCATE_L2:
             if self.hook._stub.cmd == torch_col.Event.kColocateAdjustL2:
-                with EventManager.record_duration_event('adjust_l2'):
-                    self.hook.release_and_reply()
+                self.hook.release_and_reply()
                 #     t0 = time.time()
                 #     old_gpu_mem = gpu_mem()
                 #     torch.cuda.synchronize()
