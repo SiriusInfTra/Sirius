@@ -455,9 +455,10 @@ std::function<void(InferRequest&)> Workload::GetSetRequestFn(const std::string &
     return SetMnistRequestFn(model);
   } else if (model.find("resnet") != std::string::npos
       || model.find("vgg") != std::string::npos
-      || model.find("densenet") != std::string::npos
-      || model.find("inception") != std::string::npos) {
+      || model.find("densenet") != std::string::npos) {
     return SetResnetRequestFn(model);
+  } else if ( model.find("inception") != std::string::npos) {
+    return SetInceptionRequestFn(model);
   } else if (model.find("bert") != std::string::npos) {
     return SetBertRequestFn(model);
   } else {
@@ -511,6 +512,29 @@ std::function<void(InferRequest&)> Workload::SetResnetRequestFn(const std::strin
   return set_resnet_request_fn;
 }
 
+
+std::function<void(InferRequest&)> Workload::SetInceptionRequestFn(const std::string &model) {
+      static std::vector<std::string> resnet_input_datas;
+    if (resnet_input_datas.empty()) {
+      for (size_t i = 0; i < 1; i++) {
+        resnet_input_datas.push_back(ReadInput("data/inception/input-" + std::to_string(i) + ".bin"));
+      }
+    }
+    auto set_resnet_request_fn = [&](InferRequest &request) {
+      static uint32_t i = 0;
+      request.set_model(model);
+      request.add_inputs();
+      request.mutable_inputs(0)->set_dtype("float32");
+      request.mutable_inputs(0)->add_shape(1);
+      request.mutable_inputs(0)->add_shape(3);
+      request.mutable_inputs(0)->add_shape(299);
+      request.mutable_inputs(0)->add_shape(299);
+      request.mutable_inputs(0)->set_data(resnet_input_datas[0]);
+      i++;
+    };
+    return set_resnet_request_fn;
+}
+
 std::function<void(InferRequest&)> Workload::SetBertRequestFn(const std::string &model) {
   static std::vector<std::string> bert_input_datas;
   static std::vector<std::string> bert_mask_datas;
@@ -527,12 +551,12 @@ std::function<void(InferRequest&)> Workload::SetBertRequestFn(const std::string 
     request.add_inputs();
     request.mutable_inputs(0)->set_dtype("int64");
     request.mutable_inputs(0)->add_shape(1);
-    request.mutable_inputs(0)->add_shape(128);
+    request.mutable_inputs(0)->add_shape(64);
     request.mutable_inputs(0)->set_data(bert_input_datas[0]);
     request.add_inputs();
     request.mutable_inputs(1)->set_dtype("int64");
     request.mutable_inputs(1)->add_shape(1);
-    request.mutable_inputs(1)->add_shape(128);
+    request.mutable_inputs(1)->add_shape(64);
     request.mutable_inputs(1)->set_data(bert_mask_datas[0]);
     i++;
   };

@@ -189,6 +189,7 @@ class Workload {
   std::function<void(InferRequest&)> GetSetRequestFn(const std::string& model);
   std::function<void(InferRequest&)> SetMnistRequestFn(const std::string &model = "mnist");
   std::function<void(InferRequest&)> SetResnetRequestFn(const std::string &model);
+  std::function<void(InferRequest&)> SetInceptionRequestFn(const std::string &model);
   std::function<void(InferRequest&)> SetBertRequestFn(const std::string &model);
 
   void InferOverallReport(std::ostream &os);
