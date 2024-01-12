@@ -91,8 +91,6 @@ class EventManager:
         loc = 'none'
         event = Event(timestamp, name, loc, 0, '')
         cls.event_list.append(event)
-        if name == 'adjust_l1':
-            print(f'[### {torch_col.get_unix_timestamp_us()/1000}] {timestamp/1000}')
         yield
         event.duration = (torch_col.get_unix_timestamp_us() - timestamp) / 1000
         
