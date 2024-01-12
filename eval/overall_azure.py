@@ -9,7 +9,7 @@ run_pct_mps = False
 run_colsys = True
 run_um_mps = False
 run_task_switch = False
-run_infer_only = True
+run_infer_only = False
 
 @dataclass
 class AzureConfig:
@@ -98,7 +98,8 @@ if run_colsys:
         hyper_workload = azure(rps=eval_config.heavy_rps, client_model_list=client_model_list, infer_only=False)
         system = System(mode=System.ServerMode.ColocateL1, use_sta=True, mps=True, use_xsched=True, port=eval_config.server_port, 
                         cuda_memory_pool_gb="13.5", ondemand_adjust=True, train_memory_over_predict_mb=1500,
-                        train_mps_thread_percent=eval_config.heavy_mps_train, infer_model_max_idle_ms=4000)
+                        train_mps_thread_percent=eval_config.heavy_mps_train, infer_model_max_idle_ms=4000,
+                        has_warmup=True)
         run(system, hyper_workload, server_model_config, "colsys-heavy")
 
     # colsys light
@@ -108,7 +109,8 @@ if run_colsys:
 
         system = System(mode=System.ServerMode.ColocateL1, use_sta=True, mps=True, use_xsched=True, port=eval_config.server_port, 
                         cuda_memory_pool_gb="13.5", ondemand_adjust=True, train_memory_over_predict_mb=1500,
-                        train_mps_thread_percent=eval_config.light_mps_train, infer_model_max_idle_ms=4000)
+                        train_mps_thread_percent=eval_config.light_mps_train, infer_model_max_idle_ms=4000,
+                        has_warmup=True)
         run(system, hyper_workload, server_model_config, "colsys-light")
 
 
