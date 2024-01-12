@@ -32,6 +32,7 @@ class GraphExecutor {
   void FakeInit(bool malloc, bool load_param); // used for simulating unlimted get gpu resource
   void DeInit();
   void Run();
+  void PipeLineLoad();
   void PipelineRun();
   const DLTensor* GetInput(int index) const;
   const DLTensor* GetInput(const std::string &index) const;

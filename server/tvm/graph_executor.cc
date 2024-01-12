@@ -128,13 +128,13 @@ void GraphExecutor::Init() {
       }
       PROFILE_END(InferLoadParam, 0);
     } else {
-      load_params_future_ = std::async(std::launch::async, [this]() {
-        PROFILE_START(InferLoadParam, 0);
-        if (!Config::colocate_config.skip_loading) {
-          LoadParams(Config::pipeline_load, Config::colocate_config.skip_malloc);
-        }
-        PROFILE_END(InferLoadParam, 0);
-      });
+      // load_params_future_ = std::async(std::launch::async, [this]() {
+      //   PROFILE_START(InferLoadParam, 0);
+      //   if (!Config::colocate_config.skip_loading) {
+      //     LoadParams(Config::pipeline_load, Config::colocate_config.skip_malloc);
+      //   }
+      //   PROFILE_END(InferLoadParam, 0);
+      // });
     }
     
     initialized_ = true;
@@ -170,6 +170,16 @@ void GraphExecutor::Run() {
     if (op_execs_[i]) op_execs_[i]();
   }
   DeviceAPI::Get(factory_.devices_[0])->StreamSync(factory_.devices_[0], exec_stream_);
+}
+
+void GraphExecutor::PipeLineLoad() {
+  load_params_future_ = std::async(std::launch::async, [this]() {
+    PROFILE_START(InferLoadParam, 0);
+    if (!Config::colocate_config.skip_loading) {
+      LoadParams(Config::pipeline_load, Config::colocate_config.skip_malloc);
+    }
+    PROFILE_END(InferLoadParam, 0);
+  });
 }
 
 void GraphExecutor::PipelineRun() {
@@ -517,7 +527,7 @@ void GraphExecutor::LoadParams(bool pipeline, bool force) {
         // api_1_ms += Profiler::MilliFrom(t0);
         CHECK(param_ready_event_ids_[param_ids[0]] == pg_id);
         // auto t1 = Profiler::Now();
-        CUDA_CALL(cudaEventRecord(param_ready_events_[param_ids[0]], (cudaStream_t)load_param_stream_));
+        CUDA_CALL(cudaEventRecord(param_ready_events_[pg_id], (cudaStream_t)load_param_stream_));
         // api_2_ms += Profiler::MilliFrom(t1);
         sg_off += load_nbytes;
         pg_off += load_nbytes;
@@ -534,6 +544,7 @@ void GraphExecutor::LoadParams(bool pipeline, bool force) {
     }
     // auto tot_ms = Profiler::MilliFrom(t_b);
     // LOG(INFO) << "Load Params" << " api_1_ms " << api_1_ms << " api_2_ms " << api_2_ms << " tot_ms " << tot_ms;
+    // LOG(INFO) << "LoadParams" << " tot_ms " << Profiler::MilliFrom(t_b);
   }
 
   // because we load params in async thread in pipeline mode,

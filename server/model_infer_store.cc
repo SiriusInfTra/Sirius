@@ -389,6 +389,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     {
       auto begin = std::chrono::steady_clock::now();
       if (Config::pipeline_load && first_exec) {
+        graph_executor->PipeLineLoad();
         graph_executor->PipelineRun();
       } else {
         graph_executor->Run();

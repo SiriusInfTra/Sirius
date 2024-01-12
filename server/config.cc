@@ -27,7 +27,7 @@ bool Config::better_alloc = true;
 size_t Config::better_alloc_threshold = 64 * 1024 * 1024;
 
 bool Config::group_param_load = true;
-size_t Config::group_param_load_threshold = 16 * 1024 * 1024;
+size_t Config::group_param_load_threshold = 8 * 1024 * 1024;
 
 double Config::cuda_memory_pool_gb = 12;
 
