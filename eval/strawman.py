@@ -74,6 +74,6 @@ if run_strawman:
         hyper_workload = smooth(rps=eval_config.heavy_rps, client_model_list=client_model_list, infer_only=False)
         system = System(mode=System.ServerMode.ColocateL2, use_sta=False, mps=True, use_xsched=False, port=eval_config.server_port,
                         ondemand_adjust=True, train_memory_over_predict_mb=1500,
-                        has_warmup=True, infer_model_max_idle_ms=5000
+                        has_warmup=True, infer_model_max_idle_ms=5000,
                         train_mps_thread_percent=eval_config.heavy_mps_train)
         run(system, hyper_workload, server_model_config, "strawman-heavy")
