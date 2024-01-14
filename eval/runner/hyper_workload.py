@@ -296,7 +296,6 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
         num_model_to_requests = []
         for i in range(period_num):
             # first select a few models to send requests
-            print(f"!!!!!!!!! {len(model_list) + 1}")
             num_model = self.rs.randint(1, len(model_list) + 1)
             num_request = self.rs.uniform(0, max_request_sec)
             if rps_fn is not None:

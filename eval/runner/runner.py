@@ -76,7 +76,8 @@ class System:
                  train_memory_over_predict_mb: str | float = None,
                  infer_model_max_idle_ms : Optional[int] = None,
                  has_warmup: bool = False,
-                 keep_last_time_stamp: bool = True) -> None:
+                 keep_last_time_stamp: bool = True,
+                 max_live_minute: Optional[int] = None) -> None:
         self.mode = mode
         self.use_sta = use_sta
         self.cuda_memory_pool_gb = cuda_memory_pool_gb
@@ -108,6 +109,7 @@ class System:
         self.train_memory_over_predict_mb = train_memory_over_predict_mb
         self.infer_model_max_idle_ms = infer_model_max_idle_ms
         self.has_warmup = has_warmup
+        self.max_live_minute = max_live_minute
         if System._last_time_stamp is None or not keep_last_time_stamp:
             self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
             System._last_time_stamp = self.time_stamp
@@ -216,6 +218,9 @@ class System:
             cmd += ["--use-xsched", "1"]
         else:
             cmd += ["--use-xsched", "0"]
+        
+        if self.max_live_minute is not None:
+            cmd += ["--max-live-minute", str(self.max_live_minute)]
 
         self.cmd_trace.append(" ".join(cmd))
         print("\n---------------------------\n")

@@ -11,41 +11,53 @@ run_um_mps = False
 run_task_switch = True
 run_infer_only = True
 
+# run_pct_mps = True
+# run_colsys = False
+# run_um_mps = False
+# run_task_switch = False
+# run_infer_only = False
+
 @dataclass
 class SawtoothConfig:
     model_list = [InferModel.InceptionV3, InferModel.ResNet152, InferModel.DenseNet161, InferModel.DistilBertBase]
     heavy_rps = 100
-    heavy_num_model = 64
-    heavy_mps_infer = 70
-    heavy_mps_train = 30
+    heavy_num_model = 60
+    heavy_mps_infer = 50
+    heavy_mps_train = 50
+    heavy_try_mps_pct_list = [0]
+    # heavy_try_mps_pct_list = [0, 50, 60, 70, 80]
     
     light_rps = 10
     light_num_model = 32
     light_mps_infer = 30
     light_mps_train = 70
+    light_try_mps_pct_list = [0]
+    # light_try_mps_pct_list = [0, 20, 30, 40]
+    
     server_port = "18180"
+    increase_time = 60
     
 eval_config = SawtoothConfig()
 
 
 def sawtooth(rps, client_model_list, infer_only=True):
-    workload = HyperWorkload(concurrency=2048, duration=140, delay_before_infer=30,
+    workload = HyperWorkload(concurrency=2048, duration=eval_config.increase_time + 140, delay_before_infer=30,
                              warmup=5, delay_after_warmup=5, delay_before_profile=5)
     InferModel.reset_model_cnt()
     if not infer_only:
-        workload.set_train_workload(train_workload=TrainWorkload('resnet', 15, 96))
+        workload.set_train_workload(train_workload=TrainWorkload('resnet', 15 + (eval_config.increase_time // 7), 96))
     workload.set_infer_workloads(MicrobenchmarkInferWorkload(
         model_list=client_model_list,
-        max_request_sec=rps, interval_sec=10, duration=65, 
+        max_request_sec=rps, interval_sec=10, duration=eval_config.increase_time + 65, 
         rps_fn=lambda i, rps : rps if i % 2 == 0 else 0,
     ))
     return workload
 
 
 
-
+ 
 def run(system: System, workload: HyperWorkload, server_model_config: list[System.InferModelConfig], tag: str):
-    system.launch("try-infer-mps-sawtooth", tag, time_stamp=use_time_stamp,
+    system.launch("overall-sawtooth", tag, time_stamp=use_time_stamp,
                   infer_model_config=server_model_config)
     workload.launch_workload(system)
     system.stop()
@@ -58,7 +70,7 @@ if run_pct_mps:
     num_worker = 1
     # infer only heavy
     client_model_list, server_model_config = InferModel.get_multi_model(eval_config.model_list, eval_config.heavy_num_model, num_worker)
-    for mps_pct in [0]:
+    for mps_pct in eval_config.heavy_try_mps_pct_list:
         with mps_thread_percent(mps_pct):
             client_model_list, server_model_config = InferModel.get_multi_model(eval_config.model_list, eval_config.heavy_num_model, num_worker)
             hyper_workload = sawtooth(rps=eval_config.heavy_rps, client_model_list=client_model_list, infer_only=True)
@@ -66,7 +78,7 @@ if run_pct_mps:
             run(system, hyper_workload, server_model_config, f"heavy-{mps_pct}")
     
     # infer only light
-    for mps_pct in [0]:
+    for mps_pct in eval_config.light_try_mps_pct_list:
         with mps_thread_percent(mps_pct):
             client_model_list, server_model_config = InferModel.get_multi_model(eval_config.model_list, eval_config.light_num_model, num_worker)
             hyper_workload = sawtooth(rps=eval_config.light_rps, client_model_list=client_model_list, infer_only=True)
@@ -97,7 +109,7 @@ if run_colsys:
         hyper_workload = sawtooth(rps=eval_config.heavy_rps, client_model_list=client_model_list, infer_only=False)
         system = System(mode=System.ServerMode.ColocateL1, use_sta=True, mps=True, use_xsched=True, port=eval_config.server_port,
                         cuda_memory_pool_gb="13.5", ondemand_adjust=True, train_memory_over_predict_mb=1500,
-                        train_mps_thread_percent=eval_config.heavy_mps_train, infer_model_max_idle_ms=4000,
+                        train_mps_thread_percent=eval_config.heavy_mps_train, infer_model_max_idle_ms=5000,
                         has_warmup=True)
         run(system, hyper_workload, server_model_config, "colsys-heavy")
 
@@ -108,7 +120,7 @@ if run_colsys:
 
         system = System(mode=System.ServerMode.ColocateL1, use_sta=True, mps=True, use_xsched=True, port=eval_config.server_port,
                         cuda_memory_pool_gb="13.5", ondemand_adjust=True, train_memory_over_predict_mb=1500,
-                        train_mps_thread_percent=eval_config.light_mps_train, infer_model_max_idle_ms=4000,
+                        train_mps_thread_percent=eval_config.light_mps_train, infer_model_max_idle_ms=5000, 
                         has_warmup=True)
         run(system, hyper_workload, server_model_config, "colsys-light")
 
@@ -121,7 +133,7 @@ if run_um_mps:
         hyper_workload = sawtooth(rps=eval_config.heavy_rps, client_model_list=client_model_list, infer_only=False)
 
         system = System(mode=System.ServerMode.Normal, use_sta=False, mps=True, use_xsched=False, port=eval_config.server_port,
-                        train_mps_thread_percent=eval_config.heavy_mps_train)
+                        train_mps_thread_percent=eval_config.heavy_mps_train, max_live_minute=15 + int(eval_config.increase_time / 60 * 15))
         run(system, hyper_workload, server_model_config, "um-mps-heavy")
     # um+mps light
     with um_mps(eval_config.light_mps_infer):
@@ -129,7 +141,7 @@ if run_um_mps:
         hyper_workload = sawtooth(rps=eval_config.light_rps, client_model_list=client_model_list, infer_only=False)
 
         system = System(mode=System.ServerMode.Normal, use_sta=False, mps=True, use_xsched=False, port=eval_config.server_port,
-                        train_mps_thread_percent=eval_config.light_mps_train)
+                        train_mps_thread_percent=eval_config.light_mps_train, max_live_minute=15 + int(eval_config.increase_time / 60 * 15))
         run(system, hyper_workload, server_model_config, "um-mps-light")
 
 
@@ -159,7 +171,7 @@ if run_infer_only:
         run(system, hyper_workload, server_model_config, "infer-only-heavy")
     with mps_thread_percent(eval_config.light_mps_infer):
         # infer only light
-        client_model_list, server_model_config = InferModel.get_multi_model(eval_config.model_list, eval_config.heavy_num_model, num_worker)
+        client_model_list, server_model_config = InferModel.get_multi_model(eval_config.model_list, eval_config.light_num_model, num_worker)
         hyper_workload = sawtooth(rps=eval_config.light_rps, client_model_list=client_model_list, infer_only=True)
         system = System(mode=System.ServerMode.Normal, use_sta=False, mps=True, use_xsched=False, port=eval_config.server_port)
         run(system, hyper_workload, server_model_config, "infer-only-light")
