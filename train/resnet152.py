@@ -10,6 +10,7 @@ from torch_col import MemoryPool, EventManager, TrainMode, HookMode
 from torch_col import ColocateAdjustL1Exception, SwitchL1Exception
 from torch_col import CustomeDynamicBatchDataset
 
+# torch_col.disable_release_saved_tensor()
 
 def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size: int):
     if torch_col.use_shared_tensor():
