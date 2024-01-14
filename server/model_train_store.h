@@ -47,9 +47,12 @@ class ModelTrainStore {
 
   bool Train();
   bool LaunchTrain(std::shared_ptr<Job> job, std::vector<std::string> &args);
+  void DummyAdjust();
   
   JobQueue job_queue_;
   std::unique_ptr<std::thread> thread_;
+
+  std::unique_ptr<std::thread> dummy_adjust_thread_;
 
   pid_t train_pid_{-1};
   int cur_batch_size_{-1};

@@ -11,6 +11,7 @@
 #include <tvm/runtime/logging.h>
 #include "model_infer_store.h"
 #include <glog/logging.h>
+#include <random>
 
 #include "model_train_store.h"
 #include "controller.h"
@@ -42,6 +43,11 @@ void ModelTrainStore::Init(const std::filesystem::path &train_store_path) {
     }
   }));
   pthread_barrier_wait(&barrier);
+
+  if (Config::dummy_adjust) {
+    model_train_store_->dummy_adjust_thread_ = std::make_unique<std::thread>(
+        &ModelTrainStore::DummyAdjust, model_train_store_.get());
+  }
 
   LOG(INFO) << "ModelTrainStore initialized"; 
 }
@@ -272,6 +278,26 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
     }
   } else {
     return true;
+  }
+}
+
+void ModelTrainStore::DummyAdjust() {
+  while (this->train_pid_ == -1) {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(15));
+  LOG(INFO) << "DummyAdjust: train pid " << this->train_pid_;
+  
+  std::mt19937 gen(42); // fix seed
+
+  auto start = Profiler::Now();
+  while (Profiler::MilliFrom(start) < 30*1000 && this->train_pid_ != -1) {
+    LOG(INFO) << "DummyAdjust at " << Profiler::GetTimeStamp();
+    auto batch_size = 1;
+    auto cmd_id = Controller::Get()->ColocateAdjust(batch_size);
+    Controller::Get()->WaitColocateAdjustDone(cmd_id);
+    Controller::Get()->InferExit(batch_size);
+    std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<>(200, 1000)(gen)));
   }
 }
 

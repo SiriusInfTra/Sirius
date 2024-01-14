@@ -56,6 +56,8 @@ double Config::task_switch_delay_ms = 5;
 bool Config::has_warmup = false;
 double Config::infer_model_max_idle_ms = 3000;
 
+bool Config::dummy_adjust = false;
+
 bool Config::system_initialized = false;
 
 }

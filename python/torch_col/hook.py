@@ -78,6 +78,8 @@ class HookABC(abc.ABC):
     
     @classmethod
     def register_fbward_hook(cls, module: torch.nn.Module, fwd_hood, bwd_hook):
+        if not torch_col.use_fbward_hook():
+            return
         if len(list(module.children())) == 0:
             module.register_forward_hook(fwd_hood)
             module.register_backward_hook(bwd_hook)

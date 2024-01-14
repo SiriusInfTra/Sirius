@@ -94,6 +94,8 @@ class Config {
   static bool has_warmup;
   static double infer_model_max_idle_ms;
 
+  static bool dummy_adjust;
+
   static bool system_initialized;
 
   inline static bool IsSwitchMode() {

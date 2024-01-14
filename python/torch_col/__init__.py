@@ -2,6 +2,8 @@ __use_shared_tensor = 0
 __release_saved_tensor_by_grad_fn = 0
 __release_saved_tensor_by_tagging = 1
 
+__use_fbward_hook = 1
+
 def use_shared_tensor():
     global __use_shared_tensor
     return __use_shared_tensor
@@ -13,6 +15,20 @@ def release_saved_tensor_v1():
 def release_saved_tensor_v2():
     global __release_saved_tensor_by_tagging
     return __release_saved_tensor_by_tagging
+
+def disable_release_saved_tensor(): # used for eval
+    global __release_saved_tensor_by_grad_fn
+    global __release_saved_tensor_by_tagging
+    __release_saved_tensor_by_grad_fn = 0
+    __release_saved_tensor_by_tagging = 0
+
+def disable_fbward_hook():
+    global __use_fbward_hook
+    __use_fbward_hook = 0
+
+def use_fbward_hook():
+    global __use_fbward_hook
+    return __use_fbward_hook
 
 def __setup_coltensor():
     import torch

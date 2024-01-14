@@ -7,7 +7,9 @@
 #include "sta/mempool_sampler.h"
 #include <PySched.h>
 
-int KillBatchOnRecv = 1;
+constexpr int colocate_use_xsched = 1;
+
+int KillBatchOnRecv = 1 & colocate_use_xsched;
 
 namespace torch_col {
 

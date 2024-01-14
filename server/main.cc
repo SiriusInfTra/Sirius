@@ -92,6 +92,8 @@ void init_cli_options() {
       "infer model max idle in ms, default is 3000");
   app.add_option("--has-warmup", colserve::Config::has_warmup,
       "has warmup, default is 0");
+  app.add_flag("--dummy-adjust", colserve::Config::dummy_adjust,
+      "dummy adjust for eval, default is 0");
 }
 
 void init_config() {

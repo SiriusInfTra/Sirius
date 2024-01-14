@@ -76,6 +76,7 @@ class System:
                  train_memory_over_predict_mb: str | float = None,
                  infer_model_max_idle_ms : Optional[int] = None,
                  has_warmup: bool = False,
+                 dummy_adjust: bool = False,
                  keep_last_time_stamp: bool = True,
                  max_live_minute: Optional[int] = None) -> None:
         self.mode = mode
@@ -109,6 +110,7 @@ class System:
         self.train_memory_over_predict_mb = train_memory_over_predict_mb
         self.infer_model_max_idle_ms = infer_model_max_idle_ms
         self.has_warmup = has_warmup
+        self.dummy_adjust = dummy_adjust
         self.max_live_minute = max_live_minute
         if System._last_time_stamp is None or not keep_last_time_stamp:
             self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
@@ -213,6 +215,9 @@ class System:
             cmd += ["--has-warmup", "1"]
         else:
             cmd += ["--has-warmup", "0"]
+
+        if self.dummy_adjust:
+            cmd += ["--dummy-adjust"]
         
         if self.use_xsched:
             cmd += ["--use-xsched", "1"]
