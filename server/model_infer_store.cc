@@ -450,9 +450,14 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
   Profiler::Get()->RecordEvent(Profiler::EventItem::InferExit);
   GraphCache::Get()->DeInitGraphExecutor(name_, graph_executor);
   if (Config::IsColocateMode()) {
-    Controller::Get()->InferExit(
-      (waited_trains_[rank] != -1 && waited_trains_[rank] == ModelTrainStore::Get()->GetTrainPid()) ? graph_executor_pool_.front()->GetAdjustBatchSize() : 0);
-    exit_log_ss << ", waited train " << waited_trains_[rank] << ", current train pid " << ModelTrainStore::Get()->GetTrainPid();
+    if (ModelTrainStore::Get()->GetTrainPid() != -1) {
+      Controller::Get()->EnterInferModelAlloc(rank);
+      // double free_memory_mb = graph_executor->GetFreeMemoryMB();
+      Controller::Get()->InferExit(
+        graph_executor->GetFreeMemoryMB() / 145);
+      exit_log_ss << ", waited train " << waited_trains_[rank] << ", current train pid " << ModelTrainStore::Get()->GetTrainPid();
+      Controller::Get()->ExitInferModelAlloc(rank);
+    }
   } else if (Config::IsSwitchMode()) {
     ModelInferStore::Get()->TaskSwitchExit();
     // ModelInferStore::Get()->task_switch_cv.notify_all();

@@ -81,9 +81,11 @@ class GraphExecutor {
 
   size_t GetAdjustBatchSize() const {
     size_t size_mega = sta::detail::ByteToMB(GetStorageSize());
-    /* reserve 30MB, 145MB per batch */
-    return (size_mega + 144 + 30) / 145; 
+    /* reserve 40MB, 145MB per batch */
+    return (size_mega + 125 + 40) / 125; 
   }
+
+  double GetFreeMemoryMB();
 
  private:
   void SetupStorage(bool alloc);
