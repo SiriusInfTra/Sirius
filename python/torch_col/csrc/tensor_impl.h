@@ -35,7 +35,8 @@ class ColTensorImpl : public c10::TensorImpl {
 
   bool has_storage() const override;
   const at::Storage& storage() const override;
-  int64_t storage_offset() const override;
+  // int64_t storage_offset() const override;
+  int64_t storage_offset_custom() const override;
 
   const char* tensorimpl_type_name() const override {
     return "ColTensorImpl";

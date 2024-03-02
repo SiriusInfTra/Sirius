@@ -142,7 +142,7 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
             std::unique_lock step_lock{step_mutex_};
             auto t1 = torch_col::get_unix_timestamp();
             SetBlockCudaCalls_v2(true);
-            size_t remove = AbortStream(0);
+            size_t remove = AbortStream();
             cudaStream_t stream = reinterpret_cast<cudaStream_t>(GetRegisteredGlobalStream());
             CHECK(reinterpret_cast<uint64_t>(stream) != 0);
             auto err = cudaStreamSynchronize(stream);

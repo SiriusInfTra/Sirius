@@ -134,7 +134,7 @@ struct Workspace {
     // Sometimes cuDNN returns a workspace size > 2^63, this could makes the allocation of
     // workspace fail with some 64bit indexing error instead of an OOM error. In such case,
     // we manually fail with OOM.
-    TORCH_CHECK_WITH(CUDAOutOfMemoryError, size < 1_TiB, "Not enough memory for workspace!");
+    TORCH_CHECK_WITH(OutOfMemoryError, size < 1_TiB, "Not enough memory for workspace!");
     data = c10::cuda::CUDACachingAllocator::raw_alloc(size);
   }
   Workspace(const Workspace&) = delete;
@@ -202,10 +202,9 @@ size_t getMaxWorkspaceSize(
 {
   size_t max_ws_size = 0;
   size_t max_block_size = 0;
-  size_t tmp_bytes = 0;  // Only used for filling pointer parameters that aren't used later
 
   const auto device = c10::cuda::current_device();
-  c10::cuda::CUDACachingAllocator::cacheInfo(device, &tmp_bytes, &max_block_size);
+  c10::cuda::CUDACachingAllocator::cacheInfo(device, &max_block_size);
 
   for (const auto i : c10::irange(n_algo)) {
     cudnnStatus_t err;
@@ -508,7 +507,7 @@ public:
       try {
         f(algoPerf);
         return;
-      } catch (c10::CUDAOutOfMemoryError &e) {
+      } catch (c10::OutOfMemoryError &e) {
         cudaGetLastError(); // clear CUDA error
       }
     }
@@ -519,7 +518,7 @@ public:
         f(algoPerf);
         cache.insert(args.params, algoPerf);
         return;
-      } catch (c10::CUDAOutOfMemoryError &e) {
+      } catch (c10::OutOfMemoryError &e) {
         cudaGetLastError(); // clear CUDA error
       } catch (c10::CuDNNError &e) {
         cudaGetLastError(); // clear CUDA error
@@ -533,7 +532,7 @@ inline Tensor allocate_workspace(size_t size, const Tensor &other) {
   // Sometimes cuDNN returns a workspace size > 2^63, this could makes the allocation of
   // workspace fail with some 64bit indexing error instead of an OOM error. In such case,
   // we manually fail with OOM.
-  TORCH_CHECK_WITH(CUDAOutOfMemoryError, size < 1_TiB, "Not enough memory for workspace!");
+  TORCH_CHECK_WITH(OutOfMemoryError, size < 1_TiB, "Not enough memory for workspace!");
   return at::empty({static_cast<int64_t>(size)}, other.options().dtype(kByte));
 }
 

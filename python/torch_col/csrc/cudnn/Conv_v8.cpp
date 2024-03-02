@@ -303,8 +303,7 @@ size_t get_available_workspace() {
   int device;
   C10_CUDA_CHECK(cudaGetDevice(&device));
   size_t max_block_size = 0;
-  size_t tmp_bytes = 0;  // Only used for filling pointer parameters that aren't used later
-  c10::cuda::CUDACachingAllocator::cacheInfo(device, &tmp_bytes, &max_block_size);
+  c10::cuda::CUDACachingAllocator::cacheInfo(device, &max_block_size);
   return max_block_size;
 }
 
@@ -324,13 +323,13 @@ void generate_and_filter_plans(const cudnnHandle_t handle, cudnn_frontend::Opera
       valid_plans.emplace_back(std::move(plan));
     }
   });
-  TORCH_CHECK_WITH(CUDAOutOfMemoryError, max_workspace_size < 1_TiB, "Not enough memory for workspace!");
+  TORCH_CHECK_WITH(OutOfMemoryError, max_workspace_size < 1_TiB, "Not enough memory for workspace!");
   bool remove_invalid = false;
   while (max_workspace_size) {
     try {
       workspace_ptr = c10::cuda::CUDACachingAllocator::get()->allocate(max_workspace_size);
       break;
-    } catch (c10::CUDAOutOfMemoryError &e) {
+    } catch (c10::OutOfMemoryError &e) {
       max_workspace_size /= 2;
       cudaGetLastError(); // clear CUDA error
       remove_invalid = true;
@@ -437,7 +436,7 @@ void try_plans(cudnn_frontend::executionPlans_t& plans, const CacheKey& key, con
       benchmark_cache.emplace(key, plan);
       return;
     } catch (cudnn_frontend::cudnnException &e) {} catch (CuDNNError &e) {}
-      catch (c10::CUDAOutOfMemoryError &e) {
+      catch (c10::OutOfMemoryError &e) {
         cudaGetLastError(); // clear CUDA error
     }
   }
@@ -451,7 +450,7 @@ void try_plans_fused(cudnn_frontend::executionPlans_t& plans, const CacheKeyFuse
       benchmark_cache_fused.emplace(key, plan);
       return;
     } catch (cudnn_frontend::cudnnException &e) {} catch (CuDNNError &e) {}
-      catch (c10::CUDAOutOfMemoryError &e) {
+      catch (c10::OutOfMemoryError &e) {
         cudaGetLastError(); // clear CUDA error
     }
   }
@@ -469,7 +468,7 @@ void try_configs(cudnn_frontend::EngineConfigList& configs, const CacheKey& key,
       benchmark_cache.emplace(key, plan);
       return;
     } catch (cudnn_frontend::cudnnException &e) {} catch(CuDNNError &e) {}
-      catch (c10::CUDAOutOfMemoryError &e) {
+      catch (c10::OutOfMemoryError &e) {
         cudaGetLastError(); // clear CUDA error
     }
   }
@@ -487,7 +486,7 @@ void try_configs_fused(cudnn_frontend::EngineConfigList& configs, const CacheKey
       benchmark_cache_fused.emplace(key, plan);
       return;
     } catch (cudnn_frontend::cudnnException &e) {} catch(CuDNNError &e) {}
-      catch (c10::CUDAOutOfMemoryError &e) {
+      catch (c10::OutOfMemoryError &e) {
         cudaGetLastError(); // clear CUDA error
     }
   }
@@ -508,7 +507,7 @@ void run_single_conv(const cudnnBackendDescriptorType_t operation,
     try {
       run_conv_plan(handle, x, y, w, *search);
       return;
-    } catch(c10::CUDAOutOfMemoryError &e) {
+    } catch(c10::OutOfMemoryError &e) {
       cudaGetLastError(); // clear CUDA error
     }
   }
@@ -543,7 +542,7 @@ void run_fused_conv(const Tensor& x, const Tensor& y, const Tensor& w, const Ten
     try {
       run_conv_plan_fused(handle, x, y, w, z, b, *search);
       return;
-    } catch(c10::CUDAOutOfMemoryError &e) {
+    } catch(c10::OutOfMemoryError &e) {
       cudaGetLastError(); // clear CUDA error
     }
   }

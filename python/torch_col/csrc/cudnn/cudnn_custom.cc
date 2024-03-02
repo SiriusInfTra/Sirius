@@ -283,7 +283,7 @@ at::Tensor cudnn_convolution_relu_custom(
   bool allow_tf32 = ctx.allowTF32CuDNN();
   auto _bias = bias_t.has_value()
           ? bias_t.value()
-          : at::native::zeros(
+          : at::zeros(
                 {output_t.size(1)},
                 optTypeMetaToScalarType(output_t.options().dtype_opt()),
                 output_t.options().layout_opt(),
@@ -365,7 +365,7 @@ at::Tensor cudnn_convolution_add_relu_custom(
   auto _alpha = alpha.has_value() ? alpha.value().to<float>() : 1.0;
   auto _bias = bias_t.has_value()
           ? bias_t.value()
-          : at::native::zeros(
+          : at::zeros(
                 {output_t.size(1)},
                 optTypeMetaToScalarType(output_t.options().dtype_opt()),
                 output_t.options().layout_opt(),
