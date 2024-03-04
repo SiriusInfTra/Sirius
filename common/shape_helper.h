@@ -2,14 +2,14 @@
 #define COLSERVE_SHAPE_HELPER_H
 
 // #include <dlpack/dlpack.h>
-#include "../logging_as_glog.h"
 #include <ATen/Tensor.h>
+#include "log_as_glog_sta.h"
 
 #include <vector>
 #include <cstdint>
 
 #include "dlpack.h"
-#include "tensor_pool.h"
+#include "tensor.h"
 #include "dtype_helper.h"
 
 namespace colserve {
@@ -77,8 +77,6 @@ inline std::vector<int64_t> ComputeStrides(at::IntArrayRef size) {
   }
   return stride;
 }
-
-
 
 }
 }

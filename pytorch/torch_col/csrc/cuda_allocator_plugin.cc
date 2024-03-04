@@ -14,7 +14,7 @@ std::shared_ptr<CUDAColAllocator> CUDAColAllocator::cuda_col_allocator_ = nullpt
 void CUDAColAllocator::SetCurrentAllocator() {
   CHECK(cuda_col_allocator_.get() != nullptr)
     << "CUDAColAllocator is not initialized";
-  CHECK(c10::cuda::CUDACachingAllocator::allocator.load()->initialized())
+  CHECK(!c10::cuda::CUDACachingAllocator::allocator.load()->initialized())
     << "Can't swap an already initialized allocator";
   c10::cuda::CUDACachingAllocator::allocator.store(cuda_col_allocator_.get());
 }
@@ -29,7 +29,7 @@ void CUDAColAllocator::init(int device_count) {
     return;
   }
   // init
-  LOG(INFO) << "CUDAColAllocator Initialized";
+  LOG(INFO) << "CUDAColAllocator Initialized";  
   auto has_server_env = std::getenv("SHARED_TENSOR_HAS_SERVER");
   auto pool_size_env = std::getenv("SHARED_TENSOR_POOL_GB");
   auto pool_freelist_policy_env = std::getenv("SHARED_TENSOR_POOL_FREELIST_POLICY");
@@ -37,15 +37,15 @@ void CUDAColAllocator::init(int device_count) {
                                           std::string(pool_freelist_policy_env) :
                                           "best-fit";
   auto pool_freelist_policy = colserve::sta::getFreeListPolicy(pool_freelist_policy_str);
-  bool has_server = has_server_env && std::string(has_server_env) == "1";
-  double pool_gb = 12;
+  bool has_server = has_server_env && std::string(has_server_env) == "1"; 
+  double pool_gb = 12; 
   if (!has_server && !pool_size_env) {
-    LOG(INFO) << "SHARED_TENSOR_POOL_GB not set, use default 12GB";
+  LOG(INFO) << "SHARED_TENSOR_POOL_GB not set, use default 12GB"; 
   } else if (pool_size_env) {
     pool_gb = std::stod(pool_size_env);
   }
-  size_t pool_nbytes = static_cast<size_t>(pool_gb * 1024 * 1024 * 1024);
-  colserve::sta::Init(pool_nbytes, !has_server, 
+  size_t pool_nbytes = static_cast<size_t>(pool_gb * 1024 * 1024 * 1024); 
+  colserve::sta::InitMemoryPool(pool_nbytes, !has_server, 
                       false, pool_freelist_policy);
 
   initialized_ = true;
@@ -146,7 +146,12 @@ void CUDAColAllocator::notifyCaptureDestroy(
   LOG(INFO) << "notifyCaptureDestroy not implemented";
 }
 
-void recordHistory(
+std::shared_ptr<void> CUDAColAllocator::getIpcDevPtr(std::string handle) {
+  LOG(INFO) << "getIpcDevPtr not implemented";
+  return nullptr;
+}
+
+void CUDAColAllocator::recordHistory(
     bool enabled,
     c10::cuda::CUDACachingAllocator::CreateContextFn context_recorder,
     size_t alloc_trace_max_entries,
@@ -154,7 +159,7 @@ void recordHistory(
   LOG(INFO) << "recordHistory not implemented";
 };
 
-void attachOutOfMemoryObserver(
+void CUDAColAllocator::attachOutOfMemoryObserver(
     c10::cuda::CUDACachingAllocator::OutOfMemoryObserver observer) {
   LOG(INFO) << "attachOutOfMemoryObserver not implemented";
 };

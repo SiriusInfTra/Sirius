@@ -13,7 +13,7 @@ cdef extern from "csrc/cuda_allocator_plugin.h" namespace "torch::cuda::CUDAColA
 #   CUDAColAllocator.SetCurrentAllocator()
 #   print("CUDAColAllocator initialized")
 
-def _init_col_allocator():
+def init_col_allocator():
   CUDAColAllocator.Init()
   CUDAColAllocator.SetCurrentAllocator()
   print("CUDAColAllocator initialized")

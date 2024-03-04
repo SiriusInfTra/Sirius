@@ -5,14 +5,12 @@
 #include <memory>
 #include <atomic>
 
-#include <sta/tensor_methods.h>
-#include <sta/tensor_pool.h>
-
+#include <common/tensor_methods.h>
+#include <common/tensor.h>
+#include <common/mempool.h>
 
 #include "graph_executor_factory.h"
 
-#include "glog/logging.h"
-#include "sta/mempool.h"
 
 namespace colserve {
 namespace tvm {
@@ -101,12 +99,12 @@ class GraphExecutor {
   // std::map<uint32_t, uint32_t> op_node_storage_id_map_;
   // std::vector<TVMArray> data_entry_;
 
-  std::vector<sta::handle_t> storage_pool_;
-  std::vector<sta::handle_t> data_entry_;
+  std::vector<sta::STensor> storage_pool_;
+  std::vector<sta::STensor> data_entry_;
 
   // for no shared allocator
-  std::vector<sta::STensor> raw_storage_pool_;
-  std::vector<sta::STensor> raw_data_entry_;
+  // std::vector<sta::STensor> raw_storage_pool_;
+  // std::vector<sta::STensor> raw_data_entry_;
 
   std::vector<size_t> data_alignment_;
 

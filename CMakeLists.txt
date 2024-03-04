@@ -20,7 +20,7 @@ message(STATUS "TVM_HOME: " ${TVM_HOME})
 
 
 # find cuda toolkit
-find_package(CUDAToolkit 11 REQUIRED)
+find_package(CUDAToolkit 12 REQUIRED)
 
 # Modify if you need a different default value
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
@@ -108,62 +108,27 @@ add_library(proto ${proto_srcs} ${proto_hdrs} ${grpc_srcs} ${grpc_hdrs})
 target_link_libraries(proto ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF} )
 
 
-# sta lib
-add_library(sta SHARED
-  server/sta/cuda_allocator.cc
-  server/sta/tensor_pool.cc
-  server/sta/mempool.cc
-  server/sta/tensor_methods.cc
-  server/sta/shape_helper.cc
-  server/sta/dtype_helper.cc
-  server/sta/init.cc
-)
-target_compile_definitions(sta PRIVATE -DNO_TVM)
-# add_definitions(st)
-# target_include_directories(sta INTERFACE ${TVM_HOME}/3rdparty/dlpack/include)
-target_include_directories(sta PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/server/)
-target_link_libraries(sta PRIVATE CUDA::cudart glog::glog
-                          PUBLIC ${TORCH_LIBRARIES})
+# # sta lib
+# add_library(sta SHARED
+#   server/sta/cuda_allocator.cc
+#   server/sta/tensor_pool.cc
+#   server/sta/mempool.cc
+#   server/sta/tensor_methods.cc
+#   server/sta/shape_helper.cc
+#   server/sta/dtype_helper.cc
+#   server/sta/init.cc
+# )
+# target_compile_definitions(sta PRIVATE -DNO_TVM)
+# # add_definitions(st)
+# # target_include_directories(sta INTERFACE ${TVM_HOME}/3rdparty/dlpack/include)
+# target_include_directories(sta PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/server/)
+# target_link_libraries(sta PRIVATE CUDA::cudart glog::glog
+#                           PUBLIC ${TORCH_LIBRARIES})
 
-add_executable(${PROJECT_NAME}
-  server/main.cc
-  server/cache.cc
-  server/grpc/grpc_server.cc
-  server/tvm/graph_executor_factory.cc
-  server/tvm/graph_executor.cc
-  server/job_queue.cc
-  server/model_infer_store.cc
-  server/model_train_store.cc
-  server/controller.cc
-  server/profiler.cc
-  server/config.cc
-)
+add_subdirectory(common)
+add_subdirectory(server)
 
-# add tvm runtime
-target_include_directories(${PROJECT_NAME} PUBLIC 
-  ${TVM_HOME}/include 
-  ${TVM_HOME}/3rdparty/dmlc-core/include 
-  ${TVM_HOME}/3rdparty/dlpack/include
-)
-
-target_link_directories(${PROJECT_NAME} PUBLIC
-  ${TVM_HOME}/build
-  ${TVM_HOME}/3rdparty/dmlc-core/build
-)
-
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/)
-
-target_link_libraries(${PROJECT_NAME} 
-  grpc++ proto tvm_runtime CLI11::CLI11 glog::glog
-  CUDA::nvml CUDA::cudart CUDA::cuda_driver
-  sta
-)
-
-if (DEFINED USE_NVML_V3)
-  target_compile_definitions(${PROJECT_NAME} PRIVATE USE_NVML_V3=${USE_NVML_V3})
-  message(STATUS "${PROJECT_NAME} not use nvml v3 api")
-endif()
-
+# client
 add_executable(client client/client.cc)
 target_link_libraries(client grpc++ proto glog::glog CLI11::CLI11)
 
@@ -184,5 +149,5 @@ target_link_libraries(busy_loop_launcher grpc++ proto glog::glog CLI11::CLI11)
 
 include(cmake/xsched.cmake)
 
-add_subdirectory(python)
+# add_subdirectory(python)
 add_subdirectory(pytorch)

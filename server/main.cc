@@ -5,7 +5,6 @@
 #include <tvm/runtime/module.h>
 #include <tvm/runtime/registry.h>
 #include <tvm/runtime/logging.h>
-#include "sta/mempool.h"
 #include <iostream>
 #include <filesystem>
 #include <csignal>
@@ -17,7 +16,9 @@
 #include <CLI/CLI.hpp>
 #include <cuda.h>
 
-#include <sta/init.h>
+#include <common/init.h>
+#include <common/mempool.h>
+
 
 #include "grpc/grcp_server.h"
 #include "colserve.grpc.pb.h"
@@ -182,7 +183,7 @@ int main(int argc, char *argv[]) {
   auto free_list_policy = colserve::sta::getFreeListPolicy(
       colserve::Config::mempool_freelist_policy);
   if (colserve::Config::use_shared_tensor) {
-    colserve::sta::Init(
+    colserve::sta::InitMemoryPool(
       static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1024 * 1024 * 1024),
       true, false, free_list_policy);
   }

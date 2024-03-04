@@ -54,9 +54,7 @@ class CUDAColAllocator : public c10::cuda::CUDACachingAllocator::CUDAAllocator {
       c10::cuda::CaptureId_t graph_id) override;
   void notifyCaptureEnded(int device, c10::cuda::CaptureId_t graph_id)
       override;
-  void notifyCaptureDestroy(
-      int device,
-      c10::cuda::MempoolId_t mempool_id) override;
+  void notifyCaptureDestroy(int device, c10::cuda::MempoolId_t mempool_id) override;
   std::shared_ptr<void> getIpcDevPtr(std::string handle) override;
   void recordHistory(
       bool enabled,

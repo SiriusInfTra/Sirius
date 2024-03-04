@@ -7,7 +7,7 @@
 #include <chrono>
 #include <regex>
 
-#include <sta/dtype_helper.h>
+#include <common/dtype_helper.h>
 
 #include "cache.h"
 #include "model_infer_store.h"

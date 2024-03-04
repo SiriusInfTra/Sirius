@@ -7,7 +7,8 @@
 #include <glog/logging.h>
 #include <thread>
 
-#include "../sta/dlpack.h"
+#include <common/dlpack.h>
+
 #include "colserve.grpc.pb.h"
 
 

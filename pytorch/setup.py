@@ -7,7 +7,13 @@ import torch
 import shutil
 
 def copy_lib():
-    pass
+    build_path = pathlib.Path('../build')
+    ext_build_path = build_path / 'pytorch'
+    comm_build_path = build_path / 'common'
+    lib_path = pathlib.Path('torch_col/lib')
+    lib_path.mkdir(parents=True, exist_ok=True)
+    shutil.copy(comm_build_path / 'libsta.so', lib_path)
+    shutil.copy(ext_build_path / 'libnew_torch_col.so', lib_path)
 
 def config_extension():
     torch_install_path = pathlib.Path(torch.__file__).parent
@@ -21,6 +27,7 @@ def config_extension():
         if line.startswith('CUDA_TOOLKIT_ROOT_DIR'):
             cuda_root_path = line.split('=')[1]
             break
+    copy_lib()
 
     ext = Extension(
         name="torch_col._C",
@@ -34,7 +41,10 @@ def config_extension():
             torch_include_path,
             f"{cuda_root_path}/include"
         ],
+        libraries=["new_torch_col"],
+        library_dirs=["torch_col/lib"],
         extra_compile_args=["-std=c++17"],
+        extra_link_args=["-Wl,-rpath,$ORIGIN/lib"],
     )
     return cythonize([ext]) 
 

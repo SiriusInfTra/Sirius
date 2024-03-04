@@ -1,4 +1,3 @@
-#include "../logging_as_glog.h"
 #include "shape_helper.h"
 
 

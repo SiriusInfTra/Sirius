@@ -5,7 +5,8 @@
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 
-#include "sta/cuda_allocator.h"
+#include <common/cuda_allocator.h>
+
 #include "model_train_store.h"
 #include "profiler.h"
 #include "config.h"

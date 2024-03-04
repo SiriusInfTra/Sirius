@@ -3,7 +3,7 @@
 #include <iostream>
 
 #include "cuda_allocator.h"
-#include "sta/mempool.h"
+#include "mempool.h"
 #include <glog/logging.h>
 #include <numeric>
 

@@ -1,8 +1,6 @@
 #ifndef COLSERVE_TENSOR_POOL_H
 #define COLSERVE_TENSOR_POOL_H
 
-#include "../logging_as_glog.h"
-
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -18,8 +16,6 @@
 
 namespace colserve {
 namespace sta {
-
-using handle_t = uint64_t;
 
 class STensor;
 class TensorContainer {
@@ -107,8 +103,8 @@ class STensor : public std::shared_ptr<TensorContainer> {
   size_t ComputeNumel() const;
 
   void Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride);
-  void AllocForNull(MemType mtype, bool raw_alloc);
-  void AssignMDataForNull(TensorContainer::memory_data_t mdata, bool check_memory_bound = false);
+  void AllocForNull(MemType mtype);
+  void SetMDataForNull(TensorContainer::memory_data_t mdata, bool check_memory_bound = false);
   void DeallocToNull();
   void DeallocToDummy();
   void Rearrange();
@@ -141,39 +137,6 @@ class STensor : public std::shared_ptr<TensorContainer> {
   }
 };
 
-
-class TensorPool {
- public:
-  static void Init();
-  static TensorPool* Get();
-
-  TensorPool();
-  // uint64_t Empty(std::vector<int64_t> shape, DLDataType dtype);
-  uint64_t Insert(STensor tensor);
-  void Remove(uint64_t handle);
-
-  STensor Tensor(uint64_t handle);
-  const STensor CTensor(uint64_t handle);
-  
-  void SetTrainModelAllocating(bool train_model_allocating) { train_model_allocating_ = train_model_allocating; }
-  void AddTrainIntermediateTensor(uint64_t handle);
-  void ClearTrainIntermediateTensor();
-  void ReleaseTrainIntermediateTensorMemory();
-  void RearrangeTrainMemory();
-
- private:
-  static std::unique_ptr<TensorPool> tensor_pool_;
-
-  std::mutex mutex_;
-  std::atomic<uint64_t> handle_counter_;
-  std::unordered_map<uint64_t, STensor> tensor_by_handle_;
-
-  bool train_model_allocating_{false};
-  std::unordered_set<uint64_t> train_model_tensor_handles_;
-  
-  std::vector<uint64_t> train_intermediate_tensor_handles_;
-  std::unordered_set<void*> train_intermediate_tensor_memory_;
-};
 
 }
 }
