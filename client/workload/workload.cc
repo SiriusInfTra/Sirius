@@ -470,7 +470,7 @@ std::function<void(InferRequest&)> Workload::SetMnistRequestFn(const std::string
   static std::vector<std::string> mnist_input_datas;
   if (mnist_input_datas.empty()) {
     for (size_t i = 0; i < 10; i++) {
-      mnist_input_datas.push_back(ReadInput("data/mnist/input-" + std::to_string(i) + ".bin"));
+      mnist_input_datas.push_back(ReadInput("mnist/input-" + std::to_string(i) + ".bin"));
     }
   }
   auto set_mnist_request_fn = [&](InferRequest &request) {
@@ -493,7 +493,7 @@ std::function<void(InferRequest&)> Workload::SetResnetRequestFn(const std::strin
   static std::vector<std::string> resnet_input_datas;
   if (resnet_input_datas.empty()) {
     for (size_t i = 0; i < 1; i++) {
-      resnet_input_datas.push_back(ReadInput("data/resnet/input-" + std::to_string(i) + ".bin"));
+      resnet_input_datas.push_back(ReadInput("resnet/input-" + std::to_string(i) + ".bin"));
     }
   }
 
@@ -517,7 +517,7 @@ std::function<void(InferRequest&)> Workload::SetInceptionRequestFn(const std::st
       static std::vector<std::string> resnet_input_datas;
     if (resnet_input_datas.empty()) {
       for (size_t i = 0; i < 1; i++) {
-        resnet_input_datas.push_back(ReadInput("data/inception/input-" + std::to_string(i) + ".bin"));
+        resnet_input_datas.push_back(ReadInput("inception/input-" + std::to_string(i) + ".bin"));
       }
     }
     auto set_resnet_request_fn = [&](InferRequest &request) {
@@ -540,8 +540,8 @@ std::function<void(InferRequest&)> Workload::SetBertRequestFn(const std::string 
   static std::vector<std::string> bert_mask_datas;
   if (bert_input_datas.empty()) {
     for (size_t i = 0; i < 1; i++) {
-      bert_input_datas.push_back(ReadInput("data/bert/input-" + std::to_string(i) + ".bin"));
-      bert_mask_datas.push_back(ReadInput("data/bert/mask-" + std::to_string(i) + ".bin"));
+      bert_input_datas.push_back(ReadInput("input-" + std::to_string(i) + ".bin"));
+      bert_mask_datas.push_back(ReadInput("mask-" + std::to_string(i) + ".bin"));
     }
   }
   

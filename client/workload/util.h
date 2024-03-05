@@ -12,7 +12,7 @@
 namespace colserve {
 namespace workload {
 
-std::string ReadInput(const std::string &data_path);
+std::string ReadInput(std::filesystem::path data_path);
 
 inline long GetTimeStamp() {
   return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();

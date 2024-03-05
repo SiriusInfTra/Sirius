@@ -1,10 +1,15 @@
+#include <filesystem>
+#include <glog/logging.h>
+
 #include "util.h"
-#include "glog/logging.h"
 
 namespace colserve {
 namespace workload {
 
-std::string ReadInput(const std::string &data_path) {
+std::filesystem::path data_repo_path{"client/data"};
+
+std::string ReadInput(std::filesystem::path data_path) {
+  data_path = data_repo_path / data_path;
   std::ifstream data_file{data_path, std::ios::binary};
   CHECK(data_file.good()) << "data " << data_path << " not exist";
   std::string data{std::istreambuf_iterator<char>(data_file), std::istreambuf_iterator<char>()};

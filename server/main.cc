@@ -191,7 +191,7 @@ int main(int argc, char *argv[]) {
   colserve::Profiler::Init(colserve::Config::profile_log_path);
   colserve::GraphCache::Init(colserve::Config::max_cache_nbytes);
   colserve::ModelTrainStore::Init("train");
-  colserve::ModelInferStore::Init("models");
+  colserve::ModelInferStore::Init("server/models");
   colserve::Profiler::Start();
 
   if (colserve::Config::memory_pressure_mb > 0) { 
