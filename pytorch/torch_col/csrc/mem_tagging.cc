@@ -19,7 +19,7 @@ void TagModelParameterEnd() {
 void TagIntermMemory(PyObject* py_tensor) {
   at::Tensor tensor = THPVariable_Unpack(py_tensor);
   auto storage = tensor.unsafeGetTensorImpl()->storage();
-  CUDAColAllocator::Get()->TagIntermMemory(storage);
+  CUDAColAllocator::Get()->TagIntermMemory(storage.data(), storage.nbytes(), storage.allocator());
 
   // auto col_tensor = GetColTensorImpl(tensor);
   // DLOG(INFO) << "[TORCH_COL STA] " << "tas as saved tensor " << col_tensor->Handle() << " " << col_tensor->CTensor().MData()->addr;

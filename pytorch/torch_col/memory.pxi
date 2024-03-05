@@ -6,16 +6,20 @@ from cpython.ref cimport PyObject
 cdef extern from "<csrc/cuda_allocator_plugin.h>" namespace "torch::cuda::CUDAColAllocator":
   cdef cppclass CUDAColAllocator:
     @staticmethod
+    CUDAColAllocator* Get()
+    @staticmethod
     void Init()
-
     @staticmethod
     void SetCurrentAllocator()
+    void init(int)
 
 
-def init_col_allocator():
-  CUDAColAllocator.Init()
-  CUDAColAllocator.SetCurrentAllocator()
-  print("CUDAColAllocator initialized")
+def init_col_allocator(use_shared_tensor: bool):
+    CUDAColAllocator.Init()
+    if use_shared_tensor:
+        CUDAColAllocator.Get().init(0)
+        CUDAColAllocator.SetCurrentAllocator()
+        print("CUDAColAllocator initialized")
 
 
 cdef extern from "<common/cuda_allocator.h>" namespace "colserve::sta":

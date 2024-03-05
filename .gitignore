@@ -10,7 +10,7 @@ build_*/
 *.tar
 *.onnx
 
-models/*/
+server/models/*/
 
 .pkl_memoize_py3/
 
@@ -20,8 +20,7 @@ models/*/
 *.egg-info/
 python/torch_col/torch_col.cpp
 python/torch_col/sta.cpp
-pytorch/torch_col/memory.cpp
-pytorch/torch_col/ctrl_stub.cpp
+pytorch/torch_col/main.cpp
 dist/
 
 *.code-workspace

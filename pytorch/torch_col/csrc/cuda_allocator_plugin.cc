@@ -14,17 +14,25 @@ using namespace colserve;
 
 std::shared_ptr<CUDAColAllocator> CUDAColAllocator::cuda_col_allocator_ = nullptr;
 
+CUDAColAllocator* CUDAColAllocator::Get() {
+  if (cuda_col_allocator_ == nullptr) {
+    LOG(FATAL) << "CUDAColAllocator is not initialized";
+  }
+  return cuda_col_allocator_.get();
+}
+
 void CUDAColAllocator::SetCurrentAllocator() {
   CHECK(cuda_col_allocator_.get() != nullptr)
     << "CUDAColAllocator is not initialized";
   CHECK(!c10::cuda::CUDACachingAllocator::allocator.load()->initialized())
     << "Can't swap an already initialized allocator";
   c10::cuda::CUDACachingAllocator::allocator.store(cuda_col_allocator_.get());
+  LOG(INFO) << "CUDAColAllocator is set as current allocator";
 }
 
 CUDAColAllocator::CUDAColAllocator() {
   LOG(INFO) << "CUDAColAllocator" << std::endl;
-  init(1); // for a single gpu
+  // init(1); // for a single gpu
 }
 
 void CUDAColAllocator::init(int device_count) {
@@ -179,20 +187,35 @@ std::string CUDAColAllocator::name() {
   return "CUDAColAllocator";
 }
 
-void CUDAColAllocator::TagIntermMemory(at::Storage storage) {
-  std::unique_lock lock(interm_memory_mutex_);
-  interm_memories_.push_back(storage);
+void CUDAColAllocator::TagIntermMemory(void* ptr, size_t nbytes, at::Allocator* allocator) {
+  static bool warning_logged = false;
+  if (allocator != this) {
+    if (!warning_logged) {
+      LOG(WARNING) << "allocator " << allocator << " may not be CUDAColAllocator";
+      warning_logged = true;
+    }
+    return;
+  }
+  std::unique_lock lock{interm_memory_mutex_};
+  // interm_memories_.push_back(storage);
+  interm_memories_.emplace_back(ptr, nbytes);
 };
 
 void CUDAColAllocator::ReleaseIntermMemory() {
-  std::unique_lock lock(interm_memory_mutex_);
-  for (auto &s : interm_memories_) {
-    s.unsafeGetStorageImpl()->reset();
+  std::unique_lock interm_memory_lock{interm_memory_mutex_};
+  std::unique_lock entry_lock{entry_mutex_};
+  for (auto [ptr, nbytes] : interm_memories_) {
+    // s.unsafeGetStorageImpl()->reset();
+    auto entry_it = entry_map_.find(ptr);
+    if (entry_it != entry_map_.end()) {
+      CHECK_GE(entry_it->second->nbytes, nbytes);
+      entry_map_.erase(entry_it);
+    }
   }
 }
 
 void CUDAColAllocator::UntagIntermMemory() {
-  std::unique_lock lock(interm_memory_mutex_);
+  std::unique_lock lock{interm_memory_mutex_};
   interm_memories_.clear();
 }
 
