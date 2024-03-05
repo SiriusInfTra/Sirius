@@ -1,4 +1,4 @@
-import pathlib
+import os, pathlib
 import setuptools
 from setuptools import Extension, setup, find_packages
 from Cython.Build import cythonize, build_ext
@@ -11,8 +11,13 @@ shutil.rmtree("build", ignore_errors=True)
 shutil.rmtree("dist", ignore_errors=True)
 shutil.rmtree("torch_col.egg-info", ignore_errors=True)
 
+def get_build_path():
+    return pathlib.Path(os.environ.get('BUILD_DIR', '../build'))
+
 def copy_lib():
-    build_path = pathlib.Path('../build')
+    # build_path = pathlib.Path('../build')
+    build_path = get_build_path()
+    print(f"Copying lib files from {build_path} to torch_col/lib/")
     ext_build_path = build_path / 'pytorch'
     comm_build_path = build_path / 'common'
     lib_path = pathlib.Path('torch_col/lib')
@@ -24,7 +29,7 @@ def config_extension():
     torch_install_path = pathlib.Path(torch.__file__).parent
     torch_include_path = str(torch_install_path / "include")
 
-    cmake_cache_path = pathlib.Path('../build/CMakeCache.txt')
+    cmake_cache_path = pathlib.Path(f'{get_build_path()}/CMakeCache.txt')
     assert cmake_cache_path.exists()
 
     cuda_root_path = None
