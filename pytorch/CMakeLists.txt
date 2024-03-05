@@ -25,7 +25,7 @@ target_link_libraries(new_torch_col PRIVATE
   sta
   ${TORCH_LIBRARIES}
   Python::Python
-  PySched middleware
+  PySched
 )
 
 set_target_properties(new_torch_col PROPERTIES BUILD_RPATH $ORIGIN)

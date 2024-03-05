@@ -46,12 +46,28 @@ def cuda_memory_pool_free_train_local():
     CUDAMemPool.FreeTrainLocals()
 
 
+# release activations by traversing grad_fn 
+cdef extern from "<csrc/util.h>" namespace "torch_col":
+  cdef void ReleaseGradFnSavedTensor(PyObject* function)
+  cdef void ReleaseUnderlyingStorage(PyObject* tensor)
+
+def release_grad_fn_saved_tensor(grad_fn):
+    cdef PyObject* obj = <PyObject*> grad_fn
+    ReleaseGradFnSavedTensor(obj)
+
+def release_underlying_storage(tensor):
+    cdef PyObject* obj = <PyObject*> tensor
+    ReleaseUnderlyingStorage(obj)
+
+
+# release activations by tagging activations,
+# interactive with memory pool to release memory dirrectly 
 cdef extern from "<csrc/mem_tagging.h>" namespace "torch_col":
     cdef void TagModelParameterStart()
     cdef void TagModelParameterEnd()
-    cdef void TagAsIntermediateTensor(PyObject* obj)
-    cdef void ReleaseIntermediateTensorMemory()
-    cdef void ClearIntermediateTensor()
+    cdef void TagIntermMemory(PyObject* obj)
+    cdef void ReleaseIntermMemory()
+    cdef void UntagIntermMemory()
     cdef void RearrangeMemory()
 
 def tag_model_start():
@@ -60,15 +76,15 @@ def tag_model_start():
 def tag_model_end():
     TagModelParameterEnd()
 
-def tag_as_saved_tensor(tensor):
+def tag_interm_memory(tensor):
     cdef PyObject* obj = <PyObject*> tensor
-    TagAsIntermediateTensor(obj)
+    TagIntermMemory(obj)
 
-def release_saved_tensor_memory():
-    ReleaseIntermediateTensorMemory()
+def release_interm_memory():
+    ReleaseIntermMemory()
 
-def clear_saved_tensor():
-    ClearIntermediateTensor()
+def untag_interm_memory():
+    UntagIntermMemory()
 
 def rearrange_memory():
     RearrangeMemory()

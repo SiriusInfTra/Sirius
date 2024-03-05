@@ -54,7 +54,3 @@ cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
         vector[long] GetAdjustRequestTimeStamp()
         @staticmethod
         vector[long] GetAdjustDoneTimeStamp()
-
-
-cdef extern from "<csrc/util.h>" namespace "torch_col":
-  cdef void ReleaseGradFnSavedTensor(PyObject* function)

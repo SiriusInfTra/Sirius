@@ -6,6 +6,11 @@ from Cython.Build import cythonize, build_ext
 import torch
 import shutil
 
+
+shutil.rmtree("build", ignore_errors=True)
+shutil.rmtree("dist", ignore_errors=True)
+shutil.rmtree("torch_col.egg-info", ignore_errors=True)
+
 def copy_lib():
     build_path = pathlib.Path('../build')
     ext_build_path = build_path / 'pytorch'

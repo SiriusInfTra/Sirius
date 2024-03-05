@@ -10,7 +10,7 @@ from . import xsched
 
 def register_saved_tensor_hook():
     def pack_hook(x):
-        torch_col.tag_as_saved_tensor(x)
+        torch_col.tag_interm_memory(x)
         return x
     def unpack_hook(x):
         return x
@@ -128,7 +128,7 @@ class SwitchHook(HookABC):
         if self.train_mode == TrainMode.TASKSWITCH_L0:
             return
         HookABC.register_fbward_hook(module, self.get_fwd_hook(), self.get_bwd_hook())
-        if torch_col.release_saved_tensor_v2():
+        if torch_col.release_interm_memory_v2():
             torch_col.register_saved_tensor_hook()
 
     def get_fwd_hook(self):
@@ -144,7 +144,7 @@ class SwitchHook(HookABC):
                 if self.train_mode == TrainMode.TASKSWITCH_L1:
                     def hook(module, input, output):
                         torch.cuda.synchronize()
-                        if torch_col.release_saved_tensor_v1():
+                        if torch_col.release_interm_memory_v1():
                             self._grad_fn.append(output.grad_fn)
                         if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
                             raise SwitchL1Exception("[Task Switch SYNC FWD]")
@@ -155,7 +155,7 @@ class SwitchHook(HookABC):
             case HookMode.XSCHED_SYNC:
                 if self.train_mode == TrainMode.TASKSWITCH_L1:
                     def hook(module, input, output):
-                        if torch_col.release_saved_tensor_v1():
+                        if torch_col.release_interm_memory_v1():
                             self._grad_fn.append(output.grad_fn)
                         if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
                             xsched.kill_batch()
@@ -212,12 +212,12 @@ class SwitchHook(HookABC):
     def switch_l1(self):
         # decouple kill batch and reclaim memory
         t0 = time.time()
-        if torch_col.release_saved_tensor_v1():
+        if torch_col.release_interm_memory_v1():
             for fn in self._grad_fn:
                 torch_col.release_grad_fn_saved_tensor(fn)
             self._grad_fn = []
         else:
-            torch_col.release_saved_tensor_memory()
+            torch_col.release_interm_memory()
         old_gpu_mem = MemoryPool.get_memory_usage()
         MemoryPool.empty_cache()
         cur_gpu_mem = MemoryPool.get_memory_usage()
@@ -292,7 +292,7 @@ class ColocateHook(HookABC):
                     def fwd_hook(module, input, output):
                         with EventManager.record_duration_event('sync_fwd'):
                             torch.cuda.current_stream().synchronize()
-                            if torch_col.release_saved_tensor_v1():
+                            if torch_col.release_interm_memory_v1():
                                 self._grad_fn.append(output.grad_fn)
                             if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
                                 raise ColocateAdjustL1Exception('[Adjust SYNC FWD]')
@@ -304,7 +304,7 @@ class ColocateHook(HookABC):
                 case HookMode.XSCHED_SYNC:
                     def fwd_hook(module, input, output):
                         with EventManager.record_duration_event('xsched_sync_fwd'):
-                            if torch_col.release_saved_tensor_v1():
+                            if torch_col.release_interm_memory_v1():
                                 self._grad_fn.append(output.grad_fn)
                             if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
                                 xsched.kill_batch()
@@ -319,7 +319,7 @@ class ColocateHook(HookABC):
                 case _:
                     raise RuntimeError(f"Unsupported hook_mode: {self.hook_mode.name}")
             HookABC.register_fbward_hook(module, fwd_hook, bwd_hook)
-            if torch_col.release_saved_tensor_v2():
+            if torch_col.release_interm_memory_v2():
                 torch_col.register_saved_tensor_hook()
         else:
             pass
@@ -360,12 +360,12 @@ class ColocateHook(HookABC):
         # print(f'[Adjust L1] train alloc cost {torch_col.cuda_memory_pool_train_alloc_ms()}ms', flush=True)
         t0 = time.time()
         with EventManager.record_duration_event('adjust_l1'):
-            if torch_col.release_saved_tensor_v1():
+            if torch_col.release_interm_memory_v1():
                 for fn in self._grad_fn:
                     torch_col.release_grad_fn_saved_tensor(fn)
                 self._grad_fn = []
             else:
-                torch_col.release_saved_tensor_memory()
+                torch_col.release_interm_memory()
             
             old_gpu_mem = MemoryPool.get_memory_usage()
             MemoryPool.empty_cache()

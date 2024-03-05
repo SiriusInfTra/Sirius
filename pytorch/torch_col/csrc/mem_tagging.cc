@@ -1,29 +1,38 @@
+#include <ATen/Tensor.h>
 #include <torch/csrc/autograd/python_variable.h>
 
 #include "mem_tagging.h"
+#include "cuda_allocator_plugin.h"
 
 namespace torch_col {
 
+using namespace torch::cuda::CUDAColAllocator;
+
 void TagModelParameterStart() {
-  // colserve::sta::TensorPool::Get()->SetTrainModelAllocating(true);
+  CUDAColAllocator::Get()->SetTrainModelAllocating(true);
 }
 
 void TagModelParameterEnd() {
-  // colserve::sta::TensorPool::Get()->SetTrainModelAllocating(false);
+  CUDAColAllocator::Get()->SetTrainModelAllocating(false);
 }
 
-void TagAsIntermediateTensor(PyObject* py_tensor) {
-  auto tensor = THPVariable_Unpack(py_tensor);
+void TagIntermMemory(PyObject* py_tensor) {
+  at::Tensor tensor = THPVariable_Unpack(py_tensor);
+  auto storage = tensor.unsafeGetTensorImpl()->storage();
+  CUDAColAllocator::Get()->TagIntermMemory(storage);
+
   // auto col_tensor = GetColTensorImpl(tensor);
   // DLOG(INFO) << "[TORCH_COL STA] " << "tas as saved tensor " << col_tensor->Handle() << " " << col_tensor->CTensor().MData()->addr;
   // colserve::sta::TensorPool::Get()->AddTrainIntermediateTensor(col_tensor->Handle());
 }
 
-void ReleaseIntermediateTensorMemory() {
+void ReleaseIntermMemory() {
   // colserve::sta::TensorPool::Get()->ReleaseTrainIntermediateTensorMemory();
+  CUDAColAllocator::Get()->ReleaseIntermMemory();
 }
 
-void ClearIntermediateTensor() {
+void UntagIntermMemory() {
+    CUDAColAllocator::Get()->UntagIntermMemory();
   // colserve::sta::TensorPool::Get()->ClearTrainIntermediateTensor();
 }
 

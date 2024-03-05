@@ -7,9 +7,9 @@ namespace torch_col {
 
 void TagModelParameterStart();
 void TagModelParameterEnd();
-void TagAsIntermediateTensor(PyObject* tensor);
-void ReleaseIntermediateTensorMemory();
-void ClearIntermediateTensor();
+void TagIntermMemory(PyObject* tensor);
+void ReleaseIntermMemory();
+void UntagIntermMemory();
 void RearrangeMemory();
 
 }

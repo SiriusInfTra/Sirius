@@ -15,6 +15,7 @@ inline auto get_unix_timestamp_us() {
 }
 
 void ReleaseGradFnSavedTensor(PyObject* grad_fn);
+void ReleaseUnderlyingStorage(PyObject* tensor);
 
 void DumpMempoolFreeList(std::string filename);
 void DumpMempoolBlockList(std::string filename);

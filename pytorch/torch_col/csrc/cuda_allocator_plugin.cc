@@ -70,7 +70,7 @@ c10::DeleterFnPtr CUDAColAllocator::raw_deleter() const {
 void* CUDAColAllocator::raw_alloc(size_t nbytes) {
   auto entry = sta::CUDAMemPool::Get()->Alloc(nbytes, colserve::sta::MemType::kTrain, false);
   
-  std::unique_lock<std::mutex> lock(mutex_);
+  std::unique_lock<std::mutex> lock(entry_mutex_);
   entry_map_[entry->addr] = entry;
   return entry->addr;
 }
@@ -80,7 +80,7 @@ void* CUDAColAllocator::raw_alloc_with_stream(size_t nbytes, cudaStream_t stream
 }
 
 void CUDAColAllocator::raw_delete(void* ptr) {
-  std::unique_lock<std::mutex> lock(mutex_);
+  std::unique_lock<std::mutex> lock(entry_mutex_);
   auto it = entry_map_.find(ptr);
   if (it != entry_map_.end()) {
     entry_map_.erase(it);
@@ -177,6 +177,23 @@ bool CUDAColAllocator::initialized() {
 
 std::string CUDAColAllocator::name() {
   return "CUDAColAllocator";
+}
+
+void CUDAColAllocator::TagIntermMemory(at::Storage storage) {
+  std::unique_lock lock(interm_memory_mutex_);
+  interm_memories_.push_back(storage);
+};
+
+void CUDAColAllocator::ReleaseIntermMemory() {
+  std::unique_lock lock(interm_memory_mutex_);
+  for (auto &s : interm_memories_) {
+    s.unsafeGetStorageImpl()->reset();
+  }
+}
+
+void CUDAColAllocator::UntagIntermMemory() {
+  std::unique_lock lock(interm_memory_mutex_);
+  interm_memories_.clear();
 }
 
 }

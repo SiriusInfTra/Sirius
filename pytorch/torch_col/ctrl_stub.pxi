@@ -162,10 +162,6 @@ def is_kill_batch_on_recv():
     return kill_batch_on_recv
 
 
-def release_grad_fn_saved_tensor(grad_fn):
-    cdef PyObject* obj = <PyObject*> grad_fn
-    ReleaseGradFnSavedTensor(obj)
-
 
 def get_adjust_request_time_stamp():
     return StubProfiler.GetAdjustRequestTimeStamp()

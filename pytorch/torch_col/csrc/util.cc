@@ -1,5 +1,6 @@
 #include <torch/csrc/autograd/function.h>
 #include <torch/csrc/autograd/python_cpp_function.h>
+#include <torch/csrc/autograd/python_variable.h>
 
 #include <common/mempool_sampler.h>
 #include <common/util.h>
@@ -14,6 +15,12 @@ void ReleaseGradFnSavedTensor(PyObject* py_grad_fn) {
   auto function = static_cast<::torch::autograd::Node*>(grad_fn->cdata.get());
   function->will_release_variables();
   function->release_variables();
+}
+
+void ReleaseUnderlyingStorage(PyObject* py_tensor) {
+  at::Tensor tensor = THPVariable_Unpack(py_tensor);
+  auto storage = tensor.unsafeGetTensorImpl()->storage();
+  storage.unsafeGetStorageImpl()->reset();
 }
 
 void DumpMempoolFreeList(std::string filename) {

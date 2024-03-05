@@ -3,6 +3,7 @@
 
 
 #include <c10/core/Allocator.h>
+#include <c10/core/Storage.h>
 #include <c10/cuda/CUDAStream.h>
 #include <c10/cuda/CUDACachingAllocator.h>
 
@@ -70,14 +71,25 @@ class CUDAColAllocator : public c10::cuda::CUDACachingAllocator::CUDAAllocator {
   bool needsPoolSpecificPeerAccess() override;
 
   std::string name() override;
+
+  void SetTrainModelAllocating(bool v) { train_allocating_ = v; }
+  void TagIntermMemory(at::Storage storage);
+  void ReleaseIntermMemory();
+  void UntagIntermMemory();
+
+
  private:
   static std::shared_ptr<CUDAColAllocator> cuda_col_allocator_;
 
   bool initialized_ = false;
+  bool train_allocating_ = false;
   
-  std::mutex mutex_;
+  std::mutex entry_mutex_;
   std::unordered_map<void*, std::shared_ptr<colserve::sta::CUDAMemPool::PoolEntry>> entry_map_;
-  
+
+  std::mutex interm_memory_mutex_;
+  std::vector<at::Storage> interm_memories_;
+
 };
 
 }
