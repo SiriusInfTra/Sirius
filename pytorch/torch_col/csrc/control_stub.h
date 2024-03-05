@@ -1,5 +1,5 @@
-#ifndef COLSERVE_CONTROL_STUB_H
-#define COLSERVE_CONTROL_STUB_H
+#ifndef TORCH_COL_CONTROL_STUB_H
+#define TORCH_COL_CONTROL_STUB_H
 
 #include <memory>
 #include <thread>
@@ -8,7 +8,6 @@
 #include <common/block_queue.h>
 #include <common/controlling.h>
 
-extern int KillBatchOnRecv;
 
 namespace torch_col {
 using namespace colserve;

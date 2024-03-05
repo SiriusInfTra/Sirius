@@ -1,7 +1,9 @@
+#ifndef TORCH_COL_UTIL_H
+#define TORCH_COL_UTIL_H
+
 #include <chrono>
 #include <string>
 #include <Python.h>
-
 
 namespace torch_col {
 inline auto get_unix_timestamp() {
@@ -19,3 +21,5 @@ void DumpMempoolBlockList(std::string filename);
 
 
 }
+
+#endif

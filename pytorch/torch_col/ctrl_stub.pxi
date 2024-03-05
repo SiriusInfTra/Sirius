@@ -157,9 +157,9 @@ cdef class PyColocateStub:
         del self._stub
 
 
-def kill_batch_on_recv():
-    global KillBatchOnRecv
-    return KillBatchOnRecv
+def is_kill_batch_on_recv():
+    global kill_batch_on_recv
+    return kill_batch_on_recv
 
 
 def release_grad_fn_saved_tensor(grad_fn):

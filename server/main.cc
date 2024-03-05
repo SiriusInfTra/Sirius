@@ -18,7 +18,7 @@
 
 #include <common/init.h>
 #include <common/mempool.h>
-
+#include <common/util.h>
 
 #include "grpc/grcp_server.h"
 #include "colserve.grpc.pb.h"
@@ -184,7 +184,7 @@ int main(int argc, char *argv[]) {
       colserve::Config::mempool_freelist_policy);
   if (colserve::Config::use_shared_tensor) {
     colserve::sta::InitMemoryPool(
-      static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1024 * 1024 * 1024),
+      static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
       true, false, free_list_policy);
   }
   colserve::Controller::Init();
@@ -195,7 +195,7 @@ int main(int argc, char *argv[]) {
   colserve::Profiler::Start();
 
   if (colserve::Config::memory_pressure_mb > 0) { 
-    size_t nbytes = static_cast<size_t>(colserve::Config::memory_pressure_mb * 1024 * 1024);
+    size_t nbytes = static_cast<size_t>(colserve::Config::memory_pressure_mb * 1_MB);
     CUDA_CALL(cudaMalloc(&memory_pressure_ptr, nbytes));
   }
 

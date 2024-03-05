@@ -1,3 +1,6 @@
+#ifndef COLSERVE_COMMON_INIT_H
+#define COLSERVE_COMMON_INIT_H
+
 #include "cuda_allocator.h"
 
 namespace colserve {
@@ -10,3 +13,5 @@ void InitMemoryPool(size_t memory_pool_nbytes, bool cleanup, bool observe, FreeL
 
 }
 }
+
+#endif

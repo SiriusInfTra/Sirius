@@ -26,6 +26,7 @@
 #include <iomanip>
 
 #include <cuda_runtime_api.h>
+#include <common/util.h>
 
 
 #ifdef NO_CUDA
@@ -198,7 +199,7 @@ static inline MemPoolConfig GetDefaultMemPoolConfig(size_t nbytes) {
     .cuda_device = 0,
     .cuda_memory_size = nbytes,
     .shared_memory_name = "gpu_colocation_mempool",
-    .shared_memory_size = 1024 * 1024 * 1024, /* 1G */
+    .shared_memory_size = 1_GB, 
   };
 }
 

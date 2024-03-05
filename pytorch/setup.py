@@ -32,8 +32,7 @@ def config_extension():
     ext = Extension(
         name="torch_col._C",
         sources=[
-            "torch_col/memory.pyx",
-            "torch_col/ctrl_stub.pyx",
+            "torch_col/main.pyx",
         ],
         language="c++",
         include_dirs=[

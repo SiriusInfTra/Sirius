@@ -6,12 +6,9 @@
 #include <common/mempool.h>
 
 #include "control_stub.h"
+#include "config.h"
 #include "util.h"
 
-
-constexpr int colocate_use_xsched = 1;
-
-int KillBatchOnRecv = 1 & colocate_use_xsched;
 
 namespace torch_col {
 
@@ -108,10 +105,10 @@ void SwitchStub::StepsNoInteruptEnd() {
 }
 
 ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_(batch_size) {
-  char *has_server_env = std::getenv("COLOCATE_HAS_SERVER");
-  bool has_server = has_server_env == nullptr ? true : (std::string(has_server_env) == "1");
-  cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("cmd-ctrl", !has_server);
-  status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("status-ctrl", !has_server);
+  // char *has_server_env = std::getenv("COLOCATE_HAS_SERVER");
+  // bool has_server = has_server_env == nullptr ? true : (std::string(has_server_env) == "1");
+  cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("cmd-ctrl", !has_colocated_infer_server);
+  status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("status-ctrl", !has_colocated_infer_server);
   // adjust_event_mq_ = std::make_unique<MemoryQueue<int>>("adjust-ctrl", false);
 
   thread_.reset(new std::thread([&]() {
@@ -139,7 +136,7 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
           }
 
           // only used for colocate l1
-          if (KillBatchOnRecv && data.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)) {
+          if (kill_batch_on_recv && data.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)) {
             // TODO: better cancel kernel launch
             std::unique_lock step_lock{step_mutex_};
             auto t1 = torch_col::get_unix_timestamp();
@@ -233,10 +230,10 @@ double ColocateStub::PassedTimeFromSetCmd() {
 }
 
 void ColocateStub::ReportBatchSize(int batch_size) {
-  char *has_server_env = std::getenv("COLOCATE_HAS_SERVER");
+  // char *has_server_env = std::getenv("COLOCATE_HAS_SERVER");
   current_bs_ = batch_size;
-  bool has_server = has_server_env == nullptr ? true : (std::string(has_server_env) == "1");
-  if (has_server) {
+  // bool has_server = has_server_env == nullptr ? true : (std::string(has_server_env) == "1");
+  if (has_colocated_infer_server) {
     status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kReportBatchSize), batch_size});
   }
  

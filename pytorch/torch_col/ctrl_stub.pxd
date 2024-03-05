@@ -4,10 +4,6 @@ from libcpp.vector cimport vector
 from cpython.ref cimport PyObject
 
 
-cdef extern from "<csrc/util.h>" namespace "torch_col":
-    cdef void ReleaseGradFnSavedTensor(PyObject* function)
-
-
 cdef extern from "<common/block_queue.h>" namespace "colserve":
     cdef cppclass MemoryQueue[T]:
         MemoryQueue(string, bint) except + 
@@ -16,15 +12,15 @@ cdef extern from "<common/block_queue.h>" namespace "colserve":
         bint TimedGet(T&, size_t)
 
 
-cdef extern from "<csrc/control_stub.h>":
-    cdef int KillBatchOnRecv
-
-
 cdef extern from "<common/controlling.h>" namespace "colserve::ctrl":
     cdef struct CtrlMsgEntry:
         unsigned long long id
         int event
         int value
+
+
+cdef extern from "<csrc/config.h>" namespace "torch_col":
+    cdef int kill_batch_on_recv
 
 
 cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
@@ -56,6 +52,9 @@ cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
     cdef cppclass StubProfiler:
         @staticmethod
         vector[long] GetAdjustRequestTimeStamp()
-        
         @staticmethod
         vector[long] GetAdjustDoneTimeStamp()
+
+
+cdef extern from "<csrc/util.h>" namespace "torch_col":
+  cdef void ReleaseGradFnSavedTensor(PyObject* function)

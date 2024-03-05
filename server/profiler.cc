@@ -6,6 +6,7 @@
 #include <cuda_runtime_api.h>
 
 #include <common/cuda_allocator.h>
+#include <common/util.h>
 
 #include "model_train_store.h"
 #include "profiler.h"
@@ -191,7 +192,7 @@ Profiler::Profiler(const std::string &profile_log_path)
         infer_mem = sta::CUDAMemPool::InferMemUsage();
         train_mem = sta::CUDAMemPool::TrainMemUsage();
         train_all_mem = sta::CUDAMemPool::TrainAllMemUsage();
-        total_mem = static_cast<size_t>(Config::cuda_memory_pool_gb * 1024 * 1024 * 1024);
+        total_mem = static_cast<size_t>(Config::cuda_memory_pool_gb * 1_GB);
       }
 
       this->last_infer_mem_ = infer_mem;

@@ -9,7 +9,9 @@ find_package(Python REQUIRED COMPONENTS Development)
 add_library(new_torch_col SHARED 
   torch_col/csrc/cuda_allocator_plugin.cc
   torch_col/csrc/control_stub.cc
+  torch_col/csrc/mem_tagging.cc
   torch_col/csrc/util.cc
+  torch_col/csrc/config.cc
 )
 
 add_dependencies(new_torch_col xsched_lib)
@@ -49,7 +51,8 @@ add_custom_command(
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS 
     new_torch_col sta
-    "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/memory.pyx"
-    "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/ctrl_stub.pyx"
+    "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/memory.pxi"
+    "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/ctrl_stub.pxi"
+    "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/ctrl_stub.pxd"
     ${TORCH_COL_PYTHON_FILES}
 )

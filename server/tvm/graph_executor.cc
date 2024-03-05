@@ -14,6 +14,7 @@
 
 #include <common/shape_helper.h>
 #include <common/mempool.h>
+#include <common/util.h>
 
 #include "graph_executor.h"
 #include "../model_train_store.h"

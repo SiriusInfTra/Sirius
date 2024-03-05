@@ -1,3 +1,7 @@
+#ifndef TORCH_COL_CUDA_ALLOCATOR_PLUGIN_H
+#define TORCH_COL_CUDA_ALLOCATOR_PLUGIN_H
+
+
 #include <c10/core/Allocator.h>
 #include <c10/cuda/CUDAStream.h>
 #include <c10/cuda/CUDACachingAllocator.h>
@@ -80,3 +84,5 @@ class CUDAColAllocator : public c10::cuda::CUDACachingAllocator::CUDAAllocator {
 
 }
 }
+
+#endif

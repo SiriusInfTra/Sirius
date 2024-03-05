@@ -15,14 +15,6 @@ namespace colserve {
     } \
   } while(0);
 
-#define CUDA_CALL(func) do { \
-    auto error = func; \
-    if (error != cudaSuccess) { \
-    LOG(FATAL) << #func << " " << cudaGetErrorString(error); \
-      exit(EXIT_FAILURE); \
-    } \
-  } while (0);
-
 enum class ServeMode {
   kNormal,        // infer/train contention
 
