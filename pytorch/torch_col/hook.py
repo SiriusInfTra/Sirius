@@ -107,11 +107,11 @@ class SwitchHook(HookABC):
         # TrainMode.TASKSWITCH_L1
         if self.hook_mode.use_xsched():
             while xsched.get_xqueue_size() != 0:
-                if self._stub.cmd == torch_col.Event.kInterruptTrain:
+                if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
                     xsched.kill_batch()
                     raise SwitchL1Exception('before_critical_section')
         torch.cuda.current_stream().synchronize()
-        if self._stub.cmd == torch_col.Event.kInterruptTrain:
+        if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
             raise SwitchL1Exception('before_critical_section')
         # make sure we will not interrupt step
         self._stub.StepsNoInteruptBegin()
@@ -120,7 +120,7 @@ class SwitchHook(HookABC):
         self._stub.StepsNoInteruptEnd()
 
         # during critical section executing, kill batch request may be sent
-        if self._stub.cmd == torch_col.Event.kInterruptTrain:
+        if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
             # since we sync, no kernel is executing
             self.switch()
 
@@ -135,9 +135,9 @@ class SwitchHook(HookABC):
         # def hook(module, input, output):
         #     torch.cuda.synchronize()
         #     self._grad_fn.append(output._grad_fn)
-        #     if self._stub.cmd == torch_col.Event.kInterruptTrain:
+        #     if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
         #         raise SwitchL1Exception("[Task Switch]")
-        #     elif self._stub.cmd == torch_col.Event.kResumeTrain:
+        #     elif self._stub.cmd == torch_col.CtrlEvent.kResumeTrain:
         #         self._stub.cmd = None
         match self.hook_mode:
             case HookMode.SYNC:
@@ -146,9 +146,9 @@ class SwitchHook(HookABC):
                         torch.cuda.synchronize()
                         if torch_col.release_saved_tensor_v1():
                             self._grad_fn.append(output.grad_fn)
-                        if self._stub.cmd == torch_col.Event.kInterruptTrain:
+                        if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
                             raise SwitchL1Exception("[Task Switch SYNC FWD]")
-                        elif self._stub.cmd == torch_col.Event.kResumeTrain:
+                        elif self._stub.cmd == torch_col.CtrlEvent.kResumeTrain:
                             self._stub.cmd = None
                 elif self.train_mode == TrainMode.TASKSWITCH_L0:
                     raise Exception('task switch l0 in cpp workld')
@@ -157,10 +157,10 @@ class SwitchHook(HookABC):
                     def hook(module, input, output):
                         if torch_col.release_saved_tensor_v1():
                             self._grad_fn.append(output.grad_fn)
-                        if self._stub.cmd == torch_col.Event.kInterruptTrain:
+                        if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
                             xsched.kill_batch()
                             raise ColocateAdjustL1Exception("[Task Switch XSCHED_SYNC FWD]")
-                        elif self._stub.cmd == torch_col.Event.kResumeTrain:
+                        elif self._stub.cmd == torch_col.CtrlEvent.kResumeTrain:
                             self._stub.cmd = None
                 elif self.train_mode == TrainMode.TASKSWITCH_L0:
                     raise Exception('task switch l0 in cpp workld')
@@ -171,9 +171,9 @@ class SwitchHook(HookABC):
     def get_bwd_hook(self):
         # def hook(module, grad_input, grad_output):
         #     torch.cuda.synchronize()
-        #     if self._stub.cmd == torch_col.Event.kInterruptTrain:
+        #     if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
         #         raise SwitchL1Exception("[Task Switch]")
-        #     elif self._stub.cmd == torch_col.Event.kResumeTrain:
+        #     elif self._stub.cmd == torch_col.CtrlEvent.kResumeTrain:
         #         self._stub.cmd = None
         # return hook
         match self.hook_mode:
@@ -181,9 +181,9 @@ class SwitchHook(HookABC):
                 if self.train_mode == TrainMode.TASKSWITCH_L1:
                     def hook(module, grad_input, grad_output):
                         torch.cuda.synchronize()
-                        if self._stub.cmd == torch_col.Event.kInterruptTrain:
+                        if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
                             raise SwitchL1Exception("[Task Switch BWD]")
-                        elif self._stub.cmd == torch_col.Event.kResumeTrain:
+                        elif self._stub.cmd == torch_col.CtrlEvent.kResumeTrain:
                             self._stub.cmd = None
                 elif self.train_mode == TrainMode.TASKSWITCH_L0:
                     raise Exception('task switch l0 in cpp workld')
@@ -191,10 +191,10 @@ class SwitchHook(HookABC):
                 if self.train_mode == TrainMode.TASKSWITCH_L1:
                     def hook(module, grad_input, grad_output):
                         # print(f'{event_name}: {self._stub.cmd}')
-                        if self._stub.cmd == torch_col.Event.kInterruptTrain:
+                        if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
                             xsched.kill_batch()
                             raise SwitchL1Exception("[Task Switch BWD]")
-                        elif self._stub.cmd == torch_col.Event.kResumeTrain:
+                        elif self._stub.cmd == torch_col.CtrlEvent.kResumeTrain:
                             self._stub.cmd = None
                 elif self.train_mode == TrainMode.TASKSWITCH_L0:
                     raise Exception('task switch l0 in cpp workld')
@@ -264,11 +264,11 @@ class ColocateHook(HookABC):
             # before critical section, we need to make queued kernel as less as possible
             if self.hook_mode.use_xsched():
                 while xsched.get_xqueue_size() != 0:
-                    if self._stub.cmd == torch_col.Event.kColocateAdjustL1:
+                    if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
                         xsched.kill_batch()
                         raise ColocateAdjustL1Exception('before_critical_section')
             torch.cuda.current_stream().synchronize()
-            if self._stub.cmd == torch_col.Event.kColocateAdjustL1:
+            if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
                 raise ColocateAdjustL1Exception('before_critical_section')
             # make sure we will not interrupt step
             self._stub.StepsNoInteruptBegin()
@@ -277,7 +277,7 @@ class ColocateHook(HookABC):
             self._stub.StepsNoInteruptEnd()
 
             # during critical section executing, kill batch request may be sent
-            if self._stub.cmd == torch_col.Event.kColocateAdjustL1:
+            if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
                 # since we sync, no kernel is executing
                 self.adjust()
         else:
@@ -294,25 +294,25 @@ class ColocateHook(HookABC):
                             torch.cuda.current_stream().synchronize()
                             if torch_col.release_saved_tensor_v1():
                                 self._grad_fn.append(output.grad_fn)
-                            if self._stub.cmd == torch_col.Event.kColocateAdjustL1:
+                            if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
                                 raise ColocateAdjustL1Exception('[Adjust SYNC FWD]')
                     def bwd_hook(module, grad_input, grad_output):
                         with EventManager.record_duration_event('sync_bwd'):
                             torch.cuda.current_stream().synchronize()
-                            if self._stub.cmd == torch_col.Event.kColocateAdjustL1:
+                            if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
                                 raise ColocateAdjustL1Exception('[Adjust SYNC BWD]')
                 case HookMode.XSCHED_SYNC:
                     def fwd_hook(module, input, output):
                         with EventManager.record_duration_event('xsched_sync_fwd'):
                             if torch_col.release_saved_tensor_v1():
                                 self._grad_fn.append(output.grad_fn)
-                            if self._stub.cmd == torch_col.Event.kColocateAdjustL1:
+                            if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
                                 xsched.kill_batch()
                                 raise ColocateAdjustL1Exception('[Adjust XSCHED_SYNC BWD]')
                             # torch_col.cuda_memory_pool_reset_train_alloc_ms()
                     def bwd_hook(module, grad_input, grad_output):
                         with EventManager.record_duration_event('xsched_sync_bwd'):
-                            if self._stub.cmd == torch_col.Event.kColocateAdjustL1:
+                            if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
                                 xsched.kill_batch()
                                 raise ColocateAdjustL1Exception('[Adjust XSCHED_SYNC BWD]')
                             # torch_col.cuda_memory_pool_reset_train_alloc_ms()

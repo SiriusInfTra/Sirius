@@ -30,7 +30,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
 
     def next_batch(self):
         if self.hook.train_mode == TrainMode.COLOCATE_L2:
-            if self.hook._stub.cmd == torch_col.Event.kColocateAdjustL2:
+            if self.hook._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL2:
                 self.hook.release_and_reply()
                 #     t0 = time.time()
                 #     old_gpu_mem = gpu_mem()
@@ -64,12 +64,12 @@ class CustomeDynamicBatchDataset(IterableDataset):
                     while batch_size <= 0:
                         self.hook.report_batch_size(batch_size)
                         time.sleep(1e-3)
-                        if self.hook._stub.cmd == torch_col.Event.kColocateAdjustL1 or self.hook._stub.cmd == torch_col.Event.kColocateAdjustL2:
+                        if self.hook._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1 or self.hook._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL2:
                             self.hook.release_and_reply()
                         batch_size = min(self.batch_size, self.size - self.iter_idx)
                 elif self.hook.train_mode == TrainMode.TASKSWITCH_L1:
                     assert self.hook is not None
-                    while self.hook._stub.cmd == torch_col.Event.kInterruptTrain:
+                    while self.hook._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
                         self.hook.switch()
                         time.sleep(1e-3)
                 # self.iter_idx += batch_size
