@@ -21,6 +21,7 @@ models/*/
 python/torch_col/torch_col.cpp
 python/torch_col/sta.cpp
 pytorch/torch_col/memory.cpp
+pytorch/torch_col/ctrl_stub.cpp
 dist/
 
 *.code-workspace
