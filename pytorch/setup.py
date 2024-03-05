@@ -33,11 +33,12 @@ def config_extension():
         name="torch_col._C",
         sources=[
             "torch_col/memory.pyx",
+            "torch_col/ctrl_stub.pyx",
         ],
         language="c++",
         include_dirs=[
             "../",
-            "torch_col/csrc",
+            "torch_col/",
             torch_include_path,
             f"{cuda_root_path}/include"
         ],

@@ -1,20 +1,22 @@
 #ifndef COLSERVE_CONTROLLER_H
 #define COLSERVE_CONTROLLER_H
 
+#include <common/block_queue.h>
+#include <common/controlling.h>
+
 #include <thread>
 #include <mutex>
 #include <atomic>
 #include <condition_variable>
 
-#include "block_queue.h"
 
 namespace colserve {
 
-struct CtrlMsgEntry {
-  uint64_t id;
-  int event;
-  int value;
-};
+// struct CtrlMsgEntry {
+//   uint64_t id;
+//   int event;
+//   int value;
+// };
 
 class Controller {
  public:
@@ -46,27 +48,27 @@ class Controller {
   void EnterInferModelAlloc(size_t model_rank);
   void ExitInferModelAlloc(size_t model_rank);
 
-  enum class Event {
-    // status event
-    kTrainStart,
-    kTrainEnd,
-    kInterruptTrainDone,
-    kResumeTrainDone,
-    kColocateAdjustL1Done,
-    kColocateAdjustL2Done,
+  // enum class Event {
+  //   // status event
+  //   kTrainStart,
+  //   kTrainEnd,
+  //   kInterruptTrainDone,
+  //   kResumeTrainDone,
+  //   kColocateAdjustL1Done,
+  //   kColocateAdjustL2Done,
     
-    kReportBatchSize,
+  //   kReportBatchSize,
 
-    // cmd event: switch mode
-    kInterruptTrain,
-    kResumeTrain,
-    // cmd event: colocate mode
-    kColocateAdjustL1,
-    kColocateAdjustL2,
-    kInferExit, // train adjust back
+  //   // cmd event: switch mode
+  //   kInterruptTrain,
+  //   kResumeTrain,
+  //   // cmd event: colocate mode
+  //   kColocateAdjustL1,
+  //   kColocateAdjustL2,
+  //   kInferExit, // train adjust back
 
-    kNumEvent,
-  };
+  //   kNumEvent,
+  // };
 
  private:
   static std::unique_ptr<Controller> controller_;
@@ -94,7 +96,7 @@ class Controller {
   TrainStatus train_status_;
 
   // std::unique_ptr<MemoryQueue<int>> , train_adjust_event_mq_;
-  std::unique_ptr<MemoryQueue<CtrlMsgEntry>> train_status_event_mq_, train_cmd_event_mq_;
+  std::unique_ptr<MemoryQueue<ctrl::CtrlMsgEntry>> train_status_event_mq_, train_cmd_event_mq_;
   
   // switch mode
   std::mutex wait_train_mutex_, wait_infer_mutex_;

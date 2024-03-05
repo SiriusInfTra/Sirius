@@ -1,18 +1,18 @@
 #ifndef COLSERVE_TENSOR_POOL_H
 #define COLSERVE_TENSOR_POOL_H
 
+#include <c10/core/MemoryFormat.h>
+#include <ATen/Tensor.h>
+
+#include <common/dlpack.h>
+#include <common/cuda_allocator.h>
+#include <common/dtype_helper.h>
+
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
-// #include <dlpack/dlpack.h>
 #include <vector>
 #include <optional>
-
-#include <c10/core/MemoryFormat.h>
-#include <ATen/Tensor.h>
-#include "dlpack.h"
-#include "cuda_allocator.h"
-#include "dtype_helper.h"
 
 namespace colserve {
 namespace sta {

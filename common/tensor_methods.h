@@ -5,12 +5,12 @@
 #include <ATen/TensorUtils.h>
 #include <c10/core/MemoryFormat.h>
 
-#include <iostream>
-#include <vector>
-
 #include "tensor.h"
 #include "dlpack.h"
 #include "dtype_helper.h"
+
+#include <iostream>
+#include <vector>
 
 
 namespace colserve {
