@@ -31,3 +31,4 @@ log/*
 /dcgmi_output/*.txt
 
 .env
+.gdb_history

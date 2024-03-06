@@ -107,24 +107,6 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 add_library(proto ${proto_srcs} ${proto_hdrs} ${grpc_srcs} ${grpc_hdrs})
 target_link_libraries(proto ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF} )
 
-
-# # sta lib
-# add_library(sta SHARED
-#   server/sta/cuda_allocator.cc
-#   server/sta/tensor_pool.cc
-#   server/sta/mempool.cc
-#   server/sta/tensor_methods.cc
-#   server/sta/shape_helper.cc
-#   server/sta/dtype_helper.cc
-#   server/sta/init.cc
-# )
-# target_compile_definitions(sta PRIVATE -DNO_TVM)
-# # add_definitions(st)
-# # target_include_directories(sta INTERFACE ${TVM_HOME}/3rdparty/dlpack/include)
-# target_include_directories(sta PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/server/)
-# target_link_libraries(sta PRIVATE CUDA::cudart glog::glog
-#                           PUBLIC ${TORCH_LIBRARIES})
-
 add_subdirectory(common)
 add_subdirectory(server)
 
