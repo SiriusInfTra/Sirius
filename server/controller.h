@@ -12,12 +12,6 @@
 
 namespace colserve {
 
-// struct CtrlMsgEntry {
-//   uint64_t id;
-//   int event;
-//   int value;
-// };
-
 class Controller {
  public:
   static void Init();
@@ -47,28 +41,6 @@ class Controller {
   bool TryEnterInferModelAlloc(size_t model_rank);
   void EnterInferModelAlloc(size_t model_rank);
   void ExitInferModelAlloc(size_t model_rank);
-
-  // enum class Event {
-  //   // status event
-  //   kTrainStart,
-  //   kTrainEnd,
-  //   kInterruptTrainDone,
-  //   kResumeTrainDone,
-  //   kColocateAdjustL1Done,
-  //   kColocateAdjustL2Done,
-    
-  //   kReportBatchSize,
-
-  //   // cmd event: switch mode
-  //   kInterruptTrain,
-  //   kResumeTrain,
-  //   // cmd event: colocate mode
-  //   kColocateAdjustL1,
-  //   kColocateAdjustL2,
-  //   kInferExit, // train adjust back
-
-  //   kNumEvent,
-  // };
 
  private:
   static std::unique_ptr<Controller> controller_;

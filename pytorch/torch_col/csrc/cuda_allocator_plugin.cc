@@ -56,20 +56,21 @@ void CUDAColAllocator::init(int device_count) {
 }
 
 c10::DataPtr CUDAColAllocator::allocate(size_t nbytes) const {
-  auto entry = sta::CUDAMemPool::Get()->Alloc(nbytes, colserve::sta::MemType::kTrain, false);
-  
   auto addr = const_cast<CUDAColAllocator*>(this)->raw_alloc(nbytes);
   return c10::DataPtr{addr, addr, raw_deleter(), c10::Device(c10::DeviceType::CUDA, 0)};
 }
 
 c10::DeleterFnPtr CUDAColAllocator::raw_deleter() const {
   return [](void* ptr) {
+    DLOG(INFO) << "CUDAColAllocator raw_deleter " << ptr;
     cuda_col_allocator_->raw_delete(ptr);
   };
 }
 
 void* CUDAColAllocator::raw_alloc(size_t nbytes) {
   auto entry = sta::CUDAMemPool::Get()->Alloc(nbytes, colserve::sta::MemType::kTrain, false);
+  DLOG(INFO) << "CUDAColAllocator alloc " << sta::detail::ByteDisplay(nbytes) 
+            << " : addr " << entry->addr << " nbytes " << sta::detail::ByteDisplay(entry->nbytes);
   
   std::unique_lock<std::mutex> lock(entry_mutex_);
   entry_map_[entry->addr] = entry;
@@ -81,10 +82,13 @@ void* CUDAColAllocator::raw_alloc_with_stream(size_t nbytes, cudaStream_t stream
 }
 
 void CUDAColAllocator::raw_delete(void* ptr) {
+  std::unique_lock<std::mutex> interm_lock{interm_memory_mutex_};
   std::unique_lock<std::mutex> lock(entry_mutex_);
-  auto it = entry_map_.find(ptr);
-  if (it != entry_map_.end()) {
+  if (auto it = entry_map_.find(ptr); it != entry_map_.end()) {
     entry_map_.erase(it);
+  }
+  if (auto it = interm_memories_.find(ptr); it != interm_memories_.end()) {
+    interm_memories_.erase(it);
   }
 }
 
@@ -190,8 +194,7 @@ void CUDAColAllocator::TagIntermMemory(void* ptr, size_t nbytes, at::Allocator* 
     return;
   }
   std::unique_lock lock{interm_memory_mutex_};
-  // interm_memories_.push_back(storage);
-  interm_memories_.emplace_back(ptr, nbytes);
+  interm_memories_.emplace(ptr, nbytes);
 };
 
 void CUDAColAllocator::ReleaseIntermMemory() {
@@ -201,7 +204,7 @@ void CUDAColAllocator::ReleaseIntermMemory() {
     // s.unsafeGetStorageImpl()->reset();
     auto entry_it = entry_map_.find(ptr);
     if (entry_it != entry_map_.end()) {
-      CHECK_GE(entry_it->second->nbytes, nbytes);
+      CHECK_GE(entry_it->second->nbytes, nbytes) << " ptr " << entry_it->first;
       entry_map_.erase(entry_it);
     }
   }

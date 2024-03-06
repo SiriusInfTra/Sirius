@@ -67,7 +67,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
             try:
                 tried_batch += 1
                 total_tried_batch += 1
-                optimizer.zero_grad()
+                optimizer.zero_grad(set_to_none=False)
                 output = model(images)
                 loss = criterion(output, targets)
                 loss.backward()
