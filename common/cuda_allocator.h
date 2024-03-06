@@ -25,9 +25,40 @@
 namespace colserve {
 namespace sta {
 
+enum class FreeListPolicyType {};
+enum class MemType {
+  kFree,
+  kTrainLocalFree,
+  kMemTypeFreeNum,
+
+  kInfer,
+  kTrain,
+  kMemTypeNum,
+
+  // used in stat
+  kTrainAll,
+  kMemTypeStatNum,
+
+  /*
+   * Due to the nature of PyTorch async kernel execution, 
+   * the memory released by PyTorch Tensor may not be immediately available.
+   * Thus, `kTrainLocalFree` is introduced.
+   * 
+   *  kTrainLocalFree -- sync --> kFree <-> kInfer
+   *          ^                    |
+   *          |                    v
+   *          \---- release ---- kTrain
+   */
+};
+
 class CUDAMemPool {
- public:
-  using PoolEntry = colserve::sta::PoolEntry;
+  struct PoolEntry {
+    void *addr;
+    std::size_t nbytes;
+    MemType mtype;
+  };
+public:
+
   static void Init(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy);
   static CUDAMemPool* Get();
   static size_t InferMemUsage();
@@ -52,8 +83,8 @@ class CUDAMemPool {
   CUDAMemPool(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy);
   ~CUDAMemPool();
   std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes, MemType mtype, bool allow_nullptr);
-  std::shared_ptr<PoolEntry> Resize(std::shared_ptr<PoolEntry> entry, std::size_t nbytes);
-  void CopyFromTo(std::shared_ptr<PoolEntry> src, std::shared_ptr<PoolEntry> dst);
+  // std::shared_ptr<PoolEntry> Resize(std::shared_ptr<PoolEntry> entry, std::size_t nbytes);
+  // void CopyFromTo(std::shared_ptr<PoolEntry> src, std::shared_ptr<PoolEntry> dst);
 
   inline bool CheckAddr(void *addr) {
     // return impl_->CheckAddr(addr);

@@ -1,11 +1,15 @@
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
 #include <iostream>
 
 #include "cuda_allocator.h"
 #include "mempool.h"
+#include "torch_allocator.h"
 #include <glog/logging.h>
+#include <memory>
 #include <numeric>
+#include <string>
 
 #define CUDA_CALL(func) do { \
   auto error = func; \
@@ -35,38 +39,29 @@ void CUDAMemPool::Init(std::size_t nbytes, bool cleanup, bool observe, FreeListP
 
 CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy) {
 //    remove("/dev/shm/gpu_colocation_mempool");
-  MemPoolConfig config = GetDefaultMemPoolConfig(nbytes);
-  impl_ = new MemPool{config, cleanup, observe, free_list_policy};
+  std::string nbytes_s = std::to_string(nbytes);
+  std::string cleanup_s = cleanup ? "1" : "0";
+  CHECK(setenv("COL_MEMPOOL_NBYTES", nbytes_s.c_str(), true));
+  CHECK(setenv("COL_MEMPOOL_CLEANUP", cleanup_s.c_str(), true));
+  
 }
 
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(
     std::size_t nbytes, MemType mtype, bool allow_nullptr) {
+  CHECK(mtype == MemType::kTrain);
   auto t0 = std::chrono::steady_clock::now();
-  auto ret = impl_->Alloc(nbytes, mtype);
-  if (!allow_nullptr && ret == nullptr) {
-    impl_->DumpSummary();
-    LOG(FATAL) << "request size " << nbytes << " byte ( " << detail::ByteToMB(nbytes) << " mb )"  << " out of free gpu memory";
-  }
+  auto ptr = TorchAllocator::Get().Alloc<true>(nbytes);
   auto t1 = std::chrono::steady_clock::now();
   if (mtype == MemType::kTrain) {
     train_alloc_us_.fetch_add(std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count());
   }
-  return ret;
+  auto free = [](CUDAMemPool::PoolEntry *entry) {
+    TorchAllocator::Get().Free(reinterpret_cast<std::byte*>(entry->addr));
+  };
+  return std::shared_ptr<CUDAMemPool::PoolEntry>{
+    new PoolEntry{.addr = ptr, .nbytes=nbytes, .mtype = mtype}, free
+  };
 }
-
-std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Resize(
-    std::shared_ptr<PoolEntry> entry, std::size_t nbytes) {
-  // TODO: handle reallocate
-  CHECK(entry != nullptr);
-  auto ptr = impl_->Alloc(nbytes, entry->mtype);
-  CopyFromTo(entry, ptr);
-  return ptr;
-}
-
-void CUDAMemPool::CopyFromTo(std::shared_ptr<PoolEntry> src, std::shared_ptr<PoolEntry> dst) {
-  impl_->CopyFromTo(src, dst);
-}
-
 
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::RawAlloc(size_t nbytes, MemType mtype) {
   static bool initilized = false;
@@ -97,8 +92,7 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::RawAlloc(size_t nbytes, Mem
 }
 
 CUDAMemPool::~CUDAMemPool() {
-  delete impl_;
-  impl_ = nullptr;
+
 }
 
 
@@ -130,30 +124,26 @@ CUDAMemPool::~CUDAMemPool() {
 // }
 
 size_t CUDAMemPool::InferMemUsage() {
-  return Get()->impl_->GetMemUsage(MemType::kInfer);
+  return 0;
 }
 
 size_t CUDAMemPool::TrainMemUsage() {
-  return Get()->impl_->GetMemUsage(MemType::kTrain);
+  return 0;
 }
 
 size_t CUDAMemPool::TrainAllMemUsage() {
-  return Get()->impl_->GetMemUsage(MemType::kTrainAll);
+  return 0;
 }
 
 size_t CUDAMemPool::PoolNbytes() {
-  CHECK(cuda_mem_pool_ != nullptr);
-  return Get()->impl_->PoolNbytes();
+  return 0;
 }
 
 void CUDAMemPool::FreeTrainLocals() {
-  auto t0 = std::chrono::steady_clock::now();
-  Get()->impl_->FreeLocals(MemType::kTrainLocalFree);
-  auto t1 = std::chrono::steady_clock::now();
 }
 
 void CUDAMemPool::DumpDumpBlockList() {
-  Get()->impl_->DumpBlockList();
+
 }
 
 }  // namespace sta

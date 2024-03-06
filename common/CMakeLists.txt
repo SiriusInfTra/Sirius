@@ -9,6 +9,8 @@ add_library(sta SHARED
   tensor_methods.cc
   tensor.cc
   init.cc
+  torch_allocator.cc
+  mempool.cc
 )
 
 target_include_directories(sta PUBLIC "../")
