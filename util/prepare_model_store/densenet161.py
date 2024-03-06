@@ -7,7 +7,7 @@ import tarfile
 import pathlib
 
 batch_size = 1
-model_store = "models"
+model_store = "server/models"
 tmp_dir = tempfile.gettempdir()
 
 densenet161 = models.densenet169(weights=models.DenseNet169_Weights.DEFAULT).eval()
@@ -22,6 +22,6 @@ tvmc_model = tvmc.load(f"{tmp_dir}/densenet161.onnx",
 tvmc.compile(tvmc_model=tvmc_model, target='cuda', package_path=f"{tmp_dir}/densenet161-tvm.tar")
 
 
-model_store_path = f'models/densenet161-b{batch_size}' 
+model_store_path = f'{model_store}/densenet161-b{batch_size}' 
 pathlib.Path(model_store_path).mkdir(parents=True, exist_ok=True)
 tarfile.open(f"{tmp_dir}/densenet161-tvm.tar").extractall(model_store_path)

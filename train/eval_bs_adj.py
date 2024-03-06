@@ -16,13 +16,13 @@ input('Press Enter to start...')
 while True:
 	i = random.random() * interval
 	time.sleep(i / 1000)
-	cmd_mq.put(torch_col.Event.kColocateAdjustL1)
+	cmd_mq.put(torch_col.CtrlEvent.kColocateAdjustL1)
 	t0 = time.time()
 	event = None
 	while event is None:
 		event = status_mq.timed_get(10)
 	t1 = time.time()
-	assert event == torch_col.Event.kColocateAdjustL1Done
+	assert event == torch_col.CtrlEvent.kColocateAdjustL1Done
 	print('colocate adj l1 {:.1f}ms'.format((t1 - t0) * 1000))
         
 	
