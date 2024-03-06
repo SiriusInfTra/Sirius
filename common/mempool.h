@@ -1,76 +1,48 @@
 #pragma once
 
-#include <boost/lockfree/policies.hpp>
-#include <cstddef>
-#include <cstdlib>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
+#include <common/util.h>
 
+#include <boost/lockfree/policies.hpp>
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
 #include <boost/interprocess/sync/interprocess_condition.hpp>
 #include <boost/interprocess/sync/scoped_lock.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
-
 #include <boost/circular_buffer.hpp>
 
+#include <cstddef>
+#include <cstdlib>
 #include <iomanip>
 #include <iterator>
 #include <string>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/un.h>
-
-
 #include <chrono>
 #include <algorithm>
 #include <cstring>
 #include <vector>
 #include <memory>
 #include <thread>
-
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/un.h>
 
 #include <glog/logging.h>
 
-#define CUDA_CALL(func) do { \
-  auto error = func; \
-  if (error != cudaSuccess) { \
-    LOG(FATAL) << #func << " " << cudaGetErrorString(error); \
-    exit(EXIT_FAILURE); \
-  } \
-  } while (0)
-
-#define CU_CALL(func) do { \
-  auto error = func; \
-  if (error != CUDA_SUCCESS) { \
-    const char *errMsg; cuGetErrorString(error, &errMsg); \
-    LOG(FATAL) << #func << " " << errMsg; \
-    exit(EXIT_FAILURE); \
-  } \
-  } while (0)
-
-#define CU_CALL(func) do { \
-  auto error = func; \
-  if (error != CUDA_SUCCESS) { \
-    const char *errMsg; cuGetErrorString(error, &errMsg); \
-    LOG(FATAL) << #func << " " << errMsg; \
-    exit(EXIT_FAILURE); \
-  } \
-  } while (0)
 namespace colserve::sta {
 
-const static constexpr size_t MEM_BLOCK_NBYTES = 32 * 1024 * 1024; /* 32M */
+const static constexpr size_t MEM_BLOCK_NBYTES = 32_MB; /* 32M */
 
 namespace detail {
 constexpr size_t alignment = 1024;
-constexpr size_t train_alloc_threshold = 256 * 1024 * 1024;
-constexpr size_t train_alloc_threshold_small = 32 * 1024 * 1024;
+constexpr size_t train_alloc_threshold = 256_MB;
+constexpr size_t train_alloc_threshold_small = 32_MB;
 
 const constexpr size_t MIN_BLOCK_NBYTES = 512; /* 512B */
-const constexpr size_t SMALL_BLOCK_NBYTES = 1 * 1024 * 1024;  /* 1MB */
-const constexpr size_t SMALL_PAGE_NBYTES  = 2  * 1024 * 1024; /* 2MB  */
-const constexpr size_t LARGE_PAGE_NBYTES  = 32 * 1024 * 1024; /* 32MB */
+const constexpr size_t SMALL_BLOCK_NBYTES = 1_MB;  /* 1MB */
+const constexpr size_t SMALL_PAGE_NBYTES  = 2_MB; /* 2MB  */
+const constexpr size_t LARGE_PAGE_NBYTES  = 32_MB; /* 32MB */
 
 inline size_t GetAlignedNbytes(size_t nbytes) {
   static_assert((alignment & (alignment - 1)) == 0, "alignment must be power of 2");
@@ -81,13 +53,13 @@ inline size_t GetAlignedNbytes(size_t nbytes, size_t alignment_) {
   return (nbytes + (alignment_ - 1)) & (~(alignment_ - 1));
 }
 inline double ByteToMB(size_t nbytes) {
-  return static_cast<double>(nbytes) / 1024 / 1024;
+  return static_cast<double>(nbytes) / 1_MB;
 }
 
 inline std::string ByteDisplay(size_t nbytes) {
   std::stringstream ss;
   ss << std::fixed << std::setprecision(2)
-     << static_cast<double>(nbytes) / 1024 / 1024 << "MB (" << nbytes << " Bytes)";
+     << static_cast<double>(nbytes) / 1_MB << "MB (" << nbytes << " Bytes)";
   return ss.str();
 }
 
@@ -96,11 +68,12 @@ inline size_t AlignedNBytes(size_t nbytes) {
   static_assert((align & (align - 1)) == 0, "alignment must be power of 2");
   return (nbytes + (align - 1)) & (~(align - 1));
 }
+
 inline size_t RoundUpPower2NBytes(size_t nbytes) {
   static std::vector<size_t> round_nbytes = []{
     std::vector<size_t> tmp;
-    size_t start_nbytes = 1UL * 1024 * 1024; /* 1MB */
-    size_t end_nbytes = 16UL * 1024 * 1024 * 1024; /* 16GB */
+    size_t start_nbytes = 1_MB; /* 1MB */
+    size_t end_nbytes = 16_GB; /* 16GB */
     size_t roundup_power2_divisions = 4;
     for (size_t curr_nbytes = start_nbytes; curr_nbytes <= end_nbytes; curr_nbytes *= 2) {
       for (size_t k=0; k<roundup_power2_divisions; k++) {
@@ -176,6 +149,7 @@ public:
 
   void ReleaseMaster();
 };
+
 class MemPool {
   using ring_buffer = boost::circular_buffer<size_t, bip::allocator<size_t, bip::managed_shared_memory::segment_manager>>;
 private:

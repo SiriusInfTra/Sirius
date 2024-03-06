@@ -2,7 +2,7 @@
 #include <torch/csrc/autograd/python_cpp_function.h>
 #include <torch/csrc/autograd/python_variable.h>
 
-#include <common/mempool_sampler.h>
+// #include <common/mempool_sampler.h>
 #include <common/util.h>
 
 #include <string>
@@ -24,10 +24,12 @@ void ReleaseUnderlyingStorage(PyObject* py_tensor) {
 }
 
 void DumpMempoolFreeList(std::string filename) {
-  colserve::sta::DumpMempoolFreeList(filename);
+  // colserve::sta::DumpMempoolFreeList(filename);
+  LOG(FATAL) << "removed, to be re-impl"; 
 }
 void DumpMempoolBlockList(std::string filename) {
-    colserve::sta::DumpMempoolBlockList(filename);
+  // colserve::sta::DumpMempoolBlockList(filename);
+  LOG(FATAL) << "removed, to be re-impl"; 
 }
 
 

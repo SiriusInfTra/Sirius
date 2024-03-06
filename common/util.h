@@ -1,15 +1,25 @@
 #ifndef COLSERVE_COMMON_UTIL_H
 #define COLSERVE_COMMON_UTIL_H
 
+#include <cuda.h>
+#include <cuda_runtime_api.h>
+
 #include <iostream>
 #include <cstdint>
-
-#include <cuda_runtime_api.h>
 
 #define CUDA_CALL(func) do { \
   auto error = func; \
   if (error != cudaSuccess) { \
     LOG(FATAL) << #func << " " << cudaGetErrorString(error); \
+    exit(EXIT_FAILURE); \
+  } \
+  } while (0)
+
+#define CU_CALL(func) do { \
+  auto error = func; \
+  if (error != CUDA_SUCCESS) { \
+    const char *errMsg; cuGetErrorString(error, &errMsg); \
+    LOG(FATAL) << #func << " " << errMsg; \
     exit(EXIT_FAILURE); \
   } \
   } while (0)
