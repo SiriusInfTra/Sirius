@@ -4,14 +4,14 @@ from cpython.ref cimport PyObject
 
 
 cdef extern from "<csrc/cuda_allocator_plugin.h>" namespace "torch::cuda::CUDAColAllocator":
-  cdef cppclass CUDAColAllocator:
-    @staticmethod
-    CUDAColAllocator* Get()
-    @staticmethod
-    void Init()
-    @staticmethod
-    void SetCurrentAllocator()
-    void init(int)
+    cdef cppclass CUDAColAllocator:
+        @staticmethod
+        CUDAColAllocator* Get()
+        @staticmethod
+        void Init()
+        @staticmethod
+        void SetCurrentAllocator()
+        void init(int)
 
 
 def init_col_allocator(use_shared_tensor: bool):

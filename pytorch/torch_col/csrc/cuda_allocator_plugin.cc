@@ -30,36 +30,29 @@ void CUDAColAllocator::SetCurrentAllocator() {
   LOG(INFO) << "CUDAColAllocator is set as current allocator";
 }
 
-CUDAColAllocator::CUDAColAllocator() {
-  LOG(INFO) << "CUDAColAllocator" << std::endl;
-  // init(1); // for a single gpu
-}
+// CUDAColAllocator::CUDAColAllocator() {
+//   // LOG(INFO) << "CUDAColAllocator" << std::endl;
+//   // init(1); // for a single gpu
+// }
 
 void CUDAColAllocator::init(int device_count) {
+  using namespace colserve;
   if (initialized_) {
     return;
   }
   // init
-  LOG(INFO) << "CUDAColAllocator Initialized";  
-  // auto has_server_env = std::getenv("SHARED_TENSOR_HAS_SERVER");
-  // auto pool_size_env = std::getenv("SHARED_TENSOR_POOL_GB");
   auto pool_freelist_policy_env = std::getenv("SHARED_TENSOR_POOL_FREELIST_POLICY");
   std::string pool_freelist_policy_str = pool_freelist_policy_env ? 
                                           std::string(pool_freelist_policy_env) :
                                           "best-fit";
   auto pool_freelist_policy = colserve::sta::getFreeListPolicy(pool_freelist_policy_str);
-  // bool has_server = has_server_env && std::string(has_server_env) == "1"; 
-  // double pool_gb = 12; 
-  // if (!has_server && !pool_size_env) {
-  // LOG(INFO) << "SHARED_TENSOR_POOL_GB not set, use default 12GB"; 
-  // } else if (pool_size_env) {
-  //   pool_gb = std::stod(pool_size_env);
-  // }
   size_t pool_nbytes = static_cast<size_t>(torch_col::shared_tensor_pool_gb * 1_GB); 
   colserve::sta::InitMemoryPool(pool_nbytes, !torch_col::has_shared_tensor_server, 
                                 false, pool_freelist_policy);
 
   initialized_ = true;
+  LOG(INFO) << "pytorch CUDAColAllocator Initialized, "
+            << " infer memory usage " << sta::detail::ByteDisplay(sta::CUDAMemPool::InferMemUsage());
 }
 
 c10::DataPtr CUDAColAllocator::allocate(size_t nbytes) const {

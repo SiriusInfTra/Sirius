@@ -552,7 +552,7 @@ void MemPool::DumpSummaryWithoutLock() {
 void MemPool::DumpBlockListWithoutLock() {
   // std::fstream stream{"mempool-blks", std::ios_base::out | std::ios_base::trunc};
   std::ofstream stream{"mempool-blks"};
-  std::cout << "---------- dump whole mempool (all) ----------" << std::endl;
+  std::cout << "----- dump whole mempool (all) into ./mempool-blks -----" << std::endl;
   stream << "start,len,mtype,next,prev,mtype" << std::endl;
   for(auto it = mem_entry_list_->begin(); it != mem_entry_list_->end(); ++it) {
     auto *entry = GetEntry(segment_, *it);

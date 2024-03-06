@@ -540,8 +540,8 @@ std::function<void(InferRequest&)> Workload::SetBertRequestFn(const std::string 
   static std::vector<std::string> bert_mask_datas;
   if (bert_input_datas.empty()) {
     for (size_t i = 0; i < 1; i++) {
-      bert_input_datas.push_back(ReadInput("input-" + std::to_string(i) + ".bin"));
-      bert_mask_datas.push_back(ReadInput("mask-" + std::to_string(i) + ".bin"));
+      bert_input_datas.push_back(ReadInput("bert/input-" + std::to_string(i) + ".bin"));
+      bert_mask_datas.push_back(ReadInput("bert/mask-" + std::to_string(i) + ".bin"));
     }
   }
   

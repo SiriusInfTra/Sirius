@@ -28,7 +28,7 @@ class CUDAColAllocator : public c10::cuda::CUDACachingAllocator::CUDAAllocator {
   static CUDAColAllocator* Get();
   static void SetCurrentAllocator();
 
-  CUDAColAllocator();
+  CUDAColAllocator() = default;
   
   c10::DataPtr allocate(size_t nbytes) const override;
   c10::DeleterFnPtr raw_deleter() const override;
