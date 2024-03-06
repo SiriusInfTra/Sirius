@@ -145,7 +145,7 @@ class System:
         self.cmd_trace = []
         cmd = [
             # "compute-sanitizer", "--tool", "memcheck",
-            "./build/colserve", 
+            "./build/server/colserve", 
             "-p", self.port, 
             "--mode", self.mode, 
             "--use-sta", "1" if self.use_sta else "0", 
