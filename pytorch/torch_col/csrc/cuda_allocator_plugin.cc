@@ -1,5 +1,6 @@
 #include <common/util.h>
 
+#include "common/cuda_allocator.h"
 #include "cuda_allocator_plugin.h"
 #include "config.h"
 
@@ -45,10 +46,11 @@ void CUDAColAllocator::init(int device_count) {
   std::string pool_freelist_policy_str = pool_freelist_policy_env ? 
                                           std::string(pool_freelist_policy_env) :
                                           "best-fit";
-  auto pool_freelist_policy = colserve::sta::getFreeListPolicy(pool_freelist_policy_str);
+  // auto pool_freelist_policy = colserve::sta::getFreeListPolicy(pool_freelist_policy_str);
+  sta::FreeListPolicyType policy;
   size_t pool_nbytes = static_cast<size_t>(torch_col::shared_tensor_pool_gb * 1_GB); 
   colserve::sta::InitMemoryPool(pool_nbytes, !torch_col::has_shared_tensor_server, 
-                                false, pool_freelist_policy);
+                                false, policy);
 
   initialized_ = true;
   LOG(INFO) << "pytorch CUDAColAllocator Initialized, "
