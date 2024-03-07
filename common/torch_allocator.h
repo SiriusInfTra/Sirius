@@ -143,7 +143,7 @@ private:
       ready_to_free_mem.insert(ready_to_free_mem.cend(), mapped_mem_list_.cbegin() + k0, mapped_mem_list_.cbegin() + k);
       std::fill(mapped_mem_list_.begin() + k0, mapped_mem_list_.begin() + k, nullptr);
     }
-    mempool_.DellocPhyMem(ready_to_free_mem);
+    mempool_.DeallocPhyMem(ready_to_free_mem);
 
     /* we can not pop last free physical memory entry unless we remove corresponding free entry */
     // while(!mapped_mem_list_.empty() && mapped_mem_list_.back() == nullptr) {

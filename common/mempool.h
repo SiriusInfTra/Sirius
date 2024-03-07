@@ -153,7 +153,7 @@ public:
 class MemPool {
   using ring_buffer = boost::circular_buffer<size_t, bip::allocator<size_t, bip::managed_shared_memory::segment_manager>>;
 private:
-  static std::unique_ptr<MemPool> instace_;
+  static std::unique_ptr<MemPool> instance_;
 
   bip::managed_shared_memory  shared_memory_;
   bip::interprocess_mutex     *mutex_;
@@ -176,7 +176,7 @@ public:
 
   size_t AllocPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong);
 
-  void DellocPhyMem(const std::vector<PhyMem *> &phy_mem_list);
+  void DeallocPhyMem(const std::vector<PhyMem *> &phy_mem_list);
 
   ~MemPool();
 };

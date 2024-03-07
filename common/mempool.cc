@@ -12,7 +12,7 @@
 
 namespace colserve::sta {
 
-std::unique_ptr<MemPool> MemPool::instace_ = nullptr;
+std::unique_ptr<MemPool> MemPool::instance_ = nullptr;
 
 void HandleTransfer::SendHandles(int fd_list[], size_t len, bip::scoped_lock<bip::interprocess_mutex> &lock) {
   int socket_fd;
@@ -200,6 +200,7 @@ void HandleTransfer::InitMaster() {
   LOG(INFO) << "[mempool] Alloc " << phy_mem_list_.size() << " x " << detail::ByteDisplay(mem_block_nbytes_) << " block(s) costs " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << " ms.";
   vmm_export_thread_.reset(new std::thread([&] { ExportWorker(); }));
 }
+
 void HandleTransfer::InitSlave() {
   std::vector<int> fd_list(TRANSFER_CHUNK_SIZE);
   size_t chunk_base = 0;
@@ -209,7 +210,7 @@ void HandleTransfer::InitSlave() {
   }
   while(chunk_base < phy_mem_list_.size()) {
     size_t chunk_size = std::min(TRANSFER_CHUNK_SIZE, phy_mem_list_.size() - chunk_base);
-     LOG(INFO) << "[mempool] Slave is receving handles: " << chunk_base << "/" << phy_mem_list_.size() << ".";
+    LOG(INFO) << "[mempool] Slave is receving handles: " << chunk_base << "/" << phy_mem_list_.size() << ".";
     ReceiveHandle(fd_list.data(), chunk_size);
     for (size_t k = 0; k < chunk_size; ++k) {
       CU_CALL(cuMemImportFromShareableHandle(&phy_mem_list_[chunk_base + k].cu_handle, reinterpret_cast<void *>(fd_list[k]), 
@@ -219,6 +220,7 @@ void HandleTransfer::InitSlave() {
     chunk_base += chunk_size;
   }
 }
+
 void HandleTransfer::ReleaseMaster() {
   vmm_export_running_.store(false, std::memory_order_relaxed);
   {
@@ -270,6 +272,7 @@ MemPool::MemPool(size_t nbytes, bool cleanup): mempool_nbytes(nbytes) {
     tranfer->InitSlave();
   }
 }
+
 void MemPool::WaitSlaveExit() {
   if (is_master_) {
     auto getRefCount = [&] {
@@ -309,25 +312,27 @@ size_t MemPool::AllocPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong) 
   }
   return phy_mem_list.size();
 }
-void MemPool::DellocPhyMem(const std::vector<PhyMem *> &phy_mem_list) {
+
+void MemPool::DeallocPhyMem(const std::vector<PhyMem *> &phy_mem_list) {
   bip::scoped_lock lock{*mutex_};
   for (auto &&phy_mem_ptr : phy_mem_list) {
     *phy_mem_ptr->belong = Belong::kFree;
     free_queue->push_back(phy_mem_ptr->index);
   }
 }
+
 MemPool &MemPool::Get() {
-  if (instace_ == nullptr) {
+  if (instance_ == nullptr) {
     char *nbytes = getenv("COL_MEMPOOL_NBYTES");
     CHECK(nbytes != nullptr);
     char *cleanup = getenv("COL_MEMPOOL_CLEANUP");
     LOG(INFO) << "[mempool] Init with envs: COL_MEMPOOL_NBYTES=" << nbytes
               << ", COL_MEMPOOL_CLEANUP=" << cleanup << ".";
-    instace_.reset(
+    instance_.reset(
         new MemPool(std::stoul(nbytes),
                     cleanup == nullptr ? false : std::stoi(cleanup) == 1));
   }
-  return *instace_;
+  return *instance_;
 }
 
 }
