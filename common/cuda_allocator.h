@@ -26,6 +26,9 @@ namespace colserve {
 namespace sta {
 
 enum class FreeListPolicyType {};
+inline FreeListPolicyType getFreeListPolicy(const std::string &s) {
+  return static_cast<FreeListPolicyType>(0);
+}
 enum class MemType {
   kFree,
   kTrainLocalFree,
@@ -52,13 +55,13 @@ enum class MemType {
 };
 
 class CUDAMemPool {
+
+public:
   struct PoolEntry {
     void *addr;
     std::size_t nbytes;
     MemType mtype;
   };
-public:
-
   static void Init(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy);
   static CUDAMemPool* Get();
   static size_t InferMemUsage();
