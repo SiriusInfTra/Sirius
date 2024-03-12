@@ -66,6 +66,7 @@ bool ModelTrainStore::AddJob(network::TrainHandler::TrainData* data) {
 }
 
 double ModelTrainStore::PredictMemUsageMB() {
+  // LOG(INFO) << "Predict train memory, target batch size " << target_batch_size_;
   if (target_batch_size_ <= 0) {
     return 0;
   } else {
@@ -211,6 +212,8 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
       LOG(INFO) << "[ModelTrainStore]: enable xsched.";
     }
 
+    CHECK_NE(setenv("COLOCATE_HAS_SERVER", "1", 1), -1);
+    extra_env_ss << "COLOCATE_HAS_SERVER=1" << " ";
     if (Config::use_shared_tensor_train) {
       CHECK_NE(setenv("USE_SHARED_TENSOR", "1", 1), -1);
       CHECK_NE(setenv("SHARED_TENSOR_HAS_SERVER", "1", 1), -1);

@@ -84,11 +84,13 @@ class CUDAColAllocator : public c10::cuda::CUDACachingAllocator::CUDAAllocator {
   bool initialized_ = false;
   bool train_allocating_ = false;
   
+  // first lock interm_memory mutex to avoid dead lock
   std::mutex entry_mutex_;
-  std::unordered_map<void*, std::shared_ptr<colserve::sta::CUDAMemPool::PoolEntry>> entry_map_;
-
   std::mutex interm_memory_mutex_;
-  std::vector<std::pair<void*, size_t>> interm_memories_;
+
+  std::unordered_map<void*, std::shared_ptr<colserve::sta::CUDAMemPool::PoolEntry>> entry_map_;
+  std::unordered_map<void*, size_t> interm_memories_;
+  
 
 };
 
