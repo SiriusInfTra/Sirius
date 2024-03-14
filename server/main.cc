@@ -1,4 +1,5 @@
 #include "logging_as_glog.h"
+#include "common/cuda_allocator.h"
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/c_runtime_api.h>
 #include <tvm/runtime/packed_func.h>
@@ -186,6 +187,9 @@ int main(int argc, char *argv[]) {
     colserve::sta::InitMemoryPool(
       static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
       true, false, free_list_policy);
+    colserve::sta::CUDAMemPool::Get()->RegisterOOMHandler([]() {
+      LOG(INFO) << "train predict memory " <<  colserve::ModelTrainStore::Get()->PredictMemUsageMB() << ".";
+    }, colserve::sta::MemType::kInfer);
   }
   colserve::Controller::Init();
   colserve::Profiler::Init(colserve::Config::profile_log_path);
