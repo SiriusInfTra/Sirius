@@ -89,7 +89,6 @@ class CUDAColAllocator : public c10::cuda::CUDACachingAllocator::CUDAAllocator {
 
   std::unordered_map<void*, std::shared_ptr<colserve::sta::CUDAMemPool::PoolEntry>> entry_map_;
   std::unordered_map<void*, size_t> interm_memories_;
-
   std::unordered_map<void*, size_t> model_param_memories_;
 };
 
