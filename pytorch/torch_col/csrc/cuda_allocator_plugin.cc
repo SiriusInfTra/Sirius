@@ -31,7 +31,7 @@ void CUDAColAllocator::SetCurrentAllocator() {
   CHECK(!c10::cuda::CUDACachingAllocator::allocator.load()->initialized())
     << "Can't swap an already initialized allocator";
   c10::cuda::CUDACachingAllocator::allocator.store(cuda_col_allocator_.get());
-  DLOG(INFO) << "CUDAColAllocator is set as current allocator";
+  LOG(INFO) << "CUDAColAllocator is set as current allocator";
 }
 
 // CUDAColAllocator::CUDAColAllocator() {
@@ -211,7 +211,8 @@ void CUDAColAllocator::TagIntermMemory(at::Tensor tensor) {
   
   std::unique_lock lock{interm_memory_mutex_};
   DLOG(INFO) << "TagIntermMemory emplace " << storage.data() << " nbytes " << storage.nbytes();
-  if (train_model_params_.find(storage.data()) != train_model_params_.cend()) {
+  // if (train_model_params_.find(storage.data()) != train_model_params_.cend()) {
+  if (train_model_params_.count(storage.data())) {
     DLOG(INFO) << "TagIntermMemory but is train";
   } else {
     interm_memories_.emplace(storage.data(), c10::weak_intrusive_ptr<at::TensorImpl>(tensor.getIntrusivePtr()));
