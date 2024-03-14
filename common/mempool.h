@@ -2,8 +2,7 @@
 
 #include <cuda.h>
 #include <cuda_runtime_api.h>
-#include <common/util.h>
-
+#include "util.h"
 #include <boost/lockfree/policies.hpp>
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
@@ -15,8 +14,10 @@
 
 #include <cstddef>
 #include <cstdlib>
+#include <functional>
 #include <iomanip>
 #include <iterator>
+#include <ostream>
 #include <string>
 #include <chrono>
 #include <algorithm>
@@ -31,27 +32,11 @@
 #include <glog/logging.h>
 
 namespace colserve::sta {
+const static constexpr size_t MEM_BLOCK_NBYTES = 32_MB;
 
-const static constexpr size_t MEM_BLOCK_NBYTES = 32_MB; /* 32M */
 
 namespace detail {
-constexpr size_t alignment = 1024;
-constexpr size_t train_alloc_threshold = 256_MB;
-constexpr size_t train_alloc_threshold_small = 32_MB;
 
-const constexpr size_t MIN_BLOCK_NBYTES = 512; /* 512B */
-const constexpr size_t SMALL_BLOCK_NBYTES = 1_MB;  /* 1MB */
-const constexpr size_t SMALL_PAGE_NBYTES  = 2_MB; /* 2MB  */
-const constexpr size_t LARGE_PAGE_NBYTES  = 32_MB; /* 32MB */
-
-inline size_t GetAlignedNbytes(size_t nbytes) {
-  static_assert((alignment & (alignment - 1)) == 0, "alignment must be power of 2");
-  return (nbytes + (alignment - 1)) & (~(alignment - 1));
-}
-inline size_t GetAlignedNbytes(size_t nbytes, size_t alignment_) {
-  assert((alignment_ & (alignment_ - 1)) == 0);
-  return (nbytes + (alignment_ - 1)) & (~(alignment_ - 1));
-}
 inline double ByteToMB(size_t nbytes) {
   return static_cast<double>(nbytes) / 1_MB;
 }
@@ -62,6 +47,11 @@ inline std::string ByteDisplay(size_t nbytes) {
      << static_cast<double>(nbytes) / 1_MB << "MB (" << nbytes << " Bytes)";
   return ss.str();
 }
+constexpr size_t alignment = 1024;
+inline size_t GetAlignedNbytes(size_t nbytes) {
+  static_assert((alignment & (alignment - 1)) == 0, "alignment must be power of 2");
+  return (nbytes + (alignment - 1)) & (~(alignment - 1));
+}
 
 template<size_t align>
 inline size_t AlignedNBytes(size_t nbytes) {
@@ -69,41 +59,31 @@ inline size_t AlignedNBytes(size_t nbytes) {
   return (nbytes + (align - 1)) & (~(align - 1));
 }
 
-inline size_t RoundUpPower2NBytes(size_t nbytes) {
-  static std::vector<size_t> round_nbytes = []{
-    std::vector<size_t> tmp;
-    size_t start_nbytes = 1_MB; /* 1MB */
-    size_t end_nbytes = 16_GB; /* 16GB */
-    size_t roundup_power2_divisions = 4;
-    for (size_t curr_nbytes = start_nbytes; curr_nbytes <= end_nbytes; curr_nbytes *= 2) {
-      for (size_t k=0; k<roundup_power2_divisions; k++) {
-        size_t nbytes = curr_nbytes + curr_nbytes / roundup_power2_divisions * k;
-        if (nbytes % SMALL_PAGE_NBYTES == 0 || true) {
-          tmp.push_back(nbytes);
-        }
-
-      }
-    }
-    return tmp;
-  }();         
-  return *std::lower_bound(round_nbytes.cbegin(), round_nbytes.cend(), nbytes);
 }
-
-inline std::pair<bool, size_t> AlignNbytes(size_t nbytes) {
-  // return std::make_pair(false, RoundUpPower2NBytes(nbytes));
-  if (nbytes <= SMALL_BLOCK_NBYTES - MIN_BLOCK_NBYTES) {
-    /* small block even align to n*MIN_BLOCK_NBYTES */
-    return std::make_pair(true, AlignedNBytes<MIN_BLOCK_NBYTES>(nbytes));
-  } else {
-    return std::make_pair(false, AlignedNBytes<MIN_BLOCK_NBYTES>(nbytes));
-  }
-}
-} // namespace detail
 
 
 enum class Belong {
   kTrain, kInfer, kFree
 };
+
+inline std::ostream & operator<<(std::ostream &os, const Belong &belong)  {
+  switch (belong) {
+  case Belong::kInfer:
+    os << "kInfer";
+    break;
+  case Belong::kTrain:
+    os << "kTrain";
+    break;
+  case Belong::kFree:
+    os << "kFree";
+    break;
+  default:
+    os << "Unknown(" << static_cast<size_t>(belong) << ")";
+    break;
+  }
+  return os;
+}
+
 
 struct PhyMem {
   const size_t index;
@@ -170,13 +150,34 @@ public:
 
   const size_t mempool_nbytes;
 
+
   MemPool(size_t nbytes, bool cleanup);
 
   void WaitSlaveExit();
 
+
   size_t AllocPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong);
 
   void DeallocPhyMem(const std::vector<PhyMem *> &phy_mem_list);
+
+  void DumpMemPool(std::ostream &out) {
+    bip::scoped_lock lock{*mutex_};
+    out << "index,belong,cu_handle\n";
+    for(auto &phy_mem : phy_mem_list_) {
+      out << phy_mem.index << "," << *phy_mem.belong << "," << phy_mem.cu_handle << "\n";
+    }
+    out << std::flush;
+  }
+
+  void PrintStatus() {
+    bip::scoped_lock lock{*mutex_};
+    LOG(INFO) << "[mempool] nbytes = " << detail::ByteDisplay(mempool_nbytes);
+    LOG(INFO) << "[mempool] total phy block = " << phy_mem_list_.size();
+    LOG(INFO) << "[mempool] free phy block = " << std::count_if(phy_mem_list_.cbegin(), phy_mem_list_.cend(), [](auto &phy_mem) { return *phy_mem.belong == Belong::kFree; });
+    LOG(INFO) << "[mempool] train phy block = " << std::count_if(phy_mem_list_.cbegin(), phy_mem_list_.cend(), [](auto &phy_mem) { return *phy_mem.belong == Belong::kTrain; });
+    LOG(INFO) << "[mempool] infer phy block = " << std::count_if(phy_mem_list_.cbegin(), phy_mem_list_.cend(), [](auto &phy_mem) { return *phy_mem.belong == Belong::kInfer; });
+    LOG(INFO) << "[mempool] freelist len = " << free_queue->size();
+  }
 
   ~MemPool();
 };

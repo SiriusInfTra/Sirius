@@ -1,6 +1,7 @@
 #ifndef COLSERVE_CUDA_ALLOCATOR_H
 #define COLSERVE_CUDA_ALLOCATOR_H
 
+#include <functional>
 #include <mutex>
 #include <map>
 #include <set>
@@ -82,6 +83,8 @@ public:
   }
 
   static std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes, MemType mtype);
+
+  void RegisterOOMHandler(std::function<void()> oom_handler, MemType mtype);
 
   CUDAMemPool(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy);
   ~CUDAMemPool();
