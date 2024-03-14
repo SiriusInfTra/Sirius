@@ -35,16 +35,6 @@ inline size_t GetDataAlignment(const DLTensor& arr) {
 }
 }
 
-#define CU_CALL(func) \
-  do { \
-    auto err = func; \
-    if (err != CUDA_SUCCESS) { \
-      const char* pstr = nullptr; \
-      cuGetErrorString(err, &pstr); \
-      LOG(FATAL) << #func << ": " << pstr; \
-    } \
-  } while (0);
-
 GraphExecutor::GraphExecutor(GraphExecutorFactory &factory, size_t worker_id)
     : factory_(factory), infer_model_worker_id_(worker_id), initialized_(false) {
   using namespace ::tvm::runtime;
