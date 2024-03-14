@@ -54,16 +54,6 @@ inline size_t GetAlignedNbytes(size_t nbytes, size_t alignment_) {
   assert((alignment_ & (alignment_ - 1)) == 0);
   return (nbytes + (alignment_ - 1)) & (~(alignment_ - 1));
 }
-inline double ByteToMB(size_t nbytes) {
-  return static_cast<double>(nbytes) / 1024 / 1024;
-}
-
-inline std::string ByteDisplay(size_t nbytes) {
-  std::stringstream ss;
-  ss << std::fixed << std::setprecision(2)
-     << static_cast<double>(nbytes) / 1024 / 1024 << "MB (" << nbytes << " Bytes)";
-  return ss.str();
-}
 } // namespace detail
 
 namespace bip = boost::interprocess;

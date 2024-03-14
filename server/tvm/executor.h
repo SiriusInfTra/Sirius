@@ -78,7 +78,7 @@ class Executor {
   }
 
   size_t GetAdjustBatchSize() const {
-    size_t size_mega = sta::detail::ByteToMB(GetStorageSize());
+    size_t size_mega = sta::ByteToMB(GetStorageSize());
     /* reserve 40MB, 145MB per batch */
     return (size_mega + 125 + 40) / 125; 
   }

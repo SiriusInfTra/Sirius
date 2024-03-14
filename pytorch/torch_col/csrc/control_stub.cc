@@ -121,7 +121,7 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
           std::unique_lock locker{mutex_};
           this->target_bs_ -= data.value;
           LOG(INFO) << "[ColocateStub] Adjust batch size, target " << this->target_bs_ 
-                    << "  current " << this->current_bs_
+                    << " current " << this->current_bs_
                     << " timestamp: " << torch_col::get_unix_timestamp()
                     << " malloc_ms " << colserve::sta::CUDAMemPool::TrainAllocMs();
           // CHECK_LT(this->target_bs_, this->current_bs_);
@@ -147,17 +147,20 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
             auto err = cudaStreamSynchronize(stream);
             CHECK_EQ(err, cudaSuccess) << "cudaStreamSynchronize failed: " << cudaGetErrorString(err);
             auto t2 = torch_col::get_unix_timestamp();
-            LOG(INFO) << "Receive adjust request, cancel calls first,  cost " << t2 - t1 << "ms, remove " << remove << " cuda command(s).";
+            LOG(INFO) << "Receive adjust request, cancel calls first, "
+                      << " cost " << t2 - t1 << "ms, remove " << remove << " cuda command(s).";
           }
           cmd_ = data.event;
           cmd_id_ = data.id;
           set_cmd_time_ = std::chrono::steady_clock::now();
           StubProfiler::RecordAdjustRequest();
         } else if (data.event == static_cast<int>(ctrl::CtrlEvent::kInferExit)) {
-          this->target_bs_ += data.value;
-          LOG(INFO) << "[ColocateStub] Infer Exit adjust back to " << this->target_bs_ 
+          auto old_target_bs = this->target_bs_;
+          this->target_bs_ = data.value;
+          LOG(INFO) << "[ColocateStub] Infer Exit adjust " 
+                    << old_target_bs << " -> " << this->target_bs_
                     << " current " << this->current_bs_
-                    << " timestamp: " << torch_col::get_unix_timestamp();;
+                    << " timestamp: " << torch_col::get_unix_timestamp();
           // CHECK_LE(this->target_bs_, this->current_bs_);
           // if (this->target_bs_ == this->current_bs_) {
           //   if (cmd_ == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)) {

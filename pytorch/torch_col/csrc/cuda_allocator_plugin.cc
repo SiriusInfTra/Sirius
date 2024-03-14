@@ -52,7 +52,7 @@ void CUDAColAllocator::init(int device_count) {
 
   initialized_ = true;
   LOG(INFO) << "pytorch CUDAColAllocator Initialized, "
-            << " infer memory usage " << sta::detail::ByteDisplay(sta::CUDAMemPool::InferMemUsage());
+            << " infer memory usage " << sta::ByteDisplay(sta::CUDAMemPool::InferMemUsage());
 }
 
 c10::DataPtr CUDAColAllocator::allocate(size_t nbytes) const {
@@ -69,8 +69,8 @@ c10::DeleterFnPtr CUDAColAllocator::raw_deleter() const {
 
 void* CUDAColAllocator::raw_alloc(size_t nbytes) {
   auto entry = sta::CUDAMemPool::Get()->Alloc(nbytes, colserve::sta::MemType::kTrain, false);
-  DLOG(INFO) << "CUDAColAllocator alloc " << sta::detail::ByteDisplay(nbytes) 
-            << " : addr " << entry->addr << " nbytes " << sta::detail::ByteDisplay(entry->nbytes);
+  DLOG(INFO) << "CUDAColAllocator alloc " << sta::ByteDisplay(nbytes) 
+            << " : addr " << entry->addr << " nbytes " << sta::ByteDisplay(entry->nbytes);
   
   std::unique_lock<std::mutex> lock(entry_mutex_);
   entry_map_[entry->addr] = entry;

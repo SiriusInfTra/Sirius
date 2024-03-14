@@ -1,4 +1,5 @@
-#include "mempool.h"
+#include <common/mempool.h>
+
 #include <glog/logging.h>
 #include <initializer_list>
 #include <ios>
@@ -313,7 +314,7 @@ MemPool::CreateMemPoolEntry(std::ptrdiff_t addr_offset,
 #if 0
 std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
                                           MemType mtype) {
-  DLOG(INFO) << "[mempool] alloc " << detail::ByteDisplay(nbytes) << ".";
+  DLOG(INFO) << "[mempool] alloc " << ByteDisplay(nbytes) << ".";
   if (nbytes == 0) { 
     return std::shared_ptr<PoolEntry>(new PoolEntry{nullptr, 0, mtype});
   }
@@ -326,7 +327,7 @@ std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
   if (entry == nullptr) {
     DumpSummaryWithoutLock();
     // DumpBlockListWithoutLock(); // TODO: buggy?
-    LOG(FATAL) << "[mempool] fail to alloc " << mtype << " " << detail::ByteDisplay(nbytes) << ".";
+    LOG(FATAL) << "[mempool] fail to alloc " << mtype << " " << ByteDisplay(nbytes) << ".";
   }
   CHECK(entry->IsAvailableFree(mtype));
   freeblock_policy_->RemoveFreeBlock(entry);
@@ -353,7 +354,7 @@ std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
   auto t1 = std::chrono::steady_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0);
   // if (duration.count() > 50) {
-  //   LOG(WARNING) << "[mempool] alloc " << mtype << " " << detail::ByteDisplay(nbytes) << " " << duration.count() << " us.";
+  //   LOG(WARNING) << "[mempool] alloc " << mtype << " " << ByteDisplay(nbytes) << " " << duration.count() << " us.";
   // }
   return MakeSharedPtr(entry);
 }
@@ -362,7 +363,7 @@ std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
 #else
 std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
                                           MemType mtype) {
-  DLOG(INFO) << "[mempool] alloc " << detail::ByteDisplay(nbytes) << ".";
+  DLOG(INFO) << "[mempool] alloc " << ByteDisplay(nbytes) << ".";
   if (nbytes == 0) { 
     return std::shared_ptr<PoolEntry>(new PoolEntry{nullptr, 0, mtype});
   }
@@ -388,7 +389,7 @@ std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
         if (merge_entry != nullptr) {
           alloc_by_merge = true;
           freeblock_policy_->RemoveFreeBlock(merge_entry);
-          // LOG(INFO) << "[mempool] merge local with global " << detail::ByteDisplay(alloc_nbytes) << ".";
+          // LOG(INFO) << "[mempool] merge local with global " << ByteDisplay(alloc_nbytes) << ".";
           entry = FreeWithoutLock(merge_entry);
           CHECK(entry->mtype == MemType::kFree && entry->nbytes >= alloc_nbytes)
             << "entry: " << entry->mtype << " nbytes " << entry->nbytes << " alloc_nbytes " << alloc_nbytes;
@@ -403,12 +404,12 @@ std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
   if (entry == nullptr) {
     DumpSummaryWithoutLock();
     DumpBlockListWithoutLock(); // TODO: buggy?
-    LOG(FATAL) << "[mempool] fail to alloc " << mtype << " " << detail::ByteDisplay(alloc_nbytes) << ".";
+    LOG(FATAL) << "[mempool] fail to alloc " << mtype << " " << ByteDisplay(alloc_nbytes) << ".";
   }
 
   CHECK(entry->IsAvailableFree(mtype)) << " " << entry << " mtype " << mtype << " entry->mtype " << entry->mtype;
   // if (train_over_threshold && entry) {
-  //   LOG(INFO) << "[mempool] alloc " << mtype << " " << detail::ByteDisplay(alloc_nbytes) << " "
+  //   LOG(INFO) << "[mempool] alloc " << mtype << " " << ByteDisplay(alloc_nbytes) << " "
   //             << entry << " " << entry->mtype;
   // }
   freeblock_policy_->RemoveFreeBlock(entry);
@@ -460,7 +461,7 @@ std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
     entry = freeblock_policy_->GetFreeBlock(nbytes, mtype, true, false);
     if (entry == nullptr) {
       DumpSummaryWithoutLock();
-      LOG(FATAL) << "[mempool] " << detail::ByteDisplay(nbytes) << " should be find."; 
+      LOG(FATAL) << "[mempool] " << ByteDisplay(nbytes) << " should be find."; 
     }
     freeblock_policy_->RemoveFreeBlock(entry);
     auto free_mtype = entry->mtype;
@@ -473,7 +474,7 @@ std::shared_ptr<PoolEntry> MemPool::Alloc(std::size_t nbytes,
   // auto duration = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0);
   // if (duration.count() > 50) {
   //   LOG(WARNING) << "[mempool] alloc " << mtype <<  " " << train_over_threshold << " "
-  //                << detail::ByteDisplay(nbytes) << " " << duration.count() << " us.";
+  //                << ByteDisplay(nbytes) << " " << duration.count() << " us.";
   // }
 
   return MakeSharedPtr(entry);
@@ -528,24 +529,24 @@ void MemPool::DumpSummaryWithoutLock() {
     auto& usages_mtype = usages[mtype];
     LOG(INFO) << name << " stat:";
     LOG(INFO) << "\t max: "
-              << detail::ByteDisplay(usages_mtype[UsageStat::kMaxNBytes]);
+              << ByteDisplay(usages_mtype[UsageStat::kMaxNBytes]);
     LOG(INFO) << "\t min: "
-              << detail::ByteDisplay(usages_mtype[UsageStat::kMinNBytes]);
+              << ByteDisplay(usages_mtype[UsageStat::kMinNBytes]);
     LOG(INFO) << "\t sum: "
-              << detail::ByteDisplay(usages_mtype[UsageStat::kTotalNBytes]);
+              << ByteDisplay(usages_mtype[UsageStat::kTotalNBytes]);
     LOG(INFO) << "\t cnt: "
               << usages_mtype[UsageStat::kCount];
     if (usages_mtype[UsageStat::kCount] == 0) { continue; }
     LOG(INFO) << "\t avg: "
-              << detail::ByteDisplay(static_cast<size_t>(1.0 * usages_mtype[UsageStat::kTotalNBytes] /
+              << ByteDisplay(static_cast<size_t>(1.0 * usages_mtype[UsageStat::kTotalNBytes] /
                                      usages_mtype[UsageStat::kCount]));
   }
-  LOG(INFO) << "Free: " << detail::ByteDisplay(GetMemUsage(MemType::kFree));
-  LOG(INFO) << "TrainLocalFree: " << detail::ByteDisplay(GetMemUsage(MemType::kTrainLocalFree));
+  LOG(INFO) << "Free: " << ByteDisplay(GetMemUsage(MemType::kFree));
+  LOG(INFO) << "TrainLocalFree: " << ByteDisplay(GetMemUsage(MemType::kTrainLocalFree));
 
-  LOG(INFO) << "Infer: " << detail::ByteDisplay(GetMemUsage(MemType::kInfer));
-  LOG(INFO) << "Train: " << detail::ByteDisplay(GetMemUsage(MemType::kTrain));
-  LOG(INFO) << "TrainAll: " << detail::ByteDisplay(GetMemUsage(MemType::kTrainAll)); 
+  LOG(INFO) << "Infer: " << ByteDisplay(GetMemUsage(MemType::kInfer));
+  LOG(INFO) << "Train: " << ByteDisplay(GetMemUsage(MemType::kTrain));
+  LOG(INFO) << "TrainAll: " << ByteDisplay(GetMemUsage(MemType::kTrainAll)); 
   google::FlushLogFiles(google::INFO);
 }
 
@@ -608,8 +609,8 @@ MemPoolEntry* BestFitPolicy::GetFreeBlockByMerge(size_t nbytes, MemType mtype, E
     auto prev_nbytes = prev_free ? prev_entry->nbytes : 0;
     auto next_nbytes = next_free ? next_entry->nbytes : 0;
     if (prev_nbytes + next_nbytes + entry->nbytes >= nbytes) {
-      LOG(INFO) << " GetFreeBlockByMerge " << detail::ByteDisplay(prev_nbytes + next_nbytes + entry->nbytes)
-                << " " << detail::ByteDisplay(nbytes);
+      LOG(INFO) << " GetFreeBlockByMerge " << ByteDisplay(prev_nbytes + next_nbytes + entry->nbytes)
+                << " " << ByteDisplay(nbytes);
       return entry;
     }
   }

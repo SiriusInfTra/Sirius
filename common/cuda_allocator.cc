@@ -45,7 +45,7 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(
   auto ret = impl_->Alloc(nbytes, mtype);
   if (!allow_nullptr && ret == nullptr) {
     impl_->DumpSummary();
-    LOG(FATAL) << "request size " << nbytes << " byte ( " << detail::ByteToMB(nbytes) << " mb )"  << " out of free gpu memory";
+    LOG(FATAL) << "request size " << nbytes << " byte ( " << ByteToMB(nbytes) << " mb )"  << " out of free gpu memory";
   }
   auto t1 = std::chrono::steady_clock::now();
   if (mtype == MemType::kTrain) {

@@ -8,11 +8,11 @@ add_executable(${PROJECT_NAME}
   infer_model.cc
   train_launcher.cc
   controller.cc
+  resource_manager.cc
   profiler.cc
   config.cc
 
   grpc/grpc_server.cc
-
   tvm/graph.cc
   tvm/executor.cc
 )

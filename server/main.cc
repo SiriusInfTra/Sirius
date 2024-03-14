@@ -23,6 +23,7 @@
 #include "infer_model_store.h"
 #include "train_launcher.h"
 #include "cache.h"
+#include "resource_manager.h"
 #include "controller.h"
 #include "profiler.h"
 #include "config.h"
@@ -186,6 +187,7 @@ int main(int argc, char *argv[]) {
       static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
       true, false, free_list_policy);
   }
+  colserve::ResourceManager::Init();
   colserve::Controller::Init();
   colserve::Profiler::Init(colserve::Config::profile_log_path);
   colserve::GraphCache::Init(colserve::Config::max_cache_nbytes);

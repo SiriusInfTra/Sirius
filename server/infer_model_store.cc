@@ -218,15 +218,17 @@ size_t InferModelStore::NumJobs() {
 void InferModelStore::ColocateMonitor() {
   using namespace std::chrono_literals;
   while (true) {
+    int num_exit = 0;
     for (auto& [model_name, model] : models_) {
       if (model->GetIdleMill(0) > GetMaxIdleMill()) {
         bool res = model->ReclaimMemory(0);
         if (res) {
+          num_exit++;
           LOG(INFO) << "[InferModelStore] " << model_name << " reclaim memory";
-          Controller::Get()->InferExit();
         }
       }
     }
+    if (num_exit > 0) Controller::Get()->InferExit();
     std::this_thread::sleep_for(10ms);
   }
 }

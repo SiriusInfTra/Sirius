@@ -23,6 +23,22 @@ namespace colserve {
 
 std::unique_ptr<TrainLauncher> TrainLauncher::train_launcher_;
 
+std::pair<double, double> TrainLauncher::GetModelMemParam() {
+  if (Config::use_shared_tensor_train) {
+    if (cur_model_name_ == "resnet152") {
+      return {560, 125};
+    } else {
+      LOG(FATAL) << "Unsupported model: " << cur_model_name_;
+    }
+  } else {
+    if (cur_model_name_ == "resnet152") {
+      return {3512, 145};
+    } else {
+      LOG(FATAL) << "Unsupported model: " << cur_model_name_;
+    }
+  }
+}
+
 void TrainLauncher::Init(const std::filesystem::path &train_store_path) {
   train_launcher_ = std::make_unique<TrainLauncher>();
 
@@ -70,16 +86,19 @@ double TrainLauncher::PredictMemUsageMB() {
   if (target_batch_size_ <= 0) {
     return 0;
   } else {
-    if (cur_model_name_ == "resnet152") {
-      if (Config::use_shared_tensor_train) {
-        return target_batch_size_ * 125 + 560;
-      } else {
-        return target_batch_size_ * 145 + 3512; // 3512 is 3.43 GB, GPU memory usage after empty torch internal cache
-      }
-    } else {
-      LOG(FATAL) << "Unsupported model: " << cur_model_name_;
-    }
+    auto [base, slope] = GetModelMemParam();
+    return base + slope * target_batch_size_;
   }
+}
+
+int TrainLauncher::PredictTargetBatchSize(double memory_mb) {
+  auto [base, slope] = GetModelMemParam();
+  auto ret = static_cast<int>((memory_mb - base) / slope);
+  ret = std::min(ret, job_batch_size_);
+  ret = std::max(ret, 0);
+  LOG(INFO) << "## " << memory_mb << " " << base << " " << slope
+            << " " << job_batch_size_;
+  return ret;
 }
 
 bool TrainLauncher::Train() {
@@ -109,8 +128,11 @@ bool TrainLauncher::Train() {
     for (i = j + 1, j = i; j < args.size() && args[j] != ' ' && args[j] != ','; j++); 
     args_str.push_back(args.substr(i, j - i));
     arg_v = args.substr(i, j - i);
-    if (arg_k == "batch-size") {
-      SetCurBatchSize(std::stoi(arg_v));
+    // LOG(INFO) << "@@ " << arg_k << " " << arg_v;
+    if (arg_k.find("batch-size") != std::string::npos) {
+      job_batch_size_ = std::stoi(arg_v);
+      cur_batch_size_ = job_batch_size_;
+      target_batch_size_ = job_batch_size_;
     }
     for (i = j + 1; i < args.size() && args[i] == ' '; i++);
   }
@@ -188,7 +210,7 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
     LOG(INFO) << "[TrainLauncher]: train wait infer idle in switch mode";
     Controller::Get()->WaitInferIdle();
   }
-  LOG(INFO) << "fork train";
+  LOG(INFO) << "fork train, batch size " << job_batch_size_;
 
   auto pid = fork();
   train_pid_ = pid;
@@ -263,7 +285,7 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
   int status;
   waitpid(pid, &status, 0);
   train_pid_ = -1;
-  first_batch_ = false;
+  batch_start_ = false;
   // target_batch_size_ = -1;
   // cur_batch_size_ = -1;
   Controller::Get()->TrainEnd(); // double check train end
@@ -275,7 +297,8 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
       LOG(INFO) << "[TrainLauncher]: " << job << " is killed, restart";
       return false;
     } else {
-      LOG(FATAL) << "[TrainLauncher]: " << job << " failed, signal is " << strsignal(signal) 
+      LOG(FATAL) << "[TrainLauncher]: " << job 
+                 << " failed, signal is " << strsignal(signal) 
                  << " target_batch_size " << target_batch_size_ 
                  << " cur_batch_size " << cur_batch_size_ 
                  << " predict memory " << PredictMemUsageMB() << "MB";
