@@ -29,7 +29,6 @@ class ResourceManager {
     return resource_manager_->infer_change_memory_mut_.try_lock();
   }
 
- private:
   static double GetInferMemoryMB() {
     using namespace sta;
     if (Config::use_shared_tensor_infer) {
@@ -47,6 +46,7 @@ class ResourceManager {
     }
   }
 
+ private:
   static std::unique_ptr<ResourceManager> resource_manager_;
 
   std::mutex infer_change_memory_mut_;

@@ -9,14 +9,15 @@
 #include <tvm/runtime/module.h>
 #include <tvm/runtime/registry.h>
 #include <tvm/runtime/logging.h>
-#include "infer_model_store.h"
 #include <glog/logging.h>
 #include <random>
 
-#include "train_launcher.h"
-#include "controller.h"
-#include "profiler.h"
-#include "config.h"
+#include <server/resource_manager.h>
+#include <server/infer_model_store.h>
+#include <server/train_launcher.h>
+#include <server/controller.h>
+#include <server/profiler.h>
+#include <server/config.h>
 
 
 namespace colserve {
@@ -96,8 +97,8 @@ int TrainLauncher::PredictTargetBatchSize(double memory_mb) {
   auto ret = static_cast<int>((memory_mb - base) / slope);
   ret = std::min(ret, job_batch_size_);
   ret = std::max(ret, 0);
-  LOG(INFO) << "## " << memory_mb << " " << base << " " << slope
-            << " " << job_batch_size_;
+  // LOG(INFO) << "## " << memory_mb << " " << base << " " << slope
+  //           << " " << job_batch_size_;
   return ret;
 }
 
@@ -306,7 +307,9 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
                  << " failed, signal is " << strsignal(signal) 
                  << " target_batch_size " << target_batch_size_ 
                  << " cur_batch_size " << cur_batch_size_ 
-                 << " predict memory " << PredictMemUsageMB() << "MB";
+                 << " memory " << ResourceManager::GetTrainMemoryMB() << "MB"
+                 << " predict memory " << PredictMemUsageMB() << "MB"
+                 << " calculated free memory " << ResourceManager::GetFreeMemoryMB() << "MB";
       return false;
     }
   } else {
