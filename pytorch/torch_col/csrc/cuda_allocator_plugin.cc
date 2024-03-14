@@ -218,6 +218,9 @@ void CUDAColAllocator::ReleaseIntermMemory() {
     // s.unsafeGetStorageImpl()->reset();
     auto entry_it = entry_map_.find(ptr);
     if (entry_it != entry_map_.end()) {
+      // [Note CHECK_GE]
+      // storage is unaware of actually allocated size,
+      // thus, entry nbytes is larger or equal to storage nbytes
       CHECK_GE(entry_it->second->nbytes, nbytes) << " ptr " << entry_it->first;
       entry_map_.erase(entry_it);
     }
