@@ -8,21 +8,20 @@
 #include <iostream>
 #include <filesystem>
 #include <csignal>
-#include "model_infer_store.h"
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/health_check_service_interface.h>
 #include <glog/logging.h>
 #include <CLI/CLI.hpp>
-#include <cuda.h>
 
 #include <common/init.h>
 #include <common/mempool.h>
 #include <common/util.h>
 
-#include "grpc/grcp_server.h"
+#include "grpc/grpc_server.h"
 #include "colserve.grpc.pb.h"
-#include "model_train_store.h"
+#include "infer_model_store.h"
+#include "train_launcher.h"
 #include "cache.h"
 #include "controller.h"
 #include "profiler.h"
@@ -159,8 +158,8 @@ void init_config() {
 void Shutdown(int sig) {
   LOG(INFO) <<"signal " <<  strsignal(sig) << " received, shutting down...";
   colserve::Config::running = false;
-  colserve::ModelInferStore::Shutdown();
-  colserve::ModelTrainStore::Shutdown();
+  colserve::InferModelStore::Shutdown();
+  colserve::TrainLauncher::Shutdown();
   colserve::Profiler::Shutdown();
   std::terminate();
 }
@@ -190,8 +189,8 @@ int main(int argc, char *argv[]) {
   colserve::Controller::Init();
   colserve::Profiler::Init(colserve::Config::profile_log_path);
   colserve::GraphCache::Init(colserve::Config::max_cache_nbytes);
-  colserve::ModelTrainStore::Init("train");
-  colserve::ModelInferStore::Init("server/models");
+  colserve::TrainLauncher::Init("train");
+  colserve::InferModelStore::Init("server/models");
   colserve::Profiler::Start();
 
   if (colserve::Config::memory_pressure_mb > 0) { 

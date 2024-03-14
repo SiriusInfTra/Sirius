@@ -1,9 +1,9 @@
 #include "logging_as_glog.h"
-#include <chrono>
-#include <glog/logging.h>
 
-#include "grpc/grcp_server.h"
-#include "job_queue.h"
+#include <server/grpc/grpc_server.h>
+#include <server/job_queue.h>
+
+#include <chrono> 
 
 namespace colserve {
 

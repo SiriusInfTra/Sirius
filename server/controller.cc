@@ -1,7 +1,7 @@
 #include "logging_as_glog.h"
 #include "controller.h"
 #include "config.h"
-#include "model_train_store.h"
+#include "train_launcher.h"
 
 #include <signal.h>
 
@@ -108,7 +108,7 @@ void Controller::MonitorTrain() {
       break;
     case ctrl::CtrlEvent::kReportBatchSize:
       CHECK(train_status_.status != TrainStatus::kIdle);
-      ModelTrainStore::Get()->SetCurBatchSize(entry.value);
+      TrainLauncher::Get()->SetCurBatchSize(entry.value);
       break;
     default:
       break;
@@ -133,9 +133,9 @@ uint64_t Controller::InterruptTrain() {
       train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kInterruptTrain)});
     }
   } else if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
-    if (ModelTrainStore::Get()->GetTrainPid() != -1) {
+    if (TrainLauncher::Get()->GetTrainPid() != -1) {
       LOG(INFO) << "[Controller]: kill train";
-      CHECK_EQ((kill(ModelTrainStore::Get()->GetTrainPid(), SIGKILL)), 0);
+      CHECK_EQ((kill(TrainLauncher::Get()->GetTrainPid(), SIGKILL)), 0);
       // TrainEnd();
     }
   }
@@ -160,20 +160,22 @@ uint64_t Controller::ColocateAdjust(size_t batch_size) {
     } else if (Config::serve_mode == ServeMode::kColocateL2) {
       train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL2), static_cast<int>(batch_size)});
     }
-    ModelTrainStore::Get()->AddTargetBatchSize(-batch_size);
+    TrainLauncher::Get()->AddTargetBatchSize(-batch_size);
   }
   LOG(INFO) << "Controller send ColocateAdjust cmd_id: " << cmd_id << " batch_size: " << batch_size
             << " train idle " << IsTrainIdle();
   return cmd_id;
 }
 
-uint64_t Controller::InferExit(size_t batch_size) {
+uint64_t Controller::InferExit() {
   static std::atomic<uint64_t> infer_exit_id = 1;
+
+  int batch_size = 1; // dummy
   auto cmd_id = infer_exit_id.fetch_add(1, std::memory_order_relaxed);
   if (!IsTrainIdle()) {
     if (Config::IsColocateMode()) {
       train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kInferExit), static_cast<int>(batch_size)});
-      ModelTrainStore::Get()->AddTargetBatchSize(batch_size);
+      TrainLauncher::Get()->AddTargetBatchSize(batch_size);
     }
   }
   return cmd_id;
@@ -274,14 +276,14 @@ void Controller::EnterInferModelAlloc(size_t model_rank) {
     return last_alloc_infer_model_ == static_cast<size_t>(-1);
   });
   last_alloc_infer_model_ = model_rank;
-  LOG(INFO) << "InferModel " << model_rank << " enter allocation";
+  DLOG(INFO) << "InferModel " << model_rank << " enter allocation";
 }
 
 void Controller::ExitInferModelAlloc(size_t model_rank) {
   CHECK_EQ(last_alloc_infer_model_, model_rank);
   last_alloc_infer_model_ = static_cast<size_t>(-1);
   infer_model_alloc_cv_.notify_one();
-  LOG(INFO) << "InferModel " << model_rank << " exit allocation";
+  DLOG(INFO) << "InferModel " << model_rank << " exit allocation";
 }
 
 } // namespace colserve

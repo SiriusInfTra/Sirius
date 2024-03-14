@@ -1,15 +1,15 @@
 #ifndef COLSERVE_GRAPH_EXECUTOR
 #define COLSERVE_GRAPH_EXECUTOR
 
-#include <unordered_map>
-#include <memory>
-#include <atomic>
-
 #include <common/tensor_methods.h>
 #include <common/tensor.h>
 #include <common/mempool.h>
 
-#include "graph_executor_factory.h"
+#include <server/tvm/graph.h>
+
+#include <unordered_map>
+#include <memory>
+#include <atomic>
 
 
 namespace colserve {
@@ -23,10 +23,10 @@ namespace tvm {
   }
 
 
-class GraphExecutor {
+class Executor {
  public:
-  GraphExecutor(GraphExecutorFactory &factory, size_t worker_id);
-  void Init();
+  Executor(TVMGraph &tvm_graph, size_t worker_id, const std::vector<DLDevice> &devs);
+  void Init(bool load_param);
   void FakeInit(bool malloc, bool load_param); // used for simulating unlimted get gpu resource
   void DeInit();
   void Run();
@@ -57,12 +57,12 @@ class GraphExecutor {
   void ReSetupDataEntry();
 
   
-  uint32_t GetNumOfNodes() const { return factory_.nodes_.size(); }
+  uint32_t GetNumOfNodes() const { return tvm_graph_.nodes_.size(); }
   uint32_t entry_id(NodeEntry e) const {
-    return factory_.node_row_ptr_[e.node_id] + e.index;
+    return tvm_graph_.node_row_ptr_[e.node_id] + e.index;
   }
   uint32_t entry_id(uint32_t nid, uint32_t index) const {
-    return factory_.node_row_ptr_[nid] + index;
+    return tvm_graph_.node_row_ptr_[nid] + index;
   }
 
   size_t GetParamStorageSize() const {
@@ -93,12 +93,16 @@ class GraphExecutor {
 
   bool initialized_;
   size_t infer_model_worker_id_;
-  GraphExecutorFactory &factory_;
+  TVMGraph &tvm_graph_;
+
+  std::vector<DLDevice> devices_;
+
 
   // std::vector<TVMArray> storage_pool_;
   // std::map<uint32_t, uint32_t> op_node_storage_id_map_;
   // std::vector<TVMArray> data_entry_;
 
+  std::vector<PoolEntry> pool_entry_;
   std::vector<sta::STensor> storage_pool_;
   std::vector<sta::STensor> data_entry_;
 

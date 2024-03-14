@@ -8,7 +8,7 @@
 #include <common/cuda_allocator.h>
 #include <common/util.h>
 
-#include "model_train_store.h"
+#include "train_launcher.h"
 #include "profiler.h"
 #include "config.h"
 
@@ -176,7 +176,7 @@ Profiler::Profiler(const std::string &profile_log_path)
         for (uint32_t i = 0; i < info_cnt; i++) {
           if (infos[i].pid == pid) {
             infer_mem = infos[i].usedGpuMemory;
-          } else if (infos[i].pid == ModelTrainStore::Get()->GetTrainPid()) {
+          } else if (infos[i].pid == TrainLauncher::Get()->GetTrainPid()) {
             train_mem = infos[i].usedGpuMemory;
           }
         }

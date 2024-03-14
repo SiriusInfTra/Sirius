@@ -4,6 +4,7 @@
 #include <iostream>
 #include <cstdint>
 
+#include <cuda.h>
 #include <cuda_runtime_api.h>
 
 #define CUDA_CALL(func) do { \
@@ -13,6 +14,17 @@
     exit(EXIT_FAILURE); \
   } \
   } while (0)
+
+#define CU_CALL(func) \
+  do { \
+    auto err = func; \
+    if (err != CUDA_SUCCESS) { \
+      const char* pstr = nullptr; \
+      cuGetErrorString(err, &pstr); \
+      LOG(FATAL) << #func << ": " << pstr; \
+    } \
+  } while (0);
+
 
 namespace colserve {
 namespace literals {

@@ -1,10 +1,6 @@
 #ifndef COLSERVE_GRAPH_EXECUTOR_FACTORY_H
 #define COLSERVE_GRAPH_EXECUTOR_FACTORY_H
 #include "../logging_as_glog.h"
-#include <iostream>
-#include <map>
-#include <future>
-
 
 #include <dlpack/dlpack.h>
 #include <dmlc/json.h>
@@ -13,7 +9,9 @@
 #include <tvm/runtime/packed_func.h>
 #include <tvm/runtime/module.h>
 
-
+#include <iostream>
+#include <map>
+#include <future>
 
 // #include "tvm.h"
 
@@ -220,22 +218,22 @@ struct GraphAttr {
 };
 
 
-class GraphExecutor;
-class GraphExecutorFactory {
+class Executor;
+class TVMGraph {
  public:
-  GraphExecutorFactory(size_t rank, ::colserve::Model* infer_model,
+  TVMGraph(size_t rank, ::colserve::Model* infer_model,
                        const std::string &model_name,
                        const std::string &graph_json,
                        const ::tvm::runtime::Module mod,
                        const std::string &params_file,
                        const std::vector<DLDevice> &devs);
-  GraphExecutorFactory(size_t rank, ::colserve::Model* infer_model,
+  TVMGraph(size_t rank, ::colserve::Model* infer_model,
                        const std::string &model_name,
                        const std::string &graph_json,
                        const ::tvm::runtime::Module mod,
                        const std::map<std::string, TVMArray> &params,
                        const std::vector<DLDevice> &devs);
-  std::unique_ptr<GraphExecutor> CreateGraphExecutor(size_t worker_id);
+  std::unique_ptr<Executor> CreateGraphExecutor(size_t worker_id, const std::vector<DLDevice> &devs);
 
   using ShapeInfo = std::map<std::string, std::vector<int64_t>>;
   using DtypeInfo = std::map<std::string, std::string>;
@@ -250,9 +248,9 @@ class GraphExecutorFactory {
   // void AllocParamStorage();
   // void PipelineLoadParams();
 
-  friend class GraphExecutor;
+  friend class Executor;
  private:
-  void SetupStorage();
+  // void SetupStorage();
   void LoadParams(const std::string &params_file);
   void LoadParams(const std::map<std::string, TVMArray> &params);
   void Load(dmlc::JSONReader* reader) {
@@ -300,7 +298,7 @@ class GraphExecutorFactory {
   ::colserve::Model *infer_model_;
   std::string model_name_;
   ::tvm::runtime::Module module_;
-  std::vector<DLDevice> devices_;
+  // std::vector<DLDevice> devices_;
 
   // graph
   std::vector<Node> nodes_;
@@ -315,7 +313,7 @@ class GraphExecutorFactory {
   std::map<uint32_t, TVMArray> params_;
   // std::map<uint32_t, uint32_t> param_node_storage_id_map_;
 
-  std::vector<PoolEntry> pool_entry_;
+  // std::vector<PoolEntry> pool_entry_;
   // std::vector<TVMArray> storage_pool_;
 
 };

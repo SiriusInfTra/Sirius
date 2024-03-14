@@ -24,7 +24,7 @@ class Controller {
   bool WaitTrainNotRunning();
   bool WaitInferIdle();
   bool WaitColocateAdjustDone(uint64_t cmd_id);
-  uint64_t InferExit(size_t batch_size);
+  uint64_t InferExit();
 
   void InferRequestInc(size_t inc=1);
   void InferResponseInc(size_t inc=1);

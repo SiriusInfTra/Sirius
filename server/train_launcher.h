@@ -1,5 +1,8 @@
-#ifndef COLSERVE_MODEL_TRAIN_STORE_H
-#define COLSERVE_MODEL_TRAIN_STORE_H
+#ifndef COLSERVE_TRAIN_LAUNCHER_H
+#define COLSERVE_TRAIN_LAUNCHER_H
+
+#include <server/grpc/grpc_server.h>
+#include <server/job_queue.h>
 
 #include <iostream>
 #include <memory>
@@ -11,19 +14,16 @@
 #include <future>
 #include <atomic>
 
-#include "grpc/grcp_server.h"
-#include "job_queue.h"
-
 namespace colserve {
 
-class ModelTrainStore {
+class TrainLauncher {
  public:
   static void Init(const std::filesystem::path &train_store_path);
-  static ModelTrainStore* Get() { 
-    if (model_train_store_ == nullptr) {
-      LOG(FATAL) << "ModelTrainStore not initialized";
+  static TrainLauncher* Get() { 
+    if (train_launcher_ == nullptr) {
+      LOG(FATAL) << "TrainLauncher not initialized";
     }
-    return model_train_store_.get();
+    return train_launcher_.get();
   }
   static bool Shutdown();
 
@@ -43,7 +43,7 @@ class ModelTrainStore {
   double PredictMemUsageMB();
 
  private:
-  static std::unique_ptr<ModelTrainStore> model_train_store_;
+  static std::unique_ptr<TrainLauncher> train_launcher_;
 
   bool Train();
   bool LaunchTrain(std::shared_ptr<Job> job, std::vector<std::string> &args);
