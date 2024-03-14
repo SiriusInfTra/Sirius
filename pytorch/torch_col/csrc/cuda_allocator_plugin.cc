@@ -1,9 +1,13 @@
+#include <c10/core/Storage.h>
+#include <c10/core/TensorImpl.h>
 #include <common/util.h>
 
 #include "cuda_allocator_plugin.h"
 #include "config.h"
 
 #include <glog/logging.h>
+#include <utility>
+#include <vector>
 
 namespace torch {
 namespace cuda {
@@ -16,7 +20,7 @@ std::shared_ptr<CUDAColAllocator> CUDAColAllocator::cuda_col_allocator_ = nullpt
 
 CUDAColAllocator* CUDAColAllocator::Get() {
   if (cuda_col_allocator_ == nullptr) {
-    LOG(FATAL) << "CUDAColAllocator is not initialized";
+    DLOG(FATAL) << "CUDAColAllocator is not initialized";
   }
   return cuda_col_allocator_.get();
 }
@@ -27,11 +31,11 @@ void CUDAColAllocator::SetCurrentAllocator() {
   CHECK(!c10::cuda::CUDACachingAllocator::allocator.load()->initialized())
     << "Can't swap an already initialized allocator";
   c10::cuda::CUDACachingAllocator::allocator.store(cuda_col_allocator_.get());
-  LOG(INFO) << "CUDAColAllocator is set as current allocator";
+  DLOG(INFO) << "CUDAColAllocator is set as current allocator";
 }
 
 // CUDAColAllocator::CUDAColAllocator() {
-//   // LOG(INFO) << "CUDAColAllocator" << std::endl;
+//   // DLOG(INFO) << "CUDAColAllocator" << std::endl;
 //   // init(1); // for a single gpu
 // }
 
@@ -51,7 +55,7 @@ void CUDAColAllocator::init(int device_count) {
                                 false, pool_freelist_policy);
 
   initialized_ = true;
-  LOG(INFO) << "pytorch CUDAColAllocator Initialized, "
+  DLOG(INFO) << "pytorch CUDAColAllocator Initialized, "
             << " infer memory usage " << sta::ByteDisplay(sta::CUDAMemPool::InferMemUsage());
 }
 
@@ -73,7 +77,10 @@ void* CUDAColAllocator::raw_alloc(size_t nbytes) {
             << " : addr " << entry->addr << " nbytes " << sta::ByteDisplay(entry->nbytes);
   
   std::unique_lock<std::mutex> lock(entry_mutex_);
-  entry_map_[entry->addr] = entry;
+  CHECK(entry_map_.insert(std::make_pair(entry->addr, entry)).second == true || entry->addr == nullptr) << entry->addr << " abnormal.";
+  if (train_model_allocating_) {
+    train_model_params_.insert(std::make_pair(entry->addr, entry));
+  }
   return entry->addr;
 }
 
@@ -84,11 +91,17 @@ void* CUDAColAllocator::raw_alloc_with_stream(size_t nbytes, cudaStream_t stream
 void CUDAColAllocator::raw_delete(void* ptr) {
   std::unique_lock<std::mutex> interm_lock{interm_memory_mutex_};
   std::unique_lock<std::mutex> lock(entry_mutex_);
+  DLOG(INFO) << "CUDAColAllocator raw_delete " << ptr;
   if (auto it = entry_map_.find(ptr); it != entry_map_.end()) {
     entry_map_.erase(it);
+    DLOG(INFO) << "CUDAColAllocator raw_delete " << ptr << " succ en";
   }
   if (auto it = interm_memories_.find(ptr); it != interm_memories_.end()) {
     interm_memories_.erase(it);
+    DLOG(INFO) << "CUDAColAllocator raw_delete " << ptr << " succ in";
+  }
+  if (auto it = train_model_params_.find(ptr); it != train_model_params_.cend()) {
+    train_model_params_.erase(it);
   }
 }
 
@@ -97,37 +110,37 @@ void CUDAColAllocator::emptyCache() {
 }
 
 void CUDAColAllocator::setMemoryFraction(double fraction, int device) {
-  LOG(INFO) << "setMemoryFraction not implemented";
+  DLOG(INFO) << "setMemoryFraction not implemented";
 }
 
 void CUDAColAllocator::cacheInfo(int dev_id, size_t* largestBlock) {
-  LOG(INFO) << "cacheInfo not implemented";
+  DLOG(INFO) << "cacheInfo not implemented";
 }
 
 void* CUDAColAllocator::getBaseAllocation(void* ptr, size_t* size) {
-  LOG(INFO) << "getBaseAllocation not implemented";
+  DLOG(INFO) << "getBaseAllocation not implemented";
   return nullptr;
 }
 
 void CUDAColAllocator::recordStream(const c10::DataPtr&, streamType stream) {
-  LOG(INFO) << "do nothing, due to single stream assumption";
+  DLOG(INFO) << "do nothing, due to single stream assumption";
 }
 
 c10::cuda::CUDACachingAllocator::DeviceStats CUDAColAllocator::getDeviceStats(int device) {
-  LOG(INFO) << "getDeviceStats not implemented";
+  DLOG(INFO) << "getDeviceStats not implemented";
   return c10::cuda::CUDACachingAllocator::DeviceStats{};
 }
 
 void CUDAColAllocator::resetAccumulatedStats(int device) {
-  LOG(INFO) << "resetAccumulatedStats not implemented";
+  DLOG(INFO) << "resetAccumulatedStats not implemented";
 }
 
 void CUDAColAllocator::resetPeakStats(int device) {
-  LOG(INFO) << "resetPeakStats not implemented";
+  DLOG(INFO) << "resetPeakStats not implemented";
 }
 
 c10::cuda::CUDACachingAllocator::SnapshotInfo CUDAColAllocator::snapshot() {
-  LOG(INFO) << "snapshot not implemented";
+  DLOG(INFO) << "snapshot not implemented";
   return c10::cuda::CUDACachingAllocator::SnapshotInfo{};
 }
 
@@ -135,27 +148,27 @@ void CUDAColAllocator::notifyCaptureBegin(
     int device,
     c10::cuda::CaptureId_t graph_id,
     c10::cuda::MempoolId_t mempool_id) {
-  LOG(INFO) << "notifyCaptureBegin not implemented";
+  DLOG(INFO) << "notifyCaptureBegin not implemented";
 }
 
 void CUDAColAllocator::notifyCaptureAboutToEnd(
     int device,
     c10::cuda::CaptureId_t graph_id) {
-  LOG(INFO) << "notifyCaptureAboutToEnd not implemented";
+  DLOG(INFO) << "notifyCaptureAboutToEnd not implemented";
 }
 
 void CUDAColAllocator::notifyCaptureEnded(
     int device, c10::cuda::CaptureId_t graph_id) {
-  LOG(INFO) << "notifyCaptureEnded not implemented";
+  DLOG(INFO) << "notifyCaptureEnded not implemented";
 }
 
 void CUDAColAllocator::notifyCaptureDestroy(
     int device, c10::cuda::MempoolId_t mempool_id) {
-  LOG(INFO) << "notifyCaptureDestroy not implemented";
+  DLOG(INFO) << "notifyCaptureDestroy not implemented";
 }
 
 std::shared_ptr<void> CUDAColAllocator::getIpcDevPtr(std::string handle) {
-  LOG(INFO) << "getIpcDevPtr not implemented";
+  DLOG(INFO) << "getIpcDevPtr not implemented";
   return nullptr;
 }
 
@@ -164,12 +177,12 @@ void CUDAColAllocator::recordHistory(
     c10::cuda::CUDACachingAllocator::CreateContextFn context_recorder,
     size_t alloc_trace_max_entries,
     bool alloc_trace_record_context) {
-  LOG(INFO) << "recordHistory not implemented";
+  DLOG(INFO) << "recordHistory not implemented";
 };
 
 void CUDAColAllocator::attachOutOfMemoryObserver(
     c10::cuda::CUDACachingAllocator::OutOfMemoryObserver observer) {
-  LOG(INFO) << "attachOutOfMemoryObserver not implemented";
+  DLOG(INFO) << "attachOutOfMemoryObserver not implemented";
 };
 
 bool CUDAColAllocator::needsPoolSpecificPeerAccess() {
@@ -184,37 +197,54 @@ std::string CUDAColAllocator::name() {
   return "CUDAColAllocator";
 }
 
-void CUDAColAllocator::TagIntermMemory(void* ptr, size_t nbytes, at::Allocator* allocator) {
-  static bool warning_logged = false;
-  if (allocator != this) {
-    if (!warning_logged) {
-      LOG(WARNING) << "allocator " << allocator << " may not be CUDAColAllocator";
-      warning_logged = true;
+void CUDAColAllocator::TagIntermMemory(at::Tensor tensor) {
+  static bool warning_DLOGged = false;
+  auto & storage = tensor.storage();
+  if (storage.allocator() != this) {
+    if (!warning_DLOGged) {
+      DLOG(WARNING) << "allocator " << storage.allocator() << " may not be CUDAColAllocator";
+      warning_DLOGged = true;
     }
     return;
   }
+  
   std::unique_lock lock{interm_memory_mutex_};
-  interm_memories_.emplace(ptr, nbytes);
+  DLOG(INFO) << "TagIntermMemory emplace " << storage.data() << " nbytes " << storage.nbytes();
+  if (train_model_params_.find(storage.data()) != train_model_params_.cend()) {
+    DLOG(INFO) << "TagIntermMemory but is train";
+  } else {
+    interm_memories_.emplace(storage.data(), c10::weak_intrusive_ptr<at::TensorImpl>(tensor.getIntrusivePtr()));
+  }
 };
 
 void CUDAColAllocator::ReleaseIntermMemory() {
+  DLOG(INFO) << "ReleaseIntermMemory";
   std::unique_lock interm_memory_lock{interm_memory_mutex_};
   std::unique_lock entry_lock{entry_mutex_};
-  for (auto [ptr, nbytes] : interm_memories_) {
-    // s.unsafeGetStorageImpl()->reset();
-    auto entry_it = entry_map_.find(ptr);
-    if (entry_it != entry_map_.end()) {
-      // [Note CHECK_GE]
-      // storage is unaware of actually allocated size,
-      // thus, entry nbytes is larger or equal to storage nbytes
-      CHECK_GE(entry_it->second->nbytes, nbytes) << " ptr " << entry_it->first;
-      entry_map_.erase(entry_it);
+  std::vector<at::Storage> plan_release_storage;
+  for (auto &&[ptr, weak_ptr] : interm_memories_) {
+    auto tensor_ptr = weak_ptr.lock();
+    if (tensor_ptr == nullptr) {
+      DLOG(INFO) << "ReleaseIntermMemory " << ptr << " already release.";
+    } else {
+      // since we hold lock, we should not release storage inplace
+      plan_release_storage.emplace_back(tensor_ptr->storage());
+      DLOG(INFO) << "ReleaseIntermMemory " << ptr << "  release success, nbytes = " << tensor_ptr->storage().nbytes();
     }
   }
+
+  interm_memories_.clear();
+  interm_memory_lock.unlock();
+  entry_lock.unlock();
+  for(auto &&storage : plan_release_storage) {
+    storage.unsafeGetStorageImpl()->release_resources();
+  }
+
 }
 
 void CUDAColAllocator::UntagIntermMemory() {
   std::unique_lock lock{interm_memory_mutex_};
+  DLOG(INFO) << "UntagIntermMemory";
   interm_memories_.clear();
 }
 
