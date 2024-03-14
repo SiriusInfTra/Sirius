@@ -2,6 +2,7 @@
 #define TORCH_COL_CUDA_ALLOCATOR_PLUGIN_H
 
 
+#include <ATen/core/TensorBody.h>
 #include <c10/core/Allocator.h>
 #include <c10/core/Storage.h>
 #include <c10/cuda/CUDAStream.h>
@@ -73,7 +74,7 @@ class CUDAColAllocator : public c10::cuda::CUDACachingAllocator::CUDAAllocator {
   std::string name() override;
 
   void SetTrainModelAllocating(bool v) { train_allocating_ = v; }
-  void TagIntermMemory(void* ptr, size_t nbytes, at::Allocator* allocator);
+  void TagIntermMemory(at::Tensor tensor);
   void ReleaseIntermMemory();
   void UntagIntermMemory();
 
@@ -89,7 +90,8 @@ class CUDAColAllocator : public c10::cuda::CUDACachingAllocator::CUDAAllocator {
   std::mutex interm_memory_mutex_;
 
   std::unordered_map<void*, std::shared_ptr<colserve::sta::CUDAMemPool::PoolEntry>> entry_map_;
-  std::unordered_map<void*, size_t> interm_memories_;
+  std::unordered_map<void*, std::shared_ptr<colserve::sta::CUDAMemPool::PoolEntry>> train_model_params_;
+  std::unordered_multimap<void*, c10::weak_intrusive_ptr<at::TensorImpl>> interm_memories_;
   
 
 };
