@@ -43,14 +43,15 @@ void Workload::WarmupModel(const std::string& model_name, int warmup) {
     grpc::Status status = stub_->Inference(&context, request, &result);
     CHECK(status.ok());
   }
-  {
-    grpc::ClientContext context;
-    EmptyRequest request;
-    EmptyResult result;
-    grpc::Status status = stub_->WarmupDone(&context, request, &result);
-    CHECK(status.ok());
-  }
-  DLOG(INFO) << "Complete sending " <<  warmup << " warmup infer request(s) for " << model_name << ".";
+  LOG(INFO) << "Complete sending " <<  warmup << " warmup infer request(s) for " << model_name << ".";
+}
+
+void Workload::WarmupDone() {
+  grpc::ClientContext context;
+  EmptyRequest request;
+  EmptyResult result;
+  grpc::Status status = stub_->WarmupDone(&context, request, &result);
+  CHECK(status.ok());
 }
 
 void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_infer) {

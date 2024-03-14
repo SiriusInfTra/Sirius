@@ -118,6 +118,7 @@ int main(int argc, char** argv) {
     }
     if (app.warmup > 0 && app.delay_after_warmup > 0) {
       std::this_thread::sleep_for(std::chrono::duration<double>(app.delay_after_warmup));
+      workload.WarmupDone();
     }
   }
   

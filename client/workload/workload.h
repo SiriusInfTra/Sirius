@@ -170,6 +170,7 @@ class Workload {
 
 
   void WarmupModel(const std::string& model_name, int warmup);
+  void WarmupDone();
   void InferBusyLoop(const std::string &model, size_t concurrency, 
                      std::function<double_ms_t(size_t)> interval_fn,
                      double delay_before_infer, int warmup,
