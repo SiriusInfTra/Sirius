@@ -101,6 +101,11 @@ int TrainLauncher::PredictTargetBatchSize(double memory_mb) {
   return ret;
 }
 
+int TrainLauncher::GetAdjustBatchSize(double memory_mb) {
+  auto [base, slope] = GetModelMemParam();
+  return static_cast<int>((memory_mb + slope) / slope);
+}
+
 bool TrainLauncher::Train() {
   std::shared_ptr<Job> job = nullptr;
   while (job == nullptr) {

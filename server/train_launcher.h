@@ -50,6 +50,7 @@ class TrainLauncher {
 
   double PredictMemUsageMB();
   int PredictTargetBatchSize(double memory_mb);
+  int GetAdjustBatchSize(double memory_mb);
 
  private:
   static std::unique_ptr<TrainLauncher> train_launcher_;
