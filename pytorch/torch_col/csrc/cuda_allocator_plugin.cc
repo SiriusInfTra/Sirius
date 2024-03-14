@@ -72,15 +72,8 @@ void* CUDAColAllocator::raw_alloc(size_t nbytes) {
   DLOG(INFO) << "CUDAColAllocator alloc " << sta::ByteDisplay(nbytes) 
             << " : addr " << entry->addr << " nbytes " << sta::ByteDisplay(entry->nbytes);
   
-  if (train_model_allocating_) {
-    std::unique_lock<std::mutex> lock(entry_mutex_);
-    entry_map_[entry->addr] = entry;
-  } else {
-    std::unique_lock<std::mutex> interm_lock{interm_memory_mutex_};
-    std::unique_lock<std::mutex> entry_lock{entry_mutex_};
-    entry_map_[entry->addr] = entry;
-    model_param_memories_.emplace(entry->addr, entry->nbytes);
-  }
+  std::unique_lock<std::mutex> lock(entry_mutex_);
+  entry_map_[entry->addr] = entry;
   return entry->addr;
 }
 
@@ -96,9 +89,6 @@ void CUDAColAllocator::raw_delete(void* ptr) {
   }
   if (auto it = interm_memories_.find(ptr); it != interm_memories_.end()) {
     interm_memories_.erase(it);
-  }
-  if (auto it = model_param_memories_.find(ptr); it != model_param_memories_.end()) {
-    model_param_memories_.erase(it);
   }
 }
 
@@ -204,11 +194,7 @@ void CUDAColAllocator::TagIntermMemory(void* ptr, size_t nbytes, at::Allocator* 
     return;
   }
   std::unique_lock lock{interm_memory_mutex_};
-  if (auto it = model_param_memories_.find(ptr); it != model_param_memories_.end()) {
-    CHECK_EQ(it->second, nbytes) << " ptr " << ptr << " mismatch nbytes";
-  } else {
-    interm_memories_.emplace(ptr, nbytes);
-  }
+  interm_memories_.emplace(ptr, nbytes);
 };
 
 void CUDAColAllocator::ReleaseIntermMemory() {
