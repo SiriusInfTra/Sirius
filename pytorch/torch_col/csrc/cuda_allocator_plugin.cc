@@ -94,17 +94,9 @@ void CUDAColAllocator::raw_delete(void* ptr) {
   std::unique_lock<std::mutex> interm_lock{interm_memory_mutex_};
   std::unique_lock<std::mutex> lock(entry_mutex_);
   DLOG(INFO) << "CUDAColAllocator raw_delete " << ptr;
-  if (auto it = entry_map_.find(ptr); it != entry_map_.end()) {
-    entry_map_.erase(it);
-    DLOG(INFO) << "CUDAColAllocator raw_delete " << ptr << " succ en";
-  }
-  if (auto it = interm_memories_.find(ptr); it != interm_memories_.end()) {
-    interm_memories_.erase(it);
-    DLOG(INFO) << "CUDAColAllocator raw_delete " << ptr << " succ in";
-  }
-  if (auto it = train_model_params_.find(ptr); it != train_model_params_.cend()) {
-    train_model_params_.erase(it);
-  }
+  entry_map_.erase(ptr);
+  interm_memories_.erase(ptr);
+  train_model_params_.erase(ptr);
 }
 
 void CUDAColAllocator::emptyCache() {
@@ -204,7 +196,7 @@ void CUDAColAllocator::TagIntermMemory(at::Tensor tensor) {
   auto & storage = tensor.storage();
   if (storage.allocator() != this) {
     if (!warning_DLOGged) {
-      DLOG(WARNING) << "allocator " << storage.allocator() << " may not be CUDAColAllocator";
+      LOG(WARNING) << "allocator " << storage.allocator() << " may not be CUDAColAllocator";
       warning_DLOGged = true;
     }
     return;
@@ -215,7 +207,7 @@ void CUDAColAllocator::TagIntermMemory(at::Tensor tensor) {
   if (train_model_params_.find(storage.data()) != train_model_params_.cend()) {
     DLOG(INFO) << "TagIntermMemory but is train";
   } else {
-    interm_memories_.emplace(storage.data(), c10::weak_intrusive_ptr<at::TensorImpl>(tensor.getIntrusivePtr()));
+    interm_memories_[storage.data()].emplace_back(tensor.getIntrusivePtr());
   }
 };
 
@@ -224,14 +216,16 @@ void CUDAColAllocator::ReleaseIntermMemory() {
   std::unique_lock interm_memory_lock{interm_memory_mutex_};
   std::unique_lock entry_lock{entry_mutex_};
   std::vector<at::Storage> plan_release_storage;
-  for (auto &&[ptr, weak_ptr] : interm_memories_) {
-    auto tensor_ptr = weak_ptr.lock();
-    if (tensor_ptr == nullptr) {
-      DLOG(INFO) << "ReleaseIntermMemory " << ptr << " already release.";
-    } else {
-      // since we hold lock, we should not release storage inplace
-      plan_release_storage.emplace_back(tensor_ptr->storage());
-      DLOG(INFO) << "ReleaseIntermMemory " << ptr << "  release success, nbytes = " << tensor_ptr->storage().nbytes();
+  for (auto &&[ptr, weak_ptr_arr] : interm_memories_) {
+    for (auto &&weak_ptr : weak_ptr_arr) {
+      if (auto tensor_ptr = weak_ptr.lock(); tensor_ptr != nullptr) {
+        // since we hold lock, we should not release storage inplace
+        plan_release_storage.emplace_back(tensor_ptr->storage());
+        DLOG(INFO) << "ReleaseIntermMemory " << ptr << "  release success, nbytes = " << tensor_ptr->storage().nbytes();
+        break;
+      } else {
+        DLOG(INFO) << "ReleaseIntermMemory " << ptr << " already release.";
+      }
     }
   }
 

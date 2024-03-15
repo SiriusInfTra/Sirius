@@ -91,7 +91,7 @@ class CUDAColAllocator : public c10::cuda::CUDACachingAllocator::CUDAAllocator {
 
   std::unordered_map<void*, std::shared_ptr<colserve::sta::CUDAMemPool::PoolEntry>> entry_map_;
   std::unordered_map<void*, std::shared_ptr<colserve::sta::CUDAMemPool::PoolEntry>> train_model_params_;
-  std::unordered_multimap<void*, c10::weak_intrusive_ptr<at::TensorImpl>> interm_memories_;
+  std::unordered_map<void*, std::vector<c10::weak_intrusive_ptr<at::TensorImpl>>> interm_memories_;
   
 
 };
