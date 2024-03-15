@@ -108,17 +108,30 @@ int main(int argc, char** argv) {
 
   if (app.enable_infer && !app.infer_trace.empty()) {
     auto groups = GroupByModel(trace_cfg);
+    if (app.warmup > 0) {
+      std::vector<std::future<void>> warm_up_futures;
+      for (auto &[model_id, _] : groups) {
+        auto &model = trace_cfg.models[model_id];
+        warm_up_futures.push_back(std::async(std::launch::async, 
+            [&workload, &model, &app](){
+              workload.WarmupModel(model.model_name, app.warmup);
+            }
+        ));
+      }
+      for (auto &f : warm_up_futures) {
+        f.wait();
+      }
+      if (app.delay_after_warmup > 0) {
+        std::this_thread::sleep_for(std::chrono::duration<double>(app.delay_after_warmup));
+        workload.WarmupDone();
+      }
+    }
+
     for(auto &&[model_id, start_points] : groups) {
       auto &model = trace_cfg.models[model_id];
-      if (app.warmup > 0)
-        workload.WarmupModel(model.model_name, app.warmup);
       workload.InferTrace(model.model_name, app.concurrency, 
                           start_points, app.delay_before_infer,
                           app.warmup, app.show_result);
-    }
-    if (app.warmup > 0 && app.delay_after_warmup > 0) {
-      std::this_thread::sleep_for(std::chrono::duration<double>(app.delay_after_warmup));
-      workload.WarmupDone();
     }
   }
   

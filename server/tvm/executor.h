@@ -77,13 +77,14 @@ class Executor {
     return param_storage_size_ + buffer_storage_size_;
   }
 
-  size_t GetAdjustBatchSize() const {
-    size_t size_mega = sta::ByteToMB(GetStorageSize());
-    /* reserve 40MB, 145MB per batch */
-    return (size_mega + 125 + 40) / 125; 
-  }
+  // size_t GetAdjustBatchSize() const {
+  //   size_t size_mega = sta::ByteToMB(GetStorageSize());
+  //   /* reserve 40MB, 145MB per batch */
+  //   auto [train_mem_base, train_mem_slope] = Mod;
+  //   return (size_mega + 125 + 40) / 125; 
+  // }
 
-  double GetFreeMemoryMB();
+  // double GetFreeMemoryMB();
 
  private:
   void SetupStorage(bool alloc);

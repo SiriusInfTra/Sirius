@@ -73,17 +73,16 @@ class CUDAColAllocator : public c10::cuda::CUDACachingAllocator::CUDAAllocator {
 
   std::string name() override;
 
-  void SetTrainModelAllocating(bool v) { train_allocating_ = v; }
+  void SetTrainModelAllocating(bool v) { train_model_allocating_ = v; }
   void TagIntermMemory(at::Tensor tensor);
   void ReleaseIntermMemory();
   void UntagIntermMemory();
-
 
  private:
   static std::shared_ptr<CUDAColAllocator> cuda_col_allocator_;
 
   bool initialized_ = false;
-  bool train_allocating_ = false;
+  bool train_model_allocating_ = false;
   
   // first lock interm_memory mutex to avoid dead lock
   std::mutex entry_mutex_;

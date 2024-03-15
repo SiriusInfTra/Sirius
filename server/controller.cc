@@ -165,7 +165,7 @@ uint64_t Controller::ColocateAdjust(size_t batch_size) {
     }
     TrainLauncher::Get()->AddTargetBatchSize(-batch_size);
   }
-  LOG(INFO) << "Controller send ColocateAdjust cmd_id: " << cmd_id << " batch_size: " << batch_size
+  LOG(INFO) << "[Controller] send ColocateAdjust cmd_id: " << cmd_id << " batch_size: " << batch_size
             << " train idle " << IsTrainIdle();
   return cmd_id;
 }

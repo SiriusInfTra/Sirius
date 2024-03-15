@@ -51,15 +51,26 @@ int main(int argc, char** argv) {
   CHECK(workload.Hello());
 
   if (app.enable_infer && !app.infer_models.empty()) {
+    if (app.warmup > 0) {
+      std::vector<std::future<void>> warm_up_futures;
+      for (auto &model : app.infer_models) {
+        warm_up_futures.push_back(std::async(std::launch::async, 
+            [&workload, &model, &app](){
+              workload.WarmupModel(model, app.warmup);
+            }
+        ));
+      }
+      for (auto &f : warm_up_futures) {
+        f.wait();
+      }
+      if (app.delay_after_warmup > 0) {
+        std::this_thread::sleep_for(std::chrono::duration<double>(app.delay_after_warmup));
+        workload.WarmupDone();
+      }
+    }
     for(auto &model : app.infer_models) {
-      if (app.warmup > 0)
-        workload.WarmupModel(model, app.warmup);
       workload.InferBusyLoop(model, app.concurrency, nullptr, app.delay_before_infer, 
                              app.warmup, app.show_result);
-    }
-    if (app.warmup > 0 && app.delay_after_warmup > 0) {
-      std::this_thread::sleep_for(std::chrono::duration<double>(app.delay_after_warmup));
-      workload.WarmupDone();
     }
   }
   
