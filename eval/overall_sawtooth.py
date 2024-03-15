@@ -5,14 +5,14 @@ set_global_seed(42)
 
 use_time_stamp = True
 
-run_pct_mps = True
+run_pct_mps = False
 run_colsys = True
 run_um_mps = False
-run_task_switch = True
-run_infer_only = True
+run_task_switch = False
+run_infer_only = False
 
 # run_pct_mps = True
-# run_colsys = False
+# run_colsys = False 
 # run_um_mps = False
 # run_task_switch = False
 # run_infer_only = False

@@ -291,7 +291,7 @@ class HyperWorkload:
                  infer_timeline:str = "infer-timeline",
                  seed: Optional[int] = None, 
                  warmup: int = 0,
-                 wait_warmup_done_sec: float = 0, # see [Note: client time line] in client/workload/util.h
+                 wait_warmup_done_sec: float = 0, # see [Note: client timeline] in client/workload/util.h
                  wait_train_setup_sec: float = 0,
                  wait_stable_before_start_profiling_sec: float = 0, 
                  show_result: Optional[int] = None) -> None:
