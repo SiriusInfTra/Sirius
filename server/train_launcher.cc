@@ -240,15 +240,15 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
       LOG(INFO) << "[TrainLauncher]: enable xsched.";
     }
 
-    CHECK_NE(setenv("COLOCATE_HAS_SERVER", "1", 1), -1);
-    extra_env_ss << "COLOCATE_HAS_SERVER=1" << " ";
+    CHECK_NE(setenv("HAS_INFER_SERVER", "1", 1), -1);
+    extra_env_ss << "HAS_INFER_SERVER=1" << " ";
     if (Config::use_shared_tensor_train) {
       CHECK_NE(setenv("USE_SHARED_TENSOR", "1", 1), -1);
-      CHECK_NE(setenv("SHARED_TENSOR_HAS_SERVER", "1", 1), -1);
+      CHECK_NE(setenv("HAS_SHARED_TENSOR_SERVER", "1", 1), -1);
       CHECK_NE(setenv("SHARED_TENSOR_POOL_GB", std::to_string(Config::cuda_memory_pool_gb).c_str(), 1), -1);
       CHECK_NE(setenv("SHARED_TENSOR_POOL_FREELIST_POLICY", Config::mempool_freelist_policy.c_str(), 1), -1);
       extra_env_ss << "USE_SHARED_TENSOR=1"
-                   << " SHARED_TENSOR_HAS_SERVER=1"
+                   << " HAS_SHARED_TENSOR_SERVER=1"
                    << " SHARED_TENSOR_POOL_GB=" << Config::cuda_memory_pool_gb
                    << " SHARED_TENSOR_POOL_FREELIST_POLICY=" << Config::mempool_freelist_policy << " ";
       // CHECK_NE(setenv("CUDA_LAUNCH_BLOCKING", "1", 1), -1);
@@ -330,7 +330,7 @@ void TrainLauncher::DummyAdjust() {
   while (Profiler::MilliFrom(start) < 30*1000 && this->train_pid_ != -1) {
     LOG(INFO) << "DummyAdjust at " << Profiler::GetTimeStamp();
     auto batch_size = 1;
-    auto cmd_id = Controller::Get()->ColocateAdjust(batch_size);
+    auto cmd_id = Controller::Get()->ColocateAdjust(-1, batch_size);
     Controller::Get()->WaitColocateAdjustDone(cmd_id);
     Controller::Get()->InferExit();
     std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<>(200, 1000)(gen)));

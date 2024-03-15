@@ -23,8 +23,8 @@ void ConfigTorchCol() {
     return;
   }
 
-  auto has_infer_server_env = std::getenv("COLOCATE_HAS_SERVER");
-  auto has_shared_tensor_server_env = std::getenv("SHARED_TENSOR_HAS_SERVER");
+  auto has_infer_server_env = std::getenv("HAS_INFER_SERVER");
+  auto has_shared_tensor_server_env = std::getenv("HAS_SHARED_TENSOR_SERVER");
   auto pool_size_env = std::getenv("SHARED_TENSOR_POOL_GB");
   
   has_colocated_infer_server = has_infer_server_env == nullptr ? 

@@ -105,7 +105,7 @@ void SwitchStub::StepsNoInteruptEnd() {
 }
 
 ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_(batch_size) {
-  // char *has_server_env = std::getenv("COLOCATE_HAS_SERVER");
+  // char *has_server_env = std::getenv("HAS_INFER_SERVER");
   // bool has_server = has_server_env == nullptr ? true : (std::string(has_server_env) == "1");
   cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("cmd-ctrl", !has_colocated_infer_server);
   status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("status-ctrl", !has_colocated_infer_server);
@@ -233,7 +233,7 @@ double ColocateStub::PassedTimeFromSetCmd() {
 }
 
 void ColocateStub::ReportBatchSize(int batch_size) {
-  // char *has_server_env = std::getenv("COLOCATE_HAS_SERVER");
+  // char *has_server_env = std::getenv("HAS_INFER_SERVER");
   current_bs_ = batch_size;
   // bool has_server = has_server_env == nullptr ? true : (std::string(has_server_env) == "1");
   if (has_colocated_infer_server) {
