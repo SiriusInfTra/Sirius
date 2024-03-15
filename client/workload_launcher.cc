@@ -88,7 +88,7 @@ int main(int argc, char** argv) {
   double min_duration = -std::numeric_limits<double>::infinity();
   if (app.enable_infer && !app.infer_trace.empty()) {
     trace_cfg = LoadTraceCFG(app.infer_trace);
-    min_duration = trace_cfg.start_points.back().first + app.delay_before_infer + 3;
+    min_duration = trace_cfg.start_points.back().first + app.wait_train_setup_sec + 3;
   }
   
   if (app.duration < min_duration) {
@@ -100,7 +100,7 @@ int main(int argc, char** argv) {
   colserve::workload::Workload workload(
       grpc::CreateChannel(target, grpc::InsecureChannelCredentials()),
       std::chrono::seconds(app.duration),
-      app.delay_before_profile,
+      app.wait_train_setup_sec + app.wait_stable_before_start_profiling_sec,
       app.infer_timeline
   );
   CHECK(workload.Hello());
@@ -121,8 +121,8 @@ int main(int argc, char** argv) {
       for (auto &f : warm_up_futures) {
         f.wait();
       }
-      if (app.delay_after_warmup > 0) {
-        std::this_thread::sleep_for(std::chrono::duration<double>(app.delay_after_warmup));
+      if (app.wait_warmup_done_sec > 0) {
+        std::this_thread::sleep_for(std::chrono::duration<double>(app.wait_warmup_done_sec));
         workload.WarmupDone();
       }
     }
@@ -130,7 +130,7 @@ int main(int argc, char** argv) {
     for(auto &&[model_id, start_points] : groups) {
       auto &model = trace_cfg.models[model_id];
       workload.InferTrace(model.model_name, app.concurrency, 
-                          start_points, app.delay_before_infer,
+                          start_points, app.wait_train_setup_sec,
                           app.warmup, app.show_result);
     }
   }

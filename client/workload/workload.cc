@@ -579,7 +579,9 @@ void Workload::InferBusyLoop(const std::string &model, size_t concurrency,
   infer_workers_.push_back(std::move(worker));
 }
 
-void Workload::InferTrace(const std::string &model, size_t concurrency, const std::vector<double> &start_points, double delay_before_infer,
+void Workload::InferTrace(const std::string &model, size_t concurrency, 
+                          const std::vector<double> &start_points, 
+                          double delay_before_infer,
                           int warmup, int64_t show_result) {
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(

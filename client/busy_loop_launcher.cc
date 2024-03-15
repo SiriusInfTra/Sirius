@@ -34,8 +34,8 @@ int main(int argc, char** argv) {
   }
   LOG(INFO) << "Workload random seed " << app.seed;
 
-  if (app.delay_before_infer > 0) {
-    auto new_duration = app.duration + app.delay_before_infer;
+  if (app.wait_train_setup_sec > 0) {
+    auto new_duration = app.duration + app.wait_train_setup_sec;
     LOG(INFO) << "Override duration from " << app.duration << " to " << new_duration << ".";
     app.duration = new_duration;
   }
@@ -45,7 +45,7 @@ int main(int argc, char** argv) {
   colserve::workload::Workload workload(
       grpc::CreateChannel(target, grpc::InsecureChannelCredentials()),
       std::chrono::seconds(app.duration),
-      app.delay_before_profile,
+      app.wait_train_setup_sec + app.wait_stable_before_start_profiling_sec,
       app.infer_timeline
   );
   CHECK(workload.Hello());
@@ -63,13 +63,13 @@ int main(int argc, char** argv) {
       for (auto &f : warm_up_futures) {
         f.wait();
       }
-      if (app.delay_after_warmup > 0) {
-        std::this_thread::sleep_for(std::chrono::duration<double>(app.delay_after_warmup));
+      if (app.wait_warmup_done_sec > 0) {
+        std::this_thread::sleep_for(std::chrono::duration<double>(app.wait_warmup_done_sec));
         workload.WarmupDone();
       }
     }
     for(auto &model : app.infer_models) {
-      workload.InferBusyLoop(model, app.concurrency, nullptr, app.delay_before_infer, 
+      workload.InferBusyLoop(model, app.concurrency, nullptr, app.wait_train_setup_sec, 
                              app.warmup, app.show_result);
     }
   }

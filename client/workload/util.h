@@ -39,13 +39,25 @@ class AppBase {
   std::string port;
   bool enable_train{true}, enable_infer{true};
   std::set<std::string> train_models;
-  double delay_before_infer{0};
   int duration{10}, concurrency{10};
   int num_epoch{1}, batch_size{1};
 
   int warmup{10};
-  double delay_after_warmup{0}; // second
-  double delay_before_profile{0}; // second, should include delay_before_info
+
+  double wait_warmup_done_sec{0};
+  double wait_train_setup_sec{0};
+  double wait_stable_before_start_profiling_sec{0};
+
+  /*
+   * [Note: client time line]
+   *
+   * warmup ---[wait warmup]--> workload start (record start timestamp) 
+   *        ---[wait train]---> send infer req 
+   *        ---[wait stable]--> start profiling ---> end
+   * 
+   * infer request delay after start = wait train setup
+   * profiling delay after start = wait train setup + wait stable 
+   */ 
 
   std::string log;
   int verbose{0};

@@ -14,7 +14,7 @@ def run(system: System, workload: HyperWorkload, num_worker:int ,tag: str):
     time.sleep(1)
 
 system = System(mode=System.ServerMode.ColocateL2, use_sta=False, mps=True, keep_last_time_stamp=True, infer_blob_alloc=False)
-hyper_workload = HyperWorkload(concurrency=2048, duration=30, delay_before_infer=30)
+hyper_workload = HyperWorkload(concurrency=2048, duration=30, wait_train_setup_sec=30)
 hyper_workload.set_train_workload(train_workload=TrainWorkload('resnet', num_epoch=20, batch_size=56))
 # workload.set_infer_workloads(AzureInferWorkload(
 #     AzureInferWorkload.TRACE_D01,

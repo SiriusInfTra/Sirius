@@ -290,10 +290,10 @@ class HyperWorkload:
                  trace_cfg:str = "trace-cfg",
                  infer_timeline:str = "infer-timeline",
                  seed: Optional[int] = None, 
-                 delay_before_infer: float = 0,
                  warmup: int = 0,
-                 delay_after_warmup: Optional[float] = None,
-                 delay_before_profile: Optional[float] = None, # delay before start profiling infer, note different between cpp and py
+                 wait_warmup_done_sec: float = 0, # see [Note: client time line] in client/workload/util.h
+                 wait_train_setup_sec: float = 0,
+                 wait_stable_before_start_profiling_sec: float = 0, 
                  show_result: Optional[int] = None) -> None:
         self.enable_infer = True
         self.enable_train = True
@@ -310,13 +310,10 @@ class HyperWorkload:
             self.seed = seed
         else:
             self.seed = get_global_seed()
-        self.delay_before_infer = delay_before_infer
         self.warmup = warmup
-        self.delay_after_warmup = delay_after_warmup
-        if delay_before_profile is None:
-            self.delay_before_profile = delay_before_profile
-        else:
-            self.delay_before_profile = delay_before_profile + delay_before_infer
+        self.wait_warmup_done_sec = wait_warmup_done_sec
+        self.wait_train_setup_sec = wait_train_setup_sec
+        self.wait_stable_before_start_profiling_sec = wait_stable_before_start_profiling_sec
         self.show_result = show_result
 
     def set_infer_workloads(self, *infer_workloads: InferWorkloadBase):
@@ -362,7 +359,6 @@ class HyperWorkload:
             f"./build/{launcher}",
             "-p", server.port,
             "-c", str(self.concurrency),
-            "--delay-before-infer", str(self.delay_before_infer)
         ]
         if self.duration is not None:
             cmd += ["-d", str(self.duration)]
@@ -383,11 +379,15 @@ class HyperWorkload:
         cmd += ["--seed", str(self.seed)]
 
         cmd += ["--warmup", str(self.warmup)]
-        if self.warmup > 0 and self.delay_after_warmup is not None:
-            cmd += ["--delay-after-warmup", str(self.delay_after_warmup)]
+        if self.warmup > 0 and self.wait_warmup_done_sec > 0:
+            cmd += ["--wait-warmup-done-sec", str(self.wait_warmup_done_sec)]
 
-        if self.delay_before_profile is not None:
-            cmd += ['--delay-before-profile', str(self.delay_before_profile)]
+        if self.wait_train_setup_sec > 0:
+            cmd += ['--wait-train-setup-sec', str(self.wait_train_setup_sec)]
+
+        if self.wait_stable_before_start_profiling_sec > 0:
+            cmd += ['--wait-stable-before-start-profiling-sec', 
+                    str(self.wait_stable_before_start_profiling_sec)]
 
         workload_log = pathlib.Path(server.log_dir) / self.workload_log
 

@@ -153,12 +153,15 @@ class Workload {
   bool ReportTimeStampToServer();
 
   void Run() {
-    LOG(INFO) << "Workload start ...";
     running_ = true;
     ready_promise_.set_value();
     run_btime_ = std::chrono::steady_clock::now();
     start_time_stamp_ = GetTimeStamp();
     ReportTimeStampToServer();
+    LOG(INFO) << "Workload start at " << start_time_stamp_ 
+              << " profiling will begin after " << delay_before_profile_
+              << " sec from this time point";
+
     std::this_thread::sleep_for(duration_);
     LOG(INFO) << "Workload timeout ...";
     running_ = false;
@@ -213,6 +216,8 @@ class Workload {
 
   double delay_before_profile_;
   long start_time_stamp_;
+
+
 
   // friend class InferRecorder;
 

@@ -9,8 +9,9 @@ run_um_mps = True
 run_task_switch = True
 
 def smooth(rps, num_model, infer_only=True):
-    workload = HyperWorkload(concurrency=2048, duration=140, delay_before_infer=30,
-                            warmup=5, delay_after_warmup=5, delay_before_profile=5)
+    workload = HyperWorkload(concurrency=2048, duration=140, warmup=5,
+                             wait_warmup_done_sec=5, wait_train_setup_sec=30,
+                             wait_stable_before_start_profiling_sec=10)
     InferModel.reset_model_cnt()
     if not infer_only:
         workload.set_train_workload(train_workload=TrainWorkload('resnet', 15, 96))
