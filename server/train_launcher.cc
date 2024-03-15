@@ -230,12 +230,15 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
       dup2(from_child_pipe[1], STDOUT_FILENO);
     }
     if (Config::use_xsched) {
-      std::string xsched_path = (Config::binary_directory / "xsched").string();
-      std::string xsched_lib_path = xsched_path + "/lib";
+      auto xsched_path = Config::binary_directory / "xsched";
+      auto xsched_lib_path = xsched_path / "lib";
+      auto xsched_lib_cuda = xsched_lib_path / "libcuda.so.1";
+      CHECK(std::filesystem::exists(xsched_lib_cuda));
+
       // std::string xsched_preload_path = xsched_path + "lib/libinstrument_sm70.so";
       
-      CHECK_NE(setenv("LD_LIBRARY_PATH", xsched_lib_path.c_str(), 1), -1);
-      extra_env_ss << "LD_LIBRARY_PATH=" << xsched_lib_path << " ";
+      CHECK_NE(setenv("LD_LIBRARY_PATH", xsched_lib_path.string().c_str(), 1), -1);
+      extra_env_ss << "LD_LIBRARY_PATH=" << xsched_lib_path.string() << " ";
       // CHECK_NE(setenv("LD_PRELOAD", xsched_preload_path.c_str(), 1), -1);
       LOG(INFO) << "[TrainLauncher]: enable xsched.";
     }
