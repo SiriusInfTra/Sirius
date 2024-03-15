@@ -3,6 +3,7 @@
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include "util.h"
+#include <atomic>
 #include <boost/lockfree/policies.hpp>
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
@@ -63,7 +64,7 @@ inline size_t AlignedNBytes(size_t nbytes) {
 
 
 enum class Belong {
-  kTrain, kInfer, kFree
+  kTrain, kInfer, kUsedNum, kFree
 };
 
 inline std::ostream & operator<<(std::ostream &os, const Belong &belong)  {
@@ -132,8 +133,10 @@ public:
 
 class MemPool {
   using ring_buffer = boost::circular_buffer<size_t, bip::allocator<size_t, bip::managed_shared_memory::segment_manager>>;
+  using stats_arr = std::array<std::atomic<size_t>, static_cast<size_t>(Belong::kUsedNum)>;
 private:
   static std::unique_ptr<MemPool> instance_;
+  static std::atomic<bool> is_init_;
 
   bip::managed_shared_memory  shared_memory_;
   bip::interprocess_mutex     *mutex_;
@@ -143,10 +146,13 @@ private:
   std::unique_ptr<HandleTransfer> tranfer;
   std::vector<PhyMem> phy_mem_list_;
   ring_buffer *free_queue;
+  stats_arr *allocated_nbytes_;
+  stats_arr *cached_nbytes_;
   
   bool is_master_;
 public:
   static MemPool &Get();
+  static bool IsInit();
 
   const size_t mempool_nbytes;
 
@@ -169,7 +175,27 @@ public:
     out << std::flush;
   }
 
+  inline size_t GetAllocatedNbytes(Belong belong) {
+    return allocated_nbytes_->at(static_cast<size_t>(belong)).load(std::memory_order_relaxed);
+  }
+
+  inline size_t AddAllocatedNbytes(long nbytes, Belong belong) {
+    return allocated_nbytes_->at(static_cast<size_t>(belong)).fetch_add(nbytes, std::memory_order_relaxed);
+  }
+
+  inline size_t SubAllocatedNbytes(long nbytes, Belong belong) {
+    return allocated_nbytes_->at(static_cast<size_t>(belong)).fetch_sub(nbytes, std::memory_order_relaxed);
+  }
+
+  inline size_t GetCachedNbytes(Belong belong) {
+    return cached_nbytes_->at(static_cast<size_t>(belong)).load(std::memory_order_relaxed);
+  }
+
   void PrintStatus() {
+    for (Belong belong : {Belong::kInfer, Belong::kTrain}) {
+      LOG(INFO) << belong << " Allocate: " << detail::ByteDisplay(GetAllocatedNbytes(belong));
+      LOG(INFO) << belong << " Cached: " << detail::ByteDisplay(GetCachedNbytes(belong));
+    }
     bip::scoped_lock lock{*mutex_};
     LOG(INFO) << "[mempool] nbytes = " << detail::ByteDisplay(mempool_nbytes);
     LOG(INFO) << "[mempool] total phy block = " << phy_mem_list_.size();

@@ -154,15 +154,15 @@ CUDAMemPool::~CUDAMemPool() {
 // }
 
 size_t CUDAMemPool::InferMemUsage() {
-  return 0;
+ return MemPool::Get().GetAllocatedNbytes(Belong::kInfer);
 }
 
 size_t CUDAMemPool::TrainMemUsage() {
-  return TorchAllocator::Get().GetAllocatedNBytes();
+ return MemPool::Get().GetAllocatedNbytes(Belong::kTrain);
 }
 
 size_t CUDAMemPool::TrainAllMemUsage() {
-  return TorchAllocator::Get().GetCachedNBytes();
+  return MemPool::Get().GetCachedNbytes(Belong::kTrain);
 }
 
 size_t CUDAMemPool::PoolNbytes() {

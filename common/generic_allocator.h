@@ -108,13 +108,13 @@ class GenericAllocator {
 protected:
   MemPool &mempool_;
   std::vector<PhyMem *> mapped_mem_list_;
-  std::atomic<size_t> cached_nbytes_;
+  // std::atomic<size_t> cached_nbytes_;
   std::byte *base_ptr_;
 
   EntryList             entry_list_;
   FreeList free_list_small_;
   FreeList free_list_large_;
-  std::atomic<size_t> allocated_nbytes_;
+  // std::atomic<size_t> allocated_nbytes_;
   std::function<void()>       oom_handler_;
 
 
@@ -142,7 +142,7 @@ protected:
       while (++k < ready_to_free_mask.size() && ready_to_free_mask[k] == true) {}
 
       CU_CALL(cuMemUnmap(reinterpret_cast<CUdeviceptr>(base_ptr_ + k0 * MEM_BLOCK_NBYTES), (k - k0) * MEM_BLOCK_NBYTES));
-      cached_nbytes_ -= (k - k0) * MEM_BLOCK_NBYTES;
+      // cached_nbytes_ -= (k - k0) * MEM_BLOCK_NBYTES;
       /* batch release physical memory page as it will acquire a lock */
       ready_to_free_mem.insert(ready_to_free_mem.cend(), mapped_mem_list_.cbegin() + k0, mapped_mem_list_.cbegin() + k);
       std::fill(mapped_mem_list_.begin() + k0, mapped_mem_list_.begin() + k, nullptr);
@@ -170,8 +170,8 @@ protected:
     LOG_IF(INFO, torch_allocator::VERBOSE && !missing_phy_mem_index_list.empty()) << "[TorchAllocator] missing " << missing_phy_mem_index_list.size() << " physical memory page(s), try allocate.";
     std::vector<PhyMem *> request_phy_mem_list(missing_phy_mem_index_list.size());
     if (mempool_.AllocPhyMem(request_phy_mem_list, policy_) != request_phy_mem_list.size()) {
-      LOG(INFO) << "OOM";
-      PrintOnCrash();
+      DumpState();
+      LOG(FATAL) << "OOM";
     }
     // CHECK_EQ(mempool_.AllocPhyMem(request_phy_mem_list, Belong::kTrain), request_phy_mem_list.size());
     for (size_t k = 0; k < request_phy_mem_list.size(); ++k) {
@@ -183,11 +183,11 @@ protected:
         .location = {.type = CU_MEM_LOCATION_TYPE_DEVICE, .id = 0},
         .flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE};
       CU_CALL(cuMemSetAccess(reinterpret_cast<CUdeviceptr>(target_addr), MEM_BLOCK_NBYTES, &acc_desc, 1));
-      cached_nbytes_ += MEM_BLOCK_NBYTES;
+      // cached_nbytes_ += MEM_BLOCK_NBYTES;
     }
   }
   
-  void PrintOnCrash() {
+  void DumpState() {
     if (oom_handler_ != nullptr) {
       oom_handler_();
     }
@@ -200,13 +200,16 @@ protected:
     CHECK(std::filesystem::create_directory(output_dir));
     LOG(INFO) << "[GenericAllocator] Dump has been written to: " << ss.str() << ".";
     PrintStatus();
-    mempool_.PrintStatus();
-    {
-      std::ofstream handle{output_dir / "mempool.csv"};
-      CHECK(handle.is_open());
-      mempool_.DumpMemPool(handle);
-      handle.close();
+    if (MemPool::IsInit()) {
+      mempool_.PrintStatus();
+      {
+        std::ofstream handle{output_dir / "mempool.csv"};
+        CHECK(handle.is_open());
+        mempool_.DumpMemPool(handle);
+        handle.close();
+      }
     }
+
     {
       std::ofstream handle{output_dir / "entry_list.csv"};
       CHECK(handle.is_open());
@@ -225,16 +228,13 @@ protected:
       free_list_large_.DumpFreeList(handle);
       handle.close();
     }
-
-
-    abort();
   }
 public:
   static GenericAllocator &Get();
 
   GenericAllocator(MemPool &mempool, Belong policy);
 
-  ~GenericAllocator();
+  virtual ~GenericAllocator();
 
   bool CheckState();
 
@@ -269,6 +269,10 @@ public:
     for(auto &&[_, v] : groupby) {
       auto &&[arr, name] = v;
       LOG(INFO) << "------ " << name << "-----";
+      if (arr.empty()) {
+        LOG(INFO) << "empty array";
+        continue;
+      }
       LOG(INFO) << "max: " << detail::ByteDisplay(*std::max_element(arr.cbegin(), arr.cend()));
       LOG(INFO) << "min: " << detail::ByteDisplay(*std::min_element(arr.cbegin(), arr.cend()));
       LOG(INFO) << "avg: " << detail::ByteDisplay(std::accumulate(arr.cbegin(), arr.cend(), 0UL) / arr.size());
@@ -281,12 +285,12 @@ public:
     ReleaseFreePhyMem();
   }
 
-  size_t GetCachedNBytes() {
-    return cached_nbytes_;
-  }
+  // size_t GetCachedNBytes() {
+  //   return cached_nbytes_;
+  // }
 
-  size_t GetAllocatedNBytes() {
-    return allocated_nbytes_;
-  }
+  // size_t GetAllocatedNBytes() {
+  //   return allocated_nbytes_;
+  // }
 };
 }

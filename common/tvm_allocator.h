@@ -34,12 +34,14 @@ public:
     size_t allocated = mempool_.AllocPhyMem(allocated_pages, policy_);
     if ((require && allocated < n) || (!require && allocated == 0)) {
       LOG(INFO) << "[TVMAllocator] Fail to alloc phymem, only get " << allocated << ".";
-      PrintOnCrash();
+      DumpState();
+      LOG(FATAL) << "PhyMem OOM";
     }
     if (auto *free_va = free_list_large_.PopFreeEntry(allocated * MEM_BLOCK_NBYTES); free_va) {
       for (size_t k = 0; k < free_va->nbytes / MEM_BLOCK_NBYTES; ++k) {
         mapped_mem_list_[free_va->addr_offset / MEM_BLOCK_NBYTES + k] = allocated_pages[k];
         CU_CALL(cuMemMap(reinterpret_cast<CUdeviceptr>(base_ptr_ + free_va->addr_offset + k * MEM_BLOCK_NBYTES), MEM_BLOCK_NBYTES, 0, allocated_pages[k]->cu_handle, 0));
+        // cached_nbytes_ += MEM_BLOCK_NBYTES;
       }
       CUmemAccessDesc acc_desc = {
         .location = {.type = CU_MEM_LOCATION_TYPE_DEVICE, .id = 0},
@@ -110,6 +112,7 @@ public:
     }
     CHECK(free_entry != nullptr);
     CHECK(!torch_allocator::ALWAYS_CHECK_STATE || CheckState());
+    mempool_.AddAllocatedNbytes(free_entry->nbytes, policy_);
     return base_ptr_ + free_entry->addr_offset;
   }
 
@@ -137,7 +140,9 @@ public:
         mapped_mem_list_[k] = nullptr;
       }
       CU_CALL(cuMemUnmap(reinterpret_cast<CUdeviceptr>(base_ptr_ + entry->addr_offset), entry->nbytes));
+      // cached_nbytes_ -= entry->nbytes;
       mempool_.DeallocPhyMem(free_mem);
+
       return {entry, true};
     }
       return {entry, false};
@@ -164,7 +169,7 @@ public:
       entry1->is_small = true;
       free_list_small_.PushFreeEntry(entry1);
     }
-    allocated_nbytes_ -= aligned_nbytes;
+    mempool_.SubAllocatedNbytes(aligned_nbytes, policy_);
     CHECK(!torch_allocator::ALWAYS_CHECK_STATE || CheckState());
   }
 };

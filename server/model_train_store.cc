@@ -72,7 +72,7 @@ double ModelTrainStore::PredictMemUsageMB() {
   } else {
     if (cur_model_name_ == "resnet152") {
       if (Config::use_shared_tensor_train) {
-        return target_batch_size_ * 125 + 560;
+        return target_batch_size_ * 145 + 560;
       } else {
         return target_batch_size_ * 145 + 3512; // 3512 is 3.43 GB, GPU memory usage after empty torch internal cache
       }

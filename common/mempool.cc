@@ -13,6 +13,7 @@
 namespace colserve::sta {
 
 std::unique_ptr<MemPool> MemPool::instance_ = nullptr;
+std::atomic<bool> MemPool::is_init_ = false;
 
 void HandleTransfer::SendHandles(int fd_list[], size_t len, bip::scoped_lock<bip::interprocess_mutex> &lock) {
   int socket_fd;
@@ -252,6 +253,8 @@ MemPool::MemPool(size_t nbytes, bool cleanup): mempool_nbytes(nbytes) {
     ref_count_ = shared_memory_.find_or_construct<int>("ME_ref_count")();
     mutex_ = shared_memory_.find_or_construct<bip::interprocess_mutex>("ME_mutex")();
     free_queue = shared_memory_.find_or_construct<ring_buffer>("ME_free_queue")(mem_block_num, shared_memory_.get_segment_manager());
+    allocated_nbytes_ = shared_memory_.find_or_construct<stats_arr>("ME_allocated_nbytes")();
+    cached_nbytes_ = shared_memory_.find_or_construct<stats_arr>("ME_cached_nbytes_")();
   };
   shared_memory_.atomic_func(atomic_init);
   bip::scoped_lock locker(*mutex_);
@@ -261,8 +264,7 @@ MemPool::MemPool(size_t nbytes, bool cleanup): mempool_nbytes(nbytes) {
                                    MEM_BLOCK_NBYTES,
                                    mem_block_num));
   if (is_master_) {
-    LOG(INFO) << "[mempool] Start to init master, nbytes = "
-              << detail::ByteDisplay(nbytes) << ".";
+    LOG(INFO) << "[mempool] Start to init master, nbytes = " << detail::ByteDisplay(nbytes) << ".";
     tranfer->InitMaster();
     for(auto &&phy_mem : phy_mem_list_) {
       free_queue->push_back(phy_mem.index);
@@ -271,6 +273,7 @@ MemPool::MemPool(size_t nbytes, bool cleanup): mempool_nbytes(nbytes) {
     LOG(INFO) << "[mempool] Start to init slave.";
     tranfer->InitSlave();
   }
+  is_init_ = true;
 }
 
 void MemPool::WaitSlaveExit() {
@@ -289,6 +292,7 @@ void MemPool::WaitSlaveExit() {
 }
 
 MemPool::~MemPool() {
+  is_init_ = false;
   if (is_master_) {
     WaitSlaveExit();
     tranfer->ReleaseMaster();
@@ -303,22 +307,27 @@ MemPool::~MemPool() {
 
 size_t MemPool::AllocPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong) {
   bip::scoped_lock lock{*mutex_};
-  for (size_t k = 0; k < phy_mem_list.size(); ++k) {
-    if (free_queue->empty()) { return k; }
+  size_t k;
+  for (k = 0; k < phy_mem_list.size() && ! free_queue->empty(); ++k) {
     auto &phy_mem_ptr = phy_mem_list_[free_queue->front()];
     *phy_mem_ptr.belong = belong;
     phy_mem_list[k] = &phy_mem_ptr;
     free_queue->pop_front();
   }
-  return phy_mem_list.size();
+  cached_nbytes_->at(static_cast<size_t>(belong)).fetch_add(k * MEM_BLOCK_NBYTES, std::memory_order_relaxed);
+  return k;
 }
 
 void MemPool::DeallocPhyMem(const std::vector<PhyMem *> &phy_mem_list) {
+  if (phy_mem_list.empty()) { return; }
+  Belong belong = *phy_mem_list.front()->belong;
   bip::scoped_lock lock{*mutex_};
   for (auto &&phy_mem_ptr : phy_mem_list) {
+    CHECK_EQ(*phy_mem_ptr->belong, belong);
     *phy_mem_ptr->belong = Belong::kFree;
     free_queue->push_back(phy_mem_ptr->index);
   }
+  cached_nbytes_->at(static_cast<size_t>(belong)).fetch_sub(phy_mem_list.size() * MEM_BLOCK_NBYTES, std::memory_order_relaxed);
 }
 
 MemPool &MemPool::Get() {
@@ -335,4 +344,7 @@ MemPool &MemPool::Get() {
   return *instance_;
 }
 
+bool MemPool::IsInit() {
+  return is_init_.load(std::memory_order_relaxed);
 }
+}  // namespace colserve::sta

@@ -29,8 +29,6 @@ public:
   static TorchAllocator &Get();
   TorchAllocator(MemPool &mempool);
 
-  std::set<void *> allocated_ptrs;
-
   std::byte *Alloc(size_t unaligned_nbytes, bool retry_alloc) {
     std::unique_lock lock(mutex_);
     if (unaligned_nbytes == 0) { return nullptr; }
@@ -78,16 +76,15 @@ public:
       }
     }
     if (free_entry == nullptr) {
-      LOG(INFO) << "[TorchAllocator] OMM";
-      PrintOnCrash();
+      DumpState();
+      LOG(FATAL) << "[TorchAllocator] OMM";
     }
     
     CHECK(free_entry != nullptr);
     CHECK(!free_entry->is_free);
     CHECK(!torch_allocator::ALWAYS_CHECK_STATE || CheckState());
     EnsurePhyMemAlloc(free_entry);
-    allocated_nbytes_ += free_entry->nbytes;
-    CHECK(allocated_ptrs.insert(base_ptr_ + free_entry->addr_offset).second == true) << "err1";
+    mempool_.AddAllocatedNbytes(free_entry->nbytes, policy_);
     LOG_IF(INFO, torch_allocator::VERBOSE) << "[TorchAllocator] Alloc " << detail::ByteDisplay(unaligned_nbytes) << ", (aligned to " << detail::ByteDisplay(aligned_nbytes) << "): " << base_ptr_ + free_entry->addr_offset << ". ";
     
     return base_ptr_ + free_entry->addr_offset;
@@ -105,8 +102,7 @@ public:
     CHECK(entry != nullptr);
     CHECK(!entry->is_free);
     (entry->is_small ? free_list_small_ : free_list_large_).PushFreeEntry(entry);
-    allocated_nbytes_ -= aligned_nbytes;
-    allocated_ptrs.erase(ptr);
+    mempool_.SubAllocatedNbytes(aligned_nbytes, policy_);
     CHECK(!torch_allocator::ALWAYS_CHECK_STATE || CheckState());
     
   }

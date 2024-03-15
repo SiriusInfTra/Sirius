@@ -223,7 +223,7 @@ bool FreeList::CheckState() {
 
 GenericAllocator::GenericAllocator(MemPool &mempool, Belong policy)
     : mempool_(mempool), free_list_small_(entry_list_, true, policy),
-      free_list_large_(entry_list_, false, policy), cached_nbytes_(0), allocated_nbytes_(0), policy_(policy) {
+      free_list_large_(entry_list_, false, policy), policy_(policy) {
   CU_CALL(cuMemAddressReserve(reinterpret_cast<CUdeviceptr *>(&base_ptr_),
                               mempool_.mempool_nbytes * VA_RESERVE_SCALE, MEM_BLOCK_NBYTES, 0, 0));
   LOG(INFO) << "[TorchAllocator] Init torch allocator, dev_ptr = " << base_ptr_ << ".";
@@ -231,6 +231,7 @@ GenericAllocator::GenericAllocator(MemPool &mempool, Belong policy)
 
 
 GenericAllocator::~GenericAllocator() {
+  DumpState();
   int ignore;
   if (cuDriverGetVersion(&ignore) != CUDA_ERROR_DEINITIALIZED) {
     CU_CALL(cuMemAddressFree(reinterpret_cast<CUdeviceptr>(base_ptr_), mempool_.mempool_nbytes * VA_RESERVE_SCALE));
@@ -241,8 +242,8 @@ GenericAllocator::~GenericAllocator() {
 void GenericAllocator::ExpandMemorySpace(
     const std::vector<PhyMem *> &phy_mem_list, size_t len) {
   if( (mapped_mem_list_.size() + len) * MEM_BLOCK_NBYTES > mempool_.mempool_nbytes * VA_RESERVE_SCALE) {
-    LOG(INFO) << "[GenericAllocator] VA OMM";
-    PrintOnCrash();
+    DumpState();
+    LOG(FATAL) << "[GenericAllocator] VA OMM";
   }
   auto *mapping_begin = base_ptr_ + mapped_mem_list_.size() * MEM_BLOCK_NBYTES;
   for (size_t k = 0; k < len; ++k) {
@@ -258,7 +259,7 @@ void GenericAllocator::ExpandMemorySpace(
       .flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE};
   CU_CALL(cuMemSetAccess(reinterpret_cast<CUdeviceptr>(mapping_begin),
                          len * MEM_BLOCK_NBYTES, &acc_desc, 1));
-  cached_nbytes_ += len * MEM_BLOCK_NBYTES;
+  // cached_nbytes_ += len * MEM_BLOCK_NBYTES;
 }
 bool GenericAllocator::CheckState() {
   entry_list_.CheckState();
