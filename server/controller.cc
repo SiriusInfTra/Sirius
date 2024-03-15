@@ -155,17 +155,21 @@ uint64_t Controller::ResumeTrain() {
   return cmd_id;
 }
 
-uint64_t Controller::ColocateAdjust(size_t batch_size) {
+uint64_t Controller::ColocateAdjust(size_t model_rank, size_t batch_size) {
   auto cmd_id = Controller::adjust_cmd_id.fetch_add(1, std::memory_order_relaxed);
   if (!IsTrainIdle()) {
     if (Config::serve_mode == ServeMode::kColocateL1) {
-      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1), static_cast<int>(batch_size)});
+      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1), 
+                                static_cast<int>(batch_size)});
     } else if (Config::serve_mode == ServeMode::kColocateL2) {
-      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL2), static_cast<int>(batch_size)});
+      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL2), 
+                                static_cast<int>(batch_size)});
     }
     TrainLauncher::Get()->AddTargetBatchSize(-batch_size);
   }
-  LOG(INFO) << "[Controller] send ColocateAdjust cmd_id: " << cmd_id << " batch_size: " << batch_size
+  LOG(INFO) << "[Controller] model " << model_rank 
+            << "send ColocateAdjust cmd_id: " << cmd_id 
+            << " batch_size: " << batch_size
             << " train idle " << IsTrainIdle();
   return cmd_id;
 }

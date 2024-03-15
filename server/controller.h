@@ -20,7 +20,7 @@ class Controller {
   Controller();
   uint64_t InterruptTrain();
   uint64_t ResumeTrain();
-  uint64_t ColocateAdjust(size_t batch_size);
+  uint64_t ColocateAdjust(size_t model_rank, size_t batch_size);
   bool WaitTrainNotRunning();
   bool WaitInferIdle();
   bool WaitColocateAdjustDone(uint64_t cmd_id);

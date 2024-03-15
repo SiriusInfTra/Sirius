@@ -239,6 +239,9 @@ void Profiler::RecordPerf(PerfItem item, Profiler::time_point_t start, Profiler:
 void Profiler::SetWorkloadStartTimeStamp(long ts, double delay_before_profile) {
   workload_start_time_stamp_ = ts;
   delay_before_profile_ = delay_before_profile;
+  LOG(INFO) << "workload start at " << ts 
+            << ", profile will start after " << delay_before_profile
+            << " sec from this time point";
 }
 
 double Profiler::Passed() {
@@ -249,7 +252,8 @@ double Profiler::Passed() {
 void Profiler::WriteLog() {
   std::ofstream ofs{profile_log_path_};
   
-  ofs << "[Perf Info] workload start time stamp " << workload_start_time_stamp_ << " delay before profile " << delay_before_profile_ << std::endl;
+  ofs << "[Perf Info] workload start time stamp " << workload_start_time_stamp_ 
+      << " delay before profile " << delay_before_profile_ << " sec " << std::endl;
   for (auto &it : perf_info_) {
     auto item = static_cast<Profiler::PerfItem>(it.first);
     std::vector<double> item_perf_info;

@@ -782,9 +782,10 @@ void Executor::AllocStorageMaybeAdjust() {
       // this->tvm_graph_.infer_model_->SetWaitTrainPid(this->infer_model_worker_id_, wait_train_pid);
 
       PROFILE_START(TrainAdjust, 0);
-      auto adjust_batch_size = TrainLauncher::Get()->GetAdjustBatchSize(
-          sta::ByteToMB(GetStorageSize()));
-      auto cmd_id = Controller::Get()->ColocateAdjust(adjust_batch_size);
+      auto adjust_batch_size = TrainLauncher::Get()->
+          GetAdjustBatchSize(sta::ByteToMB(GetStorageSize()));
+      auto cmd_id = Controller::Get()->
+          ColocateAdjust(this->tvm_graph_.model_rank_, adjust_batch_size);
       Controller::Get()->WaitColocateAdjustDone(cmd_id);
       PROFILE_END(TrainAdjust, 0);
       if (first_adjust) {
