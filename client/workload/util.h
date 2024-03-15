@@ -49,7 +49,7 @@ class AppBase {
   double wait_stable_before_start_profiling_sec{0};
 
   /*
-   * [Note: client time line]
+   * [Note: client timeline]
    *
    * warmup ---[wait warmup]--> workload start (record start timestamp) 
    *        ---[wait train]---> send infer req 

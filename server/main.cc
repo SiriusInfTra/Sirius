@@ -169,7 +169,6 @@ int main(int argc, char *argv[]) {
   google::InitGoogleLogging(argv[0]);
   colserve::Config::binary_directory = std::filesystem::path(argv[0]).parent_path().parent_path();
   
-
   init_cli_options();
   CLI11_PARSE(app, argc, argv);
   init_config();

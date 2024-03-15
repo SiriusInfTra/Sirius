@@ -30,12 +30,15 @@ class InferModelStore {
 
   static void WarmupDone();
   static void UpdateLastInferTime() {
-    std::unique_lock lock{InferModelStore::Get()->mutex_};
-    InferModelStore::Get()->last_infer_time_ = Profiler::Now(); 
+    std::unique_lock lock{Get()->mutex_};
+    Get()->last_infer_time_ = Profiler::Now(); 
   }
   static size_t GetModelRank() {
-    return InferModelStore::Get()->model_rank_.fetch_add(1, std::memory_order_relaxed); 
+    return Get()->model_rank_.fetch_add(1, std::memory_order_relaxed); 
   }
+
+  static void InferingInc();
+  static void InferingDec();
 
   Model* GetModel(const std::string &name);
   size_t NumJobs();
@@ -58,6 +61,12 @@ class InferModelStore {
   //   kAddWorker = 4,
   // };
 
+  enum class TaskSwitchStatus {
+    kNotInfering = 0,
+    kInfering = 1,
+    kReclaimInfer = 2, 
+  };
+
  private:
   void ColocateMonitor();
   void TaskSwitchMonitor();
@@ -78,15 +87,20 @@ class InferModelStore {
   std::mutex mutex_;
   Profiler::time_point_t last_infer_time_;
   
+  std::atomic<int> num_infering_model_{0};
+
+  std::mutex task_switch_mutex_;
+  // std::atomic<int> task_switch_ctrl_{static_cast<int>(TaskSwitchStatus::kNotInfering)};
+  // std::condition_variable task_switch_cv_;
+  
 
   std::unique_ptr<std::thread> monitor_thread_;
+  
 
-  // std::mutex task_switch_mutex_;
   // std::atomic<int> task_switch_control_cnter_{static_cast<int>(TaskSwitchStatus::kNotAddWorker)};
   // std::unique_ptr<std::thread> task_switch_control_;
   
   // std::atomic<int> task_switch_enter_cnt_{0};
-
 };
 
 

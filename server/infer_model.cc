@@ -144,7 +144,7 @@ bool Model::AddJob(network::InferHandler::InferData* data) {
 
 bool Model::ReclaimMemory(size_t rank) {
   std::unique_lock lock{muts_[rank]};
-  if (status_[rank] != Status::kReady) {
+  if (status_[rank] == Status::kWithoutMemory) {
     return false; 
   }
   executors_[rank]->DeInit();
@@ -211,6 +211,10 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
       infer_idle_mills_[rank].store(idle_mill, std::memory_order_relaxed);
       continue;
     }
+
+    // [switch mode] before infering, first claim infering execution
+    InferModelStore::InferingInc();
+
     std::unique_lock lock{muts_[rank]};
     last_infer_time = Profiler::Now();
     infer_idle_mills_[rank].store(0, std::memory_order_relaxed);
@@ -306,6 +310,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
       auto data = job->GetInferData();
       data->GetResponder().Finish(data->GetResponse(), grpc::Status::OK, data);
     }
+    InferModelStore::InferingDec();
     Controller::Get()->InferResponseInc(jobs.size());
   }}
 
