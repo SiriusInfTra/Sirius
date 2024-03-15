@@ -50,7 +50,8 @@ double ResourceManager::GetTrainAvailMemoryMB() {
     free_memory_mb = ByteToMB(free);
   }
 
-  free_memory_mb -= infer_memory_mb - Config::train_memory_over_predict_mb;
+  free_memory_mb -= infer_memory_mb;
+  free_memory_mb -= Config::train_memory_over_predict_mb;
 
   LOG(INFO) << "[ResourceManager] "
             << " free memory " << free_memory_mb
