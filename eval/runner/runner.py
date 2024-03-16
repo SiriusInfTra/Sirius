@@ -316,6 +316,8 @@ class HyperWorkload:
         self.wait_stable_before_start_profiling_sec = wait_stable_before_start_profiling_sec
         self.show_result = show_result
 
+        self.infer_extra_infer_sec = self.wait_stable_before_start_profiling_sec
+
     def set_infer_workloads(self, *infer_workloads: InferWorkloadBase):
         self.infer_workloads = list(infer_workloads)
     

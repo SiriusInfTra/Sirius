@@ -87,7 +87,10 @@ int main(int argc, char** argv) {
   double min_duration = -std::numeric_limits<double>::infinity();
   if (app.enable_infer && !app.infer_trace.empty()) {
     trace_cfg = LoadTraceCFG(app.infer_trace);
-    min_duration = trace_cfg.start_points.back().first + app.wait_train_setup_sec + 3;
+    min_duration = trace_cfg.start_points.back().first 
+                   + app.wait_train_setup_sec 
+                   + app.wait_stable_before_start_profiling_sec
+                   + 3;
   }
   
   if (app.duration < min_duration) {

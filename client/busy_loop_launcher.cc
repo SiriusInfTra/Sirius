@@ -35,7 +35,9 @@ int main(int argc, char** argv) {
   LOG(INFO) << "Workload random seed " << app.seed;
 
   if (app.wait_train_setup_sec > 0) {
-    auto new_duration = app.duration + app.wait_train_setup_sec;
+    auto new_duration = app.duration
+                        + app.wait_train_setup_sec
+                        + app.wait_stable_before_start_profiling_sec;
     LOG(INFO) << "Override duration from " << app.duration << " to " << new_duration << ".";
     app.duration = new_duration;
   }
