@@ -12,12 +12,12 @@ dependencies:
   - ipython
   - ninja
   - pudb
-  - conda-forge::cudnn=8.9.7
   - libpng
   - jpeg
   - pip:
     - cmake==3.26.4
     - cython
+    - onnx
     - onnxruntime
     - protobuf
     - transformers

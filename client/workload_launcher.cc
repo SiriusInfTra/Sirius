@@ -73,7 +73,6 @@ std::vector<std::pair<std::string, std::vector<double>>> GroupByModel(const Trac
 }
 
 
-
 int main(int argc, char** argv) {
   App app;
   CLI11_PARSE(app.app, argc, argv);

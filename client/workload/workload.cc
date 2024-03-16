@@ -170,7 +170,7 @@ void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double
   }
   while(workload.running_) {
     DLOG(INFO) << log_prefix.str() << "Workload client is still running, wait 500ms.";
-    std::this_thread::sleep_for(500 * std::chrono::milliseconds());
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
   LOG(INFO) << log_prefix.str() << "RequestInfer stop";
 }
@@ -190,7 +190,7 @@ void InferWorker::FetchInferResult(Workload &workload,
     // cq_.Next(&tag, &ok);
     while (true) {
       auto next_status = 
-          cq_.AsyncNext(&tag, &ok, std::chrono::system_clock::now() + std::chrono::seconds(1));
+          cq_.AsyncNext(&tag, &ok, std::chrono::system_clock::now() + std::chrono::seconds(5));
       if (next_status == grpc::CompletionQueue::GOT_EVENT) {
         break;
       } else if (next_status == grpc::CompletionQueue::SHUTDOWN) {
@@ -213,9 +213,11 @@ void InferWorker::FetchInferResult(Workload &workload,
     {
       std::unique_lock status_lock{slot_status_mutex_};
       std::shared_lock slot_lock{slot_mutex_};
-      CHECK(slots_[slot]->rpc_status_.ok()) << " slot " << slot << ": " 
-                                           << slots_[slot]->rpc_status_.error_code() << " " << slots_[slot]->rpc_status_.error_message();
-      CHECK(status_slots_id_[InferReqStatus::kWait].count(slot)) << " " << slot << " " << status_slots_id_[InferReqStatus::kWait].size();
+      CHECK(slots_[slot]->rpc_status_.ok()) 
+          << " slot " << slot << ": " << slots_[slot]->rpc_status_.error_code() << " " 
+          << slots_[slot]->rpc_status_.error_message();
+      CHECK(status_slots_id_[InferReqStatus::kWait].count(slot)) 
+          << " " << slot << " " << status_slots_id_[InferReqStatus::kWait].size();
     }
     auto response_time = std::chrono::steady_clock::now();
     // latency_.push_back(std::chrono::duration<double, std::milli>(end - request_status_[i].request_time_).count());
