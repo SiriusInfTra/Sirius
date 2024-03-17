@@ -213,7 +213,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     }
 
     // [switch mode] before infering, first claim infering execution
-    InferModelStore::InferingInc();
+    InferModelStore::InferingInc(executors_[rank].get());
 
     std::unique_lock lock{muts_[rank]};
     last_infer_time = Profiler::Now();
@@ -310,7 +310,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
       auto data = job->GetInferData();
       data->GetResponder().Finish(data->GetResponse(), grpc::Status::OK, data);
     }
-    InferModelStore::InferingDec();
+    InferModelStore::InferingDec(executors_[rank].get());
     Controller::Get()->InferResponseInc(jobs.size());
   }}
 

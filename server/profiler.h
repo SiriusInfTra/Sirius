@@ -132,6 +132,9 @@ class Profiler {
   std::unordered_map<int, std::vector<std::tuple<long, double>>> perf_info_; // item -> [time stamp, value]
   std::mutex infer_info_mut_, event_info_mut_, perf_info_mut_;
 
+  // pass, time stamp, infering model used memory
+  std::vector<std::tuple<double, long, size_t>> infering_memory_nbytes_; 
+
   size_t last_infer_mem_;
   size_t last_train_mem_;
 

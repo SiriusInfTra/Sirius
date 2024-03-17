@@ -198,7 +198,7 @@ void InferModelStore::WarmupDone() {
             << Model::GetNumModel(Model::Status::kReady);
 }
 
-void InferModelStore::InferingInc() {
+void InferModelStore::InferingInc(tvm::Executor *executor) {
   std::unique_lock lock{Get()->task_switch_mutex_, std::defer_lock};
   if (Config::IsSwitchMode()) {
     lock.lock();
@@ -206,17 +206,20 @@ void InferModelStore::InferingInc() {
   // Get()->task_switch_cv_.wait(lock, []() {
   //   return Get()->task_switch_ctrl_.load() != static_cast<int>(TaskSwitchStatus::kReclaimInfer);
   // });
-  auto res = Get()->num_infering_model_.fetch_add(1, std::memory_order_relaxed);
+  Get()->num_infering_model_.fetch_add(1, std::memory_order_relaxed);
+  Get()->infering_model_nbytes_.fetch_add(executor->GetStorageSize(), std::memory_order_relaxed); 
+
   // if (res == 0) {
   //   Get()->task_switch_ctrl_.store(static_cast<int>(TaskSwitchStatus::kInfering));
   // }
 }
 
-void InferModelStore::InferingDec() {
+void InferModelStore::InferingDec(tvm::Executor *executor) {
   // std::unique_lock lock{Get()->task_switch_mutex_};
   // CHECK(Get()->task_switch_ctrl_.load() == static_cast<int>(TaskSwitchStatus::kInfering));
   CHECK(Get()->num_infering_model_.load(std::memory_order_relaxed) > 0);
-  auto res = Get()->num_infering_model_.fetch_sub(1, std::memory_order_relaxed);
+  Get()->num_infering_model_.fetch_sub(1, std::memory_order_relaxed);
+  Get()->infering_model_nbytes_.fetch_sub(executor->GetStorageSize(), std::memory_order_relaxed);
   // if (res == 1) {
   //   Get()->task_switch_ctrl_.store(static_cast<int>(TaskSwitchStatus::kNotInfering));
   // }

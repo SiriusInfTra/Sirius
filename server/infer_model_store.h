@@ -37,8 +37,11 @@ class InferModelStore {
     return Get()->model_rank_.fetch_add(1, std::memory_order_relaxed); 
   }
 
-  static void InferingInc();
-  static void InferingDec();
+  static void InferingInc(tvm::Executor *executor);
+  static void InferingDec(tvm::Executor *executor);
+  static size_t GetInferingModelNbytes() { 
+    return Get()->infering_model_nbytes_.load(std::memory_order_relaxed); 
+  }
 
   Model* GetModel(const std::string &name);
   size_t NumJobs();
@@ -86,7 +89,8 @@ class InferModelStore {
 
   std::mutex mutex_;
   Profiler::time_point_t last_infer_time_;
-  
+
+  std::atomic<size_t> infering_model_nbytes_{0};
   std::atomic<int> num_infering_model_{0};
 
   std::mutex task_switch_mutex_;

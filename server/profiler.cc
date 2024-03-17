@@ -1,16 +1,15 @@
 #include "logging_as_glog.h"
-#include <nvml.h>
-#include <numeric>
-#include <regex>
-#include <cuda.h>
-#include <cuda_runtime_api.h>
-
 #include <common/cuda_allocator.h>
 #include <common/util.h>
+#include <server/infer_model_store.h>
 
 #include "train_launcher.h"
 #include "profiler.h"
 #include "config.h"
+
+#include <nvml.h>
+#include <numeric>
+#include <regex>
 
 namespace colserve {
 namespace {
@@ -94,6 +93,7 @@ void Profiler::Start() {
   profiler_->infer_info_.clear();
   // profiler_->event_info_.clear();
   profiler_->resource_info_.clear();
+  profiler_->infering_memory_nbytes_.clear();
   profiler_->start_profile_ = true;
 }
 
@@ -199,6 +199,8 @@ Profiler::Profiler(const std::string &profile_log_path)
       this->last_train_mem_ = train_mem;
       this->resource_info_.push_back({this->Passed(), Profiler::GetTimeStamp(),
                                      ResourceInfo{infer_mem, train_mem, train_all_mem, total_mem}});
+      this->infering_memory_nbytes_.push_back({this->Passed(), Profiler::GetTimeStamp(),
+                                              InferModelStore::GetInferingModelNbytes()});
       // this->profile_log_ifs_ << this->Passed()
       //                        << " InferMem " << GetMemString(infer_mem)
       //                        << " TrainMem " << GetMemString(train_mem)
@@ -314,6 +316,15 @@ void Profiler::WriteLog() {
         << " Total " << GetMemString(std::get<2>(r).gpu_used_mem)
         << std::endl;
   }
+  ofs << std::endl;
+
+  ofs << "[Infering Model Memory Info]" << std::endl;
+  for (auto &x : infering_memory_nbytes_) {
+    ofs << std::get<0>(x) << ": "
+        << std::get<1>(x) << ": "
+        << std::get<2>(x) << std::endl;
+  }
+
   ofs << std::endl;
 
   // int hit_count = std::accumulate()
