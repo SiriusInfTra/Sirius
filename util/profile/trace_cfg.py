@@ -11,10 +11,12 @@ class TraceRecord(NamedTuple):
 parser = argparse.ArgumentParser()
 parser.add_argument('-t', '--trace', type=str, required=True)
 parser.add_argument('-o', '--outdir', type=str, required=True)
+parser.add_argument('--time-scale', type=float, default=1)
 args = parser.parse_args()
 
 trace = args.trace
 outdir = args.outdir
+time_scale = args.time_scale
 
 trace_list = [] # (start_point, model_id)
 with open(trace, 'r') as f:
@@ -28,7 +30,7 @@ with open(trace, 'r') as f:
                 start = True
         else:
             start_point, model_id = l.strip().split(',')
-            trace_list.append(TraceRecord(float(start_point), model_id))
+            trace_list.append(TraceRecord(float(start_point) / time_scale, model_id))
 
 max_time = int(math.ceil(max(
     map(lambda trace_record: trace_record.timepoint, trace_list
@@ -36,7 +38,7 @@ max_time = int(math.ceil(max(
 num_models = [0 for _ in range(max_time)]
 num_types_s = [set() for _ in range(max_time)]
 for timepoint, model_id in trace_list:
-    num_models[int(timepoint)] += 1
+    num_models[int(timepoint)] += 1 / time_scale
     num_types_s[int(timepoint)].add(model_id)
 num_types = [len(s) for s in num_types_s]
 timepoints = list(range(max_time))

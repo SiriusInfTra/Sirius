@@ -112,6 +112,7 @@ class System:
         self.has_warmup = has_warmup
         self.dummy_adjust = dummy_adjust
         self.max_live_minute = max_live_minute
+        self.dcgmi_monitor = None
         if System._last_time_stamp is None or not keep_last_time_stamp:
             self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
             System._last_time_stamp = self.time_stamp
@@ -127,6 +128,7 @@ class System:
 
     def launch(self, name: str, subdir: Optional[str] = None, time_stamp:bool=True, 
                infer_model_config: List[InferModelConfig] | InferModelConfig = None,
+               dcgmi: bool = False,
                fake_launch: bool = False):
         if subdir is None:
             if time_stamp:
@@ -238,6 +240,13 @@ class System:
 
         print(f"  --> [server-log] {server_log}  |  [server-profile] {profile_log}\n")
 
+        if dcgmi:
+            with open(f"{self.log_dir}/dcgmi-monitor.log", "w") as log_file:
+                self.dcgmi_monitor = subprocess.Popen(
+                    ["dcgmi", "dmon", "-e", "1002", 
+                    "-i", os.environ['CUDA_VISIBLE_DEVICES']], 
+                    stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
+
         with open(server_log, "w") as log_file:
             self.server = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
 
@@ -261,6 +270,9 @@ class System:
             self.quit_mps()
             self.mps_server.wait()
             self.mps_server = None
+        if self.dcgmi_monitor is not None:
+            self.dcgmi_monitor.send_signal(subprocess.signal.SIGINT)
+            self.dcgmi_monitor = None
         self.cmd_trace.append(" ".join([
             'sudo', '/opt/mps-control/quit-mps-daemon-private.sh',
             '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']

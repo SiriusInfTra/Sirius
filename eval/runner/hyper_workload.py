@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import List, Optional, NamedTuple, Dict
 from types import NoneType
 
+import pandas as pd
 import numpy as np
 from numpy.random import RandomState, MT19937, SeedSequence
 
@@ -145,6 +146,8 @@ class AzureInferWorkload(RandomInferWorkload):
         func_freqs = AzureInferWorkload.read_trace_cfg(
             self.trace_cfg, self.period_num,self.func_num, 
             period_start_id=self.period_start_id)
+        # func_freqs = AzureInferWorkload.read_sorted_trace_cfg(
+        #     self.trace_cfg, self.period_num, self.func_num, )
         func_freqs = AzureInferWorkload.normalize_traces(
             func_freqs, 
             max_request_sec=self.max_request_sec, 
@@ -152,6 +155,18 @@ class AzureInferWorkload(RandomInferWorkload):
         trace_list = AzureInferWorkload.convert_traces_record(
             func_freqs, self.interval_sec, self.model_list, self.rs)
         return trace_list
+
+    # @classmethod
+    # def read_sorted_trace_cfg(cls, trace_cfg: os.PathLike[str], 
+    #                           period_num: int, func_num: int) -> np.ndarray[np.float64]:
+    #     trace_df = pd.read_csv(trace_cfg)
+    #     columns = trace_df.columns[4:]
+    #     trace_df = trace_df[trace_df.columns[4:]]
+    #     trace_df['total'] = trace_df.sum(axis=1)
+    #     trace_df = trace_df.sort_values(by='total', ascending=False)
+    #     trace_df = trace_df[columns[:period_num]]
+    #     trace_df = trace_df.head(func_num)
+    #     return trace_df.to_numpy()
 
     @classmethod
     def read_trace_cfg(cls, trace_cfg: os.PathLike[str], period_num: int, 
