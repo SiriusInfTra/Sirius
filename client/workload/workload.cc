@@ -97,7 +97,9 @@ void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_i
   LOG(INFO) << log_prefix.str() << "RequestInfer stop";
 }
 
-void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double>& start_points, double delay_before_infer) {
+void InferWorker::RequestInferTrace(Workload& workload, 
+                                    const std::vector<double>& start_points, 
+                                    double delay_before_infer) {
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << this << ") " << model_ << " TRACE] "; 
   workload.ready_future_.wait();
@@ -108,7 +110,9 @@ void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double
   {
     size_t debug_num = std::min(start_points.size(), 10UL);
     std::stringstream debug_stream;
-    debug_stream << log_prefix.str() << "RequestInfer start, " << "len(start_points)=" << start_points.size() << ", start_points[0:" << debug_num << "]={";
+    debug_stream << log_prefix.str() << "RequestInfer start, " 
+                 << "len(start_points)=" << start_points.size() 
+                 << ", start_points[0:" << debug_num << "]={";
     for (size_t k=0; k<debug_num; ++k) {
       debug_stream << start_points[k];
       if (k != debug_num - 1) {

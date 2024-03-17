@@ -115,34 +115,47 @@ class AzureInferWorkload(RandomInferWorkload):
 
     def __init__(self, 
                  trace_cfg: os.PathLike[str], 
-                 max_request_sec: float | int, 
                  interval_sec: float | int, 
                  period_num: int, 
                  func_num: int, 
-                 model_list: list[InferModel], 
+                 model_list: list[InferModel],
+                 period_start_id: int = 0,
+                 max_request_sec: Optional[float | int] = None, 
+                 avg_request_sec: Optional[float | int] = None, 
                  seed: Optional[int] = None) -> None:
         super().__init__(seed)
         self.trace_cfg = trace_cfg
         self.max_request_sec = max_request_sec
+        self.avg_request_sec = avg_request_sec
         self.model_list = model_list
         self.interval_sec = interval_sec
         self.period_num = period_num
         self.func_num = func_num
+        self.period_start_id = period_start_id
+
+        if self.max_request_sec is None and self.avg_request_sec is None:
+            raise Exception("max_request_sec and avg_request_sec cannot be both None")
+        if self.max_request_sec is not None and self.avg_request_sec is not None:
+            raise Exception("max_request_sec and avg_request_sec cannot be both specified")
 
         if period_num > 1440:
             raise Exception("period_num must be less than 1440")
 
     def get_trace(self) -> list[TraceRecord]:
         func_freqs = AzureInferWorkload.read_trace_cfg(
-            self.trace_cfg, self.period_num,self.func_num)
+            self.trace_cfg, self.period_num,self.func_num, 
+            period_start_id=self.period_start_id)
         func_freqs = AzureInferWorkload.normalize_traces(
-            func_freqs, self.max_request_sec)
+            func_freqs, 
+            max_request_sec=self.max_request_sec, 
+            avg_request_sec=self.avg_request_sec)
         trace_list = AzureInferWorkload.convert_traces_record(
             func_freqs, self.interval_sec, self.model_list, self.rs)
         return trace_list
 
     @classmethod
-    def read_trace_cfg(cls, trace_cfg: os.PathLike[str], period_num: int, func_num: int) -> np.ndarray[np.float64]:
+    def read_trace_cfg(cls, trace_cfg: os.PathLike[str], period_num: int, 
+                       func_num: int, period_start_id: int = 0) -> np.ndarray[np.float64]:
         func_freq_list = []
         with open(trace_cfg, 'r') as f:
             f.readline() # skip header
@@ -152,16 +165,25 @@ class AzureInferWorkload(RandomInferWorkload):
                 line = line.strip()
                 tokens = line.split(',')
                 tokens = tokens[4:] # skip func meta
-                tokens = tokens[:period_num] # only read period_num data
+                tokens = tokens[period_start_id: period_start_id + period_num] # only read period_num data
                 freq_data = np.array(tokens, dtype=np.float64)
                 func_freq_list.append(freq_data)
         return np.array(func_freq_list, dtype=np.float64)
 
     @classmethod
-    def normalize_traces(cls, func_freqs: np.ndarray[np.float64], max_request_sec: float | int) -> np.ndarray[np.float64]:
+    def normalize_traces(cls, func_freqs: np.ndarray[np.float64], 
+                         max_request_sec: Optional[float | int] = None,
+                         avg_request_sec: Optional[float | int] = None) -> np.ndarray[np.float64]:
         # print(func_freqs)
+        assert (max_request_sec is not None and avg_request_sec is None) or \
+            (max_request_sec is None) or (avg_request_sec is not None), \
+            f"max_request_sec {max_request_sec} avg_request_sec {avg_request_sec}"
+
         sum_every_sec = np.sum(func_freqs, axis=0)
-        scale_factor = max_request_sec / np.max(sum_every_sec)
+        if max_request_sec is not None:
+            scale_factor = max_request_sec / np.max(sum_every_sec)
+        else:
+            scale_factor = avg_request_sec / np.mean(sum_every_sec)
         # print(f"scale_factor={scale_factor}")
         func_traces_normalized = func_freqs * scale_factor
         # print(func_traces_normalized)

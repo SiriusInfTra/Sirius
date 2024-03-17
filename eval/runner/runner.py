@@ -126,7 +126,8 @@ class System:
         self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
 
     def launch(self, name: str, subdir: Optional[str] = None, time_stamp:bool=True, 
-               infer_model_config: List[InferModelConfig] | InferModelConfig = None):
+               infer_model_config: List[InferModelConfig] | InferModelConfig = None,
+               fake_launch: bool = False):
         if subdir is None:
             if time_stamp:
                 self.log_dir = pathlib.Path("log") / f'{name}-{self.time_stamp}'
@@ -230,6 +231,11 @@ class System:
         self.cmd_trace.append(" ".join(cmd))
         print("\n---------------------------\n")
         print(" ".join(cmd))
+
+        if fake_launch:
+            print(f"  --> fake launch")
+            return
+
         print(f"  --> [server-log] {server_log}  |  [server-profile] {profile_log}\n")
 
         with open(server_log, "w") as log_file:
@@ -330,7 +336,7 @@ class HyperWorkload:
     def disable_train(self):
         self.enable_train = False
 
-    def launch_workload(self, server: System, trace_cfg: Optional[PathLike] = None):
+    def launch_workload(self, server: System, trace_cfg: Optional[PathLike] = None, **kwargs):
         infer_trace_args = []
         if trace_cfg is not None:
             infer_trace_args += ["--infer-trace", str(trace_cfg)]
@@ -342,7 +348,7 @@ class HyperWorkload:
             InferTraceDumper(self.infer_workloads, trace_cfg).dump()
             infer_trace_args += ["--infer-trace", str(trace_cfg)]
         
-        self._launch(server, "workload_launcher", infer_trace_args)
+        self._launch(server, "workload_launcher", infer_trace_args, **kwargs)
 
     def launch_busy_loop(self, server: System, infer_models: List[InferModel] = None):
         if infer_models is None:
@@ -355,7 +361,7 @@ class HyperWorkload:
 
         self._launch(server, "busy_loop_launcher", infer_model_args)
         
-    def _launch(self, server: System, launcher: str, custom_args: List[str] = []):
+    def _launch(self, server: System, launcher: str, custom_args: List[str] = [], **kwargs):
         assert server is not None
         cmd = [
             f"./build/{launcher}",
@@ -406,6 +412,11 @@ class HyperWorkload:
 
         server.cmd_trace.append(" ".join(cmd))
         print(" ".join(cmd))
+
+        if kwargs.get("fake_launch", False):
+            print(f"  --> fake launch")
+            return
+
         print(f"  --> [workload-profile] {workload_log}\n")
 
         try:
