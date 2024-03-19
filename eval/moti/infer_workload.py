@@ -26,10 +26,11 @@ def azure(rps, client_model_list):
     workload.set_infer_workloads(AzureInferWorkload(
         AzureInferWorkload.TRACE_D01,
         model_list=client_model_list,
-        max_request_sec=rps, 
+        max_request_sec=200, 
         interval_sec=AzureConfig.interval_sec, 
         period_num=AzureConfig.period_num, 
-        func_num=AzureConfig.num_model * 5, 
+        func_num=AzureConfig.num_model * 3, # 3 is a suitable number
+        sort_trace_by='var_v2'
     ))
     # workload.set_infer_workloads(MicrobenchmarkInferWorkload(
     #     model_list=client_model_list,
@@ -51,7 +52,7 @@ def run(system: System, workload: HyperWorkload,
     system.stop()
     time.sleep(5)
     system.draw_memory_usage()
-    system.draw_trace_cfg()
+    system.draw_trace_cfg(time_scale=60)
 
 
 # AzureConfig.interval_sec = 60

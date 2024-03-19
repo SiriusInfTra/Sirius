@@ -287,8 +287,10 @@ class System:
         print(f'execute {cmd}')
         os.system(cmd)
     
-    def draw_trace_cfg(self):
+    def draw_trace_cfg(self, time_scale=None):
         cmd = f'python util/profile/trace_cfg.py  -t {self.exit_log_dir}/trace-cfg  -o {self.exit_log_dir}'
+        if time_scale:
+            cmd += f' --time-scale {time_scale}'
         print(f'execute {cmd}')
         os.system(cmd)
 

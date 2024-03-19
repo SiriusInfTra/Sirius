@@ -123,6 +123,7 @@ class AzureInferWorkload(RandomInferWorkload):
                  period_start_id: int = 0,
                  max_request_sec: Optional[float | int] = None, 
                  avg_request_sec: Optional[float | int] = None, 
+                 sort_trace_by: Optional[str] = None,
                  seed: Optional[int] = None) -> None:
         super().__init__(seed)
         self.trace_cfg = trace_cfg
@@ -133,18 +134,31 @@ class AzureInferWorkload(RandomInferWorkload):
         self.period_num = period_num
         self.func_num = func_num
         self.period_start_id = period_start_id
+        self.sort_by = sort_trace_by
 
         if self.max_request_sec is None and self.avg_request_sec is None:
             raise Exception("max_request_sec and avg_request_sec cannot be both None")
         if self.max_request_sec is not None and self.avg_request_sec is not None:
             raise Exception("max_request_sec and avg_request_sec cannot be both specified")
 
+        if self.sort_by is not None and self.sort_by not in ["sum", "var", "num_zero_diff", "var_v2"]:
+            raise Exception("sort_by must be either sum, var, num_zero_diff")
+
         if period_num > 1440:
             raise Exception("period_num must be less than 1440")
 
     def get_trace(self) -> list[TraceRecord]:
-        func_freqs = AzureInferWorkload.read_trace_cfg(
-            self.trace_cfg, self.period_num,self.func_num, 
+        read_trace_cfg_fn = AzureInferWorkload.read_trace_cfg
+        if self.sort_by == "sum":
+            read_trace_cfg_fn = AzureInferWorkload.read_top_sum_trace_cfg
+        elif self.sort_by == "var":
+            read_trace_cfg_fn = AzureInferWorkload.read_top_var_trace_cfg
+        elif self.sort_by == "num_zero_diff":
+            read_trace_cfg_fn = AzureInferWorkload.read_top_num_zero_diff_trace_cfg
+        elif self.sort_by == "var_v2":
+            read_trace_cfg_fn = AzureInferWorkload.read_top_var_v2_trace_cfg
+        func_freqs = read_trace_cfg_fn(
+            self.trace_cfg, self.period_num, self.func_num, 
             period_start_id=self.period_start_id)
         # func_freqs = AzureInferWorkload.read_sorted_trace_cfg(
         #     self.trace_cfg, self.period_num, self.func_num, )
@@ -156,17 +170,73 @@ class AzureInferWorkload(RandomInferWorkload):
             func_freqs, self.interval_sec, self.model_list, self.rs)
         return trace_list
 
+    @classmethod
+    def read_top_sum_trace_cfg(cls, trace_cfg: os.PathLike[str], 
+                              period_num: int, func_num: int, 
+                              period_start_id: int = 0) -> np.ndarray[np.float64]:
+        trace_df = pd.read_csv(trace_cfg)
+        columns = trace_df.columns[4:]
+        trace_df = trace_df[columns[period_start_id: period_start_id + period_num]]
+        trace_df['total'] = trace_df.sum(axis=1)
+        trace_df = trace_df.sort_values(by='total', ascending=False)
+        trace_df = trace_df[columns[period_start_id : period_start_id + period_num]]
+        trace_df = trace_df.head(func_num)
+        return trace_df.to_numpy()
+
+
+    @classmethod
+    def read_top_var_trace_cfg(cls, trace_cfg: os.PathLike[str], 
+                               period_num: int, func_num: int,
+                               period_start_id: int = 0) -> np.ndarray[np.float64]:
+        trace_df = pd.read_csv(trace_cfg)
+        columns = trace_df.columns[4:]
+        trace_df = trace_df[columns[period_start_id : period_start_id + period_num]]
+        trace_df['var'] = trace_df.var(axis=1)
+        trace_df = trace_df.sort_values(by='var', ascending=False)
+        trace_df = trace_df[columns[period_start_id : period_start_id + period_num]]
+        trace_df = trace_df.head(func_num)
+        print(trace_df)
+        return trace_df.to_numpy()
+
     # @classmethod
-    # def read_sorted_trace_cfg(cls, trace_cfg: os.PathLike[str], 
-    #                           period_num: int, func_num: int) -> np.ndarray[np.float64]:
+    # def read_top_num_zero_diff_trace_cfg(
+    #         cls, trace_cfg: os.PathLike[str], 
+    #         period_num: int, func_num: int,
+    #         period_start_id: int = 0
+    # ) -> np.ndarray[np.float64]:
     #     trace_df = pd.read_csv(trace_cfg)
     #     columns = trace_df.columns[4:]
-    #     trace_df = trace_df[trace_df.columns[4:]]
-    #     trace_df['total'] = trace_df.sum(axis=1)
-    #     trace_df = trace_df.sort_values(by='total', ascending=False)
-    #     trace_df = trace_df[columns[:period_num]]
+    #     trace_df = trace_df[columns[period_start_id : period_start_id + period_num]]
+    #     total = trace_df.sum(axis=1)
+    #     trace_df = trace_df[total > 0]
+    #     zero_threshold = 1
+    #     num_none_zeros = np.sum(trace_df > zero_threshold, axis=1)
+    #     num_zeros = np.shape(trace_df)[1] - num_none_zeros
+    #     trace_df['var'] = np.abs(num_none_zeros - num_zeros)
+    #     trace_df = trace_df.sort_values(by='var', ascending=False)
+    #     trace_df = trace_df[columns[period_start_id : period_start_id + period_num]]
     #     trace_df = trace_df.head(func_num)
+    #     # print(trace_df)
     #     return trace_df.to_numpy()
+
+
+    @classmethod
+    def read_top_var_v2_trace_cfg(
+            cls, trace_cfg: os.PathLike[str], 
+            period_num: int, func_num: int,
+            period_start_id: int = 0
+    ) -> np.ndarray[np.float64]:
+        trace_df = pd.read_csv(trace_cfg)
+        columns = trace_df.columns[4:]
+        trace_df = trace_df[columns[period_start_id : period_start_id + period_num]]
+        total = trace_df.sum(axis=1)
+        trace_df = trace_df[total > max(1, period_num * 0.1)]
+        trace_df = trace_df[total < period_num * 10]
+        trace_df['var'] = trace_df.var(axis=1)
+        trace_df = trace_df.sort_values(by='var', ascending=False)
+        trace_df = trace_df[columns[period_start_id : period_start_id + period_num]]
+        trace_df = trace_df.head(func_num)
+        return trace_df.to_numpy()
 
     @classmethod
     def read_trace_cfg(cls, trace_cfg: os.PathLike[str], period_num: int, 
