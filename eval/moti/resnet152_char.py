@@ -16,7 +16,7 @@ def get_gpu_memory(device_id):
     free, total = torch.cuda.mem_get_info(device_id)
     return (total - free) / 1024 / 1024 / 1024
 
-def train(num_epoch: int, batch_size: int):
+def train():
     model = models.resnet152().cuda()
 
     criterion = nn.CrossEntropyLoss().cuda(0)
@@ -36,21 +36,39 @@ def train(num_epoch: int, batch_size: int):
     persist_memory = 0
 
     model.train()
-    for epoch in range(num_epoch):
+    for epoch, mbs in enumerate(epoch_micro_batch_size):
         torch.cuda.reset_max_memory_allocated(0)
         interm_memorys = []
+        compute_grad_times = []
+        update_param_times = []
+        batch_times = []
+        solo_step_times = []
 
         epoch_begin_time = time.time()
-        for i, (images, targets) in enumerate(train_loader):
+        for b, (images, targets) in enumerate(train_loader):
+            batch_begin = time.time()
+
             images = images.cuda(non_blocking=True)
             targets = targets.cuda(non_blocking=True)
             optimizer.zero_grad()
-            with torch.cuda.amp.autocast():
-                outputs = model(images)
-                loss = criterion(outputs, targets)
-            scaler.scale(loss).backward()
+            for mb in range(128 // mbs):
+                with torch.cuda.amp.autocast():
+                    outputs = model(images[mb * mbs: (mb + 1) * mbs])
+                    loss = criterion(outputs, targets[mb * mbs: (mb + 1) * mbs])
+                scaler.scale(loss).backward()
+            torch.cuda.synchronize()
+            compute_grad_end = time.time()
+
             scaler.step(optimizer)
             scaler.update()
+            torch.cuda.synchronize()
+            update_param_end = time.time()
+
+            batch_end = time.time()
+
+            batch_times.append(batch_end - batch_begin)
+            compute_grad_times.append(compute_grad_end - batch_begin)
+            update_param_times.append(update_param_end - compute_grad_end)
         epoch_end_time = time.time()
 
         epoch_time = epoch_end_time - epoch_begin_time
@@ -90,14 +108,9 @@ def train(num_epoch: int, batch_size: int):
     # print(f'persist memory {persist_memory}')
 
 def main():
-    parser = argparse.ArgumentParser('Train Resnet')    
-    parser.add_argument('--batch-size', type=int, default=64)
-    parser.add_argument('--num-epoch', type=int, default=15)
+    parser = argparse.ArgumentParser('Train Resnet152')    
     args = parser.parse_args()
-    
-    batch_size = args.batch_size
-    num_epoch = args.num_epoch
-    train(num_epoch, batch_size)
+    train()
 
 
 if __name__ == '__main__':
