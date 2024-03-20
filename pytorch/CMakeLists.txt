@@ -18,6 +18,7 @@ add_dependencies(new_torch_col xsched_lib)
 
 
 target_include_directories(new_torch_col PRIVATE ${CMAKE_SOURCE_DIR})
+target_include_directories(new_torch_col PRIVATE ${CMAKE_SOURCE_DIR}/pytorch)
 target_include_directories(new_torch_col PRIVATE ${CMAKE_BINARY_DIR}/xsched/include)
 target_link_directories(new_torch_col PRIVATE ${CMAKE_BINARY_DIR}/xsched/lib)
 

@@ -96,4 +96,31 @@ def rearrange_memory():
 cdef extern from "<csrc/util.h>" namespace "torch_col":
     cpdef void DumpMempoolFreeList(string filename)
     cpdef void DumpMempoolBlockList(string filename)
+
+
+cdef extern from "<csrc/util.h>" namespace "torch_col":
+    cdef cppclass TensorWeakRef:
+        TensorWeakRef(PyObject *tensor) except +
+        size_t Nbytes()
+        size_t StorageNbytes()
+        void* DataPtr()
+
+cdef class PyTensorWeakRef:
+    cdef TensorWeakRef* _tensor_weak_ref
+    
+    def __cinit__(self, tensor):
+        cdef PyObject* obj = <PyObject*> tensor
+        self._tensor_weak_ref = new TensorWeakRef(obj)
+
+    def nbytes(self):
+        return self._tensor_weak_ref.Nbytes()
+
+    def storage_nbytes(self):
+        return self._tensor_weak_ref.StorageNbytes()
+
+    def data_ptr(self):
+        return <size_t>self._tensor_weak_ref.DataPtr()
+
+    def __dealloc__(self):
+        del self._tensor_weak_ref
     

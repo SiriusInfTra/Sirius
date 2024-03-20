@@ -4,6 +4,7 @@
 
 #include <common/mempool_sampler.h>
 #include <common/util.h>
+#include <torch_col/csrc/util.h>
 
 #include <string>
 
@@ -30,5 +31,36 @@ void DumpMempoolBlockList(std::string filename) {
     colserve::sta::DumpMempoolBlockList(filename);
 }
 
+TensorWeakRef::TensorWeakRef(PyObject* py_tensor) {
+  at::Tensor tensor = THPVariable_Unpack(py_tensor);
+  tensor_weak_ref_.emplace(tensor.getIntrusivePtr());
+}
+
+size_t TensorWeakRef::Nbytes() const {
+  if (tensor_weak_ref_.has_value()) {
+    if (auto tensor = tensor_weak_ref_.value().lock()) {
+      return tensor->numel() * tensor->itemsize();
+    }
+  }
+  return 0;
+}
+
+size_t TensorWeakRef::StorageNbytes() const {
+  if (tensor_weak_ref_.has_value()) {
+    if (auto tensor = tensor_weak_ref_.value().lock()) {
+      return tensor->storage().nbytes();
+    }
+  }
+  return 0;
+}
+
+void* TensorWeakRef::DataPtr() const {
+  if (tensor_weak_ref_.has_value()) {
+    if (auto tensor = tensor_weak_ref_.value().lock()) {
+      return tensor->data();
+    }
+  }
+  return nullptr;
+}
 
 }
