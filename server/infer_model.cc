@@ -148,18 +148,14 @@ bool Model::ReclaimMemory(size_t rank) {
     return false; 
   }
   executors_[rank]->DeInit();
-  status_[rank] = Status::kWithoutMemory;
-  model_stat_[static_cast<size_t>(Status::kReady)].fetch_sub(1, std::memory_order_relaxed);
-  model_stat_[static_cast<size_t>(Status::kWithoutMemory)].fetch_add(1, std::memory_order_relaxed);
+  ChangeStatus(rank, Status::kWithoutMemory);
   return true;
 }
 
-bool Model::SetupMemory(size_t rank) {
+bool Model::SetupMemory(size_t rank, std::unique_lock<std::mutex> &lock) {
   CHECK(status_[rank] == Status::kWithoutMemory);
   executors_[rank]->Init(false);
-  model_stat_[static_cast<size_t>(Status::kWithoutMemory)].fetch_sub(1, std::memory_order_relaxed);
-  model_stat_[static_cast<size_t>(Status::kWithoutParam)].fetch_add(1, std::memory_order_relaxed);
-  status_[rank] = Status::kWithoutParam;
+  ChangeStatus(rank, Status::kWithoutParam);
   return true;
 }
 
@@ -224,7 +220,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     {
       if (status_[rank] == Status::kWithoutMemory) {
         auto begin = Profiler::Now();
-        SetupMemory(rank);
+        SetupMemory(rank, lock);
         infer_alloc_ms = Profiler::MilliFrom(begin);
       }
     }
@@ -238,15 +234,30 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     double set_input_ms;
     {
       size_t idx = 0;
-      auto begin = std::chrono::steady_clock::now();
+      auto begin = Profiler::Now();
       for (auto& input: input_info_) {
         auto& input_id = input.first;
         err = SetInput(*graph_executor, idx++, input_id, jobs);
       }
-      auto end = std::chrono::steady_clock::now();
-      set_input_ms = std::chrono::duration<double, std::milli>(end - begin).count();
+      set_input_ms = Profiler::MilliFrom(begin);
       // DLOG(INFO) << "Inference SetInput: " << std::chrono::duration<double, std::milli>(end - begin).count();
     }
+
+    double loading_ms;
+    bool load_param = false;
+    {
+      if (!Config::pipeline_load && status_[rank] == Status::kWithoutParam) {
+        PROFILE_START(InferLoadParam);
+        graph_executor->LoadParams(false, false);
+        PROFILE_END(InferLoadParam);
+
+        load_param = true;
+        loading_ms = PROFILE_DURATRION(InferLoadParam);
+
+        ChangeStatus(rank, Status::kReady);
+      }
+    }
+
 
     double infer_ms;
     bool pipeline_exec = false;
@@ -257,10 +268,9 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
         graph_executor->PipelineRun();
         pipeline_exec = true;
         
-        status_[rank] = Status::kReady;
-        model_stat_[static_cast<size_t>(Status::kWithoutParam)].fetch_sub(1, std::memory_order_relaxed);
-        model_stat_[static_cast<size_t>(Status::kReady)].fetch_add(1, std::memory_order_relaxed);
+        ChangeStatus(rank, Status::kReady);
       } else {
+        CHECK(status_[rank] == Status::kReady);
         graph_executor->Run();
       }
       auto end = std::chrono::steady_clock::now();
@@ -293,6 +303,9 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     // if (wait_train_stop_ms != -1) {
     //   ss << " wait_train_stop_ms=" << wait_train_stop_ms;
     // }
+    if (load_param) {
+      ss << " loading_ms=" << loading_ms;
+    }
     ss << " total_infer_ms=" << std::chrono::duration<double, std::milli>(infer_end - infer_begin).count();
     LOG(INFO) << ss.str();
 

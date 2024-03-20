@@ -144,19 +144,27 @@ class Profiler {
   std::unique_ptr<std::thread> thread_;
 };
 
-#define PROFILE_START(item, idx) \
+#define PROFILE_START_WITH_ID(item, idx) \
     auto __t_ ## idx ## _ ## item ## _start_ = std::chrono::steady_clock::now(); 
 
-#define PROFILE_END(item, idx) \
+#define PROFILE_START(item) \
+    PROFILE_START_WITH_ID(item, 0)
+
+#define PROFILE_END_WITH_ID(item, idx) \
     auto __t_ ## idx ## _ ## item ## _end_ = std::chrono::steady_clock::now(); \
     auto __t_ ## idx ## _ ## item ## _ms_ = std::chrono::duration<double, std::milli>(__t_ ## idx ## _ ## item ## _end_ - __t_ ## idx ## _ ## item ## _start_).count(); \
     Profiler::Get()->RecordEvent(Profiler::EventItem::item##Start, __t_ ## idx ## _ ## item ## _start_); \
     Profiler::Get()->RecordEvent(Profiler::EventItem::item##End, __t_ ## idx ## _ ## item ## _end_); \
     Profiler::Get()->RecordPerf(Profiler::PerfItem::item, __t_ ## idx ## _ ## item ## _ms_);
 
-#define PROFILE_DURATRION(item, idx) \
+#define PROFILE_END(item) \
+    PROFILE_END_WITH_ID(item, 0)
+
+#define PROFILE_DURATRION_WITH_ID(item, idx) \
     __t_ ## idx ## _ ## item ## _ms_
 
+#define PROFILE_DURATRION(item) \
+    PROFILE_DURATRION_WITH_ID(item, 0)
     
 }
 

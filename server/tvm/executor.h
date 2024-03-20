@@ -27,6 +27,7 @@ class Executor {
  public:
   Executor(TVMGraph &tvm_graph, size_t worker_id, const std::vector<DLDevice> &devs);
   void Init(bool load_param);
+  bool Initialized() const { return initialized_; }
   void FakeInit(bool malloc, bool load_param); // used for simulating unlimted get gpu resource
   void DeInit();
   void Run();

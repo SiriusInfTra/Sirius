@@ -315,6 +315,12 @@ class HyperWorkload:
                  wait_train_setup_sec: float = 0,
                  wait_stable_before_start_profiling_sec: float = 0, 
                  show_result: Optional[int] = None) -> None:
+        """
+        Args:
+            - concurrency: 
+                busy loop -> max number of outgoing requests
+                workload  -> initial number of outgoing requests
+        """
         self.enable_infer = True
         self.enable_train = True
         self.infer_workloads: List[InferWorkloadBase] = []

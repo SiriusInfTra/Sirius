@@ -113,24 +113,24 @@ Executor::Executor(TVMGraph &factory, size_t worker_id, const std::vector<DLDevi
 void Executor::Init(bool load_param) {
   if (!initialized_) {   
     if (Config::IsColocateMode() && Config::ondemand_adjust) {
-      PROFILE_START(InferAdjustAlloc, 0);
+      PROFILE_START(InferAdjustAlloc);
       if (!Config::colocate_config.skip_malloc) AllocStorageMaybeAdjust();
-      PROFILE_END(InferAdjustAlloc, 0);
+      PROFILE_END(InferAdjustAlloc);
     } else {
-      PROFILE_START(InferAllocStorage, 0);
+      PROFILE_START(InferAllocStorage);
       if (!Config::colocate_config.skip_malloc) AllocStorage();
-      PROFILE_END(InferAllocStorage, 0);
+      PROFILE_END(InferAllocStorage);
     }
     
     if (!Config::colocate_config.skip_malloc)
       ReSetupDataEntry();
 
     if (load_param) {
-      PROFILE_START(InferLoadParam, 0);
+      PROFILE_START(InferLoadParam);
       if (!Config::colocate_config.skip_loading) {
         LoadParams(Config::pipeline_load, Config::colocate_config.skip_malloc);
       }
-      PROFILE_END(InferLoadParam, 0);
+      PROFILE_END(InferLoadParam);
     } else {
       // param will be loaded by pipeline
     }
@@ -172,11 +172,11 @@ void Executor::Run() {
 
 void Executor::PipeLineLoad() {
   load_params_future_ = std::async(std::launch::async, [this]() {
-    PROFILE_START(InferLoadParam, 0);
+    PROFILE_START(InferLoadParam);
     if (!Config::colocate_config.skip_loading) {
       LoadParams(Config::pipeline_load, Config::colocate_config.skip_malloc);
     }
-    PROFILE_END(InferLoadParam, 0);
+    PROFILE_END(InferLoadParam);
   });
 }
 
@@ -781,18 +781,18 @@ void Executor::AllocStorageMaybeAdjust() {
       //           << " begin wait train pid " << wait_train_pid;
       // this->tvm_graph_.infer_model_->SetWaitTrainPid(this->infer_model_worker_id_, wait_train_pid);
 
-      PROFILE_START(TrainAdjust, 0);
+      PROFILE_START(TrainAdjust);
       auto adjust_batch_size = TrainLauncher::Get()->
           GetAdjustBatchSize(sta::ByteToMB(GetStorageSize()));
       auto cmd_id = Controller::Get()->
           ColocateAdjust(this->tvm_graph_.model_rank_, adjust_batch_size);
       Controller::Get()->WaitColocateAdjustDone(cmd_id);
-      PROFILE_END(TrainAdjust, 0);
+      PROFILE_END(TrainAdjust);
       if (first_adjust) {
-        Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, PROFILE_DURATRION(TrainAdjust, 0));        
+        Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, PROFILE_DURATRION(TrainAdjust));        
       }
       LOG(INFO) << "[Executor] AllocStorageMaybeAdjust: model " << this->tvm_graph_.model_rank_ 
-                << " wait adjust " << PROFILE_DURATRION(TrainAdjust, 0)
+                << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
                 << " wait train pid " << wait_train_pid;
                 
     } else {
@@ -854,20 +854,9 @@ void Executor::AllocStorageMaybeAdjust() {
     adjust_train_batch_size(true);
   }
 
-  PROFILE_START(InferAllocStorage, 0);
+  PROFILE_START(InferAllocStorage);
   AllocStorage();
-  // if (Config::use_shared_tensor_infer) {
-  //   for (size_t sid = 0; sid < storage_pool_.size(); sid++) {
-  //     auto &s = storage_pool_[sid];
-  //     auto tensor = sta::TensorPool::Get()->Tensor(s);
-  //     tensor.AllocForNull(sta::MemType::kInfer, false);
-  //   }
-  // } else {
-  //   for (auto &s : raw_storage_pool_) {
-  //     s.AllocForNull(sta::MemType::kInfer, true);
-  //   }
-  // }
-  PROFILE_END(InferAllocStorage, 0);
+  PROFILE_END(InferAllocStorage);
 
   // TODO: consider fwd/bwd
   // if (sta::ByteToMB(total_storage_nbytes) < free_memory_mb) {

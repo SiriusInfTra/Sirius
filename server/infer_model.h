@@ -49,13 +49,19 @@ class Model {
 
  private:
   void InitMetaInfo();
-  bool SetupMemory(size_t rank);
+  bool SetupMemory(size_t rank, std::unique_lock<std::mutex> &lock);
   bool Inference(uint32_t rank, pthread_barrier_t* barrier);
   bool SetInput(tvm::Executor &graph_executor, size_t idx, const std::string &input_id, 
                 const std::vector<std::shared_ptr<Job>> &jobs);
   bool GetOutput(tvm::Executor &graph_executor, 
                  size_t idx, const std::string &output_id, const std::vector<std::shared_ptr<Job>> &jobs);
 
+  void ChangeStatus(uint32_t rank, Status to) {
+    auto from = status_[rank];
+    status_[rank] = to;
+    model_stat_[static_cast<size_t>(from)].fetch_sub(1, std::memory_order_relaxed);
+    model_stat_[static_cast<size_t>(to)].fetch_add(1, std::memory_order_relaxed);
+  }
   // inline double GetMaxIdleMill() { 
   //   if (warmup_) {
   //     return 3000; // a default dummy value
