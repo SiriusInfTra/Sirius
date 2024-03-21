@@ -52,14 +52,19 @@ static std::set<void *> train_set;
 
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(
     std::size_t nbytes, MemType mtype, bool allow_nullptr) {
+  if (nbytes == 0) {
+    return std::shared_ptr<CUDAMemPool::PoolEntry>{
+        new PoolEntry{.addr = nullptr, .nbytes=nbytes, .mtype = mtype}, free
+      };
+  }
   static std::mutex mutex_;
   std::unique_lock lock{mutex_};
   auto t0 = std::chrono::steady_clock::now();
   std::byte *ptr;
   if (mtype == MemType::kInfer) {
-    ptr = TVMAllocator::Get().Alloc(nbytes, true);
+    ptr = TVMAllocator::Get().Alloc(nbytes);
   } else if (mtype == MemType::kTrain) {
-    ptr = TorchAllocator::Get().Alloc(nbytes, true);
+    ptr = TorchAllocator::Get().Alloc(nbytes);
     if (ptr != nullptr) {
       CHECK(train_set.insert(ptr).second == true) << ptr;
     }

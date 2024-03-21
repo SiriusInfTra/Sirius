@@ -177,10 +177,10 @@ HandleTransfer::HandleTransfer(bip::managed_shared_memory &shm,
   ready_mutex_ = shared_memory_.find_or_construct<bip::interprocess_mutex>("HT_ready_mutex_")();
   ready_cond_ = shared_memory_.find_or_construct<bip::interprocess_condition>("HT_ready_cond")();
   phy_mem_list.reserve(mem_block_num);
-  Belong *belong_list = shared_memory_.find_or_construct<Belong>(
-      "HT_belong_list")[mem_block_num](Belong::kFree);
+  Belong *belong_list = shared_memory_.find_or_construct<Belong>("HT_belong_list")[mem_block_num](Belong::kFree);
+  phymem_queue::iterator *iter_list = shared_memory_.find_or_construct<phymem_queue::iterator>("HT_iter_list")[mem_block_num]();
   for (size_t k = 0; k < mem_block_num; ++k) {
-    phy_mem_list.push_back(PhyMem{.index = k, .belong = &belong_list[k]});
+    phy_mem_list.push_back(PhyMem{.index = k, .belong = &belong_list[k], .pos_queue = &iter_list[k]});
   }
 }
 
@@ -243,7 +243,8 @@ MemPool::MemPool(size_t nbytes, bool cleanup): mempool_nbytes(nbytes) {
 
   CU_CALL(cuInit(0));
   if (cleanup) {
-    bip::shared_memory_object::remove(shared_memory_name_.c_str());
+    bool ret = bip::shared_memory_object::remove(shared_memory_name_.c_str());
+    LOG(INFO) << "[mempool] Remove shared_memory \"" << shared_memory_name_ << "\", ret = " << ret << ".";
   }
   shared_memory_ = bip::managed_shared_memory{bip::open_or_create,
                                               shared_memory_name_.c_str(),
@@ -252,7 +253,7 @@ MemPool::MemPool(size_t nbytes, bool cleanup): mempool_nbytes(nbytes) {
   auto atomic_init = [&] {
     ref_count_ = shared_memory_.find_or_construct<int>("ME_ref_count")();
     mutex_ = shared_memory_.find_or_construct<bip::interprocess_mutex>("ME_mutex")();
-    free_queue = shared_memory_.find_or_construct<ring_buffer>("ME_free_queue")(mem_block_num, shared_memory_.get_segment_manager());
+    free_queue = shared_memory_.find_or_construct<phymem_queue>("ME_free_queue")(shared_memory_.get_segment_manager());
     allocated_nbytes_ = shared_memory_.find_or_construct<stats_arr>("ME_allocated_nbytes")();
     cached_nbytes_ = shared_memory_.find_or_construct<stats_arr>("ME_cached_nbytes_")();
   };
@@ -267,7 +268,7 @@ MemPool::MemPool(size_t nbytes, bool cleanup): mempool_nbytes(nbytes) {
     LOG(INFO) << "[mempool] Start to init master, nbytes = " << detail::ByteDisplay(nbytes) << ".";
     tranfer->InitMaster();
     for(auto &&phy_mem : phy_mem_list_) {
-      free_queue->push_back(phy_mem.index);
+      *phy_mem.pos_queue = free_queue->insert(free_queue->cend(), phy_mem.index);
     }
   } else {
     LOG(INFO) << "[mempool] Start to init slave.";
@@ -305,27 +306,26 @@ MemPool::~MemPool() {
   }
 }
 
-size_t MemPool::AllocPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong) {
-  bip::scoped_lock lock{*mutex_};
-  size_t k;
-  for (k = 0; k < phy_mem_list.size() && ! free_queue->empty(); ++k) {
+void MemPool::AllocPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong, size_t num_phy_mem) {
+  CHECK_NE(belong, Belong::kFree);
+  phy_mem_list.reserve(num_phy_mem);
+  for (size_t k = 0; k < num_phy_mem && !free_queue->empty(); ++k) {
     auto &phy_mem_ptr = phy_mem_list_[free_queue->front()];
     *phy_mem_ptr.belong = belong;
-    phy_mem_list[k] = &phy_mem_ptr;
+    phy_mem_list.push_back(&phy_mem_ptr);
     free_queue->pop_front();
   }
-  cached_nbytes_->at(static_cast<size_t>(belong)).fetch_add(k * MEM_BLOCK_NBYTES, std::memory_order_relaxed);
-  return k;
+  cached_nbytes_->at(static_cast<size_t>(belong)).fetch_add(phy_mem_list.size() * MEM_BLOCK_NBYTES, std::memory_order_relaxed);
 }
 
 void MemPool::DeallocPhyMem(const std::vector<PhyMem *> &phy_mem_list) {
   if (phy_mem_list.empty()) { return; }
   Belong belong = *phy_mem_list.front()->belong;
-  bip::scoped_lock lock{*mutex_};
+  CHECK_NE(belong, Belong::kFree);
   for (auto &&phy_mem_ptr : phy_mem_list) {
     CHECK_EQ(*phy_mem_ptr->belong, belong);
     *phy_mem_ptr->belong = Belong::kFree;
-    free_queue->push_back(phy_mem_ptr->index);
+    *phy_mem_ptr->pos_queue = free_queue->insert(free_queue->cend(), phy_mem_ptr->index);
   }
   cached_nbytes_->at(static_cast<size_t>(belong)).fetch_sub(phy_mem_list.size() * MEM_BLOCK_NBYTES, std::memory_order_relaxed);
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/interprocess/containers/list.hpp>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include "util.h"
@@ -65,7 +66,25 @@ inline size_t AlignedNBytes(size_t nbytes) {
 
 enum class Belong {
   kTrain, kInfer, kUsedNum, kFree
+
 };
+
+inline std::string ToString(Belong belong) {
+  switch (belong) {
+  case Belong::kInfer:
+    return "kInfer";
+  case Belong::kTrain:
+    return "kTrain";
+    break;
+  case Belong::kFree:
+    return "kFree";
+    break;
+  default:
+    return "Unknown(" + std::to_string(static_cast<size_t>(belong)) + ")";
+  }
+}
+
+
 
 inline std::ostream & operator<<(std::ostream &os, const Belong &belong)  {
   switch (belong) {
@@ -85,15 +104,17 @@ inline std::ostream & operator<<(std::ostream &os, const Belong &belong)  {
   return os;
 }
 
+namespace bip = boost::interprocess;
+using phymem_queue = bip::list<size_t, bip::allocator<size_t, bip::managed_shared_memory::segment_manager>>;
+  
+
 
 struct PhyMem {
   const size_t index;
   CUmemGenericAllocationHandle cu_handle;
   Belong * const belong;
+  phymem_queue::iterator * const pos_queue;
 };
-namespace bip = boost::interprocess;
-
-
 
 class HandleTransfer {
   // typically, there is a limit on the maximum number of transferred FD
@@ -131,9 +152,14 @@ public:
   void ReleaseMaster();
 };
 
+
+
+
 class MemPool {
   using ring_buffer = boost::circular_buffer<size_t, bip::allocator<size_t, bip::managed_shared_memory::segment_manager>>;
   using stats_arr = std::array<std::atomic<size_t>, static_cast<size_t>(Belong::kUsedNum)>;
+  using phymem_callback = std::function<void(const std::vector<PhyMem*> &phymem_arr)>;
+  template<typename T> friend class shm_handle;
 private:
   static std::unique_ptr<MemPool> instance_;
   static std::atomic<bool> is_init_;
@@ -145,7 +171,7 @@ private:
 
   std::unique_ptr<HandleTransfer> tranfer;
   std::vector<PhyMem> phy_mem_list_;
-  ring_buffer *free_queue;
+  phymem_queue *free_queue;
   stats_arr *allocated_nbytes_;
   stats_arr *cached_nbytes_;
   
@@ -161,13 +187,26 @@ public:
 
   void WaitSlaveExit();
 
+  inline std::vector<PhyMem> &GetPhyMemList() { return phy_mem_list_; }
 
-  size_t AllocPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong);
+  inline bip::managed_shared_memory &GetSharedMemory() { return shared_memory_; }
+
+  inline bip::interprocess_mutex &GetMutex() { return *mutex_; }
+
+  void AllocPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong, size_t num_phy_mem);
+
+  void ClaimPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong) {
+    for (auto &phymem_ptr : phy_mem_list) {
+      CHECK_EQ(*phymem_ptr->belong, Belong::kFree);
+      free_queue->erase(*phymem_ptr->pos_queue);
+      *phymem_ptr->belong = belong;
+    }
+    cached_nbytes_->at(static_cast<size_t>(belong)).fetch_add(phy_mem_list.size() * MEM_BLOCK_NBYTES, std::memory_order_relaxed);
+  }
 
   void DeallocPhyMem(const std::vector<PhyMem *> &phy_mem_list);
 
   void DumpMemPool(std::ostream &out) {
-    bip::scoped_lock lock{*mutex_};
     out << "index,belong,cu_handle\n";
     for(auto &phy_mem : phy_mem_list_) {
       out << phy_mem.index << "," << *phy_mem.belong << "," << phy_mem.cu_handle << "\n";
@@ -196,7 +235,6 @@ public:
       LOG(INFO) << belong << " Allocate: " << detail::ByteDisplay(GetAllocatedNbytes(belong));
       LOG(INFO) << belong << " Cached: " << detail::ByteDisplay(GetCachedNbytes(belong));
     }
-    bip::scoped_lock lock{*mutex_};
     LOG(INFO) << "[mempool] nbytes = " << detail::ByteDisplay(mempool_nbytes);
     LOG(INFO) << "[mempool] total phy block = " << phy_mem_list_.size();
     LOG(INFO) << "[mempool] free phy block = " << std::count_if(phy_mem_list_.cbegin(), phy_mem_list_.cend(), [](auto &phy_mem) { return *phy_mem.belong == Belong::kFree; });
