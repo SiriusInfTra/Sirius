@@ -1,4 +1,5 @@
 #include "logging_as_glog.h"
+#include "common/tvm_allocator.h"
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/c_runtime_api.h>
 #include <tvm/runtime/packed_func.h>
@@ -370,17 +371,31 @@ void GraphExecutor::AllocStorage() {
       }
     } else {
       auto storage_alloc_order = get_storage_alloc_order();
+      size_t internal_fragments_nbytes = 0, model_nbytes = 0;
       for (size_t i = 0; i < storage_alloc_order.size(); ) {
         size_t total_nbytes = 0, off = 0;
         size_t j = i;
-        for (; j < storage_alloc_order.size() && total_nbytes < Config::better_alloc_threshold; j++) {
+        while(true) {
           auto tensor = storage_pool_[storage_alloc_order[j]];
           CHECK(tensor.IsNull());
           auto aligned_nbytes = sta::ComputeStorageNbytes(
               tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
           aligned_nbytes = sta::detail::GetAlignedNbytes(aligned_nbytes);
+          if (j > i && total_nbytes + aligned_nbytes > Config::better_alloc_threshold) { break; }
+          LOG_IF(INFO, aligned_nbytes > Config::better_alloc_threshold) << "Tensor size "<< sta::detail::ByteDisplay(aligned_nbytes) << " greater than " << sta::detail::ByteDisplay(Config::better_alloc_threshold);
+          j++;
           total_nbytes += aligned_nbytes;
+          if (j >= storage_alloc_order.size()) { break; }
         }
+        // for (; j < storage_alloc_order.size() && total_nbytes < Config::better_alloc_threshold; j++) {
+        //   auto tensor = storage_pool_[storage_alloc_order[j]];
+        //   CHECK(tensor.IsNull());
+        //   auto aligned_nbytes = sta::ComputeStorageNbytes(
+        //       tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
+          
+        //   aligned_nbytes = sta::detail::GetAlignedNbytes(aligned_nbytes);
+        //   total_nbytes += aligned_nbytes;
+        // }
         // LOG(INFO) << "better alloc " << sta::detail::ByteDisplay(total_nbytes) << " " << j << " "
         //           << storage_pool_.size() << " " << Config::better_alloc_threshold;
         auto mdata_group = sta::CUDAMemPool::Get()->Alloc(
@@ -396,7 +411,10 @@ void GraphExecutor::AllocStorage() {
           off += aligned_nbytes;
         }
         storage_group_.push_back(mdata_group);
+        internal_fragments_nbytes += sta::detail::AlignedNBytes<sta::TVMAllocator::ALIGN_NBYTES>(total_nbytes) - total_nbytes;
+        model_nbytes += total_nbytes;
       }
+      LOG(INFO) << "Model internal fragments: " << sta::detail::ByteDisplay(internal_fragments_nbytes) << "/" << sta::detail::ByteDisplay(model_nbytes);
     }
   } else if (Config::infer_raw_blob_alloc) {
     size_t total_nbytes = 0, off = 0;
