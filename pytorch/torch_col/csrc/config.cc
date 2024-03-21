@@ -23,14 +23,14 @@ void ConfigTorchCol() {
     return;
   }
 
-  auto has_infer_server_env = std::getenv("COLOCATE_HAS_SERVER");
-  auto has_shared_tensor_server_env = std::getenv("SHARED_TENSOR_HAS_SERVER");
+  auto has_infer_server_env = std::getenv("HAS_INFER_SERVER");
+  auto has_shared_tensor_server_env = std::getenv("HAS_SHARED_TENSOR_SERVER");
   auto pool_size_env = std::getenv("SHARED_TENSOR_POOL_GB");
   
   has_colocated_infer_server = has_infer_server_env == nullptr ? 
-                               true : (std::string(has_infer_server_env) == "1");
+                               false : (std::string(has_infer_server_env) == "1");
   has_shared_tensor_server = has_shared_tensor_server_env == nullptr ? 
-                             true : (std::string(has_shared_tensor_server_env) == "1");
+                             false : (std::string(has_shared_tensor_server_env) == "1");
   if (!has_shared_tensor_server && !pool_size_env) {
     LOG(INFO) << "SHARED_TENSOR_POOL_GB not set, use default 12GB";
   } else if (pool_size_env) {

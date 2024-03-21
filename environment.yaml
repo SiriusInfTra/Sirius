@@ -1,0 +1,42 @@
+name: colserve
+channels:
+  - anaconda
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - boost=1.82.0
+  - git
+  - git-lfs
+  - ipython
+  - ninja
+  - pudb
+  - libpng
+  - jpeg
+  - pip:
+    - cmake==3.26.4
+    - cython
+    - onnx
+    - onnxruntime
+    - protobuf
+    - transformers
+    - xgboost==1.7.6
+    - astunparse
+    - expecttest
+    - hypothesis
+    - numpy
+    - psutil
+    - pyyaml
+    - requests
+    - setuptools
+    - types-dataclasses
+    - typing-extensions
+    - sympy
+    - filelock
+    - networkx
+    - jinja2
+    - pynvml
+    - pandas
+    - matplotlib
+    - tqdm

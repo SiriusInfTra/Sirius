@@ -20,11 +20,11 @@ class Controller {
   Controller();
   uint64_t InterruptTrain();
   uint64_t ResumeTrain();
-  uint64_t ColocateAdjust(size_t batch_size);
+  uint64_t ColocateAdjust(size_t model_rank, size_t batch_size);
   bool WaitTrainNotRunning();
   bool WaitInferIdle();
   bool WaitColocateAdjustDone(uint64_t cmd_id);
-  uint64_t InferExit(size_t batch_size);
+  uint64_t InferExit();
 
   void InferRequestInc(size_t inc=1);
   void InferResponseInc(size_t inc=1);
@@ -38,9 +38,9 @@ class Controller {
 
   bool HasFlyingColocateAdjust();
 
-  bool TryEnterInferModelAlloc(size_t model_rank);
-  void EnterInferModelAlloc(size_t model_rank);
-  void ExitInferModelAlloc(size_t model_rank);
+  // bool TryEnterInferChangeMemory(size_t model_rank);
+  // void EnterInferChangeMemory(size_t model_rank);
+  // void ExitInferChangeMemory(size_t model_rank);
 
  private:
   static std::unique_ptr<Controller> controller_;
@@ -80,10 +80,10 @@ class Controller {
   std::condition_variable wait_train_adjust_cv_;
   uint64_t adjust_done_id_{0};
   
-  // constrol cooperated allocation
-  std::mutex infer_model_alloc_mutex_; // to allocate inference model in a sequential way
-  std::condition_variable infer_model_alloc_cv_;
-  std::atomic<size_t> last_alloc_infer_model_ = static_cast<size_t>(-1);
+  // // constrol cooperated allocation
+  // std::mutex infer_change_memory_mutex_; // to allocate inference model in a sequential way
+  // std::condition_variable infer_change_memory_cv_;
+  // std::atomic<size_t> last_infer_change_memory_model_ = static_cast<size_t>(-1);
 
   // cmd counter
   static std::atomic<uint64_t> adjust_cmd_id;

@@ -1,5 +1,8 @@
-#ifndef COLSERVE_MODEL_TRAIN_STORE_H
-#define COLSERVE_MODEL_TRAIN_STORE_H
+#ifndef COLSERVE_TRAIN_LAUNCHER_H
+#define COLSERVE_TRAIN_LAUNCHER_H
+
+#include <server/grpc/grpc_server.h>
+#include <server/job_queue.h>
 
 #include <iostream>
 #include <memory>
@@ -11,19 +14,16 @@
 #include <future>
 #include <atomic>
 
-#include "grpc/grcp_server.h"
-#include "job_queue.h"
-
 namespace colserve {
 
-class ModelTrainStore {
+class TrainLauncher {
  public:
   static void Init(const std::filesystem::path &train_store_path);
-  static ModelTrainStore* Get() { 
-    if (model_train_store_ == nullptr) {
-      LOG(FATAL) << "ModelTrainStore not initialized";
+  static TrainLauncher* Get() { 
+    if (train_launcher_ == nullptr) {
+      LOG(FATAL) << "TrainLauncher not initialized";
     }
-    return model_train_store_.get();
+    return train_launcher_.get();
   }
   static bool Shutdown();
 
@@ -32,18 +32,29 @@ class ModelTrainStore {
 
   void SetCurBatchSize(int bs) {
     cur_batch_size_ = bs; 
-    if (first_batch_) {target_batch_size_ = bs; first_batch_ = false; }
+    if (!batch_start_) { batch_start_ = true; }
   }
-  int GetCurBatchSize() { return cur_batch_size_; }
-  int GetTargetBatchSize() { return target_batch_size_.load(std::memory_order_relaxed); }
+  void SetTargetBatchSize(int bs) {
+    if (batch_start_) target_batch_size_.store(bs, std::memory_order_relaxed);
+  }
+  int GetCurBatchSize() { 
+    return cur_batch_size_; 
+  }
+  int GetTargetBatchSize() { 
+    return target_batch_size_.load(std::memory_order_relaxed); 
+  }
   void AddTargetBatchSize(int delta_bs) { 
-    if (!first_batch_)  target_batch_size_.fetch_add(delta_bs, std::memory_order_relaxed);
+    if (batch_start_)  target_batch_size_.fetch_add(delta_bs, std::memory_order_relaxed);
   }
+
 
   double PredictMemUsageMB();
+  int PredictTargetBatchSize(double memory_mb);
+  int GetAdjustBatchSize(double memory_mb);
 
  private:
-  static std::unique_ptr<ModelTrainStore> model_train_store_;
+  static std::unique_ptr<TrainLauncher> train_launcher_;
+  std::pair<double, double> GetModelMemParam();
 
   bool Train();
   bool LaunchTrain(std::shared_ptr<Job> job, std::vector<std::string> &args);
@@ -55,9 +66,10 @@ class ModelTrainStore {
   std::unique_ptr<std::thread> dummy_adjust_thread_;
 
   pid_t train_pid_{-1};
+  int job_batch_size_{-1};
   int cur_batch_size_{-1};
   std::atomic<int> target_batch_size_{-1};
-  bool first_batch_{true};
+  bool batch_start_{false};
   std::string cur_model_name_;
 
   // model -> train code path

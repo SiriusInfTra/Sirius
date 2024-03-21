@@ -90,6 +90,9 @@ class Config {
 
   static bool system_initialized;
 
+  static bool log_model_init_info;
+  static bool log_grpc;
+
   inline static bool IsSwitchMode() {
     return Config::serve_mode == ServeMode::kTaskSwitchL1
         || Config::serve_mode == ServeMode::kTaskSwitchL2

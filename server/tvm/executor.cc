@@ -1,28 +1,28 @@
 #include "logging_as_glog.h"
-#include "common/tvm_allocator.h"
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/c_runtime_api.h>
 #include <tvm/runtime/packed_func.h>
 #include <tvm/runtime/module.h>
 #include <tvm/runtime/registry.h>
 #include <tvm/runtime/logging.h>
-#include <chrono>
-#include <numeric>
-#include <thread>
 #include <c10/core/MemoryFormat.h>
-#include <cuda.h>
-#include <cuda_runtime_api.h>
 
 #include <common/shape_helper.h>
 #include <common/mempool.h>
 #include <common/util.h>
+#include <server/train_launcher.h>
+#include <server/infer_model_store.h>
+#include <server/profiler.h>
+#include <server/controller.h>
+#include <server/resource_manager.h>
+#include <server/config.h>
+#include <server/tvm/executor.h>
+#include <server/tvm/texture.h>
 
-#include "graph_executor.h"
-#include "../model_train_store.h"
-#include "../model_infer_store.h"
-#include "../profiler.h"
-#include "../controller.h"
-#include "../config.h"
+#include <chrono>
+#include <numeric>
+#include <thread>
+#include <regex>
 
 
 namespace colserve {
@@ -36,16 +36,27 @@ inline size_t GetDataAlignment(const DLTensor& arr) {
 }
 }
 
-GraphExecutor::GraphExecutor(GraphExecutorFactory &factory, size_t worker_id)
-    : factory_(factory), infer_model_worker_id_(worker_id), initialized_(false) {
+namespace {
+std::string GetModelNameWithoutDuplicatedId(const std::string &model_name) {
+  std::regex r{"([a-zA-Z0-9_]+)(-[0-9]+)?"};
+  std::smatch match;
+  CHECK(std::regex_match(model_name, match, r)) << "model name " << model_name << " is not valid";
+  CHECK_EQ(match.size(), 3);
+  CHECK(!match[1].str().empty());
+  return match[1].str();
+}
+}
+
+Executor::Executor(TVMGraph &factory, size_t worker_id, const std::vector<DLDevice> &devs)
+    : tvm_graph_(factory), infer_model_worker_id_(worker_id), devices_(devs), initialized_(false) {
   using namespace ::tvm::runtime;
   auto t0 = std::chrono::steady_clock::now();
   SetupStorage(false);
   SetupOpExecs();
-  exec_stream_ = DeviceAPI::Get(factory_.devices_[0])
-      ->CreateStream(factory_.devices_[0]);
-  load_param_stream_ = DeviceAPI::Get(factory_.devices_[0])
-      ->CreateStream(factory_.devices_[0]);
+  exec_stream_ = DeviceAPI::Get(devices_[0])
+      ->CreateStream(devices_[0]);
+  load_param_stream_ = DeviceAPI::Get(devices_[0])
+      ->CreateStream(devices_[0]);
 
   param_ready_.resize(GetNumOfNodes());
   for (size_t i = 0; i < param_ready_.size(); i++) {
@@ -66,11 +77,11 @@ GraphExecutor::GraphExecutor(GraphExecutorFactory &factory, size_t worker_id)
   // }
 
   if (Config::group_param_load) {
-    for (auto sit = factory_.params_.begin(); sit != factory_.params_.end(); ) {
+    for (auto sit = tvm_graph_.params_.begin(); sit != tvm_graph_.params_.end(); ) {
       size_t total_nbytes = 0, off = 0;
       std::vector<uint32_t> param_ids;
       auto eit = sit;
-      for (; eit != factory_.params_.end() && total_nbytes < Config::group_param_load_threshold; eit++) {
+      for (; eit != tvm_graph_.params_.end() && total_nbytes < Config::group_param_load_threshold; eit++) {
         auto &p = *eit;
         auto aligned_nbytes = sta::detail::GetAlignedNbytes(GetDataSize(*p.second.operator->()));
         total_nbytes += aligned_nbytes;
@@ -89,52 +100,46 @@ GraphExecutor::GraphExecutor(GraphExecutorFactory &factory, size_t worker_id)
       this->param_storage_group_.push_back(std::make_pair(param_group, param_ids));
     }
   } else {
-    for (auto &p : factory_.params_) {
+    for (auto &p : tvm_graph_.params_) {
       param_ready_event_ids_[p.first] = p.first;
     }
   }
 
   auto t1 = std::chrono::steady_clock::now();
-  DLOG(INFO) << "[GraphExecutor] Create " 
+  DLOG(INFO) << "[Executor] Create " 
              << std::chrono::duration<double, std::milli>(t1-t0).count() << "ms";
 }
 
-void GraphExecutor::Init() {
+void Executor::Init(bool load_param) {
   if (!initialized_) {   
     if (Config::IsColocateMode() && Config::ondemand_adjust) {
-      PROFILE_START(InferAdjustAlloc, 0);
+      PROFILE_START(InferAdjustAlloc);
       if (!Config::colocate_config.skip_malloc) AllocStorageMaybeAdjust();
-      PROFILE_END(InferAdjustAlloc, 0);
+      PROFILE_END(InferAdjustAlloc);
     } else {
-      PROFILE_START(InferAllocStorage, 0);
+      PROFILE_START(InferAllocStorage);
       if (!Config::colocate_config.skip_malloc) AllocStorage();
-      PROFILE_END(InferAllocStorage, 0);
+      PROFILE_END(InferAllocStorage);
     }
     
     if (!Config::colocate_config.skip_malloc)
       ReSetupDataEntry();
 
-    if (!Config::pipeline_load) {
-      PROFILE_START(InferLoadParam, 0);
+    if (load_param) {
+      PROFILE_START(InferLoadParam);
       if (!Config::colocate_config.skip_loading) {
         LoadParams(Config::pipeline_load, Config::colocate_config.skip_malloc);
       }
-      PROFILE_END(InferLoadParam, 0);
+      PROFILE_END(InferLoadParam);
     } else {
-      // load_params_future_ = std::async(std::launch::async, [this]() {
-      //   PROFILE_START(InferLoadParam, 0);
-      //   if (!Config::colocate_config.skip_loading) {
-      //     LoadParams(Config::pipeline_load, Config::colocate_config.skip_malloc);
-      //   }
-      //   PROFILE_END(InferLoadParam, 0);
-      // });
+      // param will be loaded by pipeline
     }
     
     initialized_ = true;
   }
 }
 
-void GraphExecutor::FakeInit(bool malloc, bool load_param) {
+void Executor::FakeInit(bool malloc, bool load_param) {
   CHECK(!initialized_) << "FakeInit should only be called once before Init";
   if (malloc) {
     LOG(INFO) << "FakeInit malloc, skip malloc in Init";
@@ -147,7 +152,7 @@ void GraphExecutor::FakeInit(bool malloc, bool load_param) {
   }
 }
 
-void GraphExecutor::DeInit() {
+void Executor::DeInit() {
   CHECK(initialized_);
   if (!Config::colocate_config.skip_malloc) {
     ResetStorage();
@@ -155,27 +160,27 @@ void GraphExecutor::DeInit() {
   initialized_ = false;
 }
 
-void GraphExecutor::Run() {
+void Executor::Run() {
   using namespace ::tvm::runtime;
   CHECK(initialized_);
-  DeviceAPI::Get(factory_.devices_[0])->SetStream(factory_.devices_[0], exec_stream_);
+  DeviceAPI::Get(devices_[0])->SetStream(devices_[0], exec_stream_);
   for (size_t i = 0; i < op_execs_.size(); i++) {
     if (op_execs_[i]) op_execs_[i]();
   }
-  DeviceAPI::Get(factory_.devices_[0])->StreamSync(factory_.devices_[0], exec_stream_);
+  DeviceAPI::Get(devices_[0])->StreamSync(devices_[0], exec_stream_);
 }
 
-void GraphExecutor::PipeLineLoad() {
+void Executor::PipeLineLoad() {
   load_params_future_ = std::async(std::launch::async, [this]() {
-    PROFILE_START(InferLoadParam, 0);
+    PROFILE_START(InferLoadParam);
     if (!Config::colocate_config.skip_loading) {
       LoadParams(Config::pipeline_load, Config::colocate_config.skip_malloc);
     }
-    PROFILE_END(InferLoadParam, 0);
+    PROFILE_END(InferLoadParam);
   });
 }
 
-void GraphExecutor::PipelineRun() {
+void Executor::PipelineRun() {
   using namespace ::tvm::runtime;
   CHECK(initialized_);
   double wait_load_ms = 0;
@@ -183,7 +188,7 @@ void GraphExecutor::PipelineRun() {
   double record_exec_ms = 0;
 
   auto begin = Profiler::Now();
-  DeviceAPI::Get(factory_.devices_[0])->SetStream(factory_.devices_[0], exec_stream_);
+  DeviceAPI::Get(devices_[0])->SetStream(devices_[0], exec_stream_);
   for (size_t i = 0; i < op_execs_.size(); i++) {
     if (op_execs_[i]) {
       auto t0 = Profiler::Now();
@@ -224,15 +229,15 @@ void GraphExecutor::PipelineRun() {
       // auto t1 = std::chrono::steady_clock::now();
       // wait_time += std::chrono::duration<double, std::milli>(t1-t0).count();
       // op_execs_[i]();
-      // DeviceAPI::Get(factory_.devices_[0])->StreamSync(factory_.devices_[0], exec_stream_);
+      // DeviceAPI::Get(tvm_graph_.devices_[0])->StreamSync(tvm_graph_.devices_[0], exec_stream_);
     }
   }
-  DeviceAPI::Get(factory_.devices_[0])->StreamSync(factory_.devices_[0], exec_stream_);
+  DeviceAPI::Get(devices_[0])->StreamSync(devices_[0], exec_stream_);
   LOG(INFO) << "wait_load_ms " << wait_load_ms << " wait_ms " << wait_ms << " record_exec_ms " << record_exec_ms
             << " tot " << Profiler::MilliFrom(begin);
 }
 
-// double GraphExecutor::ComputePipelineExecTime() {
+// double Executor::ComputePipelineExecTime() {
 //   double ret = 0;
 //   for (size_t i = 0; i < op_execs_.size(); i++) {
 //     if (op_execs_[i]) {
@@ -244,41 +249,41 @@ void GraphExecutor::PipelineRun() {
 //   return ret;
 // }
 
-const DLTensor* GraphExecutor::GetInput(int index) const {
+const DLTensor* Executor::GetInput(int index) const {
   CHECK(initialized_);
-  CHECK_LT(static_cast<size_t>(index), factory_.input_nodes_.size());
-  uint32_t eid = entry_id(factory_.input_nodes_[index], 0);
+  CHECK_LT(static_cast<size_t>(index), tvm_graph_.input_nodes_.size());
+  uint32_t eid = entry_id(tvm_graph_.input_nodes_[index], 0);
   return data_entry_[eid].operator->();
 }
 
-const DLTensor* GraphExecutor::GetInput(const std::string &index) const {
+const DLTensor* Executor::GetInput(const std::string &index) const {
   return GetInput(GetInputIndex(index));
 }
 
-const DLTensor* GraphExecutor::GetInputHostBuf(const std::string &index) const {
+const DLTensor* Executor::GetInputHostBuf(const std::string &index) const {
   CHECK(initialized_);
   return input_cpu_pin_bufs_.at(index).operator->();
 }
 
-const DLTensor* GraphExecutor::GetOutput(int index) const {
+const DLTensor* Executor::GetOutput(int index) const {
   CHECK(initialized_);
-  CHECK_LE(static_cast<size_t>(index), factory_.outputs_.size());
-  uint32_t eid = entry_id(factory_.outputs_[index]);
+  CHECK_LE(static_cast<size_t>(index), tvm_graph_.outputs_.size());
+  uint32_t eid = entry_id(tvm_graph_.outputs_[index]);
   return data_entry_[eid].operator->();
 }
 
-const DLTensor* GraphExecutor::GetOutput(const std::string &index) const {
+const DLTensor* Executor::GetOutput(const std::string &index) const {
   return GetOutput(GetOutputIndex(index));
 }
 
-const DLTensor* GraphExecutor::GetOutputHostBuf(const std::string &index) const {
+const DLTensor* Executor::GetOutputHostBuf(const std::string &index) const {
   CHECK(initialized_);
   return output_cpu_pin_bufs_.at(index).operator->();
 }
 
-uint32_t GraphExecutor::GetInputIndex(const std::string &name) const {
-  auto it = factory_.input_map_.find(name);
-  if (it != factory_.input_map_.end()) {
+uint32_t Executor::GetInputIndex(const std::string &name) const {
+  auto it = tvm_graph_.input_map_.find(name);
+  if (it != tvm_graph_.input_map_.end()) {
     return it->second;
   } else {
     LOG(FATAL) << "cannot find " << name << " in input";
@@ -286,9 +291,9 @@ uint32_t GraphExecutor::GetInputIndex(const std::string &name) const {
   }
 } 
 
-uint32_t GraphExecutor::GetOutputIndex(const std::string &name) const {
-  auto it = factory_.output_map_.find(name);
-  if (it != factory_.output_map_.end()) {
+uint32_t Executor::GetOutputIndex(const std::string &name) const {
+  auto it = tvm_graph_.output_map_.find(name);
+  if (it != tvm_graph_.output_map_.end()) {
     return it->second;
   } else {
     LOG(FATAL) << "cannot find " << name << " in output";
@@ -296,7 +301,7 @@ uint32_t GraphExecutor::GetOutputIndex(const std::string &name) const {
   }
 }
 
-// void GraphExecutor::ResetBufStorage() {
+// void Executor::ResetBufStorage() {
 //   using namespace ::tvm::runtime;
 //   for (auto &e : data_entry_) {
 //     e.get_mutable()->dl_tensor.data = nullptr;
@@ -307,7 +312,7 @@ uint32_t GraphExecutor::GetOutputIndex(const std::string &name) const {
 //   }
 // }
 
-// void GraphExecutor::AllocBufStorage() {
+// void Executor::AllocBufStorage() {
 //   using namespace ::tvm::runtime;
 //   for (auto &s : storage_pool_) {
 //     s.get_mutable()->dl_tensor.data =
@@ -316,9 +321,9 @@ uint32_t GraphExecutor::GetOutputIndex(const std::string &name) const {
 //   }
 // }
 
-void GraphExecutor::ResetStorage() {
+void Executor::ResetStorage() {
   using namespace ::tvm::runtime;
-  for (auto &p : factory_.params_) {
+  for (auto &p : tvm_graph_.params_) {
     param_ready_[p.first]->store(false);
   }
   for (auto & e : data_entry_) { e.DeallocToNull(); }
@@ -339,15 +344,15 @@ void GraphExecutor::ResetStorage() {
   // CHECK(cudaFree(blob_mem_) == cudaSuccess);
 }
 
-void GraphExecutor::AllocStorage() {
+void Executor::AllocStorage() {
   using namespace ::tvm::runtime;
 
   auto get_storage_alloc_order = [this] () -> std::vector<uint32_t> {
     std::vector<uint32_t> storage_alloc_order;
     if (Config::group_param_load) {
       std::vector<bool> storage_record(storage_pool_.size(), false);
-      for (auto & p : factory_.params_) {
-        auto sid = factory_.attrs_.storage_id[p.first];
+      for (auto & p : tvm_graph_.params_) {
+        auto sid = tvm_graph_.attrs_.storage_id[p.first];
         storage_alloc_order.push_back(sid);
         storage_record[sid] = true;
       }
@@ -371,32 +376,18 @@ void GraphExecutor::AllocStorage() {
       }
     } else {
       auto storage_alloc_order = get_storage_alloc_order();
-      size_t internal_fragments_nbytes = 0, model_nbytes = 0;
       for (size_t i = 0; i < storage_alloc_order.size(); ) {
         size_t total_nbytes = 0, off = 0;
         size_t j = i;
-        while(true) {
+        for (; j < storage_alloc_order.size() && total_nbytes < Config::better_alloc_threshold; j++) {
           auto tensor = storage_pool_[storage_alloc_order[j]];
           CHECK(tensor.IsNull());
           auto aligned_nbytes = sta::ComputeStorageNbytes(
               tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
           aligned_nbytes = sta::detail::GetAlignedNbytes(aligned_nbytes);
-          if (j > i && total_nbytes + aligned_nbytes > Config::better_alloc_threshold) { break; }
-          LOG_IF(INFO, aligned_nbytes > Config::better_alloc_threshold) << "Tensor size "<< sta::detail::ByteDisplay(aligned_nbytes) << " greater than " << sta::detail::ByteDisplay(Config::better_alloc_threshold);
-          j++;
           total_nbytes += aligned_nbytes;
-          if (j >= storage_alloc_order.size()) { break; }
         }
-        // for (; j < storage_alloc_order.size() && total_nbytes < Config::better_alloc_threshold; j++) {
-        //   auto tensor = storage_pool_[storage_alloc_order[j]];
-        //   CHECK(tensor.IsNull());
-        //   auto aligned_nbytes = sta::ComputeStorageNbytes(
-        //       tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
-          
-        //   aligned_nbytes = sta::detail::GetAlignedNbytes(aligned_nbytes);
-        //   total_nbytes += aligned_nbytes;
-        // }
-        // LOG(INFO) << "better alloc " << sta::detail::ByteDisplay(total_nbytes) << " " << j << " "
+        // LOG(INFO) << "better alloc " << sta::ByteDisplay(total_nbytes) << " " << j << " "
         //           << storage_pool_.size() << " " << Config::better_alloc_threshold;
         auto mdata_group = sta::CUDAMemPool::Get()->Alloc(
             total_nbytes, sta::MemType::kInfer, false);
@@ -411,10 +402,7 @@ void GraphExecutor::AllocStorage() {
           off += aligned_nbytes;
         }
         storage_group_.push_back(mdata_group);
-        internal_fragments_nbytes += sta::detail::AlignedNBytes<sta::TVMAllocator::ALIGN_NBYTES>(total_nbytes) - total_nbytes;
-        model_nbytes += total_nbytes;
       }
-      LOG(INFO) << "Model internal fragments: " << sta::detail::ByteDisplay(internal_fragments_nbytes) << "/" << sta::detail::ByteDisplay(model_nbytes);
     }
   } else if (Config::infer_raw_blob_alloc) {
     size_t total_nbytes = 0, off = 0;
@@ -456,23 +444,23 @@ void GraphExecutor::AllocStorage() {
   // }
 }
 
-void GraphExecutor::LoadParams(bool pipeline, bool force) {
+void Executor::LoadParams(bool pipeline, bool force) {
     using namespace ::tvm::runtime;
   if (force) {
-    for (auto &p : factory_.params_)
+    for (auto &p : tvm_graph_.params_)
       param_ready_[p.first]->store(false);
   }
 
   if (!Config::group_param_load) {
-    for (auto &p : factory_.params_) {
-      auto sid = factory_.attrs_.storage_id[p.first];
+    for (auto &p : tvm_graph_.params_) {
+      auto sid = tvm_graph_.attrs_.storage_id[p.first];
       if (!param_ready_[p.first]->load()) {
         sta::STensor storage_tensor = storage_pool_[sid];
         tvm::TVMArray::CopyFromTo(
           p.second.operator->(), storage_tensor.MutableDLTensor(), load_param_stream_);
         if (pipeline) {
-          // ::tvm::runtime::DeviceAPI::Get(factory_.devices_[0])
-          //     ->StreamSync(factory_.devices_[0], load_param_stream_);
+          // ::tvm::runtime::DeviceAPI::Get(tvm_graph_.devices_[0])
+          //     ->StreamSync(tvm_graph_.devices_[0], load_param_stream_);
           param_ready_[p.first]->store(true);
           CHECK(param_ready_event_ids_[p.first] == p.first);
           CUDA_CALL(cudaEventRecord(param_ready_events_[p.first], (cudaStream_t)load_param_stream_));
@@ -495,7 +483,7 @@ void GraphExecutor::LoadParams(bool pipeline, bool force) {
       for (size_t pg_off = 0; pg_off < param_group_nbytes; ) {
         auto load_nbytes = std::min(param_group_nbytes - pg_off, storage_group->nbytes - sg_off);
         // auto t0 = Profiler::Now();
-        CUDA_CALL(cudaSetDevice(factory_.devices_[0].device_id));
+        CUDA_CALL(cudaSetDevice(devices_[0].device_id));
         CUDA_CALL(cudaMemcpyAsync(
             static_cast<char*>(storage_group->addr) + sg_off,
             static_cast<char*>(param_group->data) + pg_off,
@@ -525,20 +513,20 @@ void GraphExecutor::LoadParams(bool pipeline, bool force) {
 
   // because we load params in async thread in pipeline mode,
   // it's ok to sync to calculate loading time
-  ::tvm::runtime::DeviceAPI::Get(factory_.devices_[0])
-      ->StreamSync(factory_.devices_[0], load_param_stream_);
+  ::tvm::runtime::DeviceAPI::Get(devices_[0])
+      ->StreamSync(devices_[0], load_param_stream_);
   if (!pipeline) {
-    for (auto &p : factory_.params_)
+    for (auto &p : tvm_graph_.params_)
       param_ready_[p.first]->store(true);
   }
 }
 
-void GraphExecutor::ReSetupDataEntry() {
+void Executor::ReSetupDataEntry() {
   for (size_t i = 0; i < data_entry_.size(); i++) {
-    int sid = factory_.attrs_.storage_id[i];
+    int sid = tvm_graph_.attrs_.storage_id[i];
     // TVMArray *storage;
-    // if (factory_.pool_entry_[sid].params_entry) {
-    //   storage = &factory_.storage_pool_[factory_.param_node_storage_id_map_[sid]];
+    // if (tvm_graph_.pool_entry_[sid].params_entry) {
+    //   storage = &tvm_graph_.storage_pool_[tvm_graph_.param_node_storage_id_map_[sid]];
     // } else {
     //   storage = &storage_pool_[op_node_storage_id_map_[sid]];
     // }
@@ -551,22 +539,64 @@ void GraphExecutor::ReSetupDataEntry() {
   }
 }
 
-void GraphExecutor::SetupStorage(bool alloc) {
-  std::vector<DLDataType> vtype;
-  for (const std::string &s_type : factory_.attrs_.dltype) {
+void Executor::SetupStorage(bool alloc) {
+    std::vector<DLDataType> vtype;
+  for (const std::string &s_type : tvm_graph_.attrs_.dltype) {
     vtype.push_back(::tvm::runtime::String2DLDataType(s_type));
+  }
+
+  // std::vector<PoolEntry> pool_entry_;
+  for (size_t i = 0; i < tvm_graph_.attrs_.shape.size(); i++) {
+    int storage_id = tvm_graph_.attrs_.storage_id[i];
+    std::string storage_scope = tvm_graph_.attrs_.storage_scope.empty() ? "" : tvm_graph_.attrs_.storage_scope[i];
+    int device_type = static_cast<int>(devices_[0].device_type);
+    if (!tvm_graph_.attrs_.device_index.empty()) {
+      device_type = tvm_graph_.attrs_.device_index[i];
+    }
+
+    uint32_t sid = static_cast<uint32_t>(storage_id);
+    if (sid >= pool_entry_.size()) {
+      pool_entry_.resize(sid + 1, {-1, {0}, {}});
+    } else {
+      CHECK_EQ(pool_entry_[sid].params_entry, false)
+          << "parameter storage " << sid << " cannot be reused";
+      CHECK(pool_entry_[sid].device_type == -1 || pool_entry_[sid].device_type == device_type)
+          << "The same pool entry cannot be assigned to multiple devices";
+    }
+    tvm_graph_.CheckNullLinkedParam(tvm_graph_.module_, sid);
+    pool_entry_[sid].param_data_entry = i;
+    pool_entry_[sid].device_type = device_type;
+    pool_entry_[sid].scope = storage_scope;
+    if (tvm_graph_.params_.count(i)) {
+      pool_entry_[sid].params_entry = true;
+    }
+
+    DLDataType t = vtype[i];
+    if (!::tvm::runtime::IsTextureStorage(storage_scope)) {
+      size_t size = 1;
+      for (int64_t sz : tvm_graph_.attrs_.shape[i]) {
+        size *= static_cast<size_t>(sz);
+      }
+      size_t bits = t.bits * t.lanes;
+      CHECK(bits % 8U == 0U || bits == 1U || bits == 4U);
+      int64_t bytes = ((bits + 7U) / 8U) * size;
+      pool_entry_[sid].shape[0] = std::max(pool_entry_[sid].shape[0], bytes);
+      pool_entry_[sid].dtype = DLDataType{kDLFloat, 32, 1};
+    } else {
+      CHECK(false) << "unsuported texture memory";
+    }
   }
 
   param_storage_size_ = 0;
   buffer_storage_size_ = 0;
-  for (size_t sid = 0; sid < factory_.pool_entry_.size(); sid++) {
-    const auto &pit = factory_.pool_entry_[sid];
+  for (size_t sid = 0; sid < pool_entry_.size(); sid++) {
+    const auto &pit = pool_entry_[sid];
     // if (pit.params_entry)
     //   continue;
-    const auto &cit = std::find_if(factory_.devices_.begin(), factory_.devices_.end(), [&pit](const DLDevice &d) {
+    const auto &cit = std::find_if(devices_.begin(), devices_.end(), [&pit](const DLDevice &d) {
       return pit.device_type == static_cast<int>(d.device_type);
     });
-    DLDevice dev = cit == factory_.devices_.end() ? factory_.devices_[0] : *cit;
+    DLDevice dev = cit == devices_.end() ? devices_[0] : *cit;
     std::vector<int64_t> shape = pit.shape;
     if (shape.size() == 1) {
       shape[0] = (shape[0] + 3) / 4;
@@ -591,62 +621,64 @@ void GraphExecutor::SetupStorage(bool alloc) {
     }
   }
 
-  data_entry_.resize(factory_.node_row_ptr_.back());
-  data_alignment_.resize(factory_.node_row_ptr_.back());
+  data_entry_.resize(tvm_graph_.node_row_ptr_.back());
+  data_alignment_.resize(tvm_graph_.node_row_ptr_.back());
   for (size_t i = 0; i < data_entry_.size(); i++) {
-    int storage_id = factory_.attrs_.storage_id[i];
+    int storage_id = tvm_graph_.attrs_.storage_id[i];
     
-    data_entry_[i] = sta::ViewShapeDtype(storage_pool_[storage_id], factory_.attrs_.shape[i], vtype[i]);
+    data_entry_[i] = sta::ViewShapeDtype(storage_pool_[storage_id], tvm_graph_.attrs_.shape[i], vtype[i]);
     data_alignment_[i] = details::GetDataAlignment(*data_entry_[i].operator->());
   }
 
   // setup cpu pin memory
-  for (auto nid : factory_.input_nodes_) {
-    if (!factory_.params_.count(nid)) {
-      auto & input_id = factory_.nodes_[nid].name;
-      auto & shape = factory_.attrs_.shape[nid];
-      auto & dtype = factory_.attrs_.dltype[nid];
+  for (auto nid : tvm_graph_.input_nodes_) {
+    if (!tvm_graph_.params_.count(nid)) {
+      auto & input_id = tvm_graph_.nodes_[nid].name;
+      auto & shape = tvm_graph_.attrs_.shape[nid];
+      auto & dtype = tvm_graph_.attrs_.dltype[nid];
       input_cpu_pin_bufs_[input_id] = ::tvm::runtime::NDArray::Empty(
           shape, ::tvm::runtime::String2DLDataType(dtype), {kDLCUDAHost, 0});
     }
   }
-  for (auto e : factory_.outputs_) {
+  for (auto e : tvm_graph_.outputs_) {
     auto nid = entry_id(e);
-    auto & output_id = factory_.nodes_[nid].name;
-    auto & shape = factory_.attrs_.shape[nid];
-    auto & dtype = factory_.attrs_.dltype[nid];
+    auto & output_id = tvm_graph_.nodes_[nid].name;
+    auto & shape = tvm_graph_.attrs_.shape[nid];
+    auto & dtype = tvm_graph_.attrs_.dltype[nid];
     output_cpu_pin_bufs_[output_id] = ::tvm::runtime::NDArray::Empty(
         shape, ::tvm::runtime::String2DLDataType(dtype), {kDLCUDAHost, 0});
   }
 
+  auto model_name_without_dup_id = GetModelNameWithoutDuplicatedId(tvm_graph_.model_name_);
+
   static std::set<std::string> logged;
-  if (!logged.count(factory_.model_name_)) {
-    logged.insert(factory_.model_name_);
-    LOG(INFO) << "[GraphExecutor] " << factory_.model_name_
+  if (!logged.count((model_name_without_dup_id))) {
+    logged.insert(model_name_without_dup_id);
+    LOG(INFO) << "[Executor] " << model_name_without_dup_id
               << " params " << 1.0 * param_storage_size_ / 1024 / 1024 << " Mb"
               << " intermediate " << 1.0 * buffer_storage_size_ / 1024 / 1024 << " Mb";
   }
 }
 
-void GraphExecutor::SetupOpExecs() {
-  op_execs_.resize(factory_.nodes_.size());
-  input_dltensors_.resize(factory_.node_row_ptr_.back());
-  output_dltensors_.resize(factory_.node_row_ptr_.back());
-  both_input_output_dltensors_.resize(factory_.node_row_ptr_.back());
+void Executor::SetupOpExecs() {
+  op_execs_.resize(tvm_graph_.nodes_.size());
+  input_dltensors_.resize(tvm_graph_.node_row_ptr_.back());
+  output_dltensors_.resize(tvm_graph_.node_row_ptr_.back());
+  both_input_output_dltensors_.resize(tvm_graph_.node_row_ptr_.back());
   input_param_nid_.resize(op_execs_.size());
   std::unordered_set<uint32_t> input_node_eids;
-  for (size_t i = 0; i < factory_.input_nodes_.size(); i++) {
-    uint32_t nid = factory_.input_nodes_[i];
-    input_node_eids.insert(factory_.node_row_ptr_[nid]);
+  for (size_t i = 0; i < tvm_graph_.input_nodes_.size(); i++) {
+    uint32_t nid = tvm_graph_.input_nodes_[i];
+    input_node_eids.insert(tvm_graph_.node_row_ptr_[nid]);
   }
   std::unordered_set<uint32_t> output_node_eids;
-  for (uint32_t i = 0; i < factory_.outputs_.size(); i++) {
-    auto& output = factory_.outputs_[i];
-    output_node_eids.insert(factory_.node_row_ptr_[output.node_id] + output.index);
+  for (uint32_t i = 0; i < tvm_graph_.outputs_.size(); i++) {
+    auto& output = tvm_graph_.outputs_[i];
+    output_node_eids.insert(tvm_graph_.node_row_ptr_[output.node_id] + output.index);
   }
   
   for (uint32_t nid = 0; nid < GetNumOfNodes(); nid++) {
-    const auto &inode = factory_.nodes_[nid];
+    const auto &inode = tvm_graph_.nodes_[nid];
     if (inode.op_type == "null") continue;
     std::vector<DLTensor*> args;
     for (const auto& e : inode.inputs) {
@@ -655,7 +687,7 @@ void GraphExecutor::SetupOpExecs() {
       sta::STensor data_entry_view_tensor = data_entry_[eid];
       args.push_back(data_entry_view_tensor.MutableDLTensor());
 
-      if (factory_.params_.count(e.node_id)) {
+      if (tvm_graph_.params_.count(e.node_id)) {
         input_param_nid_[nid].push_back(e.node_id);
       }
     }
@@ -692,7 +724,7 @@ void GraphExecutor::SetupOpExecs() {
   }
 }
 
-std::pair<std::function<void()>, std::shared_ptr<OpArgs>> GraphExecutor::CreateTVMOp(
+std::pair<std::function<void()>, std::shared_ptr<OpArgs>> Executor::CreateTVMOp(
     const TVMOpParam &param, const std::vector<DLTensor*> &args) {
   std::shared_ptr<OpArgs> arg_ptr = std::make_shared<OpArgs>();
   arg_ptr->args = args;
@@ -722,7 +754,7 @@ std::pair<std::function<void()>, std::shared_ptr<OpArgs>> GraphExecutor::CreateT
     };
     return {fexec, arg_ptr};
   }
-  ::tvm::runtime::PackedFunc pf = factory_.module_.GetFunction(param.func_name, true);
+  ::tvm::runtime::PackedFunc pf = tvm_graph_.module_.GetFunction(param.func_name, true);
   CHECK(pf != nullptr);
   
   auto fexec = [arg_ptr, pf]() {
@@ -734,7 +766,7 @@ std::pair<std::function<void()>, std::shared_ptr<OpArgs>> GraphExecutor::CreateT
   return {fexec, arg_ptr};
 }
 
-void GraphExecutor::AllocStorageMaybeAdjust() {
+void Executor::AllocStorageMaybeAdjust() {
   // CHECK(Config::use_shared_tensor_infer && Config::ondemand_adjust);
   CHECK(Config::ondemand_adjust);
   CHECK(!Config::infer_raw_blob_alloc);
@@ -744,60 +776,67 @@ void GraphExecutor::AllocStorageMaybeAdjust() {
   auto adjust_train_batch_size = [this, &adjusted](bool first_adjust) {
     if (adjusted) return;
     if (!Controller::Get()->IsTrainIdle()) {
-      auto wait_train_pid = ModelTrainStore::Get()->GetTrainPid();
-      // LOG(INFO) << "[GraphExecutor] AllocStorageMaybeAdjust: model " << this->factory_.model_rank_ 
+      auto wait_train_pid = TrainLauncher::Get()->GetTrainPid();
+      // LOG(INFO) << "[Executor] AllocStorageMaybeAdjust: model " << this->tvm_graph_.model_rank_ 
       //           << " begin wait train pid " << wait_train_pid;
-      this->factory_.infer_model_->SetWaitTrainPid(this->infer_model_worker_id_, wait_train_pid);
+      // this->tvm_graph_.infer_model_->SetWaitTrainPid(this->infer_model_worker_id_, wait_train_pid);
 
-      PROFILE_START(TrainAdjust, 0);
-      auto cmd_id = Controller::Get()->ColocateAdjust(GetAdjustBatchSize());
+      PROFILE_START(TrainAdjust);
+      auto adjust_batch_size = TrainLauncher::Get()->
+          GetAdjustBatchSize(sta::ByteToMB(GetStorageSize()));
+      auto cmd_id = Controller::Get()->
+          ColocateAdjust(this->tvm_graph_.model_rank_, adjust_batch_size);
       Controller::Get()->WaitColocateAdjustDone(cmd_id);
-      PROFILE_END(TrainAdjust, 0);
+      PROFILE_END(TrainAdjust);
       if (first_adjust) {
-        Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, PROFILE_DURATRION(TrainAdjust, 0));        
+        Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, PROFILE_DURATRION(TrainAdjust));        
       }
-      LOG(INFO) << "[GraphExecutor] AllocStorageMaybeAdjust: model " << this->factory_.model_rank_ 
-                << " wait adjust " << PROFILE_DURATRION(TrainAdjust, 0)
+      LOG(INFO) << "[Executor] AllocStorageMaybeAdjust: model " << this->tvm_graph_.model_rank_ 
+                << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
                 << " wait train pid " << wait_train_pid;
                 
     } else {
-      LOG(INFO) << "[GraphExecutor] AllocStorageMaybeAdjust: model "<< this->factory_.model_rank_ << " train idle";
+      LOG(INFO) << "[Executor] AllocStorageMaybeAdjust: model "
+                << this->tvm_graph_.model_rank_ << " train idle";
     }
     adjusted = true;
   };
 
   // ensure sequential inference allocation  
-  if (!Controller::Get()->TryEnterInferModelAlloc(factory_.model_rank_)) {
+  // if (!Controller::Get()->TryEnterInferChangeMemory(tvm_graph_.model_rank_)) {
+  if (!ResourceManager::InferChangeMemoryTryLock()) {
     if (Controller::Get()->HasFlyingColocateAdjust()) {
       adjust_train_batch_size(false);
     }
     auto _t0 = Profiler::Now();
-    Controller::Get()->EnterInferModelAlloc(factory_.model_rank_);
+    // Controller::Get()->EnterInferChangeMemory(tvm_graph_.model_rank_);
+    ResourceManager::InferChangeMemoryLock();
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferWaitBeforeEnterAlloc, Profiler::MilliFrom(_t0));
   }
 
-  double free_memory_mb = GetFreeMemoryMB();
-  if (!Controller::Get()->IsTrainIdle()) {
-    if (Config::use_shared_tensor_train) {
-      free_memory_mb = sta::detail::ByteToMB(sta::CUDAMemPool::PoolNbytes() - sta::CUDAMemPool::InferMemUsage());
-      free_memory_mb -= std::max(sta::detail::ByteToMB(sta::CUDAMemPool::TrainAllMemUsage()),
-                                 ModelTrainStore::Get()->PredictMemUsageMB());
-      free_memory_mb -= Config::train_memory_over_predict_mb;
-    } else {
-      auto [free, total] = Profiler::GetGPUMemInfo();
-      auto infer_memory_mb = sta::detail::ByteToMB(Profiler::GetLastInferMem());
-      auto train_memory_mb = std::max(sta::detail::ByteToMB(Profiler::GetLastTrainMem()),
-                                            ModelTrainStore::Get()->PredictMemUsageMB());
-      train_memory_mb += Config::train_memory_over_predict_mb;
-      free_memory_mb = std::min(sta::detail::ByteToMB(free), 
-                                sta::detail::ByteToMB(total) - infer_memory_mb - train_memory_mb);
-      // free_memory_mb -= Config::train_memory_over_predict_mb;
-      LOG(INFO) << "free " << sta::detail::ByteToMB(free) << " total " << sta::detail::ByteToMB(total)
-                << " infer memory " << infer_memory_mb << " train memory " << train_memory_mb 
-                << " predict train memory " << ModelTrainStore::Get()->PredictMemUsageMB()
-                << " free memory " << free_memory_mb;
-    }
-  }
+  double free_memory_mb = ResourceManager::GetFreeMemoryMB();
+  // double free_memory_mb = GetFreeMemoryMB();
+  // if (!Controller::Get()->IsTrainIdle()) {
+  //   if (Config::use_shared_tensor_train) {
+  //     free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::PoolNbytes() - sta::CUDAMemPool::InferMemUsage());
+  //     free_memory_mb -= std::max(sta::ByteToMB(sta::CUDAMemPool::TrainAllMemUsage()),
+  //                                TrainLauncher::Get()->PredictMemUsageMB());
+  //     free_memory_mb -= Config::train_memory_over_predict_mb;
+  //   } else {
+  //     auto [free, total] = Profiler::GetGPUMemInfo();
+  //     auto infer_memory_mb = sta::ByteToMB(Profiler::GetLastInferMem());
+  //     auto train_memory_mb = std::max(sta::ByteToMB(Profiler::GetLastTrainMem()),
+  //                                           TrainLauncher::Get()->PredictMemUsageMB());
+  //     train_memory_mb += Config::train_memory_over_predict_mb;
+  //     free_memory_mb = std::min(sta::ByteToMB(free), 
+  //                               sta::ByteToMB(total) - infer_memory_mb - train_memory_mb);
+  //     // free_memory_mb -= Config::train_memory_over_predict_mb;
+  //     LOG(INFO) << "free " << sta::ByteToMB(free) << " total " << sta::ByteToMB(total)
+  //               << " infer memory " << infer_memory_mb << " train memory " << train_memory_mb 
+  //               << " predict train memory " << TrainLauncher::Get()->PredictMemUsageMB()
+  //               << " free memory " << free_memory_mb;
+  //   }
+  // }
 
   size_t total_storage_nbytes = 0;
   std::vector<size_t> storage_nbytes(storage_pool_.size());
@@ -809,27 +848,18 @@ void GraphExecutor::AllocStorageMaybeAdjust() {
     total_storage_nbytes += sta::detail::GetAlignedNbytes(nbytes);
   }
 
-  if (sta::detail::ByteToMB(total_storage_nbytes) > free_memory_mb) {
+  LOG(INFO) << "infer require " << sta::ByteDisplay(total_storage_nbytes)
+            << " free memory " << free_memory_mb << " MB";
+  if (sta::ByteToMB(total_storage_nbytes) > free_memory_mb) {
     adjust_train_batch_size(true);
   }
 
-  PROFILE_START(InferAllocStorage, 0);
+  PROFILE_START(InferAllocStorage);
   AllocStorage();
-  // if (Config::use_shared_tensor_infer) {
-  //   for (size_t sid = 0; sid < storage_pool_.size(); sid++) {
-  //     auto &s = storage_pool_[sid];
-  //     auto tensor = sta::TensorPool::Get()->Tensor(s);
-  //     tensor.AllocForNull(sta::MemType::kInfer, false);
-  //   }
-  // } else {
-  //   for (auto &s : raw_storage_pool_) {
-  //     s.AllocForNull(sta::MemType::kInfer, true);
-  //   }
-  // }
-  PROFILE_END(InferAllocStorage, 0);
+  PROFILE_END(InferAllocStorage);
 
   // TODO: consider fwd/bwd
-  // if (sta::detail::ByteToMB(total_storage_nbytes) < free_memory_mb) {
+  // if (sta::ByteToMB(total_storage_nbytes) < free_memory_mb) {
   // // case 1: memory is enough, do not need to adjust
   //   for (size_t sid = 0; sid < storage_pool_.size(); sid++) {
   //     auto &s = storage_pool_[sid];
@@ -852,39 +882,41 @@ void GraphExecutor::AllocStorageMaybeAdjust() {
   //     }
   //   }
   // }
-  Controller::Get()->ExitInferModelAlloc(factory_.model_rank_);
+  // Controller::Get()->ExitInferChangeMemory(tvm_graph_.model_rank_);
+  ResourceManager::InferChangeMemoryUnlock();
 }
 
-double GraphExecutor::GetFreeMemoryMB() {
-  double free_memory_mb;
-  if (!Controller::Get()->IsTrainIdle()) {
-    if (Config::use_shared_tensor_train) {
-      free_memory_mb = sta::detail::ByteToMB(sta::CUDAMemPool::PoolNbytes() -
-                                             sta::CUDAMemPool::InferMemUsage());
-      free_memory_mb -= ModelTrainStore::Get()->PredictMemUsageMB();
-          // std::max(sta::detail::ByteToMB(sta::CUDAMemPool::TrainAllMemUsage()),
-          //          ModelTrainStore::Get()->PredictMemUsageMB());
-      free_memory_mb -= Config::train_memory_over_predict_mb;
-    } else {
-      auto [free, total] = Profiler::GetGPUMemInfo();
-      auto infer_memory_mb = sta::detail::ByteToMB(Profiler::GetLastInferMem());
-      auto train_memory_mb = ModelTrainStore::Get()->PredictMemUsageMB();
-          // std::max(sta::detail::ByteToMB(Profiler::GetLastTrainMem()),
-          //          ModelTrainStore::Get()->PredictMemUsageMB());
-      train_memory_mb += Config::train_memory_over_predict_mb;
-      free_memory_mb = std::min(
-          sta::detail::ByteToMB(free),
-          sta::detail::ByteToMB(total) - infer_memory_mb - train_memory_mb);
-      // free_memory_mb -= Config::train_memory_over_predict_mb;
-      LOG(INFO) << "free " << sta::detail::ByteToMB(free) << " total "
-                << sta::detail::ByteToMB(total) << " infer memory "
-                << infer_memory_mb << " train memory " << train_memory_mb
-                << " predict train memory "
-                << ModelTrainStore::Get()->PredictMemUsageMB()
-                << " free memory " << free_memory_mb;
-    }
-  }
-  return free_memory_mb;
-}
+// double Executor::GetFreeMemoryMB() {
+//   double free_memory_mb;
+//   if (!Controller::Get()->IsTrainIdle()) {
+//     if (Config::use_shared_tensor_train) {
+//       free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::PoolNbytes() -
+//                                              sta::CUDAMemPool::InferMemUsage());
+//       free_memory_mb -= TrainLauncher::Get()->PredictMemUsageMB();
+//           // std::max(sta::ByteToMB(sta::CUDAMemPool::TrainAllMemUsage()),
+//           //          TrainLauncher::Get()->PredictMemUsageMB());
+//       free_memory_mb -= Config::train_memory_over_predict_mb;
+//     } else {
+//       auto [free, total] = Profiler::GetGPUMemInfo();
+//       auto infer_memory_mb = sta::ByteToMB(Profiler::GetLastInferMem());
+//       auto train_memory_mb = TrainLauncher::Get()->PredictMemUsageMB();
+//           // std::max(sta::ByteToMB(Profiler::GetLastTrainMem()),
+//           //          TrainLauncher::Get()->PredictMemUsageMB());
+//       train_memory_mb += Config::train_memory_over_predict_mb;
+//       free_memory_mb = std::min(
+//           sta::ByteToMB(free),
+//           sta::ByteToMB(total) - infer_memory_mb - train_memory_mb);
+//       // free_memory_mb -= Config::train_memory_over_predict_mb;
+//       LOG(INFO) << "free " << sta::ByteToMB(free) << " total "
+//                 << sta::ByteToMB(total) << " infer memory "
+//                 << infer_memory_mb << " train memory " << train_memory_mb
+//                 << " predict train memory "
+//                 << TrainLauncher::Get()->PredictMemUsageMB()
+//                 << " free memory " << free_memory_mb;
+//     }
+//   }
+//   return free_memory_mb;
+// }
+
 }  // namespace tvm
 }

@@ -18,6 +18,7 @@ add_dependencies(new_torch_col xsched_lib)
 
 
 target_include_directories(new_torch_col PRIVATE ${CMAKE_SOURCE_DIR})
+target_include_directories(new_torch_col PRIVATE ${CMAKE_SOURCE_DIR}/pytorch)
 target_include_directories(new_torch_col PRIVATE ${CMAKE_BINARY_DIR}/xsched/include)
 target_link_directories(new_torch_col PRIVATE ${CMAKE_BINARY_DIR}/xsched/lib)
 
@@ -51,6 +52,7 @@ add_custom_command(
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS 
     new_torch_col sta
+    "${CMAKE_CURRENT_SOURCE_DIR}/setup.py"
     "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/memory.pxi"
     "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/ctrl_stub.pxi"
     "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/ctrl_stub.pxd"

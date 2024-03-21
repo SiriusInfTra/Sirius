@@ -62,4 +62,7 @@ bool Config::dummy_adjust = false;
 
 bool Config::system_initialized = false;
 
+bool Config::log_model_init_info = false;
+bool Config::log_grpc = false;
+
 }

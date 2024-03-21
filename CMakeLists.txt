@@ -20,7 +20,7 @@ message(STATUS "TVM_HOME: " ${TVM_HOME})
 
 
 # find cuda toolkit
-find_package(CUDAToolkit 12 REQUIRED)
+find_package(CUDAToolkit 11 REQUIRED)
 
 # Modify if you need a different default value
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)

@@ -1,6 +1,10 @@
 #ifndef COLSERVE_JOB_QUEUE_H
 #define COLSERVE_JOB_QUEUE_H
 
+#include "logging_as_glog.h"
+#include <server/grpc/grpc_server.h>
+#include <server/profiler.h>
+
 #include <iostream>
 #include <queue>
 #include <memory>
@@ -10,9 +14,6 @@
 #include <condition_variable>
 #include <chrono>
 
-#include "profiler.h"
-#include "grpc/grcp_server.h"
-#include <glog/logging.h>
 
 namespace colserve {
 

@@ -153,12 +153,15 @@ class Workload {
   bool ReportTimeStampToServer();
 
   void Run() {
-    LOG(INFO) << "Workload start ...";
     running_ = true;
     ready_promise_.set_value();
     run_btime_ = std::chrono::steady_clock::now();
     start_time_stamp_ = GetTimeStamp();
     ReportTimeStampToServer();
+    LOG(INFO) << "Workload start at " << start_time_stamp_ 
+              << " profiling will begin after " << delay_before_profile_
+              << " sec from this time point";
+
     std::this_thread::sleep_for(duration_);
     LOG(INFO) << "Workload timeout ...";
     running_ = false;
@@ -170,6 +173,7 @@ class Workload {
 
 
   void WarmupModel(const std::string& model_name, int warmup);
+  void WarmupDone();
   void InferBusyLoop(const std::string &model, size_t concurrency, 
                      std::function<double_ms_t(size_t)> interval_fn,
                      double delay_before_infer, int warmup,
@@ -212,6 +216,8 @@ class Workload {
 
   double delay_before_profile_;
   long start_time_stamp_;
+
+
 
   // friend class InferRecorder;
 

@@ -14,7 +14,7 @@ def main():
 
     system = System(mode=System.ServerMode.ColocateL1, use_sta=True, mps=True, 
                     cuda_memory_pool_gb="12", ondemand_adjust=False)
-    workload = HyperWorkload(concurrency=32, duration=60, delay_before_infer=90)
+    workload = HyperWorkload(concurrency=32, duration=60, wait_train_setup_sec=90)
     InferModel.reset_model_cnt()
     workload.set_train_workload(train_workload=TrainWorkload('resnet', 45, 64))
     num_model = 4

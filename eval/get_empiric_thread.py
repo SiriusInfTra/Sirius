@@ -33,7 +33,7 @@ def run_with_dcgmi(system: System, hyper_workload:HyperWorkload, num_model:int, 
     
 def main():
     system = System(mode=System.ServerMode.Normal, use_sta=False, mps=False)
-    workload = HyperWorkload(concurrency=1, duration=10, delay_before_infer=0)
+    workload = HyperWorkload(concurrency=1, duration=10, wait_train_setup_sec=0)
     run_with_dcgmi(system, workload, 1, 0.1, "ideal")
     run_with_dcgmi(system, workload, 1, 0.2, "ideal")
     run_with_dcgmi(system, workload, 1, 0.5, "ideal")

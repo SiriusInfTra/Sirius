@@ -4,16 +4,17 @@ add_executable(${PROJECT_NAME}
   main.cc
   cache.cc
   job_queue.cc
-  model_infer_store.cc
-  model_train_store.cc
+  infer_model_store.cc
+  infer_model.cc
+  train_launcher.cc
   controller.cc
+  resource_manager.cc
   profiler.cc
   config.cc
 
   grpc/grpc_server.cc
-
-  tvm/graph_executor.cc
-  tvm/graph_executor_factory.cc
+  tvm/graph.cc
+  tvm/executor.cc
 )
 
 # add tvm runtime

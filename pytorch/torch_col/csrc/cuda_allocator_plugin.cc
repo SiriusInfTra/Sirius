@@ -9,6 +9,8 @@
 #include <glog/logging.h>
 #include <utility>
 #include <vector>
+#include <utility>
+#include <vector>
 
 namespace torch {
 namespace cuda {
@@ -57,8 +59,8 @@ void CUDAColAllocator::init(int device_count) {
                                 false, policy);
 
   initialized_ = true;
-  DLOG(INFO) << "pytorch CUDAColAllocator Initialized, "
-            << " infer memory usage " << sta::detail::ByteDisplay(sta::CUDAMemPool::InferMemUsage());
+  LOG(INFO) << "pytorch CUDAColAllocator Initialized, "
+            << " infer memory usage " << sta::ByteDisplay(sta::CUDAMemPool::InferMemUsage());
 }
 
 c10::DataPtr CUDAColAllocator::allocate(size_t nbytes) const {
@@ -75,12 +77,16 @@ c10::DeleterFnPtr CUDAColAllocator::raw_deleter() const {
 
 void* CUDAColAllocator::raw_alloc(size_t nbytes) {
   auto entry = sta::CUDAMemPool::Get()->Alloc(nbytes, colserve::sta::MemType::kTrain, false);
-  DLOG(INFO) << "CUDAColAllocator alloc " << sta::detail::ByteDisplay(nbytes) 
-            << " : addr " << entry->addr << " nbytes " << sta::detail::ByteDisplay(entry->nbytes);
+  DLOG(INFO) << "CUDAColAllocator alloc " << sta::ByteDisplay(nbytes) 
+            << " : addr " << entry->addr << " nbytes " << sta::ByteDisplay(entry->nbytes);
   
   std::unique_lock<std::mutex> lock(entry_mutex_);
-  CHECK(entry_map_.insert(std::make_pair(entry->addr, entry)).second == true || entry->addr == nullptr) << entry->addr << " abnormal.";
-  if (train_allocating_) {
+  auto res = entry_map_.insert(std::make_pair(entry->addr, entry)); 
+  CHECK(res.second == true || entry->addr == nullptr) 
+      << " addr " << entry->addr 
+      << " nbytes " << sta::ByteDisplay(entry->nbytes) 
+      << " abnormal raw alloc";
+  if (train_model_allocating_) {
     train_model_params_.insert(std::make_pair(entry->addr, entry));
   }
   return entry->addr;
@@ -93,6 +99,10 @@ void* CUDAColAllocator::raw_alloc_with_stream(size_t nbytes, cudaStream_t stream
 void CUDAColAllocator::raw_delete(void* ptr) {
   std::unique_lock<std::mutex> interm_lock{interm_memory_mutex_};
   std::unique_lock<std::mutex> lock(entry_mutex_);
+  DLOG(INFO) << "CUDAColAllocator raw_delete " << ptr;
+  entry_map_.erase(ptr);
+  interm_memories_.erase(ptr);
+  train_model_params_.erase(ptr);
   DLOG(INFO) << "CUDAColAllocator raw_delete " << ptr;
   entry_map_.erase(ptr);
   interm_memories_.erase(ptr);
@@ -204,7 +214,8 @@ void CUDAColAllocator::TagIntermMemory(at::Tensor tensor) {
   
   std::unique_lock lock{interm_memory_mutex_};
   DLOG(INFO) << "TagIntermMemory emplace " << storage.data() << " nbytes " << storage.nbytes();
-  if (train_model_params_.find(storage.data()) != train_model_params_.cend()) {
+  // if (train_model_params_.find(storage.data()) != train_model_params_.cend()) {
+  if (train_model_params_.count(storage.data())) {
     DLOG(INFO) << "TagIntermMemory but is train";
   } else {
     interm_memories_[storage.data()].emplace_back(tensor.getIntrusivePtr());

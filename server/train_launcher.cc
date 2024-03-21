@@ -9,80 +9,105 @@
 #include <tvm/runtime/module.h>
 #include <tvm/runtime/registry.h>
 #include <tvm/runtime/logging.h>
-#include "model_infer_store.h"
 #include <glog/logging.h>
 #include <random>
 
-#include "model_train_store.h"
-#include "controller.h"
-#include "profiler.h"
-#include "config.h"
+#include <server/resource_manager.h>
+#include <server/infer_model_store.h>
+#include <server/train_launcher.h>
+#include <server/controller.h>
+#include <server/profiler.h>
+#include <server/config.h>
 
 
 namespace colserve {
 
-std::unique_ptr<ModelTrainStore> ModelTrainStore::model_train_store_;
+std::unique_ptr<TrainLauncher> TrainLauncher::train_launcher_;
 
-void ModelTrainStore::Init(const std::filesystem::path &train_store_path) {
-  model_train_store_ = std::make_unique<ModelTrainStore>();
-
-  for (auto train_script : std::filesystem::directory_iterator(train_store_path)) {
-    if (train_script.is_regular_file()) {
-      model_train_store_->train_handles_[train_script.path().stem().string()] = train_script.path();
-      LOG(INFO) << "ModelTrainStore: Add " << train_script.path().stem().string();
+std::pair<double, double> TrainLauncher::GetModelMemParam() {
+  if (Config::use_shared_tensor_train) {
+    if (cur_model_name_ == "resnet152") {
+      return {560, 125};
+    } else {
+      LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
-  }
-
-  pthread_barrier_t barrier;
-  pthread_barrier_init(&barrier, NULL, 2);
-  model_train_store_->thread_.reset(new std::thread([&]() {
-    pthread_barrier_wait(&barrier);
-    LOG(INFO) << "ModelTrainStore thread start";
-    while (Config::running) {
-      model_train_store_->Train();
-    }
-  }));
-  pthread_barrier_wait(&barrier);
-
-  if (Config::dummy_adjust) {
-    model_train_store_->dummy_adjust_thread_ = std::make_unique<std::thread>(
-        &ModelTrainStore::DummyAdjust, model_train_store_.get());
-  }
-
-  LOG(INFO) << "ModelTrainStore initialized"; 
-}
-
-bool ModelTrainStore::Shutdown() {
-  if (model_train_store_->train_pid_ != -1) {
-    CHECK_EQ(kill(model_train_store_->train_pid_, SIGKILL), 0);
-    waitpid(model_train_store_->train_pid_, NULL, 0);
-  }
-  return true;
-}
-
-bool ModelTrainStore::AddJob(network::TrainHandler::TrainData* data) {
-  job_queue_.Put(std::make_shared<TrainJob>(data));
-  return true;
-}
-
-double ModelTrainStore::PredictMemUsageMB() {
-  // LOG(INFO) << "Predict train memory, target batch size " << target_batch_size_;
-  if (target_batch_size_ <= 0) {
-    return 0;
   } else {
     if (cur_model_name_ == "resnet152") {
-      if (Config::use_shared_tensor_train) {
-        return target_batch_size_ * 145 + 560;
-      } else {
-        return target_batch_size_ * 145 + 3512; // 3512 is 3.43 GB, GPU memory usage after empty torch internal cache
-      }
+      return {3512, 145};
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
   }
 }
 
-bool ModelTrainStore::Train() {
+void TrainLauncher::Init(const std::filesystem::path &train_store_path) {
+  train_launcher_ = std::make_unique<TrainLauncher>();
+
+  for (auto train_script : std::filesystem::directory_iterator(train_store_path)) {
+    if (train_script.is_regular_file()) {
+      train_launcher_->train_handles_[train_script.path().stem().string()] = train_script.path();
+      LOG(INFO) << "TrainLauncher: Add " << train_script.path().stem().string();
+    }
+  }
+
+  pthread_barrier_t barrier;
+  pthread_barrier_init(&barrier, NULL, 2);
+  train_launcher_->thread_.reset(new std::thread([&]() {
+    pthread_barrier_wait(&barrier);
+    LOG(INFO) << "TrainLauncher thread start";
+    while (Config::running) {
+      train_launcher_->Train();
+    }
+  }));
+  pthread_barrier_wait(&barrier);
+
+  if (Config::dummy_adjust) {
+    train_launcher_->dummy_adjust_thread_ = std::make_unique<std::thread>(
+        &TrainLauncher::DummyAdjust, train_launcher_.get());
+  }
+
+  LOG(INFO) << "TrainLauncher initialized"; 
+}
+
+bool TrainLauncher::Shutdown() {
+  if (train_launcher_->train_pid_ != -1) {
+    CHECK_EQ(kill(train_launcher_->train_pid_, SIGKILL), 0);
+    waitpid(train_launcher_->train_pid_, NULL, 0);
+  }
+  return true;
+}
+
+bool TrainLauncher::AddJob(network::TrainHandler::TrainData* data) {
+  job_queue_.Put(std::make_shared<TrainJob>(data));
+  return true;
+}
+
+double TrainLauncher::PredictMemUsageMB() {
+  // LOG(INFO) << "Predict train memory, target batch size " << target_batch_size_;
+  if (target_batch_size_ <= 0) {
+    return 0;
+  } else {
+    auto [base, slope] = GetModelMemParam();
+    return base + slope * target_batch_size_;
+  }
+}
+
+int TrainLauncher::PredictTargetBatchSize(double memory_mb) {
+  auto [base, slope] = GetModelMemParam();
+  auto ret = static_cast<int>((memory_mb - base) / slope);
+  ret = std::min(ret, job_batch_size_);
+  ret = std::max(ret, 0);
+  // LOG(INFO) << "## " << memory_mb << " " << base << " " << slope
+  //           << " " << job_batch_size_;
+  return ret;
+}
+
+int TrainLauncher::GetAdjustBatchSize(double memory_mb) {
+  auto [base, slope] = GetModelMemParam();
+  return static_cast<int>((memory_mb + slope) / slope);
+}
+
+bool TrainLauncher::Train() {
   std::shared_ptr<Job> job = nullptr;
   while (job == nullptr) {
     job = job_queue_.Get();
@@ -109,8 +134,11 @@ bool ModelTrainStore::Train() {
     for (i = j + 1, j = i; j < args.size() && args[j] != ' ' && args[j] != ','; j++); 
     args_str.push_back(args.substr(i, j - i));
     arg_v = args.substr(i, j - i);
-    if (arg_k == "batch-size") {
-      SetCurBatchSize(std::stoi(arg_v));
+    // LOG(INFO) << "@@ " << arg_k << " " << arg_v;
+    if (arg_k.find("batch-size") != std::string::npos) {
+      job_batch_size_ = std::stoi(arg_v);
+      cur_batch_size_ = job_batch_size_;
+      target_batch_size_ = job_batch_size_;
     }
     for (i = j + 1; i < args.size() && args[i] == ' '; i++);
   }
@@ -170,7 +198,7 @@ bool ModelTrainStore::Train() {
   return true;
 }
 
-bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::string> &args_str) {
+bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::string> &args_str) {
   std::stringstream extra_env_ss;
   std::stringstream ss;
   char* argv[args_str.size() + 1];
@@ -185,14 +213,14 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
   CHECK_NE(pipe(to_child_pipe), -1);
 
   if (Config::IsSwitchMode()) {
-    LOG(INFO) << "[ModelTrainStore]: train wait infer idle in switch mode";
+    LOG(INFO) << "[TrainLauncher]: train wait infer idle in switch mode";
     Controller::Get()->WaitInferIdle();
   }
-  LOG(INFO) << "fork train";
+  LOG(INFO) << "fork train, batch size " << job_batch_size_;
 
   auto pid = fork();
   train_pid_ = pid;
-  CHECK_GE(pid, 0) << "[ModelTrainStore]: fork failed";
+  CHECK_GE(pid, 0) << "[TrainLauncher]: fork failed";
 
   if (pid == 0) {
     close(to_child_pipe[1]);
@@ -202,25 +230,28 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
       dup2(from_child_pipe[1], STDOUT_FILENO);
     }
     if (Config::use_xsched) {
-      std::string xsched_path = (Config::binary_directory / "xsched").string();
-      std::string xsched_lib_path = xsched_path + "/lib";
+      auto xsched_path = Config::binary_directory / "xsched";
+      auto xsched_lib_path = xsched_path / "lib";
+      auto xsched_lib_cuda = xsched_lib_path / "libcuda.so.1";
+      CHECK(std::filesystem::exists(xsched_lib_cuda));
+
       // std::string xsched_preload_path = xsched_path + "lib/libinstrument_sm70.so";
       
-      CHECK_NE(setenv("LD_LIBRARY_PATH", xsched_lib_path.c_str(), 1), -1);
-      extra_env_ss << "LD_LIBRARY_PATH=" << xsched_lib_path << " ";
+      CHECK_NE(setenv("LD_LIBRARY_PATH", xsched_lib_path.string().c_str(), 1), -1);
+      extra_env_ss << "LD_LIBRARY_PATH=" << xsched_lib_path.string() << " ";
       // CHECK_NE(setenv("LD_PRELOAD", xsched_preload_path.c_str(), 1), -1);
-      LOG(INFO) << "[ModelTrainStore]: enable xsched.";
+      LOG(INFO) << "[TrainLauncher]: enable xsched.";
     }
 
-    CHECK_NE(setenv("COLOCATE_HAS_SERVER", "1", 1), -1);
-    extra_env_ss << "COLOCATE_HAS_SERVER=1" << " ";
+    CHECK_NE(setenv("HAS_INFER_SERVER", "1", 1), -1);
+    extra_env_ss << "HAS_INFER_SERVER=1" << " ";
     if (Config::use_shared_tensor_train) {
       CHECK_NE(setenv("USE_SHARED_TENSOR", "1", 1), -1);
-      CHECK_NE(setenv("SHARED_TENSOR_HAS_SERVER", "1", 1), -1);
+      CHECK_NE(setenv("HAS_SHARED_TENSOR_SERVER", "1", 1), -1);
       CHECK_NE(setenv("SHARED_TENSOR_POOL_GB", std::to_string(Config::cuda_memory_pool_gb).c_str(), 1), -1);
       CHECK_NE(setenv("SHARED_TENSOR_POOL_FREELIST_POLICY", Config::mempool_freelist_policy.c_str(), 1), -1);
       extra_env_ss << "USE_SHARED_TENSOR=1"
-                   << " SHARED_TENSOR_HAS_SERVER=1"
+                   << " HAS_SHARED_TENSOR_SERVER=1"
                    << " SHARED_TENSOR_POOL_GB=" << Config::cuda_memory_pool_gb
                    << " SHARED_TENSOR_POOL_FREELIST_POLICY=" << Config::mempool_freelist_policy << " ";
       // CHECK_NE(setenv("CUDA_LAUNCH_BLOCKING", "1", 1), -1);
@@ -231,22 +262,22 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
     if (Config::train_mps_thread_percent >= 0 && Config::train_mps_thread_percent <= 100) {
       CHECK_NE(setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", std::to_string(Config::train_mps_thread_percent).c_str(), 1), -1);
       extra_env_ss << "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE=" << Config::train_mps_thread_percent << " ";
-      LOG(INFO) << "[ModelTrainStore]: set CUDA_MPS_ACTIVE_THREAD_PERCENTAGE to " << Config::train_mps_thread_percent;
+      LOG(INFO) << "[TrainLauncher]: set CUDA_MPS_ACTIVE_THREAD_PERCENTAGE to " << Config::train_mps_thread_percent;
     }
 
-    LOG(INFO) << "[ModelTrainStore]: " << "Train " << job << " ( "
+    LOG(INFO) << "[TrainLauncher]: " << "Train " << job << " ( "
               << extra_env_ss.str() << " " << ss.str() << ")";
     auto err = execvp("python", argv);
     // auto err = execvp("nsys", argv);
     perror("execvp");
-    CHECK_GE(err, 0) << "[ModelTrainStore]: spawn train worker fail, errno " << err;
+    CHECK_GE(err, 0) << "[TrainLauncher]: spawn train worker fail, errno " << err;
   } else {
     close(to_child_pipe[0]);
     if (Config::capture_train_log) {
       close(from_child_pipe[1]);
     }
     // train_running_ = true;
-    LOG(INFO) << "[ModelTrainStore]: " << "Train " << job << " pid " << pid;
+    LOG(INFO) << "[TrainLauncher]: " << "Train " << job << " pid " << pid;
   }
 
   if (Config::capture_train_log) {
@@ -263,7 +294,7 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
   int status;
   waitpid(pid, &status, 0);
   train_pid_ = -1;
-  first_batch_ = false;
+  batch_start_ = false;
   // target_batch_size_ = -1;
   // cur_batch_size_ = -1;
   Controller::Get()->TrainEnd(); // double check train end
@@ -272,11 +303,16 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
   if (WIFSIGNALED(status)) {
     auto signal = WTERMSIG(status);
     if (signal == SIGKILL) {
-      LOG(INFO) << "[ModelTrainStore]: " << job << " is killed, restart";
+      LOG(INFO) << "[TrainLauncher]: " << job << " is killed, restart";
       return false;
     } else {
-      LOG(FATAL) << "[ModelTrainStore]: " << job << " failed, signal is " << strsignal(signal) << " target_batch_size " << target_batch_size_
-                 << " cur_batch_size " << cur_batch_size_ << " predict memory " << PredictMemUsageMB() << "MB";
+      LOG(FATAL) << "[TrainLauncher]: " << job 
+                 << " failed, signal is " << strsignal(signal) 
+                 << " target_batch_size " << target_batch_size_ 
+                 << " cur_batch_size " << cur_batch_size_ 
+                 << " memory " << ResourceManager::GetTrainMemoryMB() << "MB"
+                 << " predict memory " << PredictMemUsageMB() << "MB"
+                 << " calculated free memory " << ResourceManager::GetFreeMemoryMB() << "MB";
       return false;
     }
   } else {
@@ -284,7 +320,7 @@ bool ModelTrainStore::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::str
   }
 }
 
-void ModelTrainStore::DummyAdjust() {
+void TrainLauncher::DummyAdjust() {
   while (this->train_pid_ == -1) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
@@ -297,9 +333,9 @@ void ModelTrainStore::DummyAdjust() {
   while (Profiler::MilliFrom(start) < 30*1000 && this->train_pid_ != -1) {
     LOG(INFO) << "DummyAdjust at " << Profiler::GetTimeStamp();
     auto batch_size = 1;
-    auto cmd_id = Controller::Get()->ColocateAdjust(batch_size);
+    auto cmd_id = Controller::Get()->ColocateAdjust(-1, batch_size);
     Controller::Get()->WaitColocateAdjustDone(cmd_id);
-    Controller::Get()->InferExit(batch_size);
+    Controller::Get()->InferExit();
     std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<>(200, 1000)(gen)));
   }
 }
