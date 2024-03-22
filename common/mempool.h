@@ -1,10 +1,8 @@
 #pragma once
 
+#include <common/util.h>
+
 #include <boost/interprocess/containers/list.hpp>
-#include <cuda.h>
-#include <cuda_runtime_api.h>
-#include "util.h"
-#include <atomic>
 #include <boost/lockfree/policies.hpp>
 #include <boost/interprocess/interprocess_fwd.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
@@ -14,6 +12,10 @@
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/circular_buffer.hpp>
 
+#include <glog/logging.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/un.h>
 #include <cstddef>
 #include <cstdlib>
 #include <functional>
@@ -27,11 +29,9 @@
 #include <vector>
 #include <memory>
 #include <thread>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/un.h>
 
-#include <glog/logging.h>
+#include <atomic>
+
 
 namespace colserve::sta {
 const static constexpr size_t MEM_BLOCK_NBYTES = 32_MB;

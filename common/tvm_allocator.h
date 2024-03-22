@@ -1,10 +1,12 @@
 #pragma once
-#include "generic_allocator.h"
-#include "mempool.h"
-#include "util.h"
+
+#include <common/generic_allocator.h>
+#include <common/mempool.h>
+#include <common/util.h>
+
+#include <glog/logging.h>
 #include <algorithm>
 #include <cstddef>
-#include <glog/logging.h>
 #include <iterator>
 #include <memory>
 #include <mutex>
@@ -13,12 +15,9 @@
 #include <map>
 #include <ostream>
 #include <list>
-
 #include <utility>
 #include <vector>
 
-#include <cuda.h>
-#include <cuda_runtime_api.h> 
 
 namespace colserve::sta {
 

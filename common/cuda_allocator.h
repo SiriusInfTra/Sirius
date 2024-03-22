@@ -1,6 +1,18 @@
 #ifndef COLSERVE_CUDA_ALLOCATOR_H
 #define COLSERVE_CUDA_ALLOCATOR_H
 
+#include <common/mempool.h>
+#include <common/util.h>
+
+#include <boost/interprocess/managed_shared_memory.hpp>
+#include <boost/interprocess/containers/vector.hpp>
+#include <boost/interprocess/allocators/allocator.hpp>
+#include <boost/interprocess/sync/interprocess_mutex.hpp>
+#include <boost/container/map.hpp>
+#include <boost/unordered_map.hpp>
+#include <boost/functional/hash.hpp>
+#include <boost/thread/lock_guard.hpp>
+
 #include <functional>
 #include <mutex>
 #include <map>
@@ -12,16 +24,6 @@
 #include <thread>
 #include <chrono>
 
-#include <boost/interprocess/managed_shared_memory.hpp>
-#include <boost/interprocess/containers/vector.hpp>
-#include <boost/interprocess/allocators/allocator.hpp>
-#include <boost/interprocess/sync/interprocess_mutex.hpp>
-#include <boost/container/map.hpp>
-#include <boost/unordered_map.hpp>
-#include <boost/functional/hash.hpp>
-#include <boost/thread/lock_guard.hpp>
-#include "mempool.h"
-#include <cuda_runtime_api.h>
 
 namespace colserve {
 namespace sta {

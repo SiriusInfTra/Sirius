@@ -1,5 +1,6 @@
-#include "tvm_allocator.h"
-#include "mempool.h"
+#include <common/tvm_allocator.h>
+#include <common/mempool.h>
+
 #include <algorithm>
 #include <iterator>
 
