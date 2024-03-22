@@ -233,9 +233,9 @@ protected:
   std::vector<PhyMem *> mapped_mem_list_;
   std::byte *base_ptr_;
 
-  EntryList             entry_list_;
-  FreeList free_list_small_;
-  FreeList free_list_large_;
+  EntryList entry_list_;
+  FreeList  free_list_small_;
+  FreeList  free_list_large_;
   std::function<void()>       oom_handler_;
 
 

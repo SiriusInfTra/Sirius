@@ -30,18 +30,18 @@ public:
 
 private:
   static std::unique_ptr<TorchAllocator> instance_;
-  std::vector<std::pair<CUdeviceptr, size_t>> planning_unmap;
+  std::vector<std::pair<CUdeviceptr, size_t>> planning_unmap_;
 
   TorchAllocator(MemPool &mempool, bip::scoped_lock<bip::interprocess_mutex> &lock);
 
   void EnsureUnmap() {
     if constexpr (alloc_conf::DELAY_UNMAP) {
-      for (auto &&[dev_ptr, sz] : planning_unmap) {
+      for (auto &&[dev_ptr, sz] : planning_unmap_) {
         CU_CALL(cuMemUnmap(reinterpret_cast<CUdeviceptr>(dev_ptr), sz));
       }
-      planning_unmap.clear();
+      planning_unmap_.clear();
     }
-    CHECK(planning_unmap.empty());
+    CHECK(planning_unmap_.empty());
   }
 
    void ReleaseFreePhyMem(bip::scoped_lock<bip::interprocess_mutex> &lock) {
@@ -64,7 +64,7 @@ private:
       size_t k0 = k;
       while (++k < ready_to_free_mask.size() && ready_to_free_mask[k] == true) {}
       if constexpr (alloc_conf::DELAY_UNMAP) {
-        planning_unmap.emplace_back(reinterpret_cast<CUdeviceptr>(base_ptr_ + k0 * MEM_BLOCK_NBYTES), (k - k0) * MEM_BLOCK_NBYTES);
+        planning_unmap_.emplace_back(reinterpret_cast<CUdeviceptr>(base_ptr_ + k0 * MEM_BLOCK_NBYTES), (k - k0) * MEM_BLOCK_NBYTES);
       } else {
         CU_CALL(cuMemUnmap(reinterpret_cast<CUdeviceptr>(base_ptr_ + k0 * MEM_BLOCK_NBYTES), (k - k0) * MEM_BLOCK_NBYTES));
       }
@@ -160,7 +160,7 @@ private:
     LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Alloc, nbytes = " << ByteDisplay(nbytes) << ".";
     nbytes = detail::AlignedNBytes<ALIGN_NBYTES>(nbytes);
     MemEntry *free_entry = nullptr;
-    // 1. normal case
+    // 1. normal case, alloc in train small/large mem pool
     if (nbytes < SMALL_BLOCK_NBYTES) {
       free_entry = free_list_small_.PopFreeEntry(nbytes, true);
       CHECK(!alloc_conf::ALWAYS_CHECK_STATE || free_entry == nullptr || CheckState());
@@ -169,7 +169,7 @@ private:
       free_entry = Split(free_entry, free_entry->addr_offset, nbytes);
       CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
     }
-    // 2. fallback with mapping
+    // 2. find global free to enlarge train memory pool 
     if (free_entry == nullptr && retry_alloc) {
         size_t try_allocate_n = detail::AlignedNBytes<MEM_BLOCK_NBYTES * 8>(nbytes) / MEM_BLOCK_NBYTES;
         std::vector<PhyMem *> phy_mem_list;
