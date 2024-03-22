@@ -52,9 +52,10 @@ static std::set<void *> train_set;
 
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(
     std::size_t nbytes, MemType mtype, bool allow_nullptr) {
+  CHECK(!allow_nullptr) << "currently deprecated";
   if (nbytes == 0) {
     return std::shared_ptr<CUDAMemPool::PoolEntry>{
-        new PoolEntry{.addr = nullptr, .nbytes=nbytes, .mtype = mtype}, free
+        new PoolEntry{.addr = nullptr, .nbytes=nbytes, .mtype = mtype}
       };
   }
   static std::mutex mutex_;
