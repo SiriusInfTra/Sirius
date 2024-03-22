@@ -68,6 +68,8 @@ private:
     LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ 
         << "Free, nbytes = " << ByteDisplay(entry->nbytes) 
         << "ptr = " << base_ptr_ + entry->addr_offset << ".";
+    
+    // 1. maintain phy memory info
     if (entry->is_train) {
       entry->is_train = false;
     } else {
@@ -112,21 +114,31 @@ private:
       }
       mempool_.DeallocPhyMem(phy_mem_list);
     }
-    
+
+    // 2. free list
     if (entry->is_small) {
       entry = free_list_small_.PushFreeEntry(entry);
       entry = MaybeMerge(entry);
-    } else {
+    } else { // large
+      // 2.0. merge with large
       entry = free_list_large_.PushFreeEntry(entry);
-      if (auto *prev_entry_nbytes = entry_list_.GetPrevEntry(entry); prev_entry_nbytes && prev_entry_nbytes->is_small && prev_entry_nbytes->is_free) {
+
+      // 2.1. try merge with prev small entry
+      auto *prev_entry_nbytes = entry_list_.GetPrevEntry(entry);
+      if (prev_entry_nbytes && prev_entry_nbytes->is_small && prev_entry_nbytes->is_free) {
         size_t prev_nbytes = prev_entry_nbytes->nbytes;
-        if (auto *maybe_merged_entry = MaybeMerge(prev_entry_nbytes); maybe_merged_entry->nbytes > prev_nbytes) {
+        auto *maybe_merged_entry = MaybeMerge(prev_entry_nbytes);
+        if (maybe_merged_entry->nbytes > prev_nbytes) {
           entry = maybe_merged_entry;
         }
       }
-      if (auto *next_entry = entry_list_.GetNextEntry(entry); next_entry && next_entry->is_small && next_entry->is_free) {
+
+      // 2.2. try merge with next small entry
+      auto *next_entry = entry_list_.GetNextEntry(entry);
+      if (next_entry && next_entry->is_small && next_entry->is_free) {
         size_t next_entry_nbytes = next_entry->nbytes;
-        if (auto *maybe_merged_entry = MaybeMerge(next_entry); maybe_merged_entry->nbytes > next_entry_nbytes) {
+        auto *maybe_merged_entry = MaybeMerge(next_entry);
+        if (maybe_merged_entry->nbytes > next_entry_nbytes) {
           entry = maybe_merged_entry;
         }
       }
@@ -186,8 +198,6 @@ public:
     CHECK(entry != nullptr);
     Free0(entry);
   }
-
-  
 
   std::byte *Alloc(size_t nbytes) {
     bip::scoped_lock lock{mempool_.GetMutex()};

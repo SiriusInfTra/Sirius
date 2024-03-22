@@ -244,25 +244,26 @@ protected:
 
 
   void ExpandMemorySpace(const std::vector<PhyMem *> &phy_mem_list, size_t len) {
-      if( (mapped_mem_list_.size() + len) * MEM_BLOCK_NBYTES > mempool_.mempool_nbytes * VA_RESERVE_SCALE) {
-    DumpState();
-    LOG(FATAL) << log_prefix_ << "VA OMM";
-  }
-  auto *mapping_begin = base_ptr_ + mapped_mem_list_.size() * MEM_BLOCK_NBYTES;
-  for (size_t k = 0; k < len; ++k) {
-    auto *mem_ptr = phy_mem_list[k];
-    CU_CALL(
-        cuMemMap(reinterpret_cast<CUdeviceptr>(
-                     base_ptr_ + mapped_mem_list_.size() * MEM_BLOCK_NBYTES),
-                 MEM_BLOCK_NBYTES, 0, mem_ptr->cu_handle, 0));
-    mapped_mem_list_.push_back(mem_ptr);
-  }
-  CUmemAccessDesc acc_desc = {
-      .location = {.type = CU_MEM_LOCATION_TYPE_DEVICE, .id = 0},
-      .flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE};
-  CU_CALL(cuMemSetAccess(reinterpret_cast<CUdeviceptr>(mapping_begin),
-                         len * MEM_BLOCK_NBYTES, &acc_desc, 1));
-  // cached_nbytes_ += len * MEM_BLOCK_NBYTES;
+    if( (mapped_mem_list_.size() + len) * MEM_BLOCK_NBYTES > mempool_.mempool_nbytes * VA_RESERVE_SCALE) {
+      DumpState();
+      LOG(FATAL) << log_prefix_ << "VA OMM";
+    }
+
+    auto *mapping_begin = base_ptr_ + mapped_mem_list_.size() * MEM_BLOCK_NBYTES;
+    for (size_t k = 0; k < len; ++k) {
+      auto *mem_ptr = phy_mem_list[k];
+      CU_CALL(cuMemMap(
+          reinterpret_cast<CUdeviceptr>(base_ptr_ + mapped_mem_list_.size() * MEM_BLOCK_NBYTES),
+          MEM_BLOCK_NBYTES, 0, mem_ptr->cu_handle, 0));
+      mapped_mem_list_.push_back(mem_ptr);
+    }
+    CUmemAccessDesc acc_desc = {
+        .location = {.type = CU_MEM_LOCATION_TYPE_DEVICE, .id = 0},
+        .flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE
+    };
+    CU_CALL(cuMemSetAccess(reinterpret_cast<CUdeviceptr>(mapping_begin),
+                           len * MEM_BLOCK_NBYTES, &acc_desc, 1));
+    // cached_nbytes_ += len * MEM_BLOCK_NBYTES;
   }
   
 

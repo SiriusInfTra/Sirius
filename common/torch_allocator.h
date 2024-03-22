@@ -27,7 +27,7 @@ namespace colserve::sta {
 class TorchAllocator : public GenericAllocator {
 public:
   static const constexpr size_t ALIGN_NBYTES = 512_B; 
-  
+
 private:
   static std::unique_ptr<TorchAllocator> instance_;
   std::vector<std::pair<CUdeviceptr, size_t>> planning_unmap;
@@ -87,41 +87,48 @@ private:
   }
 
   void EnsurePhyMemAlloc(MemEntry *entry, bip::scoped_lock<bip::interprocess_mutex> &lock) {
-      std::vector<size_t> missing_phy_mem_index_list;
-      auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(entry);
-      for (size_t k = index_begin; k < index_end; ++k) {
-        if (mapped_mem_list_[k] == nullptr) {
-          missing_phy_mem_index_list.push_back(k);
-        }
-      }
-      if (missing_phy_mem_index_list.empty()) { return; }
-      LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "missing " << missing_phy_mem_index_list.size() << " physical memory page(s), try allocate.";
-      EnsureUnmap();
-      std::vector<PhyMem *> request_phy_mem_list;
-      mempool_.AllocPhyMem(request_phy_mem_list, policy_, missing_phy_mem_index_list.size());
-      if (request_phy_mem_list.size() < missing_phy_mem_index_list.size()) {
-        DumpState();
-        TVMAllocator::Get().DumpState();
-        LOG(FATAL) << "OOM";
-      }
-      TVMAllocator::Get().SyncAllocTrain(request_phy_mem_list, lock);
-      for (size_t k = 0; k < request_phy_mem_list.size(); ++k) {
-        size_t phy_mem_index = missing_phy_mem_index_list[k];
-        mapped_mem_list_[phy_mem_index] = request_phy_mem_list[k];
-        std::byte *target_addr = base_ptr_ + phy_mem_index * MEM_BLOCK_NBYTES;
-        CU_CALL(cuMemMap(reinterpret_cast<CUdeviceptr>(target_addr), MEM_BLOCK_NBYTES, 0, mapped_mem_list_[phy_mem_index]->cu_handle, 0));
-        CUmemAccessDesc acc_desc = {
-          .location = {.type = CU_MEM_LOCATION_TYPE_DEVICE, .id = 0},
-          .flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE};
-        CU_CALL(cuMemSetAccess(reinterpret_cast<CUdeviceptr>(target_addr), MEM_BLOCK_NBYTES, &acc_desc, 1));
+    std::vector<size_t> missing_phy_mem_index_list;
+    auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(entry);
+    for (size_t k = index_begin; k < index_end; ++k) {
+      if (mapped_mem_list_[k] == nullptr) {
+        missing_phy_mem_index_list.push_back(k);
       }
     }
+    if (missing_phy_mem_index_list.empty()) { 
+      return; 
+    }
+
+    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ 
+        << "missing " << missing_phy_mem_index_list.size() 
+        << " physical memory page(s), try allocate.";
+    EnsureUnmap();
+    std::vector<PhyMem *> request_phy_mem_list;
+    mempool_.AllocPhyMem(request_phy_mem_list, policy_, missing_phy_mem_index_list.size());
+    if (request_phy_mem_list.size() < missing_phy_mem_index_list.size()) {
+      DumpState();
+      TVMAllocator::Get().DumpState();
+      LOG(FATAL) << "OOM";
+    }
+    TVMAllocator::Get().SyncAllocTrain(request_phy_mem_list, lock);
+    for (size_t k = 0; k < request_phy_mem_list.size(); ++k) {
+      size_t phy_mem_index = missing_phy_mem_index_list[k];
+      mapped_mem_list_[phy_mem_index] = request_phy_mem_list[k];
+      std::byte *target_addr = base_ptr_ + phy_mem_index * MEM_BLOCK_NBYTES;
+      CU_CALL(cuMemMap(reinterpret_cast<CUdeviceptr>(target_addr), MEM_BLOCK_NBYTES, 0, mapped_mem_list_[phy_mem_index]->cu_handle, 0));
+      CUmemAccessDesc acc_desc = {
+        .location = {.type = CU_MEM_LOCATION_TYPE_DEVICE, .id = 0},
+        .flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE};
+      CU_CALL(cuMemSetAccess(reinterpret_cast<CUdeviceptr>(target_addr), MEM_BLOCK_NBYTES, &acc_desc, 1));
+    }
+  }
 
   MemEntry *Free0(MemEntry *entry, bip::scoped_lock<bip::interprocess_mutex> &lock) {
     CHECK(entry != nullptr);
     CHECK(!entry->is_free);
     size_t nbytes = entry->nbytes;
-    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Free, nbytes = " << ByteDisplay(entry->nbytes) << "ptr = " << base_ptr_ + entry->addr_offset << ".";
+    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ 
+        << "Free, nbytes = " << ByteDisplay(entry->nbytes) 
+        << "ptr = " << base_ptr_ + entry->addr_offset << ".";
     
 
     if (entry->is_small) {
@@ -153,6 +160,7 @@ private:
     LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Alloc, nbytes = " << ByteDisplay(nbytes) << ".";
     nbytes = detail::AlignedNBytes<ALIGN_NBYTES>(nbytes);
     MemEntry *free_entry = nullptr;
+    // 1. normal case
     if (nbytes < SMALL_BLOCK_NBYTES) {
       free_entry = free_list_small_.PopFreeEntry(nbytes, true);
       CHECK(!alloc_conf::ALWAYS_CHECK_STATE || free_entry == nullptr || CheckState());
@@ -161,6 +169,7 @@ private:
       free_entry = Split(free_entry, free_entry->addr_offset, nbytes);
       CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
     }
+    // 2. fallback with mapping
     if (free_entry == nullptr && retry_alloc) {
         size_t try_allocate_n = detail::AlignedNBytes<MEM_BLOCK_NBYTES * 8>(nbytes) / MEM_BLOCK_NBYTES;
         std::vector<PhyMem *> phy_mem_list;

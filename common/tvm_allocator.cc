@@ -9,7 +9,8 @@ namespace colserve::sta {
 std::unique_ptr<TVMAllocator> TVMAllocator::instance_ = nullptr;
 
 
-TVMAllocator::TVMAllocator(MemPool &mempool, bool for_train, bip::scoped_lock<bip::interprocess_mutex> &lock): GenericAllocator(mempool, Belong::kInfer, lock) {
+TVMAllocator::TVMAllocator(MemPool &mempool, bool for_train, bip::scoped_lock<bip::interprocess_mutex> &lock)
+    : GenericAllocator(mempool, Belong::kInfer, lock) {
   LOG(INFO) << log_prefix_ << "Init TVMAllocator with args: for_train = " << for_train << ".";
   std::vector<PhyMem *> phy_mem_list;
   for(auto && phymem : mempool.GetPhyMemList()) {
@@ -19,7 +20,7 @@ TVMAllocator::TVMAllocator(MemPool &mempool, bool for_train, bip::scoped_lock<bi
   if (entry_list_.GetEntry(0) == nullptr) {
     LOG(INFO) << log_prefix_ << "Init TVMAllocator entires.";
     auto *first_entry = reinterpret_cast<MemEntry *>(MemPool::Get().GetSharedMemory().allocate(sizeof(MemEntry)));
-    first_entry->nbytes      = mempool.mempool_nbytes;
+    first_entry->nbytes = mempool.mempool_nbytes;
     first_entry->addr_offset = 0;
     
     first_entry->is_free = false;
@@ -31,9 +32,7 @@ TVMAllocator::TVMAllocator(MemPool &mempool, bool for_train, bip::scoped_lock<bi
 
 }
  
-
 TVMAllocator &TVMAllocator::Get() {
-  
   if (instance_ == nullptr) {
     bip::scoped_lock lock{MemPool::Get().GetMutex(), bip::try_to_lock};
     CHECK(lock.owns()) << "dead lock"; 
@@ -47,4 +46,5 @@ void TVMAllocator::Init(bool for_train, bip::scoped_lock<bip::interprocess_mutex
   CHECK(lock.owns());
   instance_.reset(new TVMAllocator(MemPool::Get(), true, lock));
 }
+
 } // namespace colserve::sta
