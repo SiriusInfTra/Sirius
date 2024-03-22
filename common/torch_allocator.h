@@ -44,7 +44,7 @@ private:
     CHECK(planning_unmap_.empty());
   }
 
-   void ReleaseFreePhyMem(bip::scoped_lock<bip::interprocess_mutex> &lock) {
+  void ReleaseFreePhyMem(bip::scoped_lock<bip::interprocess_mutex> &lock) {
     LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Release free physical memory.";
     size_t allocated_nbytes = 0;
     std::vector<int> ready_to_free_mask(mapped_mem_list_.size(), true);
@@ -114,7 +114,9 @@ private:
       size_t phy_mem_index = missing_phy_mem_index_list[k];
       mapped_mem_list_[phy_mem_index] = request_phy_mem_list[k];
       std::byte *target_addr = base_ptr_ + phy_mem_index * MEM_BLOCK_NBYTES;
-      CU_CALL(cuMemMap(reinterpret_cast<CUdeviceptr>(target_addr), MEM_BLOCK_NBYTES, 0, mapped_mem_list_[phy_mem_index]->cu_handle, 0));
+      CU_CALL(cuMemMap(
+          reinterpret_cast<CUdeviceptr>(target_addr), 
+          MEM_BLOCK_NBYTES, 0, mapped_mem_list_[phy_mem_index]->cu_handle, 0));
       CUmemAccessDesc acc_desc = {
         .location = {.type = CU_MEM_LOCATION_TYPE_DEVICE, .id = 0},
         .flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE};
@@ -130,7 +132,6 @@ private:
         << "Free, nbytes = " << ByteDisplay(entry->nbytes) 
         << "ptr = " << base_ptr_ + entry->addr_offset << ".";
     
-
     if (entry->is_small) {
       entry = free_list_small_.PushFreeEntry(entry);
       entry = MaybeMerge(entry);
