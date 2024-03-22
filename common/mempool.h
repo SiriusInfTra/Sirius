@@ -12,7 +12,6 @@
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/circular_buffer.hpp>
 
-#include <glog/logging.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/un.h>
@@ -38,17 +37,6 @@ const static constexpr size_t MEM_BLOCK_NBYTES = 32_MB;
 
 
 namespace detail {
-
-inline double ByteToMB(size_t nbytes) {
-  return static_cast<double>(nbytes) / 1_MB;
-}
-
-inline std::string ByteDisplay(size_t nbytes) {
-  std::stringstream ss;
-  ss << std::fixed << std::setprecision(2)
-     << static_cast<double>(nbytes) / 1_MB << "MB (" << nbytes << " Bytes)";
-  return ss.str();
-}
 constexpr size_t alignment = 1024;
 inline size_t GetAlignedNbytes(size_t nbytes) {
   static_assert((alignment & (alignment - 1)) == 0, "alignment must be power of 2");
@@ -171,7 +159,7 @@ private:
 
   std::unique_ptr<HandleTransfer> tranfer;
   std::vector<PhyMem> phy_mem_list_;
-  phymem_queue *free_queue;
+  phymem_queue *free_queue_;
   stats_arr *allocated_nbytes_;
   stats_arr *cached_nbytes_;
   
@@ -195,14 +183,7 @@ public:
 
   void AllocPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong, size_t num_phy_mem);
 
-  void ClaimPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong) {
-    for (auto &phymem_ptr : phy_mem_list) {
-      CHECK_EQ(*phymem_ptr->belong, Belong::kFree);
-      free_queue->erase(*phymem_ptr->pos_queue);
-      *phymem_ptr->belong = belong;
-    }
-    cached_nbytes_->at(static_cast<size_t>(belong)).fetch_add(phy_mem_list.size() * MEM_BLOCK_NBYTES, std::memory_order_relaxed);
-  }
+  void ClaimPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong);
 
   void DeallocPhyMem(const std::vector<PhyMem *> &phy_mem_list);
 
@@ -230,18 +211,7 @@ public:
     return cached_nbytes_->at(static_cast<size_t>(belong)).load(std::memory_order_relaxed);
   }
 
-  void PrintStatus() {
-    for (Belong belong : {Belong::kInfer, Belong::kTrain}) {
-      LOG(INFO) << belong << " Allocate: " << detail::ByteDisplay(GetAllocatedNbytes(belong));
-      LOG(INFO) << belong << " Cached: " << detail::ByteDisplay(GetCachedNbytes(belong));
-    }
-    LOG(INFO) << "[mempool] nbytes = " << detail::ByteDisplay(mempool_nbytes);
-    LOG(INFO) << "[mempool] total phy block = " << phy_mem_list_.size();
-    LOG(INFO) << "[mempool] free phy block = " << std::count_if(phy_mem_list_.cbegin(), phy_mem_list_.cend(), [](auto &phy_mem) { return *phy_mem.belong == Belong::kFree; });
-    LOG(INFO) << "[mempool] train phy block = " << std::count_if(phy_mem_list_.cbegin(), phy_mem_list_.cend(), [](auto &phy_mem) { return *phy_mem.belong == Belong::kTrain; });
-    LOG(INFO) << "[mempool] infer phy block = " << std::count_if(phy_mem_list_.cbegin(), phy_mem_list_.cend(), [](auto &phy_mem) { return *phy_mem.belong == Belong::kInfer; });
-    LOG(INFO) << "[mempool] freelist len = " << free_queue->size();
-  }
+  void PrintStatus();
 
   ~MemPool();
 };

@@ -245,8 +245,12 @@ bool FreeList::CheckState() {
 
 
 GenericAllocator::GenericAllocator(MemPool &mempool, Belong policy, bip::scoped_lock<bip::interprocess_mutex> &lock)
-    : mempool_(mempool), log_prefix_("[" + ToString(policy) + "] "), entry_list_(log_prefix_, policy), free_list_small_(entry_list_, true, log_prefix_, policy),
-      free_list_large_(entry_list_, false, log_prefix_, policy), policy_(policy) {
+    : mempool_(mempool), 
+      log_prefix_("[" + ToString(policy) + "] "), 
+      entry_list_(log_prefix_, policy), 
+      free_list_small_(entry_list_, true, log_prefix_, policy),
+      free_list_large_(entry_list_, false, log_prefix_, policy), 
+      policy_(policy) {
   CHECK(lock.owns());
   CU_CALL(cuMemAddressReserve(reinterpret_cast<CUdeviceptr *>(&base_ptr_),
                               mempool_.mempool_nbytes * VA_RESERVE_SCALE, MEM_BLOCK_NBYTES, 0, 0));

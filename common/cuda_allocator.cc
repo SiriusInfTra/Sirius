@@ -58,6 +58,7 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(
         new PoolEntry{.addr = nullptr, .nbytes=nbytes, .mtype = mtype}
       };
   }
+
   static std::mutex mutex_;
   std::unique_lock lock{mutex_};
   auto t0 = std::chrono::steady_clock::now();
@@ -76,24 +77,24 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(
   }
   auto t1 = std::chrono::steady_clock::now();
   if (mtype == MemType::kTrain) {
-    train_alloc_us_.fetch_add(std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count());
+    train_alloc_us_.fetch_add(std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count(),
+                              std::memory_order_relaxed);
   }
   // DLOG(INFO) << "mtype = " << static_cast<size_t>(mtype) << ", alloc time = " << std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() << ".";
+
   auto free = [mtype](CUDAMemPool::PoolEntry *entry) {
       std::unique_lock lock{mutex_};
     if (mtype == MemType::kInfer) {
       TVMAllocator::Get().Free(reinterpret_cast<std::byte*>(entry->addr));
-
-
     } else if (mtype == MemType::kTrain) {
       TorchAllocator::Get().Free(reinterpret_cast<std::byte*>(entry->addr));
       DLOG(INFO) << "Torch Free: " << entry->addr << ", nbytes = " << entry->nbytes;
       train_set.erase(entry->addr);
     } else {
-      LOG(FATAL) << static_cast<int>(mtype);
+      LOG(FATAL) << "Unknown mtype: " << static_cast<size_t>(mtype); 
     }
-
   };
+
   return std::shared_ptr<CUDAMemPool::PoolEntry>{
     new PoolEntry{.addr = ptr, .nbytes=nbytes, .mtype = mtype}, free
   };
@@ -106,8 +107,7 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::RawAlloc(size_t nbytes, Mem
     const char* env = getenv("STA_RAW_ALLOC_UNIFIED_MEMORY");
     if (env && atoi(env) != 0) {
       unified_memory = true;
-      DLOG(INFO) << "sta raw alloc using unified memory";
-
+      LOG(INFO) << "sta raw alloc using unified memory";
     }
     initilized = true;
   }

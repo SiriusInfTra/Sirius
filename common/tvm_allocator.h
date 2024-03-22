@@ -24,13 +24,14 @@ namespace colserve::sta {
 class TVMAllocator : public GenericAllocator {
 public:
   static const constexpr size_t ALIGN_NBYTES = 16_MB; 
+
 private:
   static std::unique_ptr<TVMAllocator> instance_;
   std::mutex mutex_;
 
   MemEntry *Alloc0(size_t nbytes) {
     CHECK_GT(nbytes, 0);
-    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Alloc, nbytes = " << detail::ByteDisplay(nbytes) << ".";
+    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Alloc, nbytes = " << ByteDisplay(nbytes) << ".";
   
     nbytes = detail::AlignedNBytes<ALIGN_NBYTES>(nbytes);
     MemEntry *free_entry = nullptr;
@@ -64,7 +65,9 @@ private:
     CHECK(entry != nullptr);
     CHECK(!entry->is_free);
     size_t nbytes = entry->nbytes;
-    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Free, nbytes = " << detail::ByteDisplay(entry->nbytes) << "ptr = " << base_ptr_ + entry->addr_offset << ".";
+    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ 
+        << "Free, nbytes = " << ByteDisplay(entry->nbytes) 
+        << "ptr = " << base_ptr_ + entry->addr_offset << ".";
     if (entry->is_train) {
       entry->is_train = false;
     } else {
@@ -109,6 +112,7 @@ private:
       }
       mempool_.DeallocPhyMem(phy_mem_list);
     }
+    
     if (entry->is_small) {
       entry = free_list_small_.PushFreeEntry(entry);
       entry = MaybeMerge(entry);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <common/log_as_glog_sta.h>
 #include <common/mempool.h>
 #include <common/util.h>
 
@@ -7,7 +8,6 @@
 #include <boost/container/map.hpp>
 #include <boost/interprocess/containers/list.hpp>
 
-#include <glog/logging.h>
 #include <algorithm>
 #include <cstddef>
 #include <cstdlib>
@@ -54,9 +54,24 @@ public:
 };
 
 namespace bip = boost::interprocess;
-using entry_linklist = bip::list<shm_handle<MemEntry>, bip::allocator<shm_handle<MemEntry>, bip::managed_shared_memory::segment_manager>>;
-using entry_addr_map = boost::container::map<std::ptrdiff_t, shm_handle<MemEntry>, std::less<>, bip::allocator<std::pair<const std::ptrdiff_t, shm_handle<MemEntry>>, bip::managed_shared_memory::segment_manager>>;
-using entry_nbytes_map = boost::container::multimap<size_t, shm_handle<MemEntry>, std::less<>, bip::allocator<std::pair<const size_t, shm_handle<MemEntry>>, bip::managed_shared_memory::segment_manager>>;
+using entry_linklist = bip::list<
+    shm_handle<MemEntry>, 
+    bip::allocator<shm_handle<MemEntry>, 
+    bip::managed_shared_memory::segment_manager>>;
+
+using entry_addr_map = boost::container::map<
+    std::ptrdiff_t, 
+    shm_handle<MemEntry>, 
+    std::less<>, 
+    bip::allocator<std::pair<const std::ptrdiff_t, shm_handle<MemEntry>>, 
+    bip::managed_shared_memory::segment_manager>>;
+                                             
+using entry_nbytes_map = boost::container::multimap<
+    size_t, 
+    shm_handle<MemEntry>, 
+    std::less<>, 
+    bip::allocator<std::pair<const size_t, shm_handle<MemEntry>>, 
+    bip::managed_shared_memory::segment_manager>>;
 
 struct MemEntry {
   std::ptrdiff_t  addr_offset;
@@ -353,10 +368,10 @@ public:
         LOG(INFO) << "empty array";
         continue;
       }
-      LOG(INFO) << "max: " << detail::ByteDisplay(*std::max_element(arr.cbegin(), arr.cend()));
-      LOG(INFO) << "min: " << detail::ByteDisplay(*std::min_element(arr.cbegin(), arr.cend()));
-      LOG(INFO) << "avg: " << detail::ByteDisplay(std::accumulate(arr.cbegin(), arr.cend(), 0UL) / arr.size());
-      LOG(INFO) << "sum: " << detail::ByteDisplay(std::accumulate(arr.cbegin(), arr.cend(), 0UL));
+      LOG(INFO) << "max: " << ByteDisplay(*std::max_element(arr.cbegin(), arr.cend()));
+      LOG(INFO) << "min: " << ByteDisplay(*std::min_element(arr.cbegin(), arr.cend()));
+      LOG(INFO) << "avg: " << ByteDisplay(std::accumulate(arr.cbegin(), arr.cend(), 0UL) / arr.size());
+      LOG(INFO) << "sum: " << ByteDisplay(std::accumulate(arr.cbegin(), arr.cend(), 0UL));
       LOG(INFO) << "cnt: " << arr.size();
     }
   }
@@ -367,7 +382,7 @@ public:
     CHECK_GE(addr_offset, addr_offset) << entry;
     CHECK_LE(addr_offset + nbytes, entry->addr_offset + entry->nbytes) << entry;
     CHECK(!entry->is_free);
-    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Split, addr_offset = " << addr_offset << ", nbytes = " << detail::ByteDisplay(nbytes) << ", entry = " << entry <<  ".";
+    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Split, addr_offset = " << addr_offset << ", nbytes = " << ByteDisplay(nbytes) << ", entry = " << entry <<  ".";
   
     if (entry->addr_offset < addr_offset) {
       auto *prev_entry = entry;

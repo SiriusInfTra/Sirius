@@ -27,6 +27,7 @@ namespace colserve::sta {
 class TorchAllocator : public GenericAllocator {
 public:
   static const constexpr size_t ALIGN_NBYTES = 512_B; 
+  
 private:
   static std::unique_ptr<TorchAllocator> instance_;
   std::vector<std::pair<CUdeviceptr, size_t>> planning_unmap;
@@ -81,8 +82,8 @@ private:
     // }
 
     LOG(INFO) << log_prefix_ << "Free " << ready_to_free_mem.size() << " physical memory page(s),"
-      << " current allocated: " << detail::ByteToMB(allocated_nbytes) 
-      << " current physical: " << detail::ByteToMB(physical_nbytes) << ".";
+              << " current allocated: " << ByteToMB(allocated_nbytes) 
+              << " current physical: " << ByteToMB(physical_nbytes) << ".";
   }
 
   void EnsurePhyMemAlloc(MemEntry *entry, bip::scoped_lock<bip::interprocess_mutex> &lock) {
@@ -120,7 +121,7 @@ private:
     CHECK(entry != nullptr);
     CHECK(!entry->is_free);
     size_t nbytes = entry->nbytes;
-    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Free, nbytes = " << detail::ByteDisplay(entry->nbytes) << "ptr = " << base_ptr_ + entry->addr_offset << ".";
+    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Free, nbytes = " << ByteDisplay(entry->nbytes) << "ptr = " << base_ptr_ + entry->addr_offset << ".";
     
 
     if (entry->is_small) {
@@ -149,7 +150,7 @@ private:
 
   MemEntry *Alloc0(size_t nbytes, bool retry_alloc, bip::scoped_lock<bip::interprocess_mutex> &lock) {
     CHECK_GT(nbytes, 0);
-    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Alloc, nbytes = " << detail::ByteDisplay(nbytes) << ".";
+    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Alloc, nbytes = " << ByteDisplay(nbytes) << ".";
     nbytes = detail::AlignedNBytes<ALIGN_NBYTES>(nbytes);
     MemEntry *free_entry = nullptr;
     if (nbytes < SMALL_BLOCK_NBYTES) {
@@ -165,7 +166,10 @@ private:
         std::vector<PhyMem *> phy_mem_list;
         mempool_.AllocPhyMem(phy_mem_list, policy_, try_allocate_n);
         size_t allocated = phy_mem_list.size();
-        LOG_IF(INFO, allocated < try_allocate_n) << log_prefix_ << "Require " << try_allocate_n << " physical memory blocks, but only get " << allocated << ", later retry may fail.";
+        LOG_IF(INFO, allocated < try_allocate_n) << log_prefix_ 
+            << "Require " << try_allocate_n 
+            << " physical memory blocks, but only get " << allocated 
+            << ", later retry may fail.";
         if (allocated == 0) {
           DumpState();
           LOG(FATAL) << "OOM";
