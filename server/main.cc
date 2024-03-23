@@ -1,5 +1,4 @@
 #include "logging_as_glog.h"
-#include "common/cuda_allocator.h"
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/c_runtime_api.h>
 #include <tvm/runtime/packed_func.h>
@@ -15,6 +14,7 @@
 #include <glog/logging.h>
 #include <CLI/CLI.hpp>
 
+#include <common/cuda_allocator.h>
 #include <common/init.h>
 #include <common/mempool.h>
 #include <common/util.h>

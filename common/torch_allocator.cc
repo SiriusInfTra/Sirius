@@ -25,7 +25,8 @@ TorchAllocator &TorchAllocator::Get() {
   return *instance_;
 }
 
-TorchAllocator::TorchAllocator(MemPool &mempool, bip::scoped_lock<bip::interprocess_mutex> &lock): GenericAllocator(mempool, Belong::kTrain, lock) {
+TorchAllocator::TorchAllocator(MemPool &mempool, bip::scoped_lock<bip::interprocess_mutex> &lock)
+    : GenericAllocator(mempool, Belong::kTrain, lock) {
   LOG(INFO) << log_prefix_ << "Init TorchAllocator.";
   TVMAllocator::Init(true, lock);
 }

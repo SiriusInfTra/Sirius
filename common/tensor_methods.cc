@@ -222,15 +222,17 @@ void STensor::DeallocToDummy() {
 }
 
 void STensor::Rearrange() {
-  if (IsNull() || (get()->tensor_.data == (void*)-1)) {
-    return; // null/dummy tensor
-  }
-  auto new_mdata = CUDAMemPool::Get()->Alloc(
-    get()->mdata_->nbytes, get()->mdata_->mtype, false);
-  // CUDAMemPool::Get()->CopyFromTo(get()->mdata_, new_mdata);
-  get()->mdata_ = new_mdata;
-  get()->tensor_.data = new_mdata->addr;
-  this->UpdateVersion();
+  LOG(FATAL) << "deprecated Rearrange()";
+
+  // if (IsNull() || (get()->tensor_.data == (void*)-1)) {
+  //   return; // null/dummy tensor
+  // }
+  // auto new_mdata = CUDAMemPool::Get()->Alloc(
+  //   get()->mdata_->nbytes, get()->mdata_->mtype, false);
+  // // CUDAMemPool::Get()->CopyFromTo(get()->mdata_, new_mdata);
+  // get()->mdata_ = new_mdata;
+  // get()->tensor_.data = new_mdata->addr;
+  // this->UpdateVersion();
 }
 
 }

@@ -153,6 +153,7 @@ public:
 
   TVMAllocator(MemPool &mempool, bool for_train, bip::scoped_lock<bip::interprocess_mutex> &lock);
 
+  // TO FIX: Sync is not good name
   void SyncAllocTrain(const std::vector<PhyMem *> &phymem_list, bip::scoped_lock<bip::interprocess_mutex> &lock) {
     // TODO: awareness optimal 
     CHECK(lock.owns());

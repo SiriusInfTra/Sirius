@@ -56,26 +56,40 @@ private:
     }
     // some physical memory pages already free
     for (size_t k = 0; k < ready_to_free_mask.size(); ++k) {
-      if (mapped_mem_list_[k] == nullptr) { ready_to_free_mask[k] = false; }
+      if (mapped_mem_list_[k] == nullptr) { 
+        ready_to_free_mask[k] = false; 
+      }
     }
     std::vector<PhyMem *> ready_to_free_mem;
     for (size_t k = 0; k < ready_to_free_mask.size(); ++k) {
       if (ready_to_free_mask[k] == false) { continue; }
+      // find continuous phy pages to free
       size_t k0 = k;
       while (++k < ready_to_free_mask.size() && ready_to_free_mask[k] == true) {}
       if constexpr (alloc_conf::DELAY_UNMAP) {
-        planning_unmap_.emplace_back(reinterpret_cast<CUdeviceptr>(base_ptr_ + k0 * MEM_BLOCK_NBYTES), (k - k0) * MEM_BLOCK_NBYTES);
+        planning_unmap_.emplace_back(
+            reinterpret_cast<CUdeviceptr>(base_ptr_ + k0 * MEM_BLOCK_NBYTES), 
+            (k - k0) * MEM_BLOCK_NBYTES);
       } else {
-        CU_CALL(cuMemUnmap(reinterpret_cast<CUdeviceptr>(base_ptr_ + k0 * MEM_BLOCK_NBYTES), (k - k0) * MEM_BLOCK_NBYTES));
+        CU_CALL(cuMemUnmap(
+            reinterpret_cast<CUdeviceptr>(base_ptr_ + k0 * MEM_BLOCK_NBYTES), 
+            (k - k0) * MEM_BLOCK_NBYTES));
       }
       // cached_nbytes_ -= (k - k0) * MEM_BLOCK_NBYTES;
       /* batch release physical memory page as it will acquire a lock */
-      ready_to_free_mem.insert(ready_to_free_mem.cend(), mapped_mem_list_.cbegin() + k0, mapped_mem_list_.cbegin() + k);
+      ready_to_free_mem.insert(ready_to_free_mem.cend(), 
+                               mapped_mem_list_.cbegin() + k0, 
+                               mapped_mem_list_.cbegin() + k);
       std::fill(mapped_mem_list_.begin() + k0, mapped_mem_list_.begin() + k, nullptr);
     }
     mempool_.DeallocPhyMem(ready_to_free_mem);
     TVMAllocator::Get().SyncFreeTrain(ready_to_free_mem, lock);
-    size_t physical_nbytes = std::count_if(mapped_mem_list_.cbegin(), mapped_mem_list_.cend(), [](auto *ptr) { return ptr != nullptr; }) * MEM_BLOCK_NBYTES;
+    size_t physical_nbytes = std::count_if(
+        mapped_mem_list_.cbegin(), 
+        mapped_mem_list_.cend(), 
+        [](auto *ptr) { return ptr != nullptr; }
+      ) * MEM_BLOCK_NBYTES;
+
     /* we can not pop last free physical memory entry unless we remove corresponding free entry */
     // while(!mapped_mem_list_.empty() && mapped_mem_list_.back() == nullptr) {
     //   mapped_mem_list_.pop_back();
@@ -170,7 +184,7 @@ private:
       free_entry = Split(free_entry, free_entry->addr_offset, nbytes);
       CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
     }
-    // 2. find global free to enlarge train memory pool 
+    // 2. find global free phy page to enlarge train memory pool 
     if (free_entry == nullptr && retry_alloc) {
         size_t try_allocate_n = detail::AlignedNBytes<MEM_BLOCK_NBYTES * 8>(nbytes) / MEM_BLOCK_NBYTES;
         std::vector<PhyMem *> phy_mem_list;
@@ -207,6 +221,7 @@ private:
     CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
     return free_entry;
   }
+
 public:
   static TorchAllocator &Get();
 

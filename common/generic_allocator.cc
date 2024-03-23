@@ -8,17 +8,20 @@
 
 
 namespace colserve::sta {
+
 void EntryList::LinkNewEntry(MemEntry *entry) {
   if (entry_list_->empty()) {
     CHECK_EQ(entry->addr_offset, 0);
   } else {
-    CHECK_EQ(entry->addr_offset, entry_list_->back().ptr()->addr_offset + entry_list_->back().ptr()->nbytes);
+    CHECK_EQ(entry->addr_offset, 
+             entry_list_->back().ptr()->addr_offset + entry_list_->back().ptr()->nbytes);
   }
 
   entry->pos_entrytable =
       entry_by_addr->insert(std::make_pair(entry->addr_offset, shm_handle<MemEntry>(entry))).first;
   entry->pos_entrylist = entry_list_->insert(entry_list_->cend(), shm_handle<MemEntry>(entry));
 }
+
 MemEntry *
 EntryList::GetEntry(std::ptrdiff_t addr_offset) {
   auto iter = entry_by_addr->find(addr_offset);
@@ -38,6 +41,7 @@ EntryList::GetPrevEntry(MemEntry *entry) {
   }
   return std::prev(iter)->ptr();
 }
+
 MemEntry *
 EntryList::GetNextEntry(MemEntry *entry) {
   auto iter = std::next(entry->pos_entrylist);
@@ -49,7 +53,7 @@ EntryList::GetNextEntry(MemEntry *entry) {
 
 MemEntry *
 EntryList::SplitEntry(MemEntry *origin_entry,
-                                         size_t remain) {
+                      size_t remain) {
   CHECK_GT(origin_entry->nbytes, remain);
   bool insert_success;
   auto *entry_split = reinterpret_cast<MemEntry *>(MemPool::Get().GetSharedMemory().allocate(sizeof(MemEntry)));
@@ -73,7 +77,7 @@ EntryList::SplitEntry(MemEntry *origin_entry,
 
 MemEntry *
 EntryList::MergeMemEntry(MemEntry *first_entry,
-                                         MemEntry *secound_entry) {
+                         MemEntry *secound_entry) {
   CHECK_EQ(first_entry->addr_offset + first_entry->nbytes,
            secound_entry->addr_offset);
   CHECK_EQ(GetNextEntry(first_entry), secound_entry);
@@ -88,6 +92,7 @@ EntryList::MergeMemEntry(MemEntry *first_entry,
   CHECK(!alloc_conf::STRICT_CHECK_STATE || CheckState());
   return first_entry;
 }
+
 void EntryList::DumpMemEntryList(std::ostream &out) {
   out << "start,len,next,prev,is_free,is_train,is_small"
       << "\n";
@@ -127,8 +132,10 @@ FreeList::FreeList(EntryList &list_index, bool is_small, const std::string &log_
     : list_index_(list_index), is_small_(is_small), policy_(policy), log_prefix_(log_prefix) {
           auto &shared_memory = MemPool::Get().GetSharedMemory();
   auto atomic_init = [&] {
-    std::string name = "FL_entry_by_nbytes_" + std::to_string(is_small) + "_" + std::to_string(static_cast<size_t>(policy));
-    entry_by_nbytes_ = shared_memory.find_or_construct<entry_nbytes_map>(name.c_str())(shared_memory.get_segment_manager());
+    std::string name = "FL_entry_by_nbytes_" + std::to_string(is_small) + "_" 
+                       + std::to_string(static_cast<size_t>(policy));
+    entry_by_nbytes_ = 
+        shared_memory.find_or_construct<entry_nbytes_map>(name.c_str())(shared_memory.get_segment_manager());
   };
   shared_memory.atomic_func(atomic_init);
 }
@@ -244,7 +251,8 @@ bool FreeList::CheckState() {
 }
 
 
-GenericAllocator::GenericAllocator(MemPool &mempool, Belong policy, bip::scoped_lock<bip::interprocess_mutex> &lock)
+GenericAllocator::GenericAllocator(
+    MemPool &mempool, Belong policy, bip::scoped_lock<bip::interprocess_mutex> &lock) 
     : mempool_(mempool), 
       log_prefix_("[" + ToString(policy) + "] "), 
       entry_list_(log_prefix_, policy), 
@@ -263,7 +271,8 @@ GenericAllocator::~GenericAllocator() {
     if (mempool_.IsInit()) { DumpState(); }
     int ignore;
     if (cuDriverGetVersion(&ignore) != CUDA_ERROR_DEINITIALIZED) {
-      CU_CALL(cuMemAddressFree(reinterpret_cast<CUdeviceptr>(base_ptr_), mempool_.mempool_nbytes * VA_RESERVE_SCALE));
+      CU_CALL(cuMemAddressFree(reinterpret_cast<CUdeviceptr>(base_ptr_), 
+                               mempool_.mempool_nbytes * VA_RESERVE_SCALE));
     }
   }
 
