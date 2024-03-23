@@ -188,8 +188,9 @@ int main(int argc, char *argv[]) {
       static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
       true, false, free_list_policy);
     colserve::sta::CUDAMemPool::Get()->RegisterOOMHandler([]() {
-      LOG(INFO) << "train predict memory " <<  colserve::ModelTrainStore::Get()->PredictMemUsageMB() << ".";
-    }, colserve::sta::MemType::kInfer);
+      LOG(INFO) << "train predict memory " 
+                <<  colserve::TrainLauncher::Get()->PredictMemUsageMB() << "."; 
+      }, colserve::sta::MemType::kInfer);
   }
   colserve::ResourceManager::Init();
   colserve::Controller::Init();
