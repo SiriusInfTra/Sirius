@@ -12,15 +12,6 @@
 #include <numeric>
 #include <string>
 
-#define CUDA_CALL(func) do { \
-  auto error = func; \
-  if (error != cudaSuccess) { \
-    LOG(FATAL) << #func << " " << cudaGetErrorString(error); \
-    exit(EXIT_FAILURE); \
-  } \
-  } while (0)
-
-
 namespace colserve {
 namespace sta {
 
@@ -81,7 +72,8 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(
     train_alloc_us_.fetch_add(std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count(),
                               std::memory_order_relaxed);
   }
-  // DLOG(INFO) << "mtype = " << static_cast<size_t>(mtype) << ", alloc time = " << std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() << ".";
+  // DLOG(INFO) << "mtype = " << static_cast<size_t>(mtype) << ", alloc time = " 
+  //            << std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() << ".";
 
   auto free = [mtype](CUDAMemPool::PoolEntry *entry) {
       std::unique_lock lock{mutex_};
@@ -196,5 +188,6 @@ void CUDAMemPool::RegisterOOMHandler(std::function<void()> oom_handler, MemType 
       LOG(FATAL) << "unknown MemType " << static_cast<int>(mtype) << ".";
   }
 }
+
 }  // namespace sta
 }

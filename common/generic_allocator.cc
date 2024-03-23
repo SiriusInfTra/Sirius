@@ -254,7 +254,7 @@ bool FreeList::CheckState() {
 GenericAllocator::GenericAllocator(
     MemPool &mempool, Belong policy, bip::scoped_lock<bip::interprocess_mutex> &lock) 
     : mempool_(mempool), 
-      log_prefix_("[" + ToString(policy) + "] "), 
+      log_prefix_("[Memory Allocator] [" + ToString(policy) + "] "), 
       entry_list_(log_prefix_, policy), 
       free_list_small_(entry_list_, true, log_prefix_, policy),
       free_list_large_(entry_list_, false, log_prefix_, policy), 
