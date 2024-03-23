@@ -20,18 +20,29 @@
   } \
   } while (0)
 
-#define CU_CALL(func) do { \
-  auto t0 = std::chrono::steady_clock::now(); \
-  auto error = func; \
-  auto t1 = std::chrono::steady_clock::now(); \
-  if (error != CUDA_SUCCESS) { \
-    const char *errMsg; cuGetErrorString(error, &errMsg); \
-    LOG(FATAL) << #func << " " << errMsg; \
-    exit(EXIT_FAILURE); \
-  } else { \
-    LOG_IF(INFO, false) << #func << " cost " << std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() << " us"; \
-  } \
-  } while (0)
+// #define CU_CALL(func) do { \
+//   auto t0 = std::chrono::steady_clock::now(); \
+//   auto error = func; \
+//   auto t1 = std::chrono::steady_clock::now(); \
+//   if (error != CUDA_SUCCESS) { \
+//     const char *errMsg; cuGetErrorString(error, &errMsg); \
+//     LOG(FATAL) << #func << " " << errMsg; \
+//     exit(EXIT_FAILURE); \≈
+//   } else { \
+//     LOG_IF(INFO, false) << #func << " cost " << std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() << " us"; \
+//   } \
+//   } while (0)
+
+#define CU_CALL(func) \
+  do { \
+    auto err = func; \
+    if (err != CUDA_SUCCESS) { \
+      const char* pstr = nullptr; \
+      cuGetErrorString(err, &pstr); \
+      LOG(FATAL) << #func << ": " << pstr; \
+      exit(EXIT_FAILURE); \
+    } \
+  } while (0);
 
 namespace colserve {
 namespace literals {

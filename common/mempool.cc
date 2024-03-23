@@ -18,7 +18,8 @@ namespace colserve::sta {
 std::unique_ptr<MemPool> MemPool::instance_ = nullptr;
 std::atomic<bool> MemPool::is_init_ = false;
 
-void HandleTransfer::SendHandles(int fd_list[], size_t len, bip::scoped_lock<bip::interprocess_mutex> &lock) {
+void HandleTransfer::SendHandles(int fd_list[], size_t len, 
+                                 bip::scoped_lock<bip::interprocess_mutex> &lock) {
   int socket_fd;
   struct sockaddr_un server_addr;
 
@@ -31,7 +32,8 @@ void HandleTransfer::SendHandles(int fd_list[], size_t len, bip::scoped_lock<bip
   unlink(master_name_.c_str());
   strncpy(server_addr.sun_path, master_name_.c_str(), master_name_.size());
 
-  CHECK_EQ(bind(socket_fd, (struct sockaddr *)&server_addr, SUN_LEN(&server_addr)), 0) << "[mempool] Bind error.";
+  CHECK_EQ(bind(socket_fd, (struct sockaddr *)&server_addr, SUN_LEN(&server_addr)), 0) 
+      << "[mempool] Bind error.";
 
   // send to client
   ready_cond_->wait(lock);
@@ -84,14 +86,14 @@ void HandleTransfer::ReceiveHandle(int fd_list[], size_t len) {
 
   unlink(slave_name_.c_str());
   strncpy(client_addr.sun_path, slave_name_.c_str(), slave_name_.size());
-  CHECK_EQ(bind(socket_fd, (struct sockaddr *)&client_addr, SUN_LEN(&client_addr)), 0) << "[mempool] Bind fail.";
+  CHECK_EQ(bind(socket_fd, (struct sockaddr *)&client_addr, SUN_LEN(&client_addr)), 0) 
+      << "[mempool] Bind fail.";
 
   // recv from server
   {
     bip::scoped_lock lock{*ready_mutex_};
     ready_cond_->notify_all();
   }
-
 
   struct msghdr msg = {0};
   struct iovec iov[1];
@@ -124,7 +126,6 @@ void HandleTransfer::ReceiveHandle(int fd_list[], size_t len) {
   // close socket
   unlink(slave_name_.c_str());
   close(socket_fd);
-
 }
 
 void HandleTransfer::ExportWorker() {
@@ -162,9 +163,9 @@ void HandleTransfer::ExportWorker() {
 }
 
 HandleTransfer::HandleTransfer(bip::managed_shared_memory &shm,
-                                              std::vector<PhyMem> &phy_mem_list,
-                                              size_t mem_block_nbytes,
-                                              size_t mem_block_num)
+                               std::vector<PhyMem> &phy_mem_list,
+                               size_t mem_block_nbytes,
+                               size_t mem_block_num)
     : shared_memory_(shm), phy_mem_list_(phy_mem_list),
       mem_block_nbytes_(mem_block_nbytes) {
   char *gpu_id = getenv("CUDA_VISIBLE_DEVICES");
@@ -181,7 +182,8 @@ HandleTransfer::HandleTransfer(bip::managed_shared_memory &shm,
   ready_cond_ = shared_memory_.find_or_construct<bip::interprocess_condition>("HT_ready_cond")();
   phy_mem_list.reserve(mem_block_num);
   Belong *belong_list = shared_memory_.find_or_construct<Belong>("HT_belong_list")[mem_block_num](Belong::kFree);
-  phymem_queue::iterator *iter_list = shared_memory_.find_or_construct<phymem_queue::iterator>("HT_iter_list")[mem_block_num]();
+  phymem_queue::iterator *iter_list = 
+      shared_memory_.find_or_construct<phymem_queue::iterator>("HT_iter_list")[mem_block_num]();
   for (size_t k = 0; k < mem_block_num; ++k) {
     phy_mem_list.push_back(PhyMem{.index = k, .belong = &belong_list[k], .pos_queue = &iter_list[k]});
   }
@@ -217,11 +219,14 @@ void HandleTransfer::InitSlave() {
   }
   while(chunk_base < phy_mem_list_.size()) {
     size_t chunk_size = std::min(TRANSFER_CHUNK_SIZE, phy_mem_list_.size() - chunk_base);
-    LOG(INFO) << "[mempool] Slave is receving handles: " << chunk_base << "/" << phy_mem_list_.size() << ".";
+    LOG(INFO) << "[mempool] Slave is receving handles: " 
+              << chunk_base << "/" << phy_mem_list_.size() << ".";
     ReceiveHandle(fd_list.data(), chunk_size);
     for (size_t k = 0; k < chunk_size; ++k) {
-      CU_CALL(cuMemImportFromShareableHandle(&phy_mem_list_[chunk_base + k].cu_handle, reinterpret_cast<void *>(fd_list[k]), 
-        CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR));
+      CU_CALL(cuMemImportFromShareableHandle(
+            &phy_mem_list_[chunk_base + k].cu_handle, 
+            reinterpret_cast<void *>(fd_list[k]), 
+            CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR));
       close(fd_list[k]);
     }
     chunk_base += chunk_size;
@@ -250,7 +255,8 @@ MemPool::MemPool(size_t nbytes, bool cleanup): mempool_nbytes(nbytes) {
   CU_CALL(cuInit(0));
   if (cleanup) {
     bool ret = bip::shared_memory_object::remove(shared_memory_name_.c_str());
-    LOG(INFO) << "[mempool] Remove shared_memory \"" << shared_memory_name_ << "\", ret = " << ret << ".";
+    LOG(INFO) << "[mempool] Remove shared_memory \"" 
+              << shared_memory_name_ << "\", ret = " << ret << ".";
   }
   shared_memory_ = bip::managed_shared_memory{bip::open_or_create,
                                               shared_memory_name_.c_str(),
@@ -259,7 +265,8 @@ MemPool::MemPool(size_t nbytes, bool cleanup): mempool_nbytes(nbytes) {
   auto atomic_init = [&] {
     ref_count_ = shared_memory_.find_or_construct<int>("ME_ref_count")();
     mutex_ = shared_memory_.find_or_construct<bip::interprocess_mutex>("ME_mutex")();
-    free_queue_ = shared_memory_.find_or_construct<phymem_queue>("ME_free_queue")(shared_memory_.get_segment_manager());
+    free_queue_ = shared_memory_.find_or_construct<phymem_queue>("ME_free_queue")(
+        shared_memory_.get_segment_manager());
     allocated_nbytes_ = shared_memory_.find_or_construct<stats_arr>("ME_allocated_nbytes")();
     cached_nbytes_ = shared_memory_.find_or_construct<stats_arr>("ME_cached_nbytes_")();
   };
@@ -267,7 +274,8 @@ MemPool::MemPool(size_t nbytes, bool cleanup): mempool_nbytes(nbytes) {
   bip::scoped_lock locker(*mutex_);
   is_master_ = (*ref_count_)++ == 0;
 
-  tranfer.reset(new HandleTransfer(shared_memory_, phy_mem_list_,
+  tranfer.reset(new HandleTransfer(shared_memory_, 
+                                   phy_mem_list_,
                                    MEM_BLOCK_NBYTES,
                                    mem_block_num));
   if (is_master_) {
@@ -321,7 +329,8 @@ void MemPool::AllocPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong, si
     phy_mem_list.push_back(&phy_mem_ptr);
     free_queue_->pop_front();
   }
-  cached_nbytes_->at(static_cast<size_t>(belong)).fetch_add(phy_mem_list.size() * MEM_BLOCK_NBYTES, std::memory_order_relaxed);
+  cached_nbytes_->at(static_cast<size_t>(belong)).fetch_add(
+      phy_mem_list.size() * MEM_BLOCK_NBYTES, std::memory_order_relaxed);
 }
 
 void MemPool::ClaimPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong) {
@@ -330,7 +339,8 @@ void MemPool::ClaimPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong) {
     free_queue_->erase(*phymem_ptr->pos_queue);
     *phymem_ptr->belong = belong;
   }
-  cached_nbytes_->at(static_cast<size_t>(belong)).fetch_add(phy_mem_list.size() * MEM_BLOCK_NBYTES, std::memory_order_relaxed);
+  cached_nbytes_->at(static_cast<size_t>(belong)).fetch_add(
+      phy_mem_list.size() * MEM_BLOCK_NBYTES, std::memory_order_relaxed);
 }
 
 void MemPool::DeallocPhyMem(const std::vector<PhyMem *> &phy_mem_list) {
@@ -342,7 +352,8 @@ void MemPool::DeallocPhyMem(const std::vector<PhyMem *> &phy_mem_list) {
     *phy_mem_ptr->belong = Belong::kFree;
     *phy_mem_ptr->pos_queue = free_queue_->insert(free_queue_->cend(), phy_mem_ptr->index);
   }
-  cached_nbytes_->at(static_cast<size_t>(belong)).fetch_sub(phy_mem_list.size() * MEM_BLOCK_NBYTES, std::memory_order_relaxed);
+  cached_nbytes_->at(static_cast<size_t>(belong)).fetch_sub(
+      phy_mem_list.size() * MEM_BLOCK_NBYTES, std::memory_order_relaxed);
 }
 
 MemPool &MemPool::Get() {
@@ -370,9 +381,18 @@ void MemPool::PrintStatus() {
   }
   LOG(INFO) << "[mempool] nbytes = " << ByteDisplay(mempool_nbytes);
   LOG(INFO) << "[mempool] total phy block = " << phy_mem_list_.size();
-  LOG(INFO) << "[mempool] free phy block = " << std::count_if(phy_mem_list_.cbegin(), phy_mem_list_.cend(), [](auto &phy_mem) { return *phy_mem.belong == Belong::kFree; });
-  LOG(INFO) << "[mempool] train phy block = " << std::count_if(phy_mem_list_.cbegin(), phy_mem_list_.cend(), [](auto &phy_mem) { return *phy_mem.belong == Belong::kTrain; });
-  LOG(INFO) << "[mempool] infer phy block = " << std::count_if(phy_mem_list_.cbegin(), phy_mem_list_.cend(), [](auto &phy_mem) { return *phy_mem.belong == Belong::kInfer; });
+  LOG(INFO) << "[mempool] free phy block = " 
+            << std::count_if(phy_mem_list_.cbegin(), phy_mem_list_.cend(), 
+                             [](auto &phy_mem) { return *phy_mem.belong == Belong::kFree; });
+
+  LOG(INFO) << "[mempool] train phy block = " 
+            << std::count_if(phy_mem_list_.cbegin(), phy_mem_list_.cend(), 
+                             [](auto &phy_mem) { return *phy_mem.belong == Belong::kTrain; });
+
+  LOG(INFO) << "[mempool] infer phy block = " 
+            << std::count_if(phy_mem_list_.cbegin(), phy_mem_list_.cend(), 
+                             [](auto &phy_mem) { return *phy_mem.belong == Belong::kInfer; });
+                             
   LOG(INFO) << "[mempool] freelist len = " << free_queue_->size();
 }
 

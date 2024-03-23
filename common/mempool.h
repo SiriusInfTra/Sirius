@@ -35,7 +35,6 @@
 namespace colserve::sta {
 const static constexpr size_t MEM_BLOCK_NBYTES = 32_MB;
 
-
 namespace detail {
 constexpr size_t alignment = 1024;
 inline size_t GetAlignedNbytes(size_t nbytes) {
@@ -48,13 +47,14 @@ inline size_t AlignedNBytes(size_t nbytes) {
   static_assert((align & (align - 1)) == 0, "alignment must be power of 2");
   return (nbytes + (align - 1)) & (~(align - 1));
 }
-
 }
 
 
 enum class Belong {
-  kTrain, kInfer, kUsedNum, kFree
-
+  kTrain, 
+  kInfer, 
+  kUsedNum, 
+  kFree
 };
 
 inline std::string ToString(Belong belong) {
@@ -63,16 +63,12 @@ inline std::string ToString(Belong belong) {
     return "kInfer";
   case Belong::kTrain:
     return "kTrain";
-    break;
   case Belong::kFree:
     return "kFree";
-    break;
   default:
     return "Unknown(" + std::to_string(static_cast<size_t>(belong)) + ")";
   }
 }
-
-
 
 inline std::ostream & operator<<(std::ostream &os, const Belong &belong)  {
   switch (belong) {
@@ -94,7 +90,6 @@ inline std::ostream & operator<<(std::ostream &os, const Belong &belong)  {
 
 namespace bip = boost::interprocess;
 using phymem_queue = bip::list<size_t, bip::allocator<size_t, bip::managed_shared_memory::segment_manager>>;
-  
 
 
 struct PhyMem {
@@ -131,20 +126,20 @@ private:
   void ExportWorker();
 
 public:
-  HandleTransfer(bip::managed_shared_memory &shm, std::vector<PhyMem> &phy_mem_list, size_t mem_block_nbytes, size_t mem_block_num);
+  HandleTransfer(bip::managed_shared_memory &shm, 
+                 std::vector<PhyMem> &phy_mem_list, 
+                 size_t mem_block_nbytes, 
+                 size_t mem_block_num);
 
   void InitMaster();
-
   void InitSlave();
-
   void ReleaseMaster();
 };
 
 
-
-
 class MemPool {
-  using ring_buffer = boost::circular_buffer<size_t, bip::allocator<size_t, bip::managed_shared_memory::segment_manager>>;
+  using ring_buffer = 
+      boost::circular_buffer<size_t, bip::allocator<size_t, bip::managed_shared_memory::segment_manager>>;
   using stats_arr = std::array<std::atomic<size_t>, static_cast<size_t>(Belong::kUsedNum)>;
   using phymem_callback = std::function<void(const std::vector<PhyMem*> &phymem_arr)>;
   template<typename T> friend class shm_handle;
