@@ -61,7 +61,7 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
   // waited_trains_.resize(max_num_worker_);
 
   CHECK_LE(num_worker, max_num_worker);
-  CHECK_EQ(max_num_worker_, 1) << "currently, only support one worker";
+  CHECK(max_num_worker_ == 1 && num_worker == 1) << "currently, only support one worker";
   CHECK_LT(max_num_worker_, MAX_NUM_WORKER) << "max num worker exceed limit";
   for (size_t i = 0; i < num_worker; i++) {
     auto executor = tvm_graph_->CreateGraphExecutor(i, std::vector{device});
@@ -234,13 +234,13 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     double set_input_ms;
     {
       size_t idx = 0;
-      auto begin = Profiler::Now();
+      PROFILE_START(InferSetInput);
       for (auto& input: input_info_) {
         auto& input_id = input.first;
         err = SetInput(*graph_executor, idx++, input_id, jobs);
       }
-      set_input_ms = Profiler::MilliFrom(begin);
-      // DLOG(INFO) << "Inference SetInput: " << std::chrono::duration<double, std::milli>(end - begin).count();
+      PROFILE_END(InferSetInput);
+      set_input_ms = PROFILE_DURATRION(InferSetInput);
     }
 
     double loading_ms;
@@ -258,39 +258,39 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
       }
     }
 
-
     double infer_ms;
     bool pipeline_exec = false;
     {
-      auto begin = std::chrono::steady_clock::now();
       if (Config::pipeline_load && status_[rank] == Status::kWithoutParam) {
+        PROFILE_START(InferPipelineExec);
         graph_executor->PipeLineLoad();
         graph_executor->PipelineRun();
         pipeline_exec = true;
-        
+        PROFILE_END(InferPipelineExec);
+        infer_ms = PROFILE_DURATRION(InferPipelineExec);
+
         ChangeStatus(rank, Status::kReady);
       } else {
+        PROFILE_START(InferExec);
         CHECK(status_[rank] == Status::kReady);
         graph_executor->Run();
+        PROFILE_END(InferExec);
+        infer_ms = PROFILE_DURATRION(InferExec);
       }
-      auto end = std::chrono::steady_clock::now();
-      infer_ms = std::chrono::duration<double, std::milli>(end - begin).count();
-      // DLOG(INFO) << "Inference run: " << std::chrono::duration<double, std::milli>(end - begin).count();
     }
 
     double get_output_ms;
     {
       size_t idx = 0;
-      auto begin = std::chrono::steady_clock::now();
+      PROFILE_START(InferGetOutput);
       for (auto& output : output_info_) {
         for (auto& job : jobs)
           job->GetInferData()->AddOuput();
         auto& output_id = output.first;
         err = GetOutput(*graph_executor, idx++, output_id, jobs);
       }
-      auto end = std::chrono::steady_clock::now();
-      get_output_ms = std::chrono::duration<double, std::milli>(end - begin).count();
-      // DLOG(INFO) << "Inference GetOutput: " << std::chrono::duration<double, std::milli>(end - begin).count();
+      PROFILE_END(InferGetOutput);
+      get_output_ms = PROFILE_DURATRION(InferGetOutput);
     }
     auto infer_end = std::chrono::steady_clock::now();
 
@@ -300,22 +300,12 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
        << "set_input_ms=" << set_input_ms << " "
        << (pipeline_exec ? "pipeline_exec infer_ms= " : "infer_ms=") << infer_ms << " "
        << "get_output_ms=" << get_output_ms;
-    // if (wait_train_stop_ms != -1) {
-    //   ss << " wait_train_stop_ms=" << wait_train_stop_ms;
-    // }
     if (load_param) {
       ss << " loading_ms=" << loading_ms;
     }
     ss << " total_infer_ms=" << std::chrono::duration<double, std::milli>(infer_end - infer_begin).count();
     LOG(INFO) << ss.str();
 
-    Profiler::Get()->RecordPerf(Profiler::PerfItem::InferSetInput, set_input_ms);
-    if (pipeline_exec) {
-      Profiler::Get()->RecordPerf(Profiler::PerfItem::InferPipelineExec, infer_ms);
-    } else {
-      Profiler::Get()->RecordPerf(Profiler::PerfItem::InferExec, infer_ms);
-    }
-    Profiler::Get()->RecordPerf(Profiler::PerfItem::InferGetOutput, get_output_ms);
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferRealBatchSize, jobs.size());
     for (auto& job : jobs) {
       job->RecordFinished();

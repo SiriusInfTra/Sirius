@@ -803,40 +803,16 @@ void Executor::AllocStorageMaybeAdjust() {
   };
 
   // ensure sequential inference allocation  
-  // if (!Controller::Get()->TryEnterInferChangeMemory(tvm_graph_.model_rank_)) {
   if (!ResourceManager::InferChangeMemoryTryLock()) {
     if (Controller::Get()->HasFlyingColocateAdjust()) {
       adjust_train_batch_size(false);
     }
-    auto _t0 = Profiler::Now();
-    // Controller::Get()->EnterInferChangeMemory(tvm_graph_.model_rank_);
-    ResourceManager::InferChangeMemoryLock();
-    Profiler::Get()->RecordPerf(Profiler::PerfItem::InferWaitBeforeEnterAlloc, Profiler::MilliFrom(_t0));
+    PROFILE_START(InferWaitBeforeEnterAlloc);
+    ResourceManager::InferMemoryChangingLock();
+    PROFILE_END(InferWaitBeforeEnterAlloc);
   }
 
   double free_memory_mb = ResourceManager::GetFreeMemoryMB();
-  // double free_memory_mb = GetFreeMemoryMB();
-  // if (!Controller::Get()->IsTrainIdle()) {
-  //   if (Config::use_shared_tensor_train) {
-  //     free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::PoolNbytes() - sta::CUDAMemPool::InferMemUsage());
-  //     free_memory_mb -= std::max(sta::ByteToMB(sta::CUDAMemPool::TrainAllMemUsage()),
-  //                                TrainLauncher::Get()->PredictMemUsageMB());
-  //     free_memory_mb -= Config::train_memory_over_predict_mb;
-  //   } else {
-  //     auto [free, total] = Profiler::GetGPUMemInfo();
-  //     auto infer_memory_mb = sta::ByteToMB(Profiler::GetLastInferMem());
-  //     auto train_memory_mb = std::max(sta::ByteToMB(Profiler::GetLastTrainMem()),
-  //                                           TrainLauncher::Get()->PredictMemUsageMB());
-  //     train_memory_mb += Config::train_memory_over_predict_mb;
-  //     free_memory_mb = std::min(sta::ByteToMB(free), 
-  //                               sta::ByteToMB(total) - infer_memory_mb - train_memory_mb);
-  //     // free_memory_mb -= Config::train_memory_over_predict_mb;
-  //     LOG(INFO) << "free " << sta::ByteToMB(free) << " total " << sta::ByteToMB(total)
-  //               << " infer memory " << infer_memory_mb << " train memory " << train_memory_mb 
-  //               << " predict train memory " << TrainLauncher::Get()->PredictMemUsageMB()
-  //               << " free memory " << free_memory_mb;
-  //   }
-  // }
 
   size_t total_storage_nbytes = 0;
   std::vector<size_t> storage_nbytes(storage_pool_.size());
@@ -858,7 +834,9 @@ void Executor::AllocStorageMaybeAdjust() {
   AllocStorage();
   PROFILE_END(InferAllocStorage);
 
-  // TODO: consider fwd/bwd
+  ResourceManager::InferMemoryChangingUnlock();
+
+  // TODO: consider fwd/bwd -> deprecated
   // if (sta::ByteToMB(total_storage_nbytes) < free_memory_mb) {
   // // case 1: memory is enough, do not need to adjust
   //   for (size_t sid = 0; sid < storage_pool_.size(); sid++) {
@@ -883,40 +861,7 @@ void Executor::AllocStorageMaybeAdjust() {
   //   }
   // }
   // Controller::Get()->ExitInferChangeMemory(tvm_graph_.model_rank_);
-  ResourceManager::InferChangeMemoryUnlock();
 }
-
-// double Executor::GetFreeMemoryMB() {
-//   double free_memory_mb;
-//   if (!Controller::Get()->IsTrainIdle()) {
-//     if (Config::use_shared_tensor_train) {
-//       free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::PoolNbytes() -
-//                                              sta::CUDAMemPool::InferMemUsage());
-//       free_memory_mb -= TrainLauncher::Get()->PredictMemUsageMB();
-//           // std::max(sta::ByteToMB(sta::CUDAMemPool::TrainAllMemUsage()),
-//           //          TrainLauncher::Get()->PredictMemUsageMB());
-//       free_memory_mb -= Config::train_memory_over_predict_mb;
-//     } else {
-//       auto [free, total] = Profiler::GetGPUMemInfo();
-//       auto infer_memory_mb = sta::ByteToMB(Profiler::GetLastInferMem());
-//       auto train_memory_mb = TrainLauncher::Get()->PredictMemUsageMB();
-//           // std::max(sta::ByteToMB(Profiler::GetLastTrainMem()),
-//           //          TrainLauncher::Get()->PredictMemUsageMB());
-//       train_memory_mb += Config::train_memory_over_predict_mb;
-//       free_memory_mb = std::min(
-//           sta::ByteToMB(free),
-//           sta::ByteToMB(total) - infer_memory_mb - train_memory_mb);
-//       // free_memory_mb -= Config::train_memory_over_predict_mb;
-//       LOG(INFO) << "free " << sta::ByteToMB(free) << " total "
-//                 << sta::ByteToMB(total) << " infer memory "
-//                 << infer_memory_mb << " train memory " << train_memory_mb
-//                 << " predict train memory "
-//                 << TrainLauncher::Get()->PredictMemUsageMB()
-//                 << " free memory " << free_memory_mb;
-//     }
-//   }
-//   return free_memory_mb;
-// }
 
 }  // namespace tvm
 }
