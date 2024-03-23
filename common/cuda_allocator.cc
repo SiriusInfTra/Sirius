@@ -48,6 +48,7 @@ CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool cleanup, bool observe, FreeLis
   
 }
 
+// TO FIX: rename, this is confusing
 static std::set<void *> train_set;
 
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(
