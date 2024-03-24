@@ -36,7 +36,140 @@ std::vector<std::string> ParseModelName(const std::string &model) {
 }
 }
 
-std::unique_ptr<InferModelStore> InferModelStore::infer_model_store_;
+std::unique_ptr<InferModelCache> InferModelCache::infer_model_cache_ = nullptr;
+std::unique_ptr<InferModelStore> InferModelStore::infer_model_store_ = nullptr;
+
+std::unique_lock<std::mutex> InferModelCache::ReserveCache(
+    const std::string &model_name, size_t rank) {
+  if (!InferModelCache::Enable()) {
+    return std::unique_lock<std::mutex>{};
+  }
+
+  std::unique_lock lock{infer_model_cache_->mut_};
+
+  auto model = InferModelStore::Get()->GetModel(model_name);
+  CHECK(infer_model_cache_ != nullptr && model != nullptr);
+  infer_model_cache_->MaybeAddCacheItem(model_name, model);
+
+  std::unique_lock reserved_lock{infer_model_cache_->warm_cache_[model_name]->mut};
+  infer_model_cache_->ReserveCacheInternal(model_name, rank,
+                                           reserved_lock);
+
+  return reserved_lock;
+}
+
+std::unique_lock<std::mutex> InferModelCache::OrderedReserveCache(
+    const std::string &model_name, size_t rank,
+    const std::vector<std::shared_ptr<Job>> &jobs) {
+  if (!InferModelCache::Enable()) {
+    return std::unique_lock<std::mutex>{};
+  }
+  CHECK(!jobs.empty());
+  auto infer_req_id = jobs[0]->GetInferData()->GetId();
+
+  // auto _t = Profiler::Now();
+  std::unique_lock lock{infer_model_cache_->mut_};
+  // auto get_lock_time = Profiler::MilliFrom(_t);
+  // LOG(INFO) << model_name << " get model cache lock " << get_lock_time << " ms";
+
+  auto model = InferModelStore::Get()->GetModel(model_name);
+  CHECK(infer_model_cache_ != nullptr && model != nullptr);
+  infer_model_cache_->MaybeAddCacheItem(model_name, model);
+
+  auto t0 = Profiler::Now();
+  // LOG(INFO) << "try ordered reserve " << model_name << " req_id " << infer_req_id;
+  infer_model_cache_->fifo_cv_.wait(lock, [&lock, infer_req_id]() {
+    std::unique_lock ims_lock{InferModelStore::Get()->mutex_};
+    if (InferModelStore::Get()->queing_infer_reqs_.empty()) {
+      return true;
+    } else {
+      return *InferModelStore::Get()->queing_infer_reqs_.begin() == infer_req_id;
+    }
+  });
+
+  DLOG(INFO) << "[InferModelCache] " << "ordered reserve " 
+             << model_name << " req_id " << infer_req_id 
+             << " wait " << Profiler::MilliFrom(t0) << " ms";
+
+  std::unique_lock reserved_lock{infer_model_cache_->warm_cache_[model_name]->mut};
+
+  // auto t1 = Profiler::Now();
+  infer_model_cache_->ReserveCacheInternal(model_name, rank,
+                                           reserved_lock);
+  // LOG(INFO) << "ReserveCacheInternal " << model_name << " " << Profiler::MilliFrom(t1) << " ms";
+
+  // auto reserved_lock = ReserveCache(model_name, rank);
+  for (const auto &job : jobs) {
+    std::unique_lock ims_lock{InferModelStore::infer_model_store_->mutex_};
+    InferModelStore::Get()->queing_infer_reqs_.erase(job->GetInferData()->GetId());
+  }
+
+  infer_model_cache_->fifo_cv_.notify_all();
+  return reserved_lock;
+}
+
+void InferModelCache::MaybeAddCacheItem(const std::string &model_name, 
+                                        Model *model) {
+  if (warm_cache_.count(model_name) == 0) {
+    warm_cache_[model_name] = std::make_unique<CacheItem>();
+    warm_cache_[model_name]->model = model;
+    warm_cache_[model_name]->cached = false;
+  }
+}
+
+void InferModelCache::ReserveCacheInternal(
+    const std::string &model_name, size_t rank,
+    std::unique_lock<std::mutex> &reserved_lock) {
+  auto model = InferModelStore::Get()->GetModel(model_name);
+  CHECK(model != nullptr);
+
+  std::stringstream ss;
+  ss << "[InferModelCache] " << "reserve " << model_name;
+
+  // 1. already cached
+  if (infer_model_cache_->warm_cache_[model_name]->cached) {
+    ss << " already cached";
+    LOG(INFO) << ss.str();
+    return ;
+  }
+
+  // 2. not cached, evict if necessary
+  auto nbytes = infer_model_cache_->cached_nbytes_ + model->GetMemoryNbytes(0);
+  if (nbytes > Config::max_cache_nbytes) {
+    // std::vector<std::pair<std::string, size_t>> coldest_model{
+    //   infer_model_cache_->warm_cache_[model], infer_model_cache_->hotness_.end()};
+    std::vector<Model*> coldest_model;
+    for (auto & it : infer_model_cache_->warm_cache_) {
+      if (it.second->cached) {
+        coldest_model.push_back(it.second->model);
+      }
+    }
+    std::sort(coldest_model.begin(), coldest_model.end(), 
+        [](Model *a, Model *b) { return a->GetHotness() < b->GetHotness(); });
+
+    size_t reclaim_nbytes = 0;
+    ss << " | evict";
+    for (auto cm : coldest_model) {
+      if (nbytes - reclaim_nbytes > Config::max_cache_nbytes) {
+        auto &cm_name = cm->GetName();
+        std::unique_lock item_lock{infer_model_cache_->warm_cache_[cm_name]->mut};
+        bool res = cm->ReclaimMemory(rank);
+        if (res) {
+          ss << " " << cm_name << "(hot=" << cm->GetHotness() << ")";
+          infer_model_cache_->warm_cache_[cm_name]->cached = false;
+          reclaim_nbytes += cm->GetMemoryNbytes(rank);
+        }
+      } else {
+        break;
+      }
+    }
+    nbytes -= reclaim_nbytes;
+  }
+
+  infer_model_cache_->cached_nbytes_ = nbytes;
+  infer_model_cache_->warm_cache_[model_name]->cached = true;
+  LOG(INFO) << ss.str() << " | now cached_nbytes=" << sta::ByteDisplay(nbytes);
+}
 
 InferModelStore* InferModelStore::Get() {
   if (infer_model_store_ == nullptr) {
@@ -48,7 +181,9 @@ InferModelStore* InferModelStore::Get() {
 void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
   LOG(INFO) << "InferModelStore start initializing";
 
+  InferModelCache::Init();
   infer_model_store_ = std::make_unique<InferModelStore>();
+
   infer_model_store_->models_["dummy"] = std::make_unique<Model>();
 
   // model_name -> [key -> value]
@@ -189,6 +324,7 @@ void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
   }
   
   infer_model_store_->warmup_done_ = !Config::has_warmup;
+  infer_model_store_->initialized_ = true;
   LOG(INFO) << "InferModelStore initialized";
 }
 
@@ -196,6 +332,21 @@ void InferModelStore::WarmupDone() {
   infer_model_store_->warmup_done_ = true;
   LOG(INFO) << "[InferModelStore] warmup done, num ready model "
             << Model::GetNumModel(Model::Status::kReady);
+}
+
+bool InferModelStore::AddJob(const std::string &model_name,
+                             network::InferHandler::InferData* data) {
+  auto model = infer_model_store_->GetModel(model_name);
+  if (!model) {
+    return false;
+  }
+
+  {
+    std::unique_lock lock{infer_model_store_->mutex_};
+    infer_model_store_->queing_infer_reqs_.insert(data->GetId());
+  }
+  model->AddJob(data);
+  return true;
 }
 
 void InferModelStore::InferingInc(tvm::Executor *executor) {

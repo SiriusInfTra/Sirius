@@ -21,14 +21,64 @@
 namespace colserve {
 
 class Model;
+class InferModelStore;
+
+/* [Note: Cache]
+ *   we will have two level cache,
+ *   1. warm cache: clasic model cache in infer server, 
+ *      swap in/out model from/to the host memory to 
+ *      over-subscribe the GPU memory
+ * 
+ *   2. cold cache: cache idle model in gpu to avoid some
+ *      cold start
+ */
+class InferModelCache {
+ public:
+  InferModelCache() : cached_nbytes_(0) {};
+  static std::unique_lock<std::mutex> ReserveCache(const std::string &name, size_t rank);
+  static std::unique_lock<std::mutex> OrderedReserveCache(
+      const std::string &name, size_t rank,
+      const std::vector<std::shared_ptr<Job>> &jobs);
+  
+  static bool Enable() { return Config::max_cache_nbytes != 0; }
+
+  friend class InferModelStore;
+
+ private:
+  struct CacheItem {
+    Model *model;
+    bool cached;
+    std::mutex mut;
+  };
+
+  static void Init() {
+    infer_model_cache_ = std::make_unique<InferModelCache>();
+  }
+  void MaybeAddCacheItem(const std::string &name, Model *model);
+  void ReserveCacheInternal(const std::string &name, size_t rank,
+                            std::unique_lock<std::mutex> &reserved_lock);
+
+  static std::unique_ptr<InferModelCache> infer_model_cache_;
+
+  std::mutex mut_;
+  std::condition_variable fifo_cv_;
+  size_t cached_nbytes_;
+  
+  std::unordered_map<std::string, std::unique_ptr<CacheItem>> warm_cache_;
+};
 
 class InferModelStore {
  public:
   static InferModelStore* Get();
   static void Init(const std::filesystem::path &infer_store_path);
+  static bool Initialized() { return Get()->initialized_; }
   static bool Shutdown() { return true; }
 
+
   static void WarmupDone();
+  static bool AddJob(const std::string &model_name, 
+                     network::InferHandler::InferData* data);
+  
   static void UpdateLastInferTime() {
     std::unique_lock lock{Get()->mutex_};
     Get()->last_infer_time_ = Profiler::Now(); 
@@ -39,6 +89,9 @@ class InferModelStore {
 
   static void InferingInc(tvm::Executor *executor);
   static void InferingDec(tvm::Executor *executor);
+  static int GetNumInferingModel() { 
+    return Get()->num_infering_model_.load(std::memory_order_relaxed); 
+  }
   static size_t GetInferingModelNbytes() { 
     return Get()->infering_model_nbytes_.load(std::memory_order_relaxed); 
   }
@@ -70,6 +123,8 @@ class InferModelStore {
     kReclaimInfer = 2, 
   };
 
+  friend class InferModelCache;
+
  private:
   void ColocateMonitor();
   void TaskSwitchMonitor();
@@ -83,6 +138,7 @@ class InferModelStore {
 
   static std::unique_ptr<InferModelStore> infer_model_store_;
 
+  bool initialized_;
   bool warmup_done_;
   std::atomic<size_t> model_rank_;
   std::unordered_map<std::string, std::unique_ptr<Model>> models_;
@@ -97,10 +153,10 @@ class InferModelStore {
   // std::atomic<int> task_switch_ctrl_{static_cast<int>(TaskSwitchStatus::kNotInfering)};
   // std::condition_variable task_switch_cv_;
   
+  std::set<size_t> queing_infer_reqs_;
 
   std::unique_ptr<std::thread> monitor_thread_;
   
-
   // std::atomic<int> task_switch_control_cnter_{static_cast<int>(TaskSwitchStatus::kNotAddWorker)};
   // std::unique_ptr<std::thread> task_switch_control_;
   

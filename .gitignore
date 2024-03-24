@@ -32,3 +32,5 @@ log/*
 
 .env
 .gdb_history
+
+mempool_dump*/*
