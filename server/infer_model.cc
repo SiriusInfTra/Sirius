@@ -28,6 +28,7 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
       this,
       name,
       (model_path / "mod.json").c_str(),
+      (model_path / "mod.group").c_str(),
       rmod,
       (model_path / "mod.params").c_str(),
       std::vector{device}
@@ -38,6 +39,7 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
       this,
       name,
       (model_path / "mod.json").c_str(),
+      (model_path / "mod.group").c_str(),
       rmod,
       params.value(),
       std::vector{device}
@@ -143,6 +145,9 @@ bool Model::AddJob(network::InferHandler::InferData* data) {
 }
 
 bool Model::ReclaimMemory(size_t rank) {
+  CHECK_LT(rank, muts_.size());
+  CHECK_LT(rank, executors_.size());
+  CHECK_LT(rank, status_.size());
   std::unique_lock lock{muts_[rank]};
   if (status_[rank] == Status::kWithoutMemory) {
     return false; 

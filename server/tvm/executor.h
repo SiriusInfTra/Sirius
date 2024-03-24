@@ -10,6 +10,8 @@
 #include <unordered_map>
 #include <memory>
 #include <atomic>
+#include "common/tvm_allocator.h"
+#include "config.h"
 
 
 namespace colserve {
@@ -78,6 +80,20 @@ class Executor {
     return param_storage_size_ + buffer_storage_size_;
   }
 
+  size_t GetStorageSizeAlign() const {
+    if (Config::group_param_load) {
+      if (Config::group_param_nbytes_with_fragment) {
+        return param_groups_nbytes_;
+      } else {
+        return sta::detail::AlignedNBytes<sta::TVMAllocator::ALIGN_NBYTES>(GetStorageSize());
+      }
+    } else {
+      return GetStorageSize();
+    }
+  }
+
+  // size_t 
+
   // size_t GetAdjustBatchSize() const {
   //   size_t size_mega = sta::ByteToMB(GetStorageSize());
   //   /* reserve 40MB, 145MB per batch */
@@ -141,12 +157,16 @@ class Executor {
 
   // [ param storage group, [param ids ...] ]
   std::vector<std::pair<TVMArray, std::vector<uint32_t>>> param_storage_group_;
+
+  size_t param_groups_nbytes_;
   
   TVMStreamHandle exec_stream_;
   TVMStreamHandle load_param_stream_;
 
   size_t param_storage_size_ = 0;
   size_t buffer_storage_size_ = 0;
+
+
 };
 
 }

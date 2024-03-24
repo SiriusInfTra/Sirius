@@ -9,9 +9,11 @@
 #include <tvm/runtime/packed_func.h>
 #include <tvm/runtime/module.h>
 
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <future>
+#include <string>
 
 // #include "tvm.h"
 
@@ -224,12 +226,14 @@ class TVMGraph {
   TVMGraph(size_t rank, ::colserve::Model* infer_model,
                        const std::string &model_name,
                        const std::string &graph_json,
+                       const std::string &group_txt,
                        const ::tvm::runtime::Module mod,
                        const std::string &params_file,
                        const std::vector<DLDevice> &devs);
   TVMGraph(size_t rank, ::colserve::Model* infer_model,
                        const std::string &model_name,
                        const std::string &graph_json,
+                       const std::string &group_txt,
                        const ::tvm::runtime::Module mod,
                        const std::map<std::string, TVMArray> &params,
                        const std::vector<DLDevice> &devs);
@@ -294,6 +298,15 @@ class TVMGraph {
     return false;
   }
 
+  void LoadParamGroupParti(const std::string &path) {
+    std::ifstream handle(path);
+    CHECK(handle.is_open());
+    std::string buf;
+    while (handle >> buf) {
+      param_group_parti_.push_back(std::stoul(buf));
+    }
+  }
+
   size_t model_rank_;
   ::colserve::Model *infer_model_;
   std::string model_name_;
@@ -311,6 +324,7 @@ class TVMGraph {
   std::map<std::string, uint32_t> input_map_;
   std::map<std::string, uint32_t> output_map_;
   std::map<uint32_t, TVMArray> params_;
+  std::vector<size_t> param_group_parti_;
   // std::map<uint32_t, uint32_t> param_node_storage_id_map_;
 
   // std::vector<PoolEntry> pool_entry_;
