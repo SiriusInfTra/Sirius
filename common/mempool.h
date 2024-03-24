@@ -1,466 +1,214 @@
-#ifndef COLSERVE_CUDA_MEMPOOL_H
-#define COLSERVE_CUDA_MEMPOOL_H
-#include <algorithm>
-#include <atomic>
-#include <boost/interprocess/interprocess_fwd.hpp>
-#include <boost/interprocess/managed_shared_memory.hpp>
-#include <boost/interprocess/containers/list.hpp>
-#include <boost/interprocess/allocators/allocator.hpp>
-#include <boost/interprocess/sync/interprocess_mutex.hpp>
-#include <boost/container/map.hpp>
-#include <boost/unordered_map.hpp>
-#include <boost/functional/hash.hpp>
-#include <boost/thread/lock_guard.hpp>
-#include <cassert>
-#include <cstddef>
-#include <ostream>
-#include <sstream>
-#include <string>
-#include <tuple>
-#include <unordered_map>
-#include <unordered_set>
-#include <memory>
-#include <thread>
-#include <utility>
-#include <iostream>
-#include <iomanip>
+#pragma once
 
-#include <cuda_runtime_api.h>
 #include <common/util.h>
 
+#include <boost/interprocess/containers/list.hpp>
+#include <boost/lockfree/policies.hpp>
+#include <boost/interprocess/interprocess_fwd.hpp>
+#include <boost/interprocess/allocators/allocator.hpp>
+#include <boost/interprocess/sync/interprocess_mutex.hpp>
+#include <boost/interprocess/sync/interprocess_condition.hpp>
+#include <boost/interprocess/sync/scoped_lock.hpp>
+#include <boost/interprocess/managed_shared_memory.hpp>
+#include <boost/circular_buffer.hpp>
 
-#ifdef NO_CUDA
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/un.h>
+#include <cstddef>
+#include <cstdlib>
+#include <functional>
+#include <iomanip>
+#include <iterator>
+#include <ostream>
+#include <string>
+#include <chrono>
+#include <algorithm>
+#include <cstring>
+#include <vector>
+#include <memory>
+#include <thread>
 
-#define CUDA_TYPE(cuda_type) long
-
-#else
-
-#define CUDA_TYPE(cuda_type) cuda_type 
-
-#endif
+#include <atomic>
 
 
-namespace colserve {
-namespace sta {
+namespace colserve::sta {
+const static constexpr size_t MEM_BLOCK_NBYTES = 32_MB;
+
 namespace detail {
 constexpr size_t alignment = 1024;
-constexpr size_t train_alloc_threshold = 256 * 1024 * 1024;
-constexpr size_t train_alloc_threshold_small = 32 * 1024 * 1024;
 inline size_t GetAlignedNbytes(size_t nbytes) {
   static_assert((alignment & (alignment - 1)) == 0, "alignment must be power of 2");
   return (nbytes + (alignment - 1)) & (~(alignment - 1));
 }
-inline size_t GetAlignedNbytes(size_t nbytes, size_t alignment_) {
-  assert((alignment_ & (alignment_ - 1)) == 0);
-  return (nbytes + (alignment_ - 1)) & (~(alignment_ - 1));
+
+template<size_t align>
+inline size_t AlignedNBytes(size_t nbytes) {
+  static_assert((align & (align - 1)) == 0, "alignment must be power of 2");
+  return (nbytes + (align - 1)) & (~(align - 1));
 }
-} // namespace detail
+}
 
-namespace bip = boost::interprocess;
-using bip_shared_memory = bip::managed_shared_memory;
-using bip_segment_manager = bip_shared_memory::segment_manager;
 
-using MemPoolEntryHandle = bip::managed_shared_memory::handle_t;
-using EntryAddrTableType = std::pair<std::ptrdiff_t, MemPoolEntryHandle>;
-using EntryAddrTableAllocator = bip::allocator<EntryAddrTableType, bip::managed_shared_memory::segment_manager>;
-using EntryAddrTable = boost::unordered_map<std::ptrdiff_t, bip::managed_shared_memory::handle_t, boost::hash<std::ptrdiff_t>, std::equal_to<>, EntryAddrTableAllocator>;
-
-using EntrySizeTableType = std::pair<const size_t, MemPoolEntryHandle>;
-using EntrySizeTableAllocator = bip::allocator<EntrySizeTableType, bip::managed_shared_memory::segment_manager>;
-using EntrySizeTable = boost::container::multimap<size_t, MemPoolEntryHandle, std::less<>, EntrySizeTableAllocator>;
-using EntrySizeTableIterator = EntrySizeTable::iterator;
-
-using EntryListAllocator = bip::allocator<MemPoolEntryHandle, bip::managed_shared_memory::segment_manager>;
-using EntryList = bip::list<MemPoolEntryHandle, EntryListAllocator>;
-using EntryListIterator = EntryList::iterator;
-
-enum class MemType {
-  kFree,
-  kTrainLocalFree,
-  kMemTypeFreeNum,
-
-  kInfer,
-  kTrain,
-  kMemTypeNum,
-
-  // used in stat
-  kTrainAll,
-  kMemTypeStatNum,
-
-  /*
-   * Due to the nature of PyTorch async kernel execution, 
-   * the memory released by PyTorch Tensor may not be immediately available.
-   * Thus, `kTrainLocalFree` is introduced.
-   * 
-   *  kTrainLocalFree -- sync --> kFree <-> kInfer
-   *          ^                    |
-   *          |                    v
-   *          \---- release ---- kTrain
-   */
+enum class Belong {
+  kTrain, 
+  kInfer, 
+  kUsedNum, 
+  kFree
 };
 
-std::ostream &operator<<(std::ostream &os, const MemType &mtype);
-
-enum class UsageStat {
-  kMaxNBytes,
-  kMinNBytes,
-  kCount,
-  kTotalNBytes,
-};
-
-struct MemPoolEntry {
-  std::ptrdiff_t addr_offset;
-  std::size_t nbytes;
-  MemType mtype;
-  EntryListIterator mem_entry_pos;
-  union {
-    EntryListIterator freelist_pos;
-    EntrySizeTableIterator freetable_pos;
-  };
-
-  inline bool IsMergableFree(MemType cur_mtype) const {
-    return cur_mtype == MemType::kTrain ? mtype == MemType::kTrainLocalFree : mtype == MemType::kFree;
+inline std::string ToString(Belong belong) {
+  switch (belong) {
+  case Belong::kInfer:
+    return "kInfer";
+  case Belong::kTrain:
+    return "kTrain";
+  case Belong::kFree:
+    return "kFree";
+  default:
+    return "Unknown(" + std::to_string(static_cast<size_t>(belong)) + ")";
   }
-  inline bool IsAvailableFree(MemType cur_mtype) const {
-    return (mtype == MemType::kFree) || (cur_mtype == MemType::kTrain && mtype == MemType::kTrainLocalFree);
+}
+
+inline std::ostream & operator<<(std::ostream &os, const Belong &belong)  {
+  switch (belong) {
+  case Belong::kInfer:
+    os << "kInfer";
+    break;
+  case Belong::kTrain:
+    os << "kTrain";
+    break;
+  case Belong::kFree:
+    os << "kFree";
+    break;
+  default:
+    os << "Unknown(" << static_cast<size_t>(belong) << ")";
+    break;
   }
-  inline bool IsFree() const {
-    return (mtype == MemType::kFree) || (mtype == MemType::kTrainLocalFree);
-  }
-  inline void SetAsFree() {
-    mtype = mtype == MemType::kTrain ? MemType::kTrainLocalFree : MemType::kFree;
-  }
-};
-
-struct PoolEntry {
-  void *addr;
-  std::size_t nbytes;
-  MemType mtype;
-};
-
-struct MemPoolConfig {
-  int cuda_device;
-  size_t cuda_memory_size;
-  std::string shared_memory_name;
-  size_t shared_memory_size;
-};
-
-using StatValueType = std::atomic<size_t>;
-using StatMap = std::array<StatValueType, static_cast<size_t>(MemType::kMemTypeStatNum)>;
-using RefCount = int;
-
-inline std::ostream &operator<<(std::ostream &os, const MemPoolEntry &entry) {
-  os << "entry: {addr_offset=" << entry.addr_offset << ", nbytes=" << entry.nbytes
-     << ", mtype=" << static_cast<int>(entry.mtype) << "}";
   return os;
 }
 
-inline MemPoolEntry *GetEntry(const bip_shared_memory &segment, MemPoolEntryHandle handle) {
-  return reinterpret_cast<MemPoolEntry *>(segment.get_address_from_handle(handle));
-}
-
-inline MemPoolEntryHandle GetHandle(const bip_shared_memory &segment, MemPoolEntry *entry) {
-  return segment.get_handle_from_address(entry);
-}
-
-inline MemPoolEntry *GetPrevEntry(const bip_shared_memory &segment, MemPoolEntry *entry, 
-                                  const EntryListIterator &begin_bound_check) {
-  auto iter = entry->mem_entry_pos;
-  if (iter == begin_bound_check) {
-    return nullptr;
-  }
-  iter--;
-  return GetEntry(segment, *iter);
-}
-
-inline MemPoolEntry *GetNextEntry(const bip_shared_memory &segment, MemPoolEntry *entry, 
-                                  const EntryListIterator &end_bound_check) {
-  auto iter = entry->mem_entry_pos;
-  iter++;
-  if (iter == end_bound_check) {
-    return nullptr;
-  }
-  return GetEntry(segment, *iter);
-}
+namespace bip = boost::interprocess;
+using phymem_queue = bip::list<size_t, bip::allocator<size_t, bip::managed_shared_memory::segment_manager>>;
 
 
-static inline MemPoolConfig GetDefaultMemPoolConfig(size_t nbytes) {
-  return {
-    .cuda_device = 0,
-    .cuda_memory_size = nbytes,
-    .shared_memory_name = "gpu_colocation_mempool",
-    .shared_memory_size = 1_GB, 
-  };
-}
-
-
-enum class FreeListPolicyType {
-  kNextFit,
-  kFirstFit,
-  kBestFit,
-  kReserved,
-  kPolicyNum,
+struct PhyMem {
+  const size_t index;
+  CUmemGenericAllocationHandle cu_handle;
+  Belong * const belong;
+  phymem_queue::iterator * const pos_queue;
 };
-FreeListPolicyType getFreeListPolicy(const std::string& s);
 
-class FreeListPolicy {
-protected:
-  using PolicyName = std::array<char, 20>;
+class HandleTransfer {
+  // typically, there is a limit on the maximum number of transferred FD
+  // include/net/scm.h SCM_MAX_FD 253
+  static const constexpr size_t TRANSFER_CHUNK_SIZE = 128;
+private:
+  bip::managed_shared_memory  &shared_memory_;
+  bip::interprocess_mutex     *request_mutex_;
+  bip::interprocess_condition *request_cond_;
+  bip::interprocess_mutex     *ready_mutex_;
+  bip::interprocess_condition *ready_cond_;
 
-  const bip_shared_memory &segment_;
-  PolicyName *policy_name_;
-  std::string policy_name_str_{"FreeListPolicy"};
+  std::string         master_name_;
+  std::string         slave_name_;
+  std::vector<PhyMem> &phy_mem_list_;
+  size_t              mem_block_nbytes_;
 
-  virtual bool CheckGetFreeInput(size_t nbytes, MemType mtype) {
-    return mtype == MemType::kInfer || mtype == MemType::kTrain;
-  }
+  /* master only */
+  std::atomic<bool>            vmm_export_running_;
+  std::unique_ptr<std::thread> vmm_export_thread_;
+
+  void SendHandles(int fd_list[], size_t len, bip::scoped_lock<bip::interprocess_mutex> &ready_lock);
+
+  void ReceiveHandle(int fd_list[], size_t len);
+
+  void ExportWorker();
+
 public:
-  FreeListPolicy(bip_shared_memory &segment) : segment_(segment) {
-    policy_name_ = segment.find_or_construct<PolicyName>("PolicyName")();
-  };
+  HandleTransfer(bip::managed_shared_memory &shm, 
+                 std::vector<PhyMem> &phy_mem_list, 
+                 size_t mem_block_nbytes, 
+                 size_t mem_block_num);
 
-  virtual ~FreeListPolicy() = default;
-
-  virtual void InitMaster(MemPoolEntry *free_entry);
-  virtual void InitSlave();
-
-  virtual MemPoolEntry *GetFreeBlock(size_t nbytes, MemType mtype, bool local, bool global) = 0;
-  virtual MemPoolEntry* GetFreeBlockByMerge(size_t nbytes, MemType mtype, EntryList* mem_entry_list) {
-    return nullptr;
-  }
-
-  virtual void NotifyUpdateFreeBlockNbytes(MemPoolEntry *entry, size_t old_nbytes) = 0;
-
-  virtual void RemoveFreeBlock(MemPoolEntry *entry) = 0;
-
-  virtual void AddFreeBlock(MemPoolEntry *entry) = 0;
-
-  virtual void RemoveLocalFreeBlocks(MemType mtype, std::function<void(MemPoolEntry*)> fn) = 0;
-
-  virtual void CheckFreeList(const EntryListIterator &begin, const EntryListIterator &end) = 0;
-
-  virtual void DumpFreeList(std::ostream &stream, const EntryListIterator &begin, const EntryListIterator &end) = 0;
+  void InitMaster();
+  void InitSlave();
+  void ReleaseMaster();
 };
 
-
-class BestFitPolicy : public FreeListPolicy {
- private:
-  EntrySizeTable *free_entry_tables_[static_cast<size_t>(MemType::kMemTypeFreeNum)];
- public:
-  BestFitPolicy(bip_shared_memory& segment);
-
-  ~BestFitPolicy() {}
-
-  void InitMaster(MemPoolEntry* free_entry) override;
-
-  MemPoolEntry* GetFreeBlock(size_t nbytes, MemType mtype, bool local, bool global) override;
-  MemPoolEntry* GetFreeBlockByMerge(size_t nbytes, MemType mtype, EntryList* mem_entry_list) override;
-
-  void NotifyUpdateFreeBlockNbytes(MemPoolEntry* entry,
-                                   size_t old_nbytes) override;
-
-  void RemoveFreeBlock(MemPoolEntry* entry) override;
-
-  void AddFreeBlock(MemPoolEntry* entry) override;
-
-  void RemoveLocalFreeBlocks(MemType mtype, std::function<void(MemPoolEntry*)> fn) override;
-
-  void DumpFreeList(std::ostream& stream, const EntryListIterator& begin, const EntryListIterator& end) override {
-    stream << "start, len, allocated, next, prev, mtype" << std::endl;
-    for (size_t i = 0; i < static_cast<size_t>(MemType::kMemTypeFreeNum); i++) {
-      auto free_entry_table = free_entry_tables_[i];
-      for (auto&& [nbytes, handle] : *free_entry_table) {
-        auto* entry = GetEntry(segment_, handle);
-        auto* prev = GetPrevEntry(segment_, entry, begin);
-        auto* next = GetNextEntry(segment_, entry, end);
-        stream << entry->addr_offset << "," << entry->nbytes << ", "
-              << static_cast<int>(entry->mtype) << ", "
-              << (next ? next->addr_offset : -1) << ", "
-              << (prev ? prev->addr_offset : -1) << ", "
-              << static_cast<unsigned>(entry->mtype) << std::endl;
-      }
-    }
-  }
-
-  void CheckFreeList(const EntryListIterator& begin, const EntryListIterator& end) override;
-};
-
-
-
-class NextFitPolicy: public FreeListPolicy {
- protected:
-  EntryList *freelists_[static_cast<size_t>(MemType::kMemTypeFreeNum)];
-  EntryListIterator *freelist_poses_[static_cast<size_t>(MemType::kMemTypeFreeNum)];
- public:
-  NextFitPolicy(bip_shared_memory& segment): FreeListPolicy(segment) {
-    policy_name_str_ = "NextFitPolicy";
-    for (size_t i = 0; i < static_cast<size_t>(MemType::kMemTypeFreeNum); i++) {
-      std::string free_list_name = "FreeList" + std::to_string(i);
-      std::string free_list_pos_name = "FreeListPos" + std::to_string(i);
-      freelists_[i] = segment.find_or_construct<EntryList>(free_list_name.c_str())(segment.get_segment_manager());
-      freelist_poses_[i] = segment.find_or_construct<EntryListIterator>(free_list_pos_name.c_str())();
-    }
-  }
-  ~NextFitPolicy() {}
-
-  void InitMaster(MemPoolEntry *free_entry) override;
- 
-  MemPoolEntry* GetFreeBlock(size_t nbytes, MemType mtype, bool local, bool global) override {
-    auto find_free_block = [this, nbytes](
-        EntryList* freelist, EntryListIterator* freelist_pos) -> MemPoolEntry* {
-      {
-        auto iter = *freelist_pos;
-        while (iter != freelist->cend()) {
-          auto *entry = GetEntry(this->segment_, *iter);
-          if (entry->nbytes >= nbytes) {
-            *freelist_pos = iter;
-            return entry;
-          }
-          iter++;
-        }
-      }
-      {
-        auto iter = freelist->begin();
-        while (iter != *freelist_pos) {
-          auto *entry = GetEntry(this->segment_, *iter);
-          if (entry->nbytes >= nbytes) {
-            *freelist_pos = iter;
-            return entry;
-          }
-          iter++;
-        }
-      }
-      return nullptr;
-    };
-    if (mtype == MemType::kTrain && local) {
-      auto entry = find_free_block(
-          freelists_[static_cast<size_t>(MemType::kTrainLocalFree)],
-          freelist_poses_[static_cast<size_t>(MemType::kTrainLocalFree)]);
-      if (entry != nullptr) return entry;
-    }
-    if (global) {
-      return find_free_block(
-          freelists_[static_cast<size_t>(MemType::kFree)],
-          freelist_poses_[static_cast<size_t>(MemType::kFree)]);
-    } else {
-      return nullptr;
-    }
-  }
-
-  void NotifyUpdateFreeBlockNbytes(MemPoolEntry* entry,
-                                   size_t old_nbytes) override;
-
-  void AddFreeBlock(MemPoolEntry* entry) override;
-
-  void RemoveFreeBlock(MemPoolEntry* entry) override;
-
-  void RemoveLocalFreeBlocks(MemType mtype, std::function<void(MemPoolEntry*)> fn) override {
-    // TODO
-  };
-
-
-  void CheckFreeList(const EntryListIterator& begin,
-                     const EntryListIterator& end) override;
-
- void DumpFreeList(std::ostream& stream, const EntryListIterator& begin,
-                     const EntryListIterator& end) override;
-};
-
-class FirstFitPolicy: public NextFitPolicy {
-public:
-  FirstFitPolicy(bip_shared_memory &segment): NextFitPolicy(segment) {
-    policy_name_str_ = "FirstFitPolicy";
-  }; 
-
-  ~FirstFitPolicy() {}
-
-  MemPoolEntry* GetFreeBlock(size_t nbytes, MemType mtype, bool local, bool global) override;
-};
 
 class MemPool {
-  friend class MempoolSampler;
+  using ring_buffer = 
+      boost::circular_buffer<size_t, bip::allocator<size_t, bip::managed_shared_memory::segment_manager>>;
+  using stats_arr = std::array<std::atomic<size_t>, static_cast<size_t>(Belong::kUsedNum)>;
+  using phymem_callback = std::function<void(const std::vector<PhyMem*> &phymem_arr)>;
+  template<typename T> friend class shm_handle;
 private:
-  bip_shared_memory segment_;
-  FreeListPolicy *freeblock_policy_;
-  EntryAddrTable *mem_entry_table_;
-  EntryList *mem_entry_list_;
+  static std::unique_ptr<MemPool> instance_;
+  static std::atomic<bool> is_init_;
 
-  MemPoolConfig config_;
-  RefCount *ref_count_;
-  bip::interprocess_mutex *mutex_;
-  bool master_;
-  bool observe_;
+  bip::managed_shared_memory  shared_memory_;
+  bip::interprocess_mutex     *mutex_;
+  int                         *ref_count_;
+  std::string                 shared_memory_name_;
 
-  std::byte *mem_pool_base_ptr_;
-  CUDA_TYPE(cudaIpcMemHandle_t) *cuda_mem_handle_;
-  CUDA_TYPE(cudaStream_t) cuda_memcpy_stream_;
+  std::unique_ptr<HandleTransfer> tranfer;
+  std::vector<PhyMem> phy_mem_list_;
+  phymem_queue *free_queue_;
+  stats_arr *allocated_nbytes_;
+  stats_arr *cached_nbytes_;
+  
+  bool is_master_;
+public:
+  static MemPool &Get();
+  static bool IsInit();
 
-  StatMap *stat_;
+  const size_t mempool_nbytes;
 
-  void RemoveMemPoolEntry(MemPoolEntry *entry);
 
-  MemPoolEntry *CreateMemPoolEntry(std::ptrdiff_t addr_offset,
-                                   std::size_t nbytes, MemType mtype,
-                                   EntryListIterator insert_pos);
-
-  void Free(MemPoolEntry *entry);
-  MemPoolEntry* FreeWithoutLock(MemPoolEntry *entry);
-
-  std::shared_ptr<PoolEntry> MakeSharedPtr(MemPoolEntry *entry);
+  MemPool(size_t nbytes, bool cleanup);
 
   void WaitSlaveExit();
 
-  bool CheckPoolWithoutLock();
+  inline std::vector<PhyMem> &GetPhyMemList() { return phy_mem_list_; }
 
-  std::unordered_map<MemType, std::unordered_map<UsageStat, size_t>>
-  GetUsageWithoutLock();
+  inline bip::managed_shared_memory &GetSharedMemory() { return shared_memory_; }
 
-  void DumpSummaryWithoutLock();
-  void DumpBlockListWithoutLock();
+  inline bip::interprocess_mutex &GetMutex() { return *mutex_; }
 
-  void CopyFromToInternel(void *dst_dev_ptr, void *src_dev_ptr, size_t nbytes);
+  void AllocPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong, size_t num_phy_mem);
 
+  void ClaimPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong);
 
- public:
-  MemPool(MemPoolConfig config, bool cleanup, bool observe, FreeListPolicyType policy_type = FreeListPolicyType::kNextFit);
+  void DeallocPhyMem(const std::vector<PhyMem *> &phy_mem_list);
+
+  void DumpMemPool(std::ostream &out) {
+    out << "index,belong,cu_handle\n";
+    for(auto &phy_mem : phy_mem_list_) {
+      out << phy_mem.index << "," << *phy_mem.belong << "," << phy_mem.cu_handle << "\n";
+    }
+    out << std::flush;
+  }
+
+  inline size_t GetAllocatedNbytes(Belong belong) {
+    return allocated_nbytes_->at(static_cast<size_t>(belong)).load(std::memory_order_relaxed);
+  }
+
+  inline size_t AddAllocatedNbytes(long nbytes, Belong belong) {
+    return allocated_nbytes_->at(static_cast<size_t>(belong)).fetch_add(nbytes, std::memory_order_relaxed);
+  }
+
+  inline size_t SubAllocatedNbytes(long nbytes, Belong belong) {
+    return allocated_nbytes_->at(static_cast<size_t>(belong)).fetch_sub(nbytes, std::memory_order_relaxed);
+  }
+
+  inline size_t GetCachedNbytes(Belong belong) {
+    return cached_nbytes_->at(static_cast<size_t>(belong)).load(std::memory_order_relaxed);
+  }
+
+  void PrintStatus();
 
   ~MemPool();
-
-  void CheckPool();
-
-  std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes, MemType mtype);
-  void FreeLocals(MemType mtype);
-
-  void CopyFromTo(std::shared_ptr<PoolEntry> src, std::shared_ptr<PoolEntry> dst);
-
-  inline size_t GetMemUsage(MemType mtype) {
-    return stat_->at(static_cast<size_t>(mtype)).load(std::memory_order_relaxed);
-  }
-
-  inline size_t PoolNbytes() {
-    return config_.cuda_memory_size;
-  }
-
-  inline void DumpSummary() {
-    bip::scoped_lock locker(*mutex_);
-    DumpSummaryWithoutLock();
-  }
-
-  inline void DumpBlockList() {
-    bip::scoped_lock locker(*mutex_);
-    DumpBlockListWithoutLock();
-  }
-
-  inline std::unordered_map<MemType, std::unordered_map<UsageStat, size_t>> GetUsage() {
-    bip::scoped_lock locker(*mutex_);
-    return GetUsageWithoutLock();
-  }
 };
 
-
 }
-}
-
-
-
-#endif

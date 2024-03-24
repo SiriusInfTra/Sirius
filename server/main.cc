@@ -14,6 +14,7 @@
 #include <glog/logging.h>
 #include <CLI/CLI.hpp>
 
+#include <common/cuda_allocator.h>
 #include <common/init.h>
 #include <common/mempool.h>
 #include <common/util.h>
@@ -186,6 +187,10 @@ int main(int argc, char *argv[]) {
     colserve::sta::InitMemoryPool(
       static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
       true, false, free_list_policy);
+    colserve::sta::CUDAMemPool::Get()->RegisterOOMHandler([]() {
+      LOG(INFO) << "train predict memory " 
+                <<  colserve::TrainLauncher::Get()->PredictMemUsageMB() << "."; 
+      }, colserve::sta::MemType::kInfer);
   }
   colserve::ResourceManager::Init();
   colserve::Controller::Init();

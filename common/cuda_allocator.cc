@@ -1,11 +1,16 @@
+#include <common/tvm_allocator.h>
+#include <common/cuda_allocator.h>
+#include <common/mempool.h>
+#include <common/torch_allocator.h>
+
+#include <glog/logging.h>
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
 #include <iostream>
-
-#include "cuda_allocator.h"
-#include "mempool.h"
-#include <glog/logging.h>
+#include <memory>
 #include <numeric>
+#include <string>
 
 #define CUDA_CALL(func) do { \
   auto error = func; \
@@ -29,44 +34,65 @@ CUDAMemPool *CUDAMemPool::Get() {
 }
 
 void CUDAMemPool::Init(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy) {
-  // LOG(INFO) << "[CUDA Memory Pool] initilized with size " << size / 1024 / 1024 << " Mb";
+  // DLOG(INFO) << "[CUDA Memory Pool] initilized with size " << size / 1024 / 1024 << " Mb";
   cuda_mem_pool_ = std::make_unique<CUDAMemPool>(nbytes, cleanup, observe, free_list_policy);
 }
 
 CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy) {
 //    remove("/dev/shm/gpu_colocation_mempool");
-  MemPoolConfig config = GetDefaultMemPoolConfig(nbytes);
-  impl_ = new MemPool{config, cleanup, observe, free_list_policy};
+  std::string nbytes_s = std::to_string(nbytes);
+  std::string cleanup_s = cleanup ? "1" : "0";
+  CHECK_EQ(setenv("COL_MEMPOOL_NBYTES", nbytes_s.c_str(), true), 0);
+  CHECK_EQ(setenv("COL_MEMPOOL_CLEANUP", cleanup_s.c_str(), true), 0);
+  TorchAllocator::Get();
+  
 }
+
 
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(
     std::size_t nbytes, MemType mtype, bool allow_nullptr) {
+  CHECK(!allow_nullptr) << "currently deprecated";
+  if (nbytes == 0) {
+    return std::shared_ptr<CUDAMemPool::PoolEntry>{
+        new PoolEntry{.addr = nullptr, .nbytes=nbytes, .mtype = mtype}
+      };
+  }
+
+  static std::mutex mutex_;
+  std::unique_lock lock{mutex_};
   auto t0 = std::chrono::steady_clock::now();
-  auto ret = impl_->Alloc(nbytes, mtype);
-  if (!allow_nullptr && ret == nullptr) {
-    impl_->DumpSummary();
-    LOG(FATAL) << "request size " << nbytes << " byte ( " << ByteToMB(nbytes) << " mb )"  << " out of free gpu memory";
+  std::byte *ptr;
+  if (mtype == MemType::kInfer) {
+    ptr = TVMAllocator::Get().Alloc(nbytes);
+  } else if (mtype == MemType::kTrain) {
+    ptr = TorchAllocator::Get().Alloc(nbytes);
+    DLOG(INFO) << "Torch Alloc: " << ptr << ", nbytes = " << nbytes;
+  } else {
+    LOG(FATAL) << "Unknown mtype: " << static_cast<size_t>(mtype); 
   }
   auto t1 = std::chrono::steady_clock::now();
   if (mtype == MemType::kTrain) {
-    train_alloc_us_.fetch_add(std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count());
+    train_alloc_us_.fetch_add(std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count(),
+                              std::memory_order_relaxed);
   }
-  return ret;
-}
+  // DLOG(INFO) << "mtype = " << static_cast<size_t>(mtype) << ", alloc time = " << std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() << ".";
 
-std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Resize(
-    std::shared_ptr<PoolEntry> entry, std::size_t nbytes) {
-  // TODO: handle reallocate
-  CHECK(entry != nullptr);
-  auto ptr = impl_->Alloc(nbytes, entry->mtype);
-  CopyFromTo(entry, ptr);
-  return ptr;
-}
+  auto free = [mtype](CUDAMemPool::PoolEntry *entry) {
+      std::unique_lock lock{mutex_};
+    if (mtype == MemType::kInfer) {
+      TVMAllocator::Get().Free(reinterpret_cast<std::byte*>(entry->addr));
+    } else if (mtype == MemType::kTrain) {
+      TorchAllocator::Get().Free(reinterpret_cast<std::byte*>(entry->addr));
+      DLOG(INFO) << "Torch Free: " << entry->addr << ", nbytes = " << entry->nbytes;
+    } else {
+      LOG(FATAL) << "Unknown mtype: " << static_cast<size_t>(mtype); 
+    }
+  };
 
-void CUDAMemPool::CopyFromTo(std::shared_ptr<PoolEntry> src, std::shared_ptr<PoolEntry> dst) {
-  impl_->CopyFromTo(src, dst);
+  return std::shared_ptr<CUDAMemPool::PoolEntry>{
+    new PoolEntry{.addr = ptr, .nbytes=nbytes, .mtype = mtype}, free
+  };
 }
-
 
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::RawAlloc(size_t nbytes, MemType mtype) {
   static bool initilized = false;
@@ -76,7 +102,6 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::RawAlloc(size_t nbytes, Mem
     if (env && atoi(env) != 0) {
       unified_memory = true;
       LOG(INFO) << "sta raw alloc using unified memory";
-
     }
     initilized = true;
   }
@@ -97,25 +122,24 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::RawAlloc(size_t nbytes, Mem
 }
 
 CUDAMemPool::~CUDAMemPool() {
-  delete impl_;
-  impl_ = nullptr;
+
 }
 
 
 
 // void CUDAMemPoolImpl::DumpSummary() {
-//   LOG(INFO) << "---------- mempool summary ----------";
-//   LOG(INFO) << "free blocks: " << size2entry_->size();
-//   LOG(INFO) << "free size: " << std::accumulate(size2entry_->cbegin(), size2entry_->cend(), 0L,
+//   DLOG(INFO) << "---------- mempool summary ----------";
+//   DLOG(INFO) << "free blocks: " << size2entry_->size();
+//   DLOG(INFO) << "free size: " << std::accumulate(size2entry_->cbegin(), size2entry_->cend(), 0L,
 //                                                 [](auto acc, auto &&pair) { return acc + pair.first; });
-//   LOG(INFO) << "largest free block size: " << (--size2entry_->cend())->first;
-//   LOG(INFO) << "total blocks: " << addr2entry_->size();
-//   LOG(INFO) << "total size: " << std::accumulate(addr2entry_->cbegin(), addr2entry_->cend(), 0L,
+//   DLOG(INFO) << "largest free block size: " << (--size2entry_->cend())->first;
+//   DLOG(INFO) << "total blocks: " << addr2entry_->size();
+//   DLOG(INFO) << "total size: " << std::accumulate(addr2entry_->cbegin(), addr2entry_->cend(), 0L,
 //                                                  [&](auto acc, auto &&pair) {
 //                                                    return acc + GetEntry(pair.second)->nbytes;
 //                                                  });
-//   LOG(INFO) << "infer usage: " << InferMemUsage();
-//   LOG(INFO) << "train usage: " << TrainMemUsage();
+//   DLOG(INFO) << "infer usage: " << InferMemUsage();
+//   DLOG(INFO) << "train usage: " << TrainMemUsage();
 // }
 
 // bool CUDAMemPoolImpl::CheckAddr(void *addr) {
@@ -130,31 +154,40 @@ CUDAMemPool::~CUDAMemPool() {
 // }
 
 size_t CUDAMemPool::InferMemUsage() {
-  return Get()->impl_->GetMemUsage(MemType::kInfer);
+ return MemPool::Get().GetAllocatedNbytes(Belong::kInfer);
 }
 
 size_t CUDAMemPool::TrainMemUsage() {
-  return Get()->impl_->GetMemUsage(MemType::kTrain);
+ return MemPool::Get().GetAllocatedNbytes(Belong::kTrain);
 }
 
 size_t CUDAMemPool::TrainAllMemUsage() {
-  return Get()->impl_->GetMemUsage(MemType::kTrainAll);
+  return TorchAllocator::Get().PeekAllocatedNbytes();
 }
 
 size_t CUDAMemPool::PoolNbytes() {
-  CHECK(cuda_mem_pool_ != nullptr);
-  return Get()->impl_->PoolNbytes();
+  return MemPool::Get().mempool_nbytes;
 }
 
 void CUDAMemPool::FreeTrainLocals() {
-  auto t0 = std::chrono::steady_clock::now();
-  Get()->impl_->FreeLocals(MemType::kTrainLocalFree);
-  auto t1 = std::chrono::steady_clock::now();
+  TorchAllocator::Get().EmptyCache();
 }
 
 void CUDAMemPool::DumpDumpBlockList() {
-  Get()->impl_->DumpBlockList();
+
 }
 
+void CUDAMemPool::RegisterOOMHandler(std::function<void()> oom_handler, MemType mtype) {
+  switch (mtype) {
+    case MemType::kInfer:
+      TVMAllocator::Get().RegisterOOMHandler(oom_handler);
+      break;
+    case MemType::kTrain:
+      TorchAllocator::Get().RegisterOOMHandler(oom_handler);
+      break;
+    default:
+      LOG(FATAL) << "unknown MemType " << static_cast<int>(mtype) << ".";
+  }
+}
 }  // namespace sta
 }

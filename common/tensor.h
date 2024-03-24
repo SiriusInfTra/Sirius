@@ -102,7 +102,7 @@ class STensor : public std::shared_ptr<TensorContainer> {
   bool ComputeContiguous() const;
   size_t ComputeNumel() const;
 
-  void Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride);
+  // void Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride);
   void AllocForNull(MemType mtype);
   void SetMDataForNull(TensorContainer::memory_data_t mdata, bool check_memory_bound = false);
   void DeallocToNull();

@@ -131,45 +131,45 @@ void AsStrided_(STensor tensor, at::IntArrayRef size,
   tensor.UpdateVersion();
 }
 
-void STensor::Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride) {
-  // std::cout << "resize tensor " << size << std::endl;
-  CHECK(!IsNull());
-  bool same_size = (Shape() == size) && (!stride.has_value() || Shape() == stride.value());
-  if (same_size) {
-    return;
-  }
+// void STensor::Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride) {
+//   // std::cout << "resize tensor " << size << std::endl;
+//   CHECK(!IsNull());
+//   bool same_size = (Shape() == size) && (!stride.has_value() || Shape() == stride.value());
+//   if (same_size) {
+//     return;
+//   }
 
-  size_t storage_nbytes;
-  if (stride.has_value()) {
-    storage_nbytes = ComputeStorageNbytes(size, stride.value(), get()->tensor_.dtype) 
-        + get()->tensor_.byte_offset;
-  } else {
-    storage_nbytes = ComputeStorageNbytes(size, get()->tensor_.dtype) 
-        + get()->tensor_.byte_offset;
-  }
+//   size_t storage_nbytes;
+//   if (stride.has_value()) {
+//     storage_nbytes = ComputeStorageNbytes(size, stride.value(), get()->tensor_.dtype) 
+//         + get()->tensor_.byte_offset;
+//   } else {
+//     storage_nbytes = ComputeStorageNbytes(size, get()->tensor_.dtype) 
+//         + get()->tensor_.byte_offset;
+//   }
 
-  // std::stringstream ss;
-  // ss << "Resize storage_nbytes: " << storage_nbytes;
-  TensorContainer::memory_data_t mdata = MData();
-  if (mdata->addr == nullptr || mdata->nbytes < storage_nbytes) {
-    auto new_mdata = CUDAMemPool::Get()->Resize(mdata, storage_nbytes);
-    // CUDAMemPool::Get()->CopyFromTo(mdata, new_mdata);
-    mdata = new_mdata;
-  }
-  // if (mdata) {
-  //   ss << " mdata:" << mdata->addr << " " << mdata->nbytes;
-  // }
-  // std::cout << ss.str() << std::endl;
-  DLOG(INFO) << "Resize storage_nbytes: " << storage_nbytes << " addr " << (mdata ? mdata->addr : 0);
+//   // std::stringstream ss;
+//   // ss << "Resize storage_nbytes: " << storage_nbytes;
+//   TensorContainer::memory_data_t mdata = MData();
+//   if (mdata->addr == nullptr || mdata->nbytes < storage_nbytes) {
+//     auto new_mdata = CUDAMemPool::Get()->Resize(mdata, storage_nbytes);
+//     CUDAMemPool::Get()->CopyFromTo(mdata, new_mdata);
+//     mdata = new_mdata;
+//   }
+//   // if (mdata) {
+//   //   ss << " mdata:" << mdata->addr << " " << mdata->nbytes;
+//   // }
+//   // std::cout << ss.str() << std::endl;
+//   DLOG(INFO) << "Resize storage_nbytes: " << storage_nbytes << " addr " << (mdata ? mdata->addr : 0);
 
-  if (stride.has_value()) {
-    get()->SetTensor(mdata, size.vec(), stride.value().vec(), 
-        get()->tensor_.dtype, std::nullopt);
-  } else {
-    get()->SetTensor(mdata, size.vec(), get()->tensor_.dtype, std::nullopt);
-  }
-  this->UpdateVersion();
-}
+//   if (stride.has_value()) {
+//     get()->SetTensor(mdata, size.vec(), stride.value().vec(), 
+//         get()->tensor_.dtype, std::nullopt);
+//   } else {
+//     get()->SetTensor(mdata, size.vec(), get()->tensor_.dtype, std::nullopt);
+//   }
+//   this->UpdateVersion();
+// }
 
 void STensor::AllocForNull(MemType mtype) {
   CHECK(IsNull());
@@ -217,20 +217,22 @@ void STensor::DeallocToDummy() {
   get()->tensor_.data = (void*)-1;
   auto nbytes = get()->mdata_->nbytes;
   auto mtype = get()->mdata_->mtype;
-  get()->mdata_ = std::shared_ptr<PoolEntry>(new PoolEntry{(void*)-1, nbytes, mtype});
+  get()->mdata_ = std::shared_ptr<CUDAMemPool::PoolEntry>(new CUDAMemPool::PoolEntry{(void*)-1, nbytes, mtype});
   this->UpdateVersion();
 }
 
 void STensor::Rearrange() {
-  if (IsNull() || (get()->tensor_.data == (void*)-1)) {
-    return; // null/dummy tensor
-  }
-  auto new_mdata = CUDAMemPool::Get()->Alloc(
-    get()->mdata_->nbytes, get()->mdata_->mtype, false);
-  CUDAMemPool::Get()->CopyFromTo(get()->mdata_, new_mdata);
-  get()->mdata_ = new_mdata;
-  get()->tensor_.data = new_mdata->addr;
-  this->UpdateVersion();
+  LOG(FATAL) << "deprecated Rearrange()";
+
+  // if (IsNull() || (get()->tensor_.data == (void*)-1)) {
+  //   return; // null/dummy tensor
+  // }
+  // auto new_mdata = CUDAMemPool::Get()->Alloc(
+  //   get()->mdata_->nbytes, get()->mdata_->mtype, false);
+  // // CUDAMemPool::Get()->CopyFromTo(get()->mdata_, new_mdata);
+  // get()->mdata_ = new_mdata;
+  // get()->tensor_.data = new_mdata->addr;
+  // this->UpdateVersion();
 }
 
 }
