@@ -215,13 +215,11 @@ bool InferHandler::InferData::Process(bool ok) {
           << "[gPRC Process InferData] [" << GetModelName() << ", Id " << id_ << "]";
       status_ = Status::kFinish;
       
-      auto model = InferModelStore::Get()->GetModel(GetModelName());
-      if (!model) {
+      auto res = InferModelStore::AddJob(GetModelName(), this);
+      if (!res) {
         LOG(FATAL) << "[Process InferData] Model " << GetModelName() << " not found";
         response_.set_result("model not found");
         responder_.Finish(response_, grpc::Status::CANCELLED, (void*)this);
-      } else {
-        model->AddJob(this);
       }
       return true;
     }

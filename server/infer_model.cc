@@ -65,7 +65,8 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
   CHECK_LT(max_num_worker_, MAX_NUM_WORKER) << "max num worker exceed limit";
   for (size_t i = 0; i < num_worker; i++) {
     auto executor = tvm_graph_->CreateGraphExecutor(i, std::vector{device});
-    executor->Init(true);
+    // InferModelCache::ReserveCache(name);
+    // executor->Init(true);
     executors_.push_back(std::move(executor));
     status_.push_back(Status::kReady);
     model_stat_[static_cast<size_t>(Status::kReady)].fetch_add(1, std::memory_order_relaxed);
@@ -139,6 +140,7 @@ bool Model::AddJob(network::InferHandler::InferData* data) {
   Controller::Get()->InferRequestInc();
   // InterruptTrain check whether to interrupt train
   Controller::Get()->InterruptTrain(); 
+  infer_count_.fetch_add(1, std::memory_order_relaxed);
   return job_queue_.Put(std::make_shared<InferJob>(data));
 }
 
@@ -168,8 +170,17 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
   // auto graph_executor = tvm_graph_->CreateGraphExecutor();
   auto graph_executor = executors_[rank].get();
   num_worker_.fetch_add(1, std::memory_order_relaxed);
-  LOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") start inference";
   if (barrier != nullptr) pthread_barrier_wait(barrier);
+
+  while (!InferModelStore::Initialized()) {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+  }
+  LOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") start inference";
+
+  {
+    auto reserved_lock = InferModelCache::ReserveCache(name_, rank);
+    executors_[rank]->Init(true);
+  }
 
   // bool first_exec = true;
   
@@ -200,7 +211,6 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     //   }
     // }
 
-    // TODO dynamic batching
     auto jobs = job_queue_.GetBatch(batch_size_, 10, 10);
     if (jobs.empty()) {
       auto idle_mill = Profiler::MilliFrom(last_infer_time);
@@ -208,20 +218,29 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
       continue;
     }
 
+
+    // let cache serve models in a fifo manner
+    auto reserve_cache_begin = Profiler::Now();
+    auto reserved_lock = InferModelCache::OrderedReserveCache(name_, rank, jobs);
+    auto reserve_cache_ms = Profiler::MilliFrom(reserve_cache_begin);
+
     // [switch mode] before infering, first claim infering execution
     InferModelStore::InferingInc(executors_[rank].get());
 
+    // lock to avoid be interrupted by memory reclaim
     std::unique_lock lock{muts_[rank]};
     last_infer_time = Profiler::Now();
     infer_idle_mills_[rank].store(0, std::memory_order_relaxed);
     InferModelStore::UpdateLastInferTime();
 
-    double infer_alloc_ms = 0;
+    double setup_mem_ms = 0;
+    bool setup_memory = false;
     {
       if (status_[rank] == Status::kWithoutMemory) {
         auto begin = Profiler::Now();
         SetupMemory(rank, lock);
-        infer_alloc_ms = Profiler::MilliFrom(begin);
+        setup_mem_ms = Profiler::MilliFrom(begin);
+        setup_memory = true;
       }
     }
 
@@ -300,10 +319,11 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
        << "set_input_ms=" << set_input_ms << " "
        << (pipeline_exec ? "pipeline_exec infer_ms= " : "infer_ms=") << infer_ms << " "
        << "get_output_ms=" << get_output_ms;
-    if (load_param) {
-      ss << " loading_ms=" << loading_ms;
-    }
+    if (setup_memory) { ss << " setup_mem_ms=" << setup_mem_ms; }
+    if (load_param) { ss << " loading_ms=" << loading_ms; }
+
     ss << " total_infer_ms=" << std::chrono::duration<double, std::milli>(infer_end - infer_begin).count();
+    if (InferModelCache::Enable()) { ss << " | reserve_cache_ms=" << reserve_cache_ms; }
     LOG(INFO) << ss.str();
 
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferRealBatchSize, jobs.size());
@@ -422,8 +442,5 @@ bool Model::GetOutput(tvm::Executor &graph_executor,
   }
   return true;
 }
-
-
-
 
 }

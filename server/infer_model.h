@@ -39,9 +39,18 @@ class Model {
 
   bool ReclaimMemory(size_t rank);
 
+  const std::string &GetName() { return name_; }
   double GetIdleMill(size_t rank) {
     return infer_idle_mills_[rank].load(std::memory_order_relaxed);
   }
+  size_t GetHotness() {
+    return infer_count_.load(std::memory_order_relaxed);
+  }
+
+  size_t GetMemoryNbytes(size_t rank) {
+    return executors_[rank]->GetStorageSize();
+  }
+
   // void SetWaitTrainPid(size_t worker_id, pid_t train_pid) {
   //   CHECK_LT(worker_id, waited_trains_.size());
   //   waited_trains_[worker_id] = train_pid;
@@ -88,11 +97,14 @@ class Model {
   std::unordered_map<std::string, 
       std::pair<std::vector<int64_t>, std::string>> input_info_, output_info_;
 
+  // need to lock when changing model resources
   std::array<std::mutex, MAX_NUM_WORKER> muts_;
   std::vector<Status> status_;
   std::vector<std::unique_ptr<tvm::Executor>> executors_;
   std::vector<std::unique_ptr<std::thread>> infer_workers_;
   std::array<std::atomic<double>, MAX_NUM_WORKER> infer_idle_mills_;
+
+  std::atomic<size_t> infer_count_{0};
 
 
   // std::vector<std::unique_ptr<tvm::Executor>> graph_executor_pool_;
