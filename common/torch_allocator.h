@@ -5,6 +5,7 @@
 #include <common/tvm_allocator.h>
 #include <common/util.h>
 
+#include <atomic>
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
 #include <boost/interprocess/sync/scoped_lock.hpp>
 
@@ -31,6 +32,7 @@ public:
 private:
   static std::unique_ptr<TorchAllocator> instance_;
   std::vector<std::pair<CUdeviceptr, size_t>> planning_unmap_;
+  std::atomic<size_t> *peek_allocated_nbytes_;
 
   TorchAllocator(MemPool &mempool, bip::scoped_lock<bip::interprocess_mutex> &lock);
 
@@ -121,7 +123,7 @@ private:
     if (request_phy_mem_list.size() < missing_phy_mem_index_list.size()) {
       DumpState();
       TVMAllocator::Get().DumpState();
-      LOG(FATAL) << "OOM";
+      LOG(FATAL) << log_prefix_ << "OOM while alloc phy mem page, entry = " << entry << ".";
     }
     TVMAllocator::Get().SyncAllocTrain(request_phy_mem_list, lock);
     for (size_t k = 0; k < request_phy_mem_list.size(); ++k) {
@@ -196,7 +198,7 @@ private:
             << ", later retry may fail.";
         if (allocated == 0) {
           DumpState();
-          LOG(FATAL) << "OOM";
+          LOG(FATAL) << log_prefix_  << "OOM while finding physical memory page, nbytes = " << ByteDisplay(nbytes) << ".";
         }
         TVMAllocator::Get().SyncAllocTrain(phy_mem_list, lock);
         auto *expand_entry = reinterpret_cast<MemEntry *>(MemPool::Get().GetSharedMemory().allocate(sizeof(MemEntry)));
@@ -217,7 +219,8 @@ private:
     }
     CHECK(!free_entry->is_free);
     EnsurePhyMemAlloc(free_entry, lock);
-    mempool_.AddAllocatedNbytes(nbytes, policy_);
+    size_t allocated_nbytes = mempool_.AddAllocatedNbytes(nbytes, policy_);
+    peek_allocated_nbytes_->store(std::max(peek_allocated_nbytes_->load(std::memory_order_relaxed), allocated_nbytes), std::memory_order_relaxed);
     CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
     return free_entry;
   }
@@ -244,6 +247,11 @@ public:
   void EmptyCache() {
     bip::scoped_lock lock{mempool_.GetMutex()};
     ReleaseFreePhyMem(lock);
+    peek_allocated_nbytes_->store(0, std::memory_order_relaxed);
+  }
+
+  size_t PeekAllocatedNbytes() {
+    return peek_allocated_nbytes_->load(std::memory_order_relaxed);
   }
 
 };
