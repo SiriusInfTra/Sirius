@@ -1,7 +1,7 @@
 import os
 os.environ['USE_SHARED_TENSOR'] = "1"
 os.environ['SHARED_TENSOR_POOL_GB'] = "12"
-os.environ['SHARED_TENSOR_HAS_SERVER'] = "1"
+os.environ['HAS_SHARED_TENSOR_SERVER'] = "1"
 os.environ['GLOG_logtostderr'] = "1"
 
 import torch

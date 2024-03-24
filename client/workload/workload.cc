@@ -43,14 +43,15 @@ void Workload::WarmupModel(const std::string& model_name, int warmup) {
     grpc::Status status = stub_->Inference(&context, request, &result);
     CHECK(status.ok());
   }
-  {
-    grpc::ClientContext context;
-    EmptyRequest request;
-    EmptyResult result;
-    grpc::Status status = stub_->WarmupDone(&context, request, &result);
-    CHECK(status.ok());
-  }
-  DLOG(INFO) << "Complete sending " <<  warmup << " warmup infer request(s) for " << model_name << ".";
+  LOG(INFO) << "Complete sending " <<  warmup << " warmup infer request(s) for " << model_name << ".";
+}
+
+void Workload::WarmupDone() {
+  grpc::ClientContext context;
+  EmptyRequest request;
+  EmptyResult result;
+  grpc::Status status = stub_->WarmupDone(&context, request, &result);
+  CHECK(status.ok());
 }
 
 void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_infer) {
@@ -96,7 +97,9 @@ void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_i
   LOG(INFO) << log_prefix.str() << "RequestInfer stop";
 }
 
-void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double>& start_points, double delay_before_infer) {
+void InferWorker::RequestInferTrace(Workload& workload, 
+                                    const std::vector<double>& start_points, 
+                                    double delay_before_infer) {
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << this << ") " << model_ << " TRACE] "; 
   workload.ready_future_.wait();
@@ -107,7 +110,9 @@ void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double
   {
     size_t debug_num = std::min(start_points.size(), 10UL);
     std::stringstream debug_stream;
-    debug_stream << log_prefix.str() << "RequestInfer start, " << "len(start_points)=" << start_points.size() << ", start_points[0:" << debug_num << "]={";
+    debug_stream << log_prefix.str() << "RequestInfer start, " 
+                 << "len(start_points)=" << start_points.size() 
+                 << ", start_points[0:" << debug_num << "]={";
     for (size_t k=0; k<debug_num; ++k) {
       debug_stream << start_points[k];
       if (k != debug_num - 1) {
@@ -169,7 +174,7 @@ void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double
   }
   while(workload.running_) {
     DLOG(INFO) << log_prefix.str() << "Workload client is still running, wait 500ms.";
-    std::this_thread::sleep_for(500 * std::chrono::milliseconds());
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
   LOG(INFO) << log_prefix.str() << "RequestInfer stop";
 }
@@ -189,7 +194,7 @@ void InferWorker::FetchInferResult(Workload &workload,
     // cq_.Next(&tag, &ok);
     while (true) {
       auto next_status = 
-          cq_.AsyncNext(&tag, &ok, std::chrono::system_clock::now() + std::chrono::seconds(1));
+          cq_.AsyncNext(&tag, &ok, std::chrono::system_clock::now() + std::chrono::seconds(5));
       if (next_status == grpc::CompletionQueue::GOT_EVENT) {
         break;
       } else if (next_status == grpc::CompletionQueue::SHUTDOWN) {
@@ -212,9 +217,11 @@ void InferWorker::FetchInferResult(Workload &workload,
     {
       std::unique_lock status_lock{slot_status_mutex_};
       std::shared_lock slot_lock{slot_mutex_};
-      CHECK(slots_[slot]->rpc_status_.ok()) << " slot " << slot << ": " 
-                                           << slots_[slot]->rpc_status_.error_code() << " " << slots_[slot]->rpc_status_.error_message();
-      CHECK(status_slots_id_[InferReqStatus::kWait].count(slot)) << " " << slot << " " << status_slots_id_[InferReqStatus::kWait].size();
+      CHECK(slots_[slot]->rpc_status_.ok()) 
+          << " slot " << slot << ": " << slots_[slot]->rpc_status_.error_code() << " " 
+          << slots_[slot]->rpc_status_.error_message();
+      CHECK(status_slots_id_[InferReqStatus::kWait].count(slot)) 
+          << " " << slot << " " << status_slots_id_[InferReqStatus::kWait].size();
     }
     auto response_time = std::chrono::steady_clock::now();
     // latency_.push_back(std::chrono::duration<double, std::milli>(end - request_status_[i].request_time_).count());
@@ -470,7 +477,7 @@ std::function<void(InferRequest&)> Workload::SetMnistRequestFn(const std::string
   static std::vector<std::string> mnist_input_datas;
   if (mnist_input_datas.empty()) {
     for (size_t i = 0; i < 10; i++) {
-      mnist_input_datas.push_back(ReadInput("data/mnist/input-" + std::to_string(i) + ".bin"));
+      mnist_input_datas.push_back(ReadInput("mnist/input-" + std::to_string(i) + ".bin"));
     }
   }
   auto set_mnist_request_fn = [&](InferRequest &request) {
@@ -493,7 +500,7 @@ std::function<void(InferRequest&)> Workload::SetResnetRequestFn(const std::strin
   static std::vector<std::string> resnet_input_datas;
   if (resnet_input_datas.empty()) {
     for (size_t i = 0; i < 1; i++) {
-      resnet_input_datas.push_back(ReadInput("data/resnet/input-" + std::to_string(i) + ".bin"));
+      resnet_input_datas.push_back(ReadInput("resnet/input-" + std::to_string(i) + ".bin"));
     }
   }
 
@@ -517,7 +524,7 @@ std::function<void(InferRequest&)> Workload::SetInceptionRequestFn(const std::st
       static std::vector<std::string> resnet_input_datas;
     if (resnet_input_datas.empty()) {
       for (size_t i = 0; i < 1; i++) {
-        resnet_input_datas.push_back(ReadInput("data/inception/input-" + std::to_string(i) + ".bin"));
+        resnet_input_datas.push_back(ReadInput("inception/input-" + std::to_string(i) + ".bin"));
       }
     }
     auto set_resnet_request_fn = [&](InferRequest &request) {
@@ -540,8 +547,8 @@ std::function<void(InferRequest&)> Workload::SetBertRequestFn(const std::string 
   static std::vector<std::string> bert_mask_datas;
   if (bert_input_datas.empty()) {
     for (size_t i = 0; i < 1; i++) {
-      bert_input_datas.push_back(ReadInput("data/bert/input-" + std::to_string(i) + ".bin"));
-      bert_mask_datas.push_back(ReadInput("data/bert/mask-" + std::to_string(i) + ".bin"));
+      bert_input_datas.push_back(ReadInput("bert/input-" + std::to_string(i) + ".bin"));
+      bert_mask_datas.push_back(ReadInput("bert/mask-" + std::to_string(i) + ".bin"));
     }
   }
   
@@ -578,7 +585,9 @@ void Workload::InferBusyLoop(const std::string &model, size_t concurrency,
   infer_workers_.push_back(std::move(worker));
 }
 
-void Workload::InferTrace(const std::string &model, size_t concurrency, const std::vector<double> &start_points, double delay_before_infer,
+void Workload::InferTrace(const std::string &model, size_t concurrency, 
+                          const std::vector<double> &start_points, 
+                          double delay_before_infer,
                           int warmup, int64_t show_result) {
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(

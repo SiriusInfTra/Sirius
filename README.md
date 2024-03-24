@@ -51,7 +51,7 @@ resnet152
 ### launch server
 
 ```
-GLOG_logtostderr=1 ./build/colserve
+GLOG_logtostderr=1 ./build/server/colserve
 ```
 
 Options

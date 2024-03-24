@@ -1,8 +1,11 @@
+#include <server/train_launcher.h>
+#include <server/resource_manager.h>
 #include "logging_as_glog.h"
-#include <signal.h>
 #include "controller.h"
 #include "config.h"
-#include "model_train_store.h"
+
+#include <signal.h>
+
 
 namespace colserve
 {
@@ -11,31 +14,32 @@ std::unique_ptr<Controller> Controller::controller_;
 
 std::atomic<uint64_t> Controller::adjust_cmd_id = 1;
 
-std::ostream& operator<<(std::ostream&os, Controller::Event event) {
+std::ostream& operator<<(std::ostream&os, ctrl::CtrlEvent event) {
   switch (event) {
   // status event
-  case Controller::Event::kTrainStart:
-    os << "Controller::Event::kTrainStart"; 
+  case ctrl::CtrlEvent::kTrainStart:
+    os << "ctrl::CtrlEvent::kTrainStart"; 
     return os;
-  case Controller::Event::kTrainEnd:
-    os << "Controller::Event::kTrainEnd"; 
+  case ctrl::CtrlEvent::kTrainEnd:
+    os << "ctrl::CtrlEvent::kTrainEnd"; 
     return os;
-  case Controller::Event::kInterruptTrainDone:
-    os << "Controller::Event::kInterruptTrainDone";
+  case ctrl::CtrlEvent::kInterruptTrainDone:
+    os << "ctrl::CtrlEvent::kInterruptTrainDone";
     return os;
-  case Controller::Event::kResumeTrainDone:
-    os << "Controller::Event::kResumeTrainDone";
+  case ctrl::CtrlEvent::kResumeTrainDone:
+    os << "ctrl::CtrlEvent::kResumeTrainDone";
     return os;
 
   // cmd event
-  case Controller::Event::kInterruptTrain:
-    os << "Controller::Event::kInterruptTrain";
+  case ctrl::CtrlEvent::kInterruptTrain:
+    os << "ctrl::CtrlEvent::kInterruptTrain";
     return os;
-  case Controller::Event::kResumeTrain:
-    os << "Controller::Event::kResumeTrain";
+  case ctrl::CtrlEvent::kResumeTrain:
+    os << "ctrl::CtrlEvent::kResumeTrain";
     return os;
   default:
-    LOG(FATAL) << "unknown Controller::Event";
+    LOG(FATAL) << "unknown ctrl::CtrlEvent";
+    return os;
   }
 }
 
@@ -52,6 +56,7 @@ std::ostream& operator<<(std::ostream& os, const Controller::TrainStatus &status
     return os;
   default:
     LOG(FATAL) << "unknown Controller::TrainStatus";
+    return os;
   }
 }
 
@@ -67,46 +72,46 @@ Controller* Controller::Get(){
 }
 
 Controller::Controller() {
-  train_cmd_event_mq_ = std::make_unique<MemoryQueue<CtrlMsgEntry>>("cmd-ctrl", true);
-  train_status_event_mq_ = std::make_unique<MemoryQueue<CtrlMsgEntry>>("status-ctrl", true);
+  train_cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("cmd-ctrl", true);
+  train_status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("status-ctrl", true);
   // train_adjust_event_mq_ = std::make_unique<MemoryQueue<int>>("adjust-ctrl", true);
   monitor_train_thread_ = std::make_unique<std::thread>(&Controller::MonitorTrain, this);
 }
 
 void Controller::MonitorTrain() {
   while (true) {
-    auto entry = static_cast<CtrlMsgEntry>(train_status_event_mq_->BlockGet());
-    auto event = static_cast<Event>(entry.event);
+    auto entry = static_cast<ctrl::CtrlMsgEntry>(train_status_event_mq_->BlockGet());
+    auto event = static_cast<ctrl::CtrlEvent>(entry.event);
     auto cur_status = train_status_;
     // LOG(INFO) << "[Controller] MonitorTrain: " << event;
     switch (event){
-    case Event::kTrainStart:
+    case ctrl::CtrlEvent::kTrainStart:
       CHECK_EQ(train_status_.status, TrainStatus::kIdle);
       train_status_.status = TrainStatus::kRunning;
       break;
-    case Event::kInterruptTrainDone:
+    case ctrl::CtrlEvent::kInterruptTrainDone:
       train_status_.status = TrainStatus::kInterrupted;
       LOG(INFO) << "[Controller]: train interrupted";
       break;
-    case Event::kResumeTrainDone:
+    case ctrl::CtrlEvent::kResumeTrainDone:
       CHECK(train_status_.status == TrainStatus::kInterrupted 
           || train_status_.status == TrainStatus::kRunning);
       train_status_.status = TrainStatus::kRunning;
       break;
-    case Event::kColocateAdjustL1Done:
-    case Event::kColocateAdjustL2Done:
+    case ctrl::CtrlEvent::kColocateAdjustL1Done:
+    case ctrl::CtrlEvent::kColocateAdjustL2Done:
       adjust_done_id_ = entry.id;
       wait_train_adjust_cv_.notify_all();
       break;
-    case Event::kTrainEnd:
+    case ctrl::CtrlEvent::kTrainEnd:
       CHECK(train_status_.status == TrainStatus::kRunning
           || train_status_.status == TrainStatus::kIdle);
       train_status_.status = TrainStatus::kIdle;
       train_cmd_event_mq_->Clear();
       break;
-    case Event::kReportBatchSize:
+    case ctrl::CtrlEvent::kReportBatchSize:
       CHECK(train_status_.status != TrainStatus::kIdle);
-      ModelTrainStore::Get()->SetCurBatchSize(entry.value);
+      TrainLauncher::Get()->SetCurBatchSize(entry.value);
       break;
     default:
       break;
@@ -128,12 +133,12 @@ uint64_t Controller::InterruptTrain() {
   if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
     if (train_status_.status == TrainStatus::kRunning) {
       // LOG(INFO) << "Controller: Put InterruptTrain";
-      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(Event::kInterruptTrain)});
+      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kInterruptTrain)});
     }
   } else if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
-    if (ModelTrainStore::Get()->GetTrainPid() != -1) {
+    if (TrainLauncher::Get()->GetTrainPid() != -1) {
       LOG(INFO) << "[Controller]: kill train";
-      CHECK_EQ((kill(ModelTrainStore::Get()->GetTrainPid(), SIGKILL)), 0);
+      CHECK_EQ((kill(TrainLauncher::Get()->GetTrainPid(), SIGKILL)), 0);
       // TrainEnd();
     }
   }
@@ -145,31 +150,54 @@ uint64_t Controller::ResumeTrain() {
   auto cmd_id = resume_cmd_id.fetch_add(1, std::memory_order_relaxed);
   if (!IsTrainIdle()) {
     // LOG(INFO) << "Controller: Put ResumeTrain";
-    train_cmd_event_mq_->Put({cmd_id, static_cast<int>(Event::kResumeTrain)});
+    train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kResumeTrain)});
   }
   return cmd_id;
 }
 
-uint64_t Controller::ColocateAdjust(size_t batch_size) {
+uint64_t Controller::ColocateAdjust(size_t model_rank, size_t batch_size) {
   auto cmd_id = Controller::adjust_cmd_id.fetch_add(1, std::memory_order_relaxed);
   if (!IsTrainIdle()) {
     if (Config::serve_mode == ServeMode::kColocateL1) {
-      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(Event::kColocateAdjustL1), static_cast<int>(batch_size)});
+      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1), 
+                                static_cast<int>(batch_size)});
     } else if (Config::serve_mode == ServeMode::kColocateL2) {
-      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(Event::kColocateAdjustL2), static_cast<int>(batch_size)});
+      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL2), 
+                                static_cast<int>(batch_size)});
     }
-    ModelTrainStore::Get()->AddTargetBatchSize(-batch_size);
+    TrainLauncher::Get()->AddTargetBatchSize(-batch_size);
   }
+  LOG(INFO) << "[Controller] model " << model_rank 
+            << "send ColocateAdjust cmd_id: " << cmd_id 
+            << " batch_size: " << batch_size
+            << " train idle " << IsTrainIdle();
   return cmd_id;
 }
 
-uint64_t Controller::InferExit(size_t batch_size) {
+uint64_t Controller::InferExit() {
   static std::atomic<uint64_t> infer_exit_id = 1;
+
   auto cmd_id = infer_exit_id.fetch_add(1, std::memory_order_relaxed);
   if (!IsTrainIdle()) {
     if (Config::IsColocateMode()) {
-      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(Event::kInferExit), static_cast<int>(batch_size)});
-      ModelTrainStore::Get()->AddTargetBatchSize(batch_size);
+      // Controller::Get()->EnterInferChangeMemory();
+      int train_target_bs;
+      double train_avail_memory_mb;
+      {
+        ResourceManager::InferMemoryChangingLock();
+        train_avail_memory_mb = ResourceManager::GetTrainAvailMemoryMB();
+        train_target_bs = TrainLauncher::Get()->PredictTargetBatchSize(train_avail_memory_mb);
+        TrainLauncher::Get()->SetTargetBatchSize(train_target_bs);
+        ResourceManager::InferMemoryChangingUnlock();
+        // TrainLauncher::Get()->AddTargetBatchSize(batch_size);
+      }
+
+      LOG(INFO) << "[Controller] Infer Exit"
+                << " train avail memory " << train_avail_memory_mb
+                << " target batch size " << train_target_bs;
+      train_cmd_event_mq_->Put({cmd_id, 
+                                static_cast<int>(ctrl::CtrlEvent::kInferExit), 
+                                train_target_bs});
     }
   }
   return cmd_id;
@@ -241,11 +269,11 @@ std::string Controller::GetInferStatusStr() {
 
 void Controller::TrainStart() {
   // LOG(INFO) << "Controller Put TrainStart";
-  train_status_event_mq_->Put({0, static_cast<int>(Event::kTrainStart)});
+  train_status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainStart)});
 }
 
 void Controller::TrainEnd() {
-  train_status_event_mq_->Put({0, static_cast<int>(Event::kTrainEnd)});
+  train_status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainEnd)});
 }
 
 bool Controller::IsTrainIdle() {
@@ -256,28 +284,6 @@ bool Controller::HasFlyingColocateAdjust() {
   return adjust_done_id_ + 1 < Controller::adjust_cmd_id;
 }
 
-bool Controller::TryEnterInferModelAlloc(size_t model_rank) {
-  if (last_alloc_infer_model_ != static_cast<size_t>(-1)) {
-    return false;
-  }
-  EnterInferModelAlloc(model_rank);
-  return true;
-}
 
-void Controller::EnterInferModelAlloc(size_t model_rank) {
-  std::unique_lock<std::mutex> lock{infer_model_alloc_mutex_};
-  infer_model_alloc_cv_.wait(lock, [this, model_rank]() {
-    return last_alloc_infer_model_ == static_cast<size_t>(-1);
-  });
-  last_alloc_infer_model_ = model_rank;
-  LOG(INFO) << "InferModel " << model_rank << " enter allocation";
-}
-
-void Controller::ExitInferModelAlloc(size_t model_rank) {
-  CHECK_EQ(last_alloc_infer_model_, model_rank);
-  last_alloc_infer_model_ = static_cast<size_t>(-1);
-  infer_model_alloc_cv_.notify_one();
-  LOG(INFO) << "InferModel " << model_rank << " exit allocation";
-}
 
 } // namespace colserve

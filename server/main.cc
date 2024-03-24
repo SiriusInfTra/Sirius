@@ -5,24 +5,26 @@
 #include <tvm/runtime/module.h>
 #include <tvm/runtime/registry.h>
 #include <tvm/runtime/logging.h>
-#include "sta/mempool.h"
 #include <iostream>
 #include <filesystem>
 #include <csignal>
-#include "model_infer_store.h"
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/health_check_service_interface.h>
 #include <glog/logging.h>
 #include <CLI/CLI.hpp>
-#include <cuda.h>
 
-#include <sta/init.h>
+#include <common/cuda_allocator.h>
+#include <common/init.h>
+#include <common/mempool.h>
+#include <common/util.h>
 
-#include "grpc/grcp_server.h"
+#include "grpc/grpc_server.h"
 #include "colserve.grpc.pb.h"
-#include "model_train_store.h"
+#include "infer_model_store.h"
+#include "train_launcher.h"
 #include "cache.h"
+#include "resource_manager.h"
 #include "controller.h"
 #include "profiler.h"
 #include "config.h"
@@ -158,16 +160,16 @@ void init_config() {
 void Shutdown(int sig) {
   LOG(INFO) <<"signal " <<  strsignal(sig) << " received, shutting down...";
   colserve::Config::running = false;
-  colserve::ModelInferStore::Shutdown();
-  colserve::ModelTrainStore::Shutdown();
+  colserve::InferModelStore::Shutdown();
+  colserve::TrainLauncher::Shutdown();
   colserve::Profiler::Shutdown();
   std::terminate();
 }
 
 int main(int argc, char *argv[]) {
   google::InitGoogleLogging(argv[0]);
-  colserve::Config::binary_directory = std::filesystem::path(argv[0]).parent_path();
-
+  colserve::Config::binary_directory = std::filesystem::path(argv[0]).parent_path().parent_path();
+  
   init_cli_options();
   CLI11_PARSE(app, argc, argv);
   init_config();
@@ -182,19 +184,24 @@ int main(int argc, char *argv[]) {
   auto free_list_policy = colserve::sta::getFreeListPolicy(
       colserve::Config::mempool_freelist_policy);
   if (colserve::Config::use_shared_tensor) {
-    colserve::sta::Init(
-      static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1024 * 1024 * 1024),
+    colserve::sta::InitMemoryPool(
+      static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
       true, false, free_list_policy);
+    colserve::sta::CUDAMemPool::Get()->RegisterOOMHandler([]() {
+      LOG(INFO) << "train predict memory " 
+                <<  colserve::TrainLauncher::Get()->PredictMemUsageMB() << "."; 
+      }, colserve::sta::MemType::kInfer);
   }
+  colserve::ResourceManager::Init();
   colserve::Controller::Init();
   colserve::Profiler::Init(colserve::Config::profile_log_path);
   colserve::GraphCache::Init(colserve::Config::max_cache_nbytes);
-  colserve::ModelTrainStore::Init("train");
-  colserve::ModelInferStore::Init("models");
+  colserve::TrainLauncher::Init("train");
+  colserve::InferModelStore::Init("server/models");
   colserve::Profiler::Start();
 
   if (colserve::Config::memory_pressure_mb > 0) { 
-    size_t nbytes = static_cast<size_t>(colserve::Config::memory_pressure_mb * 1024 * 1024);
+    size_t nbytes = static_cast<size_t>(colserve::Config::memory_pressure_mb * 1_MB);
     CUDA_CALL(cudaMalloc(&memory_pressure_ptr, nbytes));
   }
 

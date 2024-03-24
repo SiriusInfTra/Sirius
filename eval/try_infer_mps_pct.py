@@ -3,8 +3,9 @@ from runner import *
 set_global_seed(42)
 
 def get_workload(rps, infer_only=False):
-    workload = HyperWorkload(concurrency=2048, duration=140, delay_before_infer=0,
-                            warmup=5, delay_after_warmup=5)
+    workload = HyperWorkload(concurrency=2048, duration=140, 
+                             warmup=5, wait_warmup_done_sec=5,
+                             wait_train_setup_sec=0)
     InferModel.reset_model_cnt()
     workload.set_infer_workloads(MicrobenchmarkInferWorkload(
         model_list=InferModel.get_model_list("resnet152", 32),
@@ -13,8 +14,9 @@ def get_workload(rps, infer_only=False):
     return workload
 
 def azure(rps, infer_only=True):
-    workload = HyperWorkload(concurrency=2048, duration=140, delay_before_infer=30,
-                            warmup=5, delay_after_warmup=5)
+    workload = HyperWorkload(concurrency=2048, duration=140, 
+                             warmup=5, wait_warmup_done_sec=5,
+                             wait_train_setup_sec=30,)
     InferModel.reset_model_cnt()
     if not infer_only:
         workload.set_train_workload(train_workload=TrainWorkload('resnet', 15, 96))
@@ -27,8 +29,9 @@ def azure(rps, infer_only=True):
     return workload
 
 def smooth(rps, infer_only=True):
-    workload = HyperWorkload(concurrency=2048, duration=140, delay_before_infer=30,
-                            warmup=5, delay_after_warmup=5)
+    workload = HyperWorkload(concurrency=2048, duration=140,
+                             warmup=5, wait_warmup_done_sec=5,
+                             wait_train_setup_sec=30,)
     InferModel.reset_model_cnt()
     if not infer_only:
         workload.set_train_workload(train_workload=TrainWorkload('resnet', 15, 96))

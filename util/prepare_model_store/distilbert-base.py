@@ -12,7 +12,7 @@ from tvm.driver import tvmc
 import tarfile
 
 
-model_store = "models"
+model_store = "server/models"
 tmp_dir = tempfile.gettempdir()
 
 # start global
@@ -52,7 +52,7 @@ def tvm_compile():
     tune_records = "util/prepare_model_store/distilbert-tune.json"
     tvmc.compile(tvmc_model=tvmc_model, target='cuda', package_path=f"{tmp_dir}/distilbert_base-tvm.tar", tuning_records=tune_records)
 
-    model_store_path = f'models/distilbert_base-b{batch_size}' 
+    model_store_path = f'{model_store}/distilbert_base-b{batch_size}' 
     pathlib.Path(model_store_path).mkdir(parents=True, exist_ok=True)
     tarfile.open(f"{tmp_dir}/distilbert_base-tvm.tar").extractall(model_store_path)
 

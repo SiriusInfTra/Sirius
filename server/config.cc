@@ -1,3 +1,5 @@
+#include <common/util.h>
+
 #include "config.h"
 
 namespace colserve {
@@ -24,10 +26,10 @@ bool Config::use_shared_tensor_infer = true;
 bool Config::use_shared_tensor_train = true;
 bool Config::ondemand_adjust = true;
 bool Config::better_alloc = true;
-size_t Config::better_alloc_threshold = 64 * 1024 * 1024;
+size_t Config::better_alloc_threshold = 64_MB;
 
 bool Config::group_param_load = true;
-size_t Config::group_param_load_threshold = 8 * 1024 * 1024;
+size_t Config::group_param_load_threshold = 8_MB;
 
 double Config::cuda_memory_pool_gb = 12;
 
@@ -59,5 +61,8 @@ double Config::infer_model_max_idle_ms = 3000;
 bool Config::dummy_adjust = false;
 
 bool Config::system_initialized = false;
+
+bool Config::log_model_init_info = false;
+bool Config::log_grpc = false;
 
 }

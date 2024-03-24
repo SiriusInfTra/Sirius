@@ -45,11 +45,11 @@ def main():
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
     for num_model, req_per_sec, train_thread_percent in parmas:
         system = System(mode=System.ServerMode.Normal, use_sta=False, mps=True, train_mps_thread_percent=train_thread_percent)
-        workload = HyperWorkload(concurrency=1, duration=60, delay_before_infer=10)
+        workload = HyperWorkload(concurrency=1, duration=60, wait_train_setup_sec=10)
         run(system, workload, num_model, req_per_sec, "ideal", timestamp)
 
     system = System(mode=System.ServerMode.TaskSwitchL1, use_sta=False, mps=False)
-    workload = HyperWorkload(concurrency=32, duration=60, delay_before_infer=30)
+    workload = HyperWorkload(concurrency=32, duration=60, wait_train_setup_sec=30)
     run(system, workload, 1, 0.1, "taskswitch", timestamp)
     run(system, workload, 1, 0.2, "taskswitch", timestamp)
     run(system, workload, 1, 0.5, "taskswitch", timestamp)

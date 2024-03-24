@@ -9,7 +9,7 @@ import torch
 from transformers import BertModel, BertTokenizer, BertConfig
 import tempfile
 
-model_store = "models"
+model_store = "server/models"
 tmp_dir = tempfile.gettempdir()
 
 # start global

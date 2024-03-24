@@ -61,13 +61,13 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
             images:torch.Tensor = images.to('cuda:0', non_blocking=True)
             targets:torch.Tensor = targets.to('cuda:0', non_blocking=True)
             if torch_col.use_shared_tensor():
-                torch_col.clear_saved_tensor()
+                torch_col.untag_interm_memory()
             # micro_batch_size = random.randint(1, batch_size)
             # print(micro_batch_size)
             try:
                 tried_batch += 1
                 total_tried_batch += 1
-                optimizer.zero_grad()
+                optimizer.zero_grad(set_to_none=False)
                 output = model(images)
                 loss = criterion(output, targets)
                 loss.backward()

@@ -5,11 +5,11 @@ set_global_seed(42)
 
 use_time_stamp = True
 
-run_pct_mps = True
+run_pct_mps = False
 run_colsys = True
 run_um_mps = False
-run_task_switch = True
-run_infer_only = True
+run_task_switch = False
+run_infer_only = False
 
 
 # run_pct_mps = True
@@ -43,8 +43,9 @@ eval_config = AzureConfig()
 
 
 def azure(rps, client_model_list, infer_only=True):
-    workload = HyperWorkload(concurrency=2048, duration=eval_config.increase_time + 140, delay_before_infer=30,
-                            warmup=5, delay_after_warmup=5, delay_before_profile=5)
+    workload = HyperWorkload(concurrency=2048, duration=eval_config.increase_time + 140, warmup=5,
+                             wait_warmup_done_sec=5, wait_train_setup_sec=30,
+                             wait_stable_before_start_profiling_sec=10,)
     InferModel.reset_model_cnt()
     if not infer_only:
         workload.set_train_workload(train_workload=TrainWorkload('resnet', 15 + (eval_config.increase_time // 7), 96))
@@ -88,10 +89,7 @@ if run_pct_mps:
             run(system, hyper_workload, server_model_config, f"light-{mps_pct}")
 
 
-
-
-
-
+# ===================================================================================
 
 def run(system: System, workload: HyperWorkload, server_model_config: str, tag: str):
     system.launch("overall-azure", tag, time_stamp=use_time_stamp,
@@ -104,7 +102,7 @@ def run(system: System, workload: HyperWorkload, server_model_config: str, tag: 
 
 
 if run_colsys:
-    num_worker = 0
+    num_worker = 1
     # colsys heavy
     with mps_thread_percent(eval_config.heavy_mps_infer):
         client_model_list, server_model_config = InferModel.get_multi_model(eval_config.model_list, eval_config.heavy_num_model, num_worker)

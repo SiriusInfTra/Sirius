@@ -7,7 +7,7 @@ import tarfile
 import pathlib
 
 batch_size = 1
-model_store = "models"
+model_store = "server/models"
 tmp_dir = tempfile.gettempdir()
 
 vgg19 = models.vgg19(weights=models.VGG19_Weights.DEFAULT).eval()

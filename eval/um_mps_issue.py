@@ -41,7 +41,7 @@ def run(system: System, hyper_workload:HyperWorkload, num_model:int, req_per_sec
 
 
 system = System(mode=System.ServerMode.Normal, use_sta=False, mps=True, train_mps_thread_percent=40)
-hyper_workload = HyperWorkload(concurrency=1, duration=30, delay_before_infer=30)
+hyper_workload = HyperWorkload(concurrency=1, duration=30, wait_train_setup_sec=30)
 
 run(system, hyper_workload, 1, 4, "ideal")
 run(system, hyper_workload, 2, 4, "ideal")

@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 #include <unordered_map>
-#include <tvm/graph_executor.h>
+#include <tvm/executor.h>
 #include <sstream>
 #include <mutex>
 #include "profiler.h"
@@ -17,7 +17,7 @@ namespace colserve {
 const constexpr char CACHE_LOG_PREFIX[] = "[Cache]";
 
 struct CacheItem {
-  tvm::GraphExecutor *graph_executor;
+  tvm::Executor *graph_executor;
   bool is_cache;
   std::string name;
 };
@@ -27,8 +27,8 @@ class LRUPolicy {
  private:
   std::mutex mutex_;
   std::list<CacheItem> lru_list_;
-  std::unordered_map<tvm::GraphExecutor*, std::list<CacheItem>::iterator> cache_;
-  std::unordered_map<tvm::GraphExecutor*, std::mutex> loading_locks_;
+  std::unordered_map<tvm::Executor*, std::list<CacheItem>::iterator> cache_;
+  std::unordered_map<tvm::Executor*, std::mutex> loading_locks_;
   size_t cached_nbytes_ = 0;
 
 
@@ -43,7 +43,7 @@ class LRUPolicy {
   }
 
  public:
-  CacheItem RemoveIfPresent(const std::string &name, tvm::GraphExecutor *graph_executor) {
+  CacheItem RemoveIfPresent(const std::string &name, tvm::Executor *graph_executor) {
     std::unique_lock lock{mutex_};
     DumpLRUList("RemoveIfPresent-" + name + "-begin");
     auto iter = cache_.find(graph_executor); 
@@ -51,7 +51,7 @@ class LRUPolicy {
       DumpLRUList("RemoveIfPresent-" + name + "-end1");
       std::unique_lock loading_locker{loading_locks_[graph_executor]};
       lock.unlock();
-      graph_executor->Init();
+      graph_executor->Init(true);
       return {CacheItem{graph_executor, false, name}};
     }
     auto list_node = iter->second;
@@ -65,7 +65,7 @@ class LRUPolicy {
     return cache_item;
   }
 
-  std::tuple<CacheItem, size_t> PutRemoveLast(const std::string &name, tvm::GraphExecutor *graph_executor, size_t max_cache_nbytes) {
+  std::tuple<CacheItem, size_t> PutRemoveLast(const std::string &name, tvm::Executor *graph_executor, size_t max_cache_nbytes) {
     std::unique_lock lock{mutex_};
     DumpLRUList("PutRemoveLast-" + name + "-begin");
     CHECK_LE(graph_executor->GetStorageSize(), max_cache_nbytes);
@@ -107,9 +107,9 @@ class GraphCache {
   }
   
   // assume graph_executor is accessed by a unique thread
-  void InitGraphExecutor(const std::string &name, tvm::GraphExecutor* graph_executor) {
+  void InitGraphExecutor(const std::string &name, tvm::Executor* graph_executor) {
     if (max_cache_nbytes_ == 0) {
-      graph_executor->Init();
+      graph_executor->Init(true);
       return;
     }
     auto cache_item = policy_.RemoveIfPresent(name, graph_executor);
@@ -122,7 +122,7 @@ class GraphCache {
     }
   }
 
-  void DeInitGraphExecutor(const std::string &name, tvm::GraphExecutor* graph_executor) {
+  void DeInitGraphExecutor(const std::string &name, tvm::Executor* graph_executor) {
     if (max_cache_nbytes_ == 0) {
       graph_executor->DeInit();
       return;

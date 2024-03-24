@@ -6,8 +6,8 @@ import tempfile
 import tarfile
 import pathlib
 
-batch_size = 4
-model_store = "models"
+batch_size = 1
+model_store = "server/models"
 tmp_dir = tempfile.gettempdir()
 
 resnet50 = models.resnet50(weights=models.ResNet50_Weights.DEFAULT).eval()
