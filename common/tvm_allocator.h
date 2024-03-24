@@ -46,7 +46,7 @@ private:
 
     if (free_entry == nullptr) {
       DumpState();
-      LOG(FATAL) << log_prefix_ << "OOM";
+      LOG(FATAL) << log_prefix_  << "OOM while finding virtual memory, nbytes = " << ByteDisplay(nbytes) << ".";
     }
     auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(free_entry);
     std::vector<PhyMem *> phy_mem_list;
