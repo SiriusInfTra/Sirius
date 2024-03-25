@@ -12,8 +12,6 @@
 
 namespace colserve::sta {
 
-
-
 std::unique_ptr<TorchAllocator> TorchAllocator::instance_ = nullptr;
 
 TorchAllocator &TorchAllocator::Get() {

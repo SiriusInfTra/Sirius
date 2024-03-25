@@ -156,7 +156,7 @@ private:
   std::vector<PhyMem> phy_mem_list_;
   phymem_queue *free_queue_;
   stats_arr *allocated_nbytes_;
-  stats_arr *mem_page_nbytes;
+  stats_arr *phy_mem_page_nbytes_;
   
   bool is_master_;
 public:
@@ -178,7 +178,7 @@ public:
 
   std::vector<PhyMem *> AllocNumPhyMem(Belong belong, size_t num_phy_mem);
 
-  void AllocSpecificPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong);
+  void AllocSpecifiedPhyMem(const std::vector<PhyMem *> &phy_mem_list, Belong belong);
 
   void DeallocPhyMem(const std::vector<PhyMem *> &phy_mem_list);
 
@@ -202,8 +202,8 @@ public:
     return allocated_nbytes_->at(static_cast<size_t>(belong)).fetch_sub(nbytes, std::memory_order_relaxed);
   }
 
-  inline size_t GetMemPageNBytes(Belong belong) {
-    return mem_page_nbytes->at(static_cast<size_t>(belong)).load(std::memory_order_relaxed);
+  inline size_t GetPhyMemPageNbytes(Belong belong) {
+    return phy_mem_page_nbytes_->at(static_cast<size_t>(belong)).load(std::memory_order_relaxed);
   }
 
   void PrintStatus();

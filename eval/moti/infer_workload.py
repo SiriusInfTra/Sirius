@@ -72,6 +72,18 @@ system = System(
     has_warmup=True,
     max_live_minute=max_live_minute,
 )
+
+# infer w/ less memory
+# system = System(
+#     mode=System.ServerMode.Normal,
+#     use_sta=True, mps=False, use_xsched=False,
+#     port=AzureConfig.server_port,
+#     has_warmup=True,
+#     max_live_minute=max_live_minute,
+#     max_cache_nbytes=int(4.5 * 1024 * 1024 * 1024),
+#     cuda_memory_pool_gb=6
+# )
+
 run(system, hyper_workload, server_model_config, 
     f"azure-interval-{AzureConfig.interval_sec}-period-{AzureConfig.period_num}")
 

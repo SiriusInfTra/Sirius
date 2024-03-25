@@ -152,15 +152,19 @@ private:
       entry = MaybeMerge(entry);
     } else {
       entry = free_list_large_.PushFreeEntry(entry);
-      if (auto *prev_entry_nbytes = entry_list_.GetPrevEntry(entry); prev_entry_nbytes && prev_entry_nbytes->is_small && prev_entry_nbytes->is_free) {
+      auto *prev_entry_nbytes = entry_list_.GetPrevEntry(entry);
+      if (prev_entry_nbytes && prev_entry_nbytes->is_small && prev_entry_nbytes->is_free) {
         size_t prev_nbytes = prev_entry_nbytes->nbytes;
-        if (auto *maybe_merged_entry = MaybeMerge(prev_entry_nbytes); maybe_merged_entry->nbytes > prev_nbytes) {
+        auto *maybe_merged_entry = MaybeMerge(prev_entry_nbytes);
+        if (maybe_merged_entry->nbytes > prev_nbytes) {
           entry = maybe_merged_entry;
         }
       }
-      if (auto *next_entry = entry_list_.GetNextEntry(entry); next_entry && next_entry->is_small && next_entry->is_free) {
+      auto *next_entry = entry_list_.GetNextEntry(entry);
+      if (next_entry && next_entry->is_small && next_entry->is_free) {
         size_t next_entry_nbytes = next_entry->nbytes;
-        if (auto *maybe_merged_entry = MaybeMerge(next_entry); maybe_merged_entry->nbytes > next_entry_nbytes) {
+        auto *maybe_merged_entry = MaybeMerge(next_entry);
+        if (maybe_merged_entry->nbytes > next_entry_nbytes) {
           entry = maybe_merged_entry;
         }
       }
@@ -173,7 +177,9 @@ private:
 
   MemEntry *Alloc0(size_t nbytes, bool retry_alloc, bip::scoped_lock<bip::interprocess_mutex> &lock) {
     CHECK_GT(nbytes, 0);
-    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Alloc, nbytes = " << ByteDisplay(nbytes) << ".";
+    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ 
+        << "Alloc, nbytes = " << ByteDisplay(nbytes) << ".";
+  
     nbytes = detail::AlignedNBytes<ALIGN_NBYTES>(nbytes);
     MemEntry *free_entry = nullptr;
     // 1. normal case, alloc in train small/large mem pool
@@ -199,7 +205,8 @@ private:
           LOG(FATAL) << log_prefix_  << "OOM while finding physical memory page, nbytes = " << ByteDisplay(nbytes) << ".";
         }
         TVMAllocator::Get().SyncAllocTrain(phy_mem_list, lock);
-        auto *expand_entry = reinterpret_cast<MemEntry *>(MemPool::Get().GetSharedMemory().allocate(sizeof(MemEntry)));
+        auto *expand_entry = reinterpret_cast<MemEntry *>(
+            MemPool::Get().GetSharedMemory().allocate(sizeof(MemEntry)));
         expand_entry->addr_offset = MEM_BLOCK_NBYTES * mapped_mem_list_.size();
         expand_entry->nbytes = allocated * MEM_BLOCK_NBYTES;
         expand_entry->is_free = false;
@@ -235,8 +242,6 @@ public:
     Free0(entry, lock);
   }
 
-  
-
   std::byte *Alloc(size_t nbytes) {
     bip::scoped_lock lock{mempool_.GetMutex()};
     return base_ptr_ + Alloc0(nbytes, true, lock)->addr_offset;
@@ -253,7 +258,5 @@ public:
   }
 
 };
-
-
 
 }
