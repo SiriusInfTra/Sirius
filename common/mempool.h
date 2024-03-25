@@ -202,7 +202,7 @@ public:
     return allocated_nbytes_->at(static_cast<size_t>(belong)).fetch_sub(nbytes, std::memory_order_relaxed);
   }
 
-  inline size_t GetPhyMemNbytes(Belong belong) {
+  inline size_t GetPhyMemPageNbytes(Belong belong) {
     return phy_mem_page_nbytes_->at(static_cast<size_t>(belong)).load(std::memory_order_relaxed);
   }
 

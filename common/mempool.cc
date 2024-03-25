@@ -377,7 +377,7 @@ bool MemPool::IsInit() {
 void MemPool::PrintStatus() {
   for (Belong belong : {Belong::kInfer, Belong::kTrain}) {
     LOG(INFO) << belong << " Allocate: " << ByteDisplay(GetAllocatedNbytes(belong));
-    LOG(INFO) << belong << " Cached: " << ByteDisplay(GetPhyMemNbytes(belong));
+    LOG(INFO) << belong << " Cached: " << ByteDisplay(GetPhyMemPageNbytes(belong));
   }
   LOG(INFO) << "[mempool] nbytes = " << ByteDisplay(mempool_nbytes);
   LOG(INFO) << "[mempool] total phy block = " << phy_mem_list_.size();
