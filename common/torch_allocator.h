@@ -118,8 +118,7 @@ private:
         << "missing " << missing_phy_mem_index_list.size() 
         << " physical memory page(s), try allocate.";
     EnsureUnmap();
-    std::vector<PhyMem *> request_phy_mem_list;
-    mempool_.AllocPhyMem(request_phy_mem_list, policy_, missing_phy_mem_index_list.size());
+    std::vector<PhyMem *> request_phy_mem_list =mempool_.AllocNumPhyMem( policy_, missing_phy_mem_index_list.size());
     if (request_phy_mem_list.size() < missing_phy_mem_index_list.size()) {
       DumpState();
       TVMAllocator::Get().DumpState();
@@ -189,8 +188,7 @@ private:
     // 2. find global free phy page to enlarge train memory pool 
     if (free_entry == nullptr && retry_alloc) {
         size_t try_allocate_n = detail::AlignedNBytes<MEM_BLOCK_NBYTES * 8>(nbytes) / MEM_BLOCK_NBYTES;
-        std::vector<PhyMem *> phy_mem_list;
-        mempool_.AllocPhyMem(phy_mem_list, policy_, try_allocate_n);
+        std::vector<PhyMem *> phy_mem_list = mempool_.AllocNumPhyMem(policy_, try_allocate_n);
         size_t allocated = phy_mem_list.size();
         LOG_IF(INFO, allocated < try_allocate_n) << log_prefix_ 
             << "Require " << try_allocate_n 

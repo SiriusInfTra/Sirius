@@ -176,9 +176,9 @@ public:
 
   inline bip::interprocess_mutex &GetMutex() { return *mutex_; }
 
-  void AllocPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong, size_t num_phy_mem);
+  std::vector<PhyMem *> AllocNumPhyMem(Belong belong, size_t num_phy_mem);
 
-  void ClaimPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong);
+  void AllocSpecificPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong);
 
   void DeallocPhyMem(const std::vector<PhyMem *> &phy_mem_list);
 
