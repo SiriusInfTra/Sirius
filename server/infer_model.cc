@@ -68,8 +68,8 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
     // InferModelCache::ReserveCache(name);
     // executor->Init(true);
     executors_.push_back(std::move(executor));
-    status_.push_back(Status::kReady);
-    model_stat_[static_cast<size_t>(Status::kReady)].fetch_add(1, std::memory_order_relaxed);
+    status_.push_back(Status::kWithoutMemory);
+    model_stat_[static_cast<size_t>(Status::kWithoutMemory)].fetch_add(1, std::memory_order_relaxed);
   }
   infer_workers_.resize(max_num_worker_);
 
