@@ -69,6 +69,7 @@ public:
   static CUDAMemPool* Get();
   static size_t InferMemUsage();
   static size_t TrainMemUsage();
+  static size_t TrainPeakMemUsage();
   static size_t TrainAllMemUsage();
   static size_t FreeMemUsage();
   static size_t PoolNbytes();

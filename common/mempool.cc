@@ -320,8 +320,9 @@ MemPool::~MemPool() {
   }
 }
 
-void MemPool::AllocPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong, size_t num_phy_mem) {
+std::vector<PhyMem *> MemPool::AllocNumPhyMem(Belong belong, size_t num_phy_mem) {
   CHECK_NE(belong, Belong::kFree);
+  std::vector<PhyMem *> phy_mem_list;
   phy_mem_list.reserve(num_phy_mem);
   for (size_t k = 0; k < num_phy_mem && !free_queue_->empty(); ++k) {
     auto &phy_mem_ptr = phy_mem_list_[free_queue_->front()];
@@ -331,6 +332,7 @@ void MemPool::AllocPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong, si
   }
   phy_mem_page_nbytes_->at(static_cast<size_t>(belong)).fetch_add(
       phy_mem_list.size() * MEM_BLOCK_NBYTES, std::memory_order_relaxed);
+  return phy_mem_list;
 }
 
 void MemPool::AllocSpecifiedPhyMem(const std::vector<PhyMem *> &phy_mem_list, Belong belong) {
