@@ -268,7 +268,7 @@ MemPool::MemPool(size_t nbytes, bool cleanup): mempool_nbytes(nbytes) {
     free_queue_ = shared_memory_.find_or_construct<phymem_queue>("ME_free_queue")(
         shared_memory_.get_segment_manager());
     allocated_nbytes_ = shared_memory_.find_or_construct<stats_arr>("ME_allocated_nbytes")();
-    phy_mem_nbytes_ = shared_memory_.find_or_construct<stats_arr>("ME_cached_nbytes_")();
+    phy_mem_page_nbytes_ = shared_memory_.find_or_construct<stats_arr>("ME_cached_nbytes_")();
   };
   shared_memory_.atomic_func(atomic_init);
   bip::scoped_lock locker(*mutex_);
@@ -329,7 +329,7 @@ void MemPool::AllocPhyMem(std::vector<PhyMem *> &phy_mem_list, Belong belong, si
     phy_mem_list.push_back(&phy_mem_ptr);
     free_queue_->pop_front();
   }
-  phy_mem_nbytes_->at(static_cast<size_t>(belong)).fetch_add(
+  phy_mem_page_nbytes_->at(static_cast<size_t>(belong)).fetch_add(
       phy_mem_list.size() * MEM_BLOCK_NBYTES, std::memory_order_relaxed);
 }
 
@@ -339,7 +339,7 @@ void MemPool::AllocSpecifiedPhyMem(const std::vector<PhyMem *> &phy_mem_list, Be
     free_queue_->erase(*phymem_ptr->pos_queue);
     *phymem_ptr->belong = belong;
   }
-  phy_mem_nbytes_->at(static_cast<size_t>(belong)).fetch_add(
+  phy_mem_page_nbytes_->at(static_cast<size_t>(belong)).fetch_add(
       phy_mem_list.size() * MEM_BLOCK_NBYTES, std::memory_order_relaxed);
 }
 
@@ -352,7 +352,7 @@ void MemPool::DeallocPhyMem(const std::vector<PhyMem *> &phy_mem_list) {
     *phy_mem_ptr->belong = Belong::kFree;
     *phy_mem_ptr->pos_queue = free_queue_->insert(free_queue_->cend(), phy_mem_ptr->index);
   }
-  phy_mem_nbytes_->at(static_cast<size_t>(belong)).fetch_sub(
+  phy_mem_page_nbytes_->at(static_cast<size_t>(belong)).fetch_sub(
       phy_mem_list.size() * MEM_BLOCK_NBYTES, std::memory_order_relaxed);
 }
 

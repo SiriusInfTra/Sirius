@@ -156,7 +156,7 @@ private:
   std::vector<PhyMem> phy_mem_list_;
   phymem_queue *free_queue_;
   stats_arr *allocated_nbytes_;
-  stats_arr *phy_mem_nbytes_;
+  stats_arr *phy_mem_page_nbytes_;
   
   bool is_master_;
 public:
@@ -203,7 +203,7 @@ public:
   }
 
   inline size_t GetPhyMemNbytes(Belong belong) {
-    return phy_mem_nbytes_->at(static_cast<size_t>(belong)).load(std::memory_order_relaxed);
+    return phy_mem_page_nbytes_->at(static_cast<size_t>(belong)).load(std::memory_order_relaxed);
   }
 
   void PrintStatus();
