@@ -55,7 +55,7 @@ private:
         phy_mem_list.push_back(mapped_mem_list_[k]);
       }
     }
-    mempool_.ClaimPhyMem(phy_mem_list, policy_);
+    mempool_.AllocSpecifiedPhyMem(phy_mem_list, policy_);
     mempool_.AddAllocatedNbytes(nbytes, policy_);
     CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
     return free_entry;
@@ -146,6 +146,7 @@ private:
     CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
     return entry;
   }
+
 public:
   static TVMAllocator &Get();
 
