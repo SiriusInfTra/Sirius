@@ -39,8 +39,6 @@ CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool cleanup, bool observe, FreeLis
   
 }
 
-// TO FIX: rename, this is confusing
-static std::set<void *> train_set;
 
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(
     std::size_t nbytes, MemType mtype, bool allow_nullptr) {
@@ -59,10 +57,6 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(
     ptr = TVMAllocator::Get().Alloc(nbytes);
   } else if (mtype == MemType::kTrain) {
     ptr = TorchAllocator::Get().Alloc(nbytes);
-    if (ptr != nullptr) {
-      CHECK(train_set.insert(ptr).second == true) << ptr;
-    }
-
     DLOG(INFO) << "Torch Alloc: " << ptr << ", nbytes = " << nbytes;
   } else {
     LOG(FATAL) << "Unknown mtype: " << static_cast<size_t>(mtype); 
@@ -82,7 +76,6 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(
     } else if (mtype == MemType::kTrain) {
       TorchAllocator::Get().Free(reinterpret_cast<std::byte*>(entry->addr));
       DLOG(INFO) << "Torch Free: " << entry->addr << ", nbytes = " << entry->nbytes;
-      train_set.erase(entry->addr);
     } else {
       LOG(FATAL) << "Unknown mtype: " << static_cast<size_t>(mtype); 
     }
@@ -161,7 +154,7 @@ size_t CUDAMemPool::TrainMemUsage() {
 }
 
 size_t CUDAMemPool::TrainAllMemUsage() {
-  return MemPool::Get().GetCachedNbytes(Belong::kTrain);
+  return TorchAllocator::Get().PeekAllocatedNbytes();
 }
 
 size_t CUDAMemPool::PoolNbytes() {

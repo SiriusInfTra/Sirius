@@ -37,6 +37,7 @@ TensorContainer::TensorContainer(memory_data_t mdata, std::vector<int64_t> shape
       break;
     case c10::MemoryFormat::ChannelsLast3d:
       SetTensor(mdata, std::move(shape), c10::get_channels_last_strides_2d(shape), dtype, 0);
+      break;
     default:
       LOG(FATAL) << "unknown memory_format: " << memory_format << ".";
       break;

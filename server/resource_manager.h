@@ -19,14 +19,14 @@ class ResourceManager {
   static double GetFreeMemoryMB();
   static double GetTrainAvailMemoryMB();
 
-  static void InferChangeMemoryLock() {
-    resource_manager_->infer_change_memory_mut_.lock();
+  static void InferMemoryChangingLock() {
+    resource_manager_->infer_memory_changing_mut_.lock();
   }
-  static void InferChangeMemoryUnlock() {
-    resource_manager_->infer_change_memory_mut_.unlock();
+  static void InferMemoryChangingUnlock() {
+    resource_manager_->infer_memory_changing_mut_.unlock();
   }
   static bool InferChangeMemoryTryLock() {
-    return resource_manager_->infer_change_memory_mut_.try_lock();
+    return resource_manager_->infer_memory_changing_mut_.try_lock();
   }
 
   static double GetInferMemoryMB() {
@@ -49,7 +49,7 @@ class ResourceManager {
  private:
   static std::unique_ptr<ResourceManager> resource_manager_;
 
-  std::mutex infer_change_memory_mut_;
+  std::mutex infer_memory_changing_mut_;
 };
 
 }

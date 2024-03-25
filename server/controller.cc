@@ -184,11 +184,11 @@ uint64_t Controller::InferExit() {
       int train_target_bs;
       double train_avail_memory_mb;
       {
-        ResourceManager::InferChangeMemoryLock();
+        ResourceManager::InferMemoryChangingLock();
         train_avail_memory_mb = ResourceManager::GetTrainAvailMemoryMB();
         train_target_bs = TrainLauncher::Get()->PredictTargetBatchSize(train_avail_memory_mb);
         TrainLauncher::Get()->SetTargetBatchSize(train_target_bs);
-        ResourceManager::InferChangeMemoryUnlock();
+        ResourceManager::InferMemoryChangingUnlock();
         // TrainLauncher::Get()->AddTargetBatchSize(batch_size);
       }
 
@@ -284,28 +284,6 @@ bool Controller::HasFlyingColocateAdjust() {
   return adjust_done_id_ + 1 < Controller::adjust_cmd_id;
 }
 
-// bool Controller::TryEnterInferChangeMemory(size_t model_rank) {
-//   if (last_infer_change_memory_model_ != static_cast<size_t>(-1)) {
-//     return false;
-//   }
-//   EnterInferChangeMemory(model_rank);
-//   return true;
-// }
 
-// void Controller::EnterInferChangeMemory(size_t model_rank) {
-//   std::unique_lock<std::mutex> lock{infer_change_memory_mutex_};
-//   infer_change_memory_cv_.wait(lock, [this, model_rank]() {
-//     return last_infer_change_memory_model_ == static_cast<size_t>(-1);
-//   });
-//   last_infer_change_memory_model_ = model_rank;
-//   DLOG(INFO) << "InferModel " << model_rank << " enter allocation";
-// }
-
-// void Controller::ExitInferChangeMemory(size_t model_rank) {
-//   CHECK_EQ(last_infer_change_memory_model_, model_rank);
-//   last_infer_change_memory_model_ = static_cast<size_t>(-1);
-//   infer_change_memory_cv_.notify_one();
-//   DLOG(INFO) << "InferModel " << model_rank << " exit allocation";
-// }
 
 } // namespace colserve

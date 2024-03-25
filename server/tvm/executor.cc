@@ -1,4 +1,5 @@
 #include "logging_as_glog.h"
+#include "common/tvm_allocator.h"
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/c_runtime_api.h>
 #include <tvm/runtime/packed_func.h>
@@ -20,7 +21,11 @@
 #include <server/tvm/texture.h>
 
 #include <chrono>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <numeric>
+#include <string>
 #include <thread>
 #include <regex>
 
@@ -376,21 +381,45 @@ void Executor::AllocStorage() {
       }
     } else {
       auto storage_alloc_order = get_storage_alloc_order();
-      for (size_t i = 0; i < storage_alloc_order.size(); ) {
-        size_t total_nbytes = 0, off = 0;
-        size_t j = i;
-        for (; j < storage_alloc_order.size() && total_nbytes < Config::better_alloc_threshold; j++) {
-          auto tensor = storage_pool_[storage_alloc_order[j]];
+      param_groups_nbytes_ = 0;
+      if (Config::group_param_dump) {
+        std::vector<size_t> model_storage_nbytes(storage_alloc_order.size());
+        for (uint32_t k : storage_alloc_order) {
+          auto tensor = storage_pool_[storage_alloc_order[k]];
+          CHECK(tensor.IsNull());
+          auto aligned_nbytes = sta::ComputeStorageNbytes(
+              tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
+          model_storage_nbytes[k] = aligned_nbytes;
+        }
+        size_t model_nbytes1 = std::accumulate(model_storage_nbytes.cbegin(), model_storage_nbytes.cend(), 0U);
+        std::string file_name = "nbytes_" + std::to_string(model_nbytes1) + ".txt";
+        if (!std::filesystem::exists(file_name)) {
+          std::ofstream handle(file_name);
+          CHECK(handle.is_open());
+          for (size_t nbytes : model_storage_nbytes) {
+            handle << nbytes << "\n";
+          }
+          handle.close();
+        }
+      }
+      size_t model_nbytes = 0, fragment_nbytes = 0;
+      CHECK_GE(tvm_graph_.param_group_parti_.size(), 2);
+      CHECK_EQ(tvm_graph_.param_group_parti_.front(), 0);
+      CHECK_EQ(tvm_graph_.param_group_parti_.back(), storage_pool_.size());
+      for (size_t k = 0; k < tvm_graph_.param_group_parti_.size() - 1; ++k) {
+        size_t i = tvm_graph_.param_group_parti_[k], j = tvm_graph_.param_group_parti_[k + 1];
+        size_t group_nbytes = 0;
+        for (auto iter = storage_alloc_order.cbegin() + i; iter != storage_alloc_order.cbegin() + j; ++iter) {
+          auto tensor = storage_pool_[*iter];
           CHECK(tensor.IsNull());
           auto aligned_nbytes = sta::ComputeStorageNbytes(
               tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
           aligned_nbytes = sta::detail::GetAlignedNbytes(aligned_nbytes);
-          total_nbytes += aligned_nbytes;
+          group_nbytes += aligned_nbytes;
         }
-        // LOG(INFO) << "better alloc " << sta::ByteDisplay(total_nbytes) << " " << j << " "
-        //           << storage_pool_.size() << " " << Config::better_alloc_threshold;
         auto mdata_group = sta::CUDAMemPool::Get()->Alloc(
-            total_nbytes, sta::MemType::kInfer, false);
+            group_nbytes, sta::MemType::kInfer, false);
+        size_t off = 0;
         for (; i < j; i++) {
           auto tensor = storage_pool_[storage_alloc_order[i]];
           auto aligned_nbytes = sta::ComputeStorageNbytes(
@@ -402,7 +431,12 @@ void Executor::AllocStorage() {
           off += aligned_nbytes;
         }
         storage_group_.push_back(mdata_group);
-      }
+
+        model_nbytes += group_nbytes;
+        fragment_nbytes += sta::detail::AlignedNBytes<sta::TVMAllocator::ALIGN_NBYTES>(group_nbytes) - group_nbytes;
+        param_groups_nbytes_ += sta::detail::AlignedNBytes<sta::TVMAllocator::ALIGN_NBYTES>(group_nbytes);
+      } 
+      LOG(INFO) << "[Executor] " << "internal fragment: " << sta::ByteDisplay(fragment_nbytes) << " / " << sta::ByteDisplay(model_nbytes);
     }
   } else if (Config::infer_raw_blob_alloc) {
     size_t total_nbytes = 0, off = 0;
@@ -783,7 +817,7 @@ void Executor::AllocStorageMaybeAdjust() {
 
       PROFILE_START(TrainAdjust);
       auto adjust_batch_size = TrainLauncher::Get()->
-          GetAdjustBatchSize(sta::ByteToMB(GetStorageSize()));
+          GetAdjustBatchSize(sta::ByteToMB(GetStorageSizeAlign()));
       auto cmd_id = Controller::Get()->
           ColocateAdjust(this->tvm_graph_.model_rank_, adjust_batch_size);
       Controller::Get()->WaitColocateAdjustDone(cmd_id);
@@ -803,40 +837,16 @@ void Executor::AllocStorageMaybeAdjust() {
   };
 
   // ensure sequential inference allocation  
-  // if (!Controller::Get()->TryEnterInferChangeMemory(tvm_graph_.model_rank_)) {
   if (!ResourceManager::InferChangeMemoryTryLock()) {
     if (Controller::Get()->HasFlyingColocateAdjust()) {
       adjust_train_batch_size(false);
     }
-    auto _t0 = Profiler::Now();
-    // Controller::Get()->EnterInferChangeMemory(tvm_graph_.model_rank_);
-    ResourceManager::InferChangeMemoryLock();
-    Profiler::Get()->RecordPerf(Profiler::PerfItem::InferWaitBeforeEnterAlloc, Profiler::MilliFrom(_t0));
+    PROFILE_START(InferWaitBeforeEnterAlloc);
+    ResourceManager::InferMemoryChangingLock();
+    PROFILE_END(InferWaitBeforeEnterAlloc);
   }
 
   double free_memory_mb = ResourceManager::GetFreeMemoryMB();
-  // double free_memory_mb = GetFreeMemoryMB();
-  // if (!Controller::Get()->IsTrainIdle()) {
-  //   if (Config::use_shared_tensor_train) {
-  //     free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::PoolNbytes() - sta::CUDAMemPool::InferMemUsage());
-  //     free_memory_mb -= std::max(sta::ByteToMB(sta::CUDAMemPool::TrainAllMemUsage()),
-  //                                TrainLauncher::Get()->PredictMemUsageMB());
-  //     free_memory_mb -= Config::train_memory_over_predict_mb;
-  //   } else {
-  //     auto [free, total] = Profiler::GetGPUMemInfo();
-  //     auto infer_memory_mb = sta::ByteToMB(Profiler::GetLastInferMem());
-  //     auto train_memory_mb = std::max(sta::ByteToMB(Profiler::GetLastTrainMem()),
-  //                                           TrainLauncher::Get()->PredictMemUsageMB());
-  //     train_memory_mb += Config::train_memory_over_predict_mb;
-  //     free_memory_mb = std::min(sta::ByteToMB(free), 
-  //                               sta::ByteToMB(total) - infer_memory_mb - train_memory_mb);
-  //     // free_memory_mb -= Config::train_memory_over_predict_mb;
-  //     LOG(INFO) << "free " << sta::ByteToMB(free) << " total " << sta::ByteToMB(total)
-  //               << " infer memory " << infer_memory_mb << " train memory " << train_memory_mb 
-  //               << " predict train memory " << TrainLauncher::Get()->PredictMemUsageMB()
-  //               << " free memory " << free_memory_mb;
-  //   }
-  // }
 
   size_t total_storage_nbytes = 0;
   std::vector<size_t> storage_nbytes(storage_pool_.size());
@@ -858,7 +868,9 @@ void Executor::AllocStorageMaybeAdjust() {
   AllocStorage();
   PROFILE_END(InferAllocStorage);
 
-  // TODO: consider fwd/bwd
+  ResourceManager::InferMemoryChangingUnlock();
+
+  // TODO: consider fwd/bwd -> deprecated
   // if (sta::ByteToMB(total_storage_nbytes) < free_memory_mb) {
   // // case 1: memory is enough, do not need to adjust
   //   for (size_t sid = 0; sid < storage_pool_.size(); sid++) {
@@ -883,40 +895,7 @@ void Executor::AllocStorageMaybeAdjust() {
   //   }
   // }
   // Controller::Get()->ExitInferChangeMemory(tvm_graph_.model_rank_);
-  ResourceManager::InferChangeMemoryUnlock();
 }
-
-// double Executor::GetFreeMemoryMB() {
-//   double free_memory_mb;
-//   if (!Controller::Get()->IsTrainIdle()) {
-//     if (Config::use_shared_tensor_train) {
-//       free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::PoolNbytes() -
-//                                              sta::CUDAMemPool::InferMemUsage());
-//       free_memory_mb -= TrainLauncher::Get()->PredictMemUsageMB();
-//           // std::max(sta::ByteToMB(sta::CUDAMemPool::TrainAllMemUsage()),
-//           //          TrainLauncher::Get()->PredictMemUsageMB());
-//       free_memory_mb -= Config::train_memory_over_predict_mb;
-//     } else {
-//       auto [free, total] = Profiler::GetGPUMemInfo();
-//       auto infer_memory_mb = sta::ByteToMB(Profiler::GetLastInferMem());
-//       auto train_memory_mb = TrainLauncher::Get()->PredictMemUsageMB();
-//           // std::max(sta::ByteToMB(Profiler::GetLastTrainMem()),
-//           //          TrainLauncher::Get()->PredictMemUsageMB());
-//       train_memory_mb += Config::train_memory_over_predict_mb;
-//       free_memory_mb = std::min(
-//           sta::ByteToMB(free),
-//           sta::ByteToMB(total) - infer_memory_mb - train_memory_mb);
-//       // free_memory_mb -= Config::train_memory_over_predict_mb;
-//       LOG(INFO) << "free " << sta::ByteToMB(free) << " total "
-//                 << sta::ByteToMB(total) << " infer memory "
-//                 << infer_memory_mb << " train memory " << train_memory_mb
-//                 << " predict train memory "
-//                 << TrainLauncher::Get()->PredictMemUsageMB()
-//                 << " free memory " << free_memory_mb;
-//     }
-//   }
-//   return free_memory_mb;
-// }
 
 }  // namespace tvm
 }
