@@ -219,7 +219,7 @@ private:
     }
     CHECK(!free_entry->is_free);
     EnsurePhyMemAlloc(free_entry, lock);
-    size_t allocated_nbytes = mempool_.AddAllocatedNbytes(nbytes, policy_);
+    size_t allocated_nbytes = mempool_.AddAllocatedNbytes(free_entry->nbytes, policy_);
     peek_allocated_nbytes_->store(std::max(peek_allocated_nbytes_->load(std::memory_order_relaxed), allocated_nbytes), std::memory_order_relaxed);
     CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
     return free_entry;
