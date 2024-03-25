@@ -194,12 +194,12 @@ public:
     return allocated_nbytes_->at(static_cast<size_t>(belong)).load(std::memory_order_relaxed);
   }
 
-  inline size_t AddAllocatedNbytes(long nbytes, Belong belong) {
-    return allocated_nbytes_->at(static_cast<size_t>(belong)).fetch_add(nbytes, std::memory_order_relaxed);
+  inline void AddAllocatedNbytes(long nbytes, Belong belong) {
+    allocated_nbytes_->at(static_cast<size_t>(belong)).fetch_add(nbytes, std::memory_order_relaxed);
   }
 
-  inline size_t SubAllocatedNbytes(long nbytes, Belong belong) {
-    return allocated_nbytes_->at(static_cast<size_t>(belong)).fetch_sub(nbytes, std::memory_order_relaxed);
+  inline void SubAllocatedNbytes(long nbytes, Belong belong) {
+    allocated_nbytes_->at(static_cast<size_t>(belong)).fetch_sub(nbytes, std::memory_order_relaxed);
   }
 
   inline size_t GetPhyMemPageNbytes(Belong belong) {

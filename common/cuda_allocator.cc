@@ -153,8 +153,13 @@ size_t CUDAMemPool::TrainMemUsage() {
  return MemPool::Get().GetAllocatedNbytes(Belong::kTrain);
 }
 
-size_t CUDAMemPool::TrainAllMemUsage() {
+size_t CUDAMemPool::TrainPeakMemUsage() {
   return TorchAllocator::Get().PeekAllocatedNbytes();
+}
+
+size_t CUDAMemPool::TrainAllMemUsage() {
+  // return TorchAllocator::Get().PeekAllocatedNbytes();
+  return MemPool::Get().GetPhyMemPageNbytes(Belong::kTrain);
 }
 
 size_t CUDAMemPool::PoolNbytes() {
