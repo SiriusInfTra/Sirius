@@ -4,8 +4,10 @@
 #include <common/tensor_methods.h>
 #include <common/tensor.h>
 #include <common/mempool.h>
+#include <common/tvm_allocator.h>
 
 #include <server/tvm/graph.h>
+#include <server/config.h>
 
 #include <unordered_map>
 #include <memory>
@@ -78,6 +80,20 @@ class Executor {
     return param_storage_size_ + buffer_storage_size_;
   }
 
+  size_t GetStorageSizeAlign() const {
+    if (Config::group_param_load) {
+      if (Config::group_param_nbytes_with_fragment) {
+        return model_nbytes_with_group_fragment_;
+      } else {
+        return sta::detail::AlignedNBytes<sta::TVMAllocator::ALIGN_NBYTES>(GetStorageSize());
+      }
+    } else {
+      return GetStorageSize();
+    }
+  }
+
+  // size_t 
+
   // size_t GetAdjustBatchSize() const {
   //   size_t size_mega = sta::ByteToMB(GetStorageSize());
   //   /* reserve 40MB, 145MB per batch */
@@ -89,6 +105,7 @@ class Executor {
 
  private:
   void SetupStorage(bool alloc);
+  void SetupStorageGroup();
   void SetupOpExecs();
   std::pair<std::function<void()>, std::shared_ptr<OpArgs>> CreateTVMOp(
     const TVMOpParam &param, const std::vector<DLTensor*>& args);
@@ -136,11 +153,16 @@ class Executor {
   // void* blob_mem_{nullptr};
   std::shared_ptr<sta::CUDAMemPool::PoolEntry> blob_mem_{nullptr};
 
-  // better alloc to avoid fragmentation
-  std::vector<std::shared_ptr<sta::CUDAMemPool::PoolEntry>> storage_group_;
+  // group storage
+  std::vector<uint32_t> storage_alloc_order_;
 
+  // better alloc to avoid fragmentation
+  size_t model_nbytes_with_group_fragment_;
+  std::vector<size_t> storage_group_nbytes_;
+  std::vector<std::shared_ptr<sta::CUDAMemPool::PoolEntry>> storage_group_;
   // [ param storage group, [param ids ...] ]
   std::vector<std::pair<TVMArray, std::vector<uint32_t>>> param_storage_group_;
+
   
   TVMStreamHandle exec_stream_;
   TVMStreamHandle load_param_stream_;

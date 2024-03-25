@@ -33,8 +33,8 @@ namespace alloc_conf {
 static const constexpr bool ALWAYS_CHECK_STATE = false;
 static const constexpr bool STRICT_CHECK_STATE = false;
 static const constexpr bool DUMP_BEFORE_CHECK = false;
-// static const constexpr bool VERBOSE = false;
-static const constexpr bool VERBOSE = true;
+static const constexpr bool VERBOSE = false;
+// static const constexpr bool VERBOSE = true;
 static const constexpr bool DELAY_UNMAP = true;
 
 }
