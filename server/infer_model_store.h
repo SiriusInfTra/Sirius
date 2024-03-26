@@ -116,7 +116,6 @@ class InferModelStore {
   static bool Initialized() { return Get()->initialized_; }
   static bool Shutdown() { return true; }
 
-
   static void WarmupDone();
   static bool AddJob(const std::string &model_name, 
                      network::InferHandler::InferData* data);
@@ -140,6 +139,8 @@ class InferModelStore {
 
   Model* GetModel(const std::string &name);
   size_t NumJobs();
+
+  void ClearColdCache();
 
   // void TaskSwitchEnter() { task_switch_enter_cnt_++; }
   // void TaskSwitchExit() { task_switch_enter_cnt_--; }

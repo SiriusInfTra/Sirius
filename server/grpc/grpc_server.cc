@@ -104,6 +104,7 @@ void CommonHandler::SetupCallData() {
       CommonData<EmptyRequest, EmptyResult>* data) {
     LOG(INFO) << "[Common Data]: WarmupDone";
     Profiler::Get()->Clear();
+    InferModelStore::Get()->ClearColdCache();
     InferModelStore::WarmupDone();
     data->responder_.Finish(data->response_, grpc::Status::OK, (void*)data);
   };

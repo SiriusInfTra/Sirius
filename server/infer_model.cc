@@ -165,14 +165,17 @@ bool Model::ReclaimMemory(size_t rank) {
     .PushCacheItem(name_, rank, executor->GetGroupsNbytes(), executor->GetStorageSizeAlign(), cold_cache_lock);
   CHECK(succ);
   for (auto &&[name, evict_groups_id] : evict_group_list) {
-    auto *other_model = InferModelStore::Get()->GetModel(name);
-    std::unique_lock other_model_lock{other_model->muts_[rank]};
-    other_model->executors_[rank]->ClearColdCached(evict_groups_id);
+    InferModelStore::Get()->GetModel(name)->ClearColdCache(evict_groups_id, rank, cold_cache_lock);
   }
   cold_cache_lock.unlock();
   executor->DeInit(cached_groups_id);
   ChangeStatus(rank, Status::kWithoutMemory);
   return true;
+}
+
+void Model::ClearColdCache(const std::vector<size_t> &cold_cached_group_id, int rank, std::unique_lock<std::mutex> &cold_cache_lock) {
+  std::unique_lock other_model_lock{muts_[rank]};
+  executors_[rank]->ClearColdCached(cold_cached_group_id);
 }
 
 bool Model::SetupMemory(size_t rank, std::unique_lock<std::mutex> &lock) {

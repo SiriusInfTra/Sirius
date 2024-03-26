@@ -398,6 +398,17 @@ size_t InferModelStore::NumJobs() {
   return num_jobs;
 }
 
+void InferModelStore::ClearColdCache() {
+  auto &cold_cache = ColdModelCache::Get();
+  auto cold_cache_lock = cold_cache.Lock();
+  int rank = 0;
+  for (auto &&[name, model]: models_) {
+    auto &&[evict_groups_id, succ] = cold_cache.PopCacheItem(name, rank, cold_cache_lock);
+    if (succ) { model->ClearColdCache(evict_groups_id, rank, cold_cache_lock); }
+  }
+  CHECK_EQ(cold_cache.GetCachedNbytes(), 0);
+}
+
 void InferModelStore::ColocateMonitor() {
   using namespace std::chrono_literals;
   while (true) {
@@ -507,4 +518,5 @@ std::pair<std::vector<size_t>, bool> ColdModelCache::PopCacheItem(const std::str
   cold_cache_.erase(iter);
   return {cached_groups_id, true};
 }
+
 }  // namespace colserve

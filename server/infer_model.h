@@ -39,6 +39,8 @@ class Model {
 
   bool ReclaimMemory(size_t rank);
 
+  void ClearColdCache(const std::vector<size_t> &cold_cached_group_id, int rank, std::unique_lock<std::mutex> &cold_cache_lock);
+
   const std::string &GetName() { return name_; }
   double GetIdleMill(size_t rank) {
     return infer_idle_mills_[rank].load(std::memory_order_relaxed);
