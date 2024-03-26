@@ -5,10 +5,10 @@
 #include <common/tvm_allocator.h>
 #include <common/util.h>
 
-#include <atomic>
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
 #include <boost/interprocess/sync/scoped_lock.hpp>
 
+#include <atomic>
 #include <glog/logging.h>
 #include <sys/types.h>
 #include <algorithm>
@@ -224,8 +224,10 @@ private:
     }
     CHECK(!free_entry->is_free);
     EnsurePhyMemAlloc(free_entry, lock);
-    size_t allocated_nbytes = mempool_.AddAllocatedNbytes(free_entry->nbytes, policy_);
-    peek_allocated_nbytes_->store(std::max(peek_allocated_nbytes_->load(std::memory_order_relaxed), allocated_nbytes), std::memory_order_relaxed);
+    mempool_.AddAllocatedNbytes(free_entry->nbytes, policy_);
+    peek_allocated_nbytes_->store(
+      std::max(peek_allocated_nbytes_->load(std::memory_order_relaxed), mempool_.GetAllocatedNbytes(policy_)), 
+      std::memory_order_relaxed);
     CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
     return free_entry;
   }
@@ -250,7 +252,8 @@ public:
   void EmptyCache() {
     bip::scoped_lock lock{mempool_.GetMutex()};
     ReleaseFreePhyMem(lock);
-    peek_allocated_nbytes_->store(0, std::memory_order_relaxed);
+    peek_allocated_nbytes_->store(mempool_.GetAllocatedNbytes(policy_), 
+                                  std::memory_order_relaxed);
   }
 
   size_t PeekAllocatedNbytes() {

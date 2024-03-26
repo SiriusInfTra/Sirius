@@ -9,6 +9,7 @@
 #include <tvm/runtime/logging.h>
 #include <c10/core/MemoryFormat.h>
 
+#include <common/tvm_allocator.h>
 #include <common/shape_helper.h>
 #include <common/mempool.h>
 #include <common/util.h>
@@ -360,41 +361,10 @@ void Executor::ResetStorage() {
   } else {
     if (Config::infer_raw_blob_alloc) { blob_mem_.reset(); }
   }
-
-  // for (auto &e : data_entry_) {
-  //   e.get_mutable()->dl_tensor.data = nullptr;
-  // }
-  // for (auto &s : storage_pool_) {
-  //   // DeviceAPI::Get(s->device)->FreeDataSpace(s->device, s->data);
-  //   s.get_mutable()->dl_tensor.data = nullptr;
-  // }
-  // CHECK(cudaFree(blob_mem_) == cudaSuccess);
 }
 
 void Executor::AllocStorage() {
   using namespace ::tvm::runtime;
-
-  auto get_storage_alloc_order = [this] () -> std::vector<uint32_t> {
-    std::vector<uint32_t> storage_alloc_order;
-    if (Config::group_param_load) {
-      std::vector<bool> storage_record(storage_pool_.size(), false);
-      for (auto & p : tvm_graph_.params_) {
-        auto sid = tvm_graph_.attrs_.storage_id[p.first];
-        storage_alloc_order.push_back(sid);
-        storage_record[sid] = true;
-      }
-      for (size_t i = 0; i < storage_pool_.size(); i++) {
-        if (!storage_record[i]) {
-          storage_alloc_order.push_back(i);
-        }
-      }
-    } else {
-      for (size_t i = 0; i < storage_pool_.size(); i++) {
-        storage_alloc_order.push_back(i);
-      }
-    }
-    return storage_alloc_order;
-  };
 
   if (Config::use_shared_tensor_infer) {
     if (!Config::better_alloc) {
@@ -448,7 +418,8 @@ void Executor::AllocStorage() {
         }
         size_t off = 0;
         for (; i < j; i++) {
-          auto tensor = storage_pool_[storage_alloc_order[i]];
+          auto tensor = storage_pool_[storage_alloc_order_[i]];
+          CHECK(tensor.IsNull());
           auto aligned_nbytes = sta::ComputeStorageNbytes(
               tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
           aligned_nbytes = sta::detail::GetAlignedNbytes(aligned_nbytes);
@@ -458,12 +429,7 @@ void Executor::AllocStorage() {
           off += aligned_nbytes;
         }
         storage_group_.push_back(mdata_group);
-
-        model_nbytes += group_nbytes;
-        fragment_nbytes += sta::detail::AlignedNBytes<sta::TVMAllocator::ALIGN_NBYTES>(group_nbytes) - group_nbytes;
-        param_groups_nbytes_ += sta::detail::AlignedNBytes<sta::TVMAllocator::ALIGN_NBYTES>(group_nbytes);
-      } 
-      LOG(INFO) << "[Executor] " << "internal fragment: " << sta::ByteDisplay(fragment_nbytes) << " / " << sta::ByteDisplay(model_nbytes);
+      }
     }
   } else if (Config::infer_raw_blob_alloc) {
     size_t total_nbytes = 0, off = 0;
@@ -487,22 +453,6 @@ void Executor::AllocStorage() {
       s.AllocForNull(sta::MemType::kInfer);
     }
   }
-
-  // size_t total_size = 0, off = 0;
-  // for (auto &s : storage_pool_) {
-  //   total_size += GetDataSize(*s.operator->());
-  // }
-  // CHECK(cudaMalloc(&blob_mem_, total_size) == cudaSuccess);
-  // for (auto &s : storage_pool_) {
-  //   s.get_mutable()->dl_tensor.data = static_cast<char*>(blob_mem_) + off;
-  //   off += GetDataSize(*s.operator->());
-  // }
-
-  // for (auto &s : storage_pool_) {
-  //   s.get_mutable()->dl_tensor.data =
-  //       DeviceAPI::Get(s->device)->AllocDataSpace(
-  //         s->device, s->ndim, s->shape, s->dtype);
-  // }
 }
 
 void Executor::LoadParams(bool pipeline, bool force) {
@@ -719,12 +669,116 @@ void Executor::SetupStorage(bool alloc) {
 
   auto model_name_without_dup_id = GetModelNameWithoutDuplicatedId(tvm_graph_.model_name_);
 
+  if (Config::use_shared_tensor_infer 
+      && Config::better_alloc) {
+    SetupStorageGroup();
+  }
+
   static std::set<std::string> logged;
   if (!logged.count((model_name_without_dup_id))) {
     logged.insert(model_name_without_dup_id);
     LOG(INFO) << "[Executor] " << model_name_without_dup_id
               << " params " << 1.0 * param_storage_size_ / 1024 / 1024 << " Mb"
               << " intermediate " << 1.0 * buffer_storage_size_ / 1024 / 1024 << " Mb";
+  }
+}
+
+void Executor::SetupStorageGroup() {
+  CHECK(Config::use_shared_tensor_infer && Config::better_alloc);
+
+  std::vector<uint32_t> storage_alloc_order;
+  if (Config::group_param_load) {
+    std::vector<bool> storage_record(storage_pool_.size(), false);
+    for (auto & p : tvm_graph_.params_) {
+      auto sid = tvm_graph_.attrs_.storage_id[p.first];
+      storage_alloc_order.push_back(sid);
+      storage_record[sid] = true;
+    }
+    for (size_t i = 0; i < storage_pool_.size(); i++) {
+      if (!storage_record[i]) {
+        storage_alloc_order.push_back(i);
+      }
+    }
+  } else {
+    for (size_t i = 0; i < storage_pool_.size(); i++) {
+      storage_alloc_order.push_back(i);
+    }
+  }
+  storage_alloc_order_ = storage_alloc_order;
+
+  // TO FIX: 
+  //    garrentee consistent with the storage order
+  //    this is affected by group_param_load
+  //    currently, we assume group_param_load is always true
+  if (Config::group_param_dump) {
+    std::vector<size_t> model_storage_nbytes(storage_alloc_order.size());
+    for (uint32_t k : storage_alloc_order) {
+      auto tensor = storage_pool_[storage_alloc_order[k]];
+      CHECK(tensor.IsNull());
+      auto aligned_nbytes = sta::ComputeStorageNbytes(
+          tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
+      model_storage_nbytes[k] = aligned_nbytes;
+    }
+    size_t model_nbytes_acc = std::accumulate(model_storage_nbytes.cbegin(), 
+                                              model_storage_nbytes.cend(), 0U);
+    std::string file_name = "nbytes_" + std::to_string(model_nbytes_acc) + ".txt";
+    if (!std::filesystem::exists(file_name)) {
+      std::ofstream handle(file_name);
+      CHECK(handle.is_open());
+      for (size_t nbytes : model_storage_nbytes) {
+        handle << nbytes << "\n";
+      }
+      handle.close();
+    }
+  }
+
+  model_nbytes_with_group_fragment_ = 0;
+  size_t model_nbytes = 0, fragment_nbytes = 0;
+  CHECK_GE(tvm_graph_.storage_group_parti_.size(), 2);
+  CHECK_EQ(tvm_graph_.storage_group_parti_.front(), 0);
+  CHECK_EQ(tvm_graph_.storage_group_parti_.back(), storage_pool_.size());
+
+  for (size_t k = 0; k < tvm_graph_.storage_group_parti_.size() - 1; ++k) {
+    size_t i = tvm_graph_.storage_group_parti_[k], j = tvm_graph_.storage_group_parti_[k + 1];
+    size_t group_nbytes = 0;
+    for (auto iter = storage_alloc_order.cbegin() + i; iter != storage_alloc_order.cbegin() + j; ++iter) {
+      auto tensor = storage_pool_[*iter];
+      // CHECK(tensor.IsNull());
+      auto aligned_nbytes = sta::ComputeStorageNbytes(
+          tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
+      aligned_nbytes = sta::detail::GetAlignedNbytes(aligned_nbytes);
+      group_nbytes += aligned_nbytes;
+    }
+    storage_group_nbytes_.push_back(group_nbytes);
+
+    // auto mdata_group = sta::CUDAMemPool::Get()->Alloc(
+    //     group_nbytes, sta::MemType::kInfer, false);
+    // size_t off = 0;
+    // for (; i < j; i++) {
+    //   auto tensor = storage_pool_[storage_alloc_order[i]];
+    //   auto aligned_nbytes = sta::ComputeStorageNbytes(
+    //       tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
+    //   aligned_nbytes = sta::detail::GetAlignedNbytes(aligned_nbytes);
+    //   auto mdata = std::shared_ptr<sta::CUDAMemPool::PoolEntry>(
+    //       new sta::CUDAMemPool::PoolEntry{static_cast<char*>(mdata_group->addr) + off, aligned_nbytes});
+    //   tensor.SetMDataForNull(mdata);
+    //   off += aligned_nbytes;
+    // }
+    // storage_group_.push_back(mdata_group);
+
+    model_nbytes += group_nbytes;
+    fragment_nbytes += sta::detail::AlignedNBytes<sta::TVMAllocator::ALIGN_NBYTES>(group_nbytes) - group_nbytes;
+    model_nbytes_with_group_fragment_ += sta::detail::AlignedNBytes<sta::TVMAllocator::ALIGN_NBYTES>(group_nbytes);
+  }
+
+  static std::set<std::string> logged;
+  auto model_name_without_dup_id = GetModelNameWithoutDuplicatedId(tvm_graph_.model_name_);
+  if (!logged.count((model_name_without_dup_id))) {
+    logged.insert(model_name_without_dup_id);
+    LOG(INFO) << "[Executor] " << tvm_graph_.model_name_ << "internal fragment: " 
+              << sta::ByteDisplay(fragment_nbytes) << " / " << sta::ByteDisplay(model_nbytes)
+              << " model with group fragment "
+              << sta::ByteDisplay(model_nbytes_with_group_fragment_);
   }
 }
 
@@ -805,8 +859,9 @@ std::pair<std::function<void()>, std::shared_ptr<OpArgs>> Executor::CreateTVMOp(
     arg_ptr->arg_values.push_back(v);
     arg_ptr->arg_tcodes.push_back(kTVMDLTensorHandle);
     if (param.flatten_data) {
-      arg_ptr->shape_data[i] =
-          std::accumulate(args[i]->shape, args[i]->shape + args[i]->ndim, 1, std::multiplies<int64_t>());
+      arg_ptr->shape_data[i] = std::accumulate(args[i]->shape, 
+                                               args[i]->shape + args[i]->ndim, 
+                                               1, std::multiplies<int64_t>());
       args[i]->ndim = 1;
       args[i]->shape = &(arg_ptr->shape_data[i]);
     }

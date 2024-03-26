@@ -303,7 +303,7 @@ class TVMGraph {
     CHECK(handle.is_open());
     std::string buf;
     while (handle >> buf) {
-      param_group_parti_.push_back(std::stoul(buf));
+      storage_group_parti_.push_back(std::stoul(buf));
     }
   }
 
@@ -324,7 +324,7 @@ class TVMGraph {
   std::map<std::string, uint32_t> input_map_;
   std::map<std::string, uint32_t> output_map_;
   std::map<uint32_t, TVMArray> params_;
-  std::vector<size_t> param_group_parti_;
+  std::vector<size_t> storage_group_parti_;
   // std::map<uint32_t, uint32_t> param_node_storage_id_map_;
 
   // std::vector<PoolEntry> pool_entry_;
