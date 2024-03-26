@@ -706,9 +706,9 @@ void Executor::SetupStorageGroup() {
   auto model_name_without_dup_id = GetModelNameWithoutDuplicatedId(tvm_graph_.model_name_);
   if (!logged.count((model_name_without_dup_id))) {
     logged.insert(model_name_without_dup_id);
-    LOG(INFO) << "[Executor] " << tvm_graph_.model_name_ << "internal fragment: " 
+    LOG(INFO) << "[Executor] " << tvm_graph_.model_name_ << " internal fragment: " 
               << sta::ByteDisplay(fragment_nbytes) << " / " << sta::ByteDisplay(model_nbytes)
-              << " model with group fragment "
+              << " | model with group fragment "
               << sta::ByteDisplay(model_nbytes_with_group_fragment_);
   }
 }
