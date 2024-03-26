@@ -34,7 +34,6 @@ class Model {
         std::optional<const std::map<std::string, tvm::TVMArray>> params,
         DLDevice device, size_t batch_size, size_t num_worker, size_t max_num_worker);
 
-  bool AddJob(network::InferHandler::InferData* data);
   size_t NumJobs() { return job_queue_.NumJobs(); }
 
   bool ReclaimMemory(size_t rank);
@@ -56,7 +55,11 @@ class Model {
   //   waited_trains_[worker_id] = train_pid;
   // }
 
+  friend class InferModelStore;
+  
  private:
+  bool AddJob(network::InferHandler::InferData* data);
+
   void InitMetaInfo();
   bool SetupMemory(size_t rank, std::unique_lock<std::mutex> &lock);
   bool Inference(uint32_t rank, pthread_barrier_t* barrier);
