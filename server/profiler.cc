@@ -59,6 +59,7 @@ std::ostream& operator<<(std::ostream &os, Profiler::PerfItem item) {
 
     LOG_ITEM(Profiler::PerfItem, InferRealBatchSize)
     LOG_ITEM(Profiler::PerfItem, InferModelLoad)
+    LOG_ITEM(Profiler::PerfItem, InferModelColdCacheHit)
   default:
     return os;
   }

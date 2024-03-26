@@ -7,9 +7,13 @@
 
 #include <server/tvm/graph.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <iterator>
 #include <unordered_map>
 #include <memory>
 #include <atomic>
+#include "common/cuda_allocator.h"
 #include "common/tvm_allocator.h"
 #include "config.h"
 
@@ -31,7 +35,9 @@ class Executor {
   void Init(bool load_param);
   bool Initialized() const { return initialized_; }
   void FakeInit(bool malloc, bool load_param); // used for simulating unlimted get gpu resource
-  void DeInit();
+  void DeInit(const std::vector<size_t> &keep_cold_cached_group_id);
+  void ClearColdCached(const std::vector<size_t> &cold_cached_group_id);
+
   void Run();
   void PipeLineLoad();
   void PipelineRun();
@@ -90,6 +96,21 @@ class Executor {
     } else {
       return GetStorageSize();
     }
+  }
+
+  size_t GetMissingStorageSizeAlign() const {
+    return GetStorageSizeAlign() - cold_cached_nbytes_.load(std::memory_order_relaxed);
+  }
+
+  std::vector<size_t> GetGroupsNbytes() const {
+    std::vector<size_t> groups_nbytes;
+    if (Config::group_param_load) {
+      std::transform(storage_group_.cbegin(), storage_group_.cend(), std::back_inserter(groups_nbytes), 
+        [](auto &&entry) { return entry->nbytes; });
+    } else {
+      groups_nbytes.push_back(GetStorageSize());
+    }
+    return groups_nbytes;
   }
 
   // size_t 
@@ -154,6 +175,10 @@ class Executor {
 
   // better alloc to avoid fragmentation
   std::vector<std::shared_ptr<sta::CUDAMemPool::PoolEntry>> storage_group_;
+
+  // cached group, used for SetupMemory/Init(false)
+  std::unordered_map<size_t, std::shared_ptr<sta::CUDAMemPool::PoolEntry>> cold_cached_group_;
+  std::atomic<size_t> cold_cached_nbytes_;
 
   // [ param storage group, [param ids ...] ]
   std::vector<std::pair<TVMArray, std::vector<uint32_t>>> param_storage_group_;

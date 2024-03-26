@@ -74,7 +74,9 @@ class Config {
 
   static int train_mps_thread_percent;
 
-  static size_t max_cache_nbytes;
+  static size_t max_cold_cache_nbytes;
+  static size_t max_warm_cache_nbytes;
+  static double cold_cache_ratio;
 
   static double task_switch_delay_ms;
 

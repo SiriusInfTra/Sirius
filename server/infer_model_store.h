@@ -9,6 +9,7 @@
 #include <server/infer_model.h>
 #include <server/config.h>
 
+#include <atomic>
 #include <iostream>
 #include <memory>
 #include <unordered_map>
@@ -17,6 +18,7 @@
 #include <optional>
 #include <cstdlib>
 #include <condition_variable>
+#include <utility>
 
 namespace colserve {
 
@@ -40,7 +42,7 @@ class InferModelCache {
       const std::string &name, size_t rank,
       const std::vector<std::shared_ptr<Job>> &jobs);
   
-  static bool Enable() { return Config::max_cache_nbytes != 0; }
+  static bool Enable() { return Config::max_warm_cache_nbytes != 0; }
 
   friend class InferModelStore;
 
@@ -63,8 +65,48 @@ class InferModelCache {
   std::mutex mut_;
   std::condition_variable fifo_cv_;
   size_t cached_nbytes_;
-  
   std::unordered_map<std::string, std::unique_ptr<CacheItem>> warm_cache_;
+
+};
+
+class ColdModelCache {
+ public:
+  ColdModelCache(): cold_cached_nbytes_(0) {}
+
+  friend class InferModelStore;
+
+  std::tuple<std::vector<size_t>, std::vector<std::pair<std::string, std::vector<size_t>>>, bool>
+  PushCacheItem(const std::string& name, size_t rank, std::vector<size_t> groups_nbytes, size_t total_nbytes, std::unique_lock<std::mutex> &lock);
+
+  std::pair<std::vector<size_t>, bool> PopCacheItem(const std::string& name, size_t rank, std::unique_lock<std::mutex> &lock);
+
+  std::unique_lock<std::mutex> Lock() {
+    return std::unique_lock{mut_};
+  }
+
+  inline size_t GetCachedNbytes() {
+    return cold_cached_nbytes_.load(std::memory_order_relaxed);
+  }
+
+  static void Init() {
+    cold_model_cache_ = std::make_unique<ColdModelCache>();
+  }
+
+  static ColdModelCache &Get() {
+    CHECK(cold_model_cache_ != nullptr);
+    return *cold_model_cache_;
+  }
+
+ private:
+  std::atomic<size_t> cold_cached_nbytes_;
+  std::mutex mut_;
+  struct CacheItem {
+    Model *model;
+    std::vector<size_t> cached_groups_id;
+    size_t cached_group_nbytes;
+  };
+  static std::unique_ptr<ColdModelCache> cold_model_cache_;
+  std::unordered_map<std::string, std::unique_ptr<CacheItem>> cold_cache_;
 };
 
 class InferModelStore {

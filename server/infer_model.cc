@@ -2,6 +2,8 @@
 #include <server/infer_model.h>
 #include <server/controller.h>
 #include <server/config.h>
+#include <mutex>
+#include <vector>
 
 
 namespace colserve {
@@ -70,8 +72,8 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
     // InferModelCache::ReserveCache(name);
     // executor->Init(true);
     executors_.push_back(std::move(executor));
-    status_.push_back(Status::kReady);
-    model_stat_[static_cast<size_t>(Status::kReady)].fetch_add(1, std::memory_order_relaxed);
+    status_.push_back(Status::kWithoutMemory);
+    model_stat_[static_cast<size_t>(Status::kWithoutMemory)].fetch_add(1, std::memory_order_relaxed);
   }
   infer_workers_.resize(max_num_worker_);
 
@@ -150,18 +152,35 @@ bool Model::ReclaimMemory(size_t rank) {
   CHECK_LT(rank, muts_.size());
   CHECK_LT(rank, executors_.size());
   CHECK_LT(rank, status_.size());
-  std::unique_lock lock{muts_[rank]};
   if (status_[rank] == Status::kWithoutMemory) {
     return false; 
   }
-  executors_[rank]->DeInit();
+  auto &cold_cache = ColdModelCache::Get();
+
+  auto cold_cache_lock = cold_cache.Lock();
+  std::unique_lock lock{muts_[rank]};
+
+  auto &executor = executors_[rank];
+  auto &&[cached_groups_id, evict_group_list, succ] = cold_cache
+    .PushCacheItem(name_, rank, executor->GetGroupsNbytes(), executor->GetStorageSizeAlign(), cold_cache_lock);
+  CHECK(succ);
+  for (auto &&[name, evict_groups_id] : evict_group_list) {
+    auto *other_model = InferModelStore::Get()->GetModel(name);
+    std::unique_lock other_model_lock{other_model->muts_[rank]};
+    other_model->executors_[rank]->ClearColdCached(evict_groups_id);
+  }
+  cold_cache_lock.unlock();
+  executor->DeInit(cached_groups_id);
   ChangeStatus(rank, Status::kWithoutMemory);
   return true;
 }
 
 bool Model::SetupMemory(size_t rank, std::unique_lock<std::mutex> &lock) {
   CHECK(status_[rank] == Status::kWithoutMemory);
+  auto cold_cache_lock = ColdModelCache::Get().Lock();
+  ColdModelCache::Get().PopCacheItem(name_, rank, cold_cache_lock);
   executors_[rank]->Init(false);
+  cold_cache_lock.unlock();
   ChangeStatus(rank, Status::kWithoutParam);
   return true;
 }
@@ -175,7 +194,11 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
   // auto graph_executor = tvm_graph_->CreateGraphExecutor();
   auto graph_executor = executors_[rank].get();
   num_worker_.fetch_add(1, std::memory_order_relaxed);
-  if (barrier != nullptr) pthread_barrier_wait(barrier);
+
+  if (barrier != nullptr) {
+    int err = pthread_barrier_wait(barrier);
+    CHECK(err == 0 || err == PTHREAD_BARRIER_SERIAL_THREAD) << "err: " << err << ".";
+  } 
 
   while (!InferModelStore::Initialized()) {
     std::this_thread::sleep_for(std::chrono::seconds(1));

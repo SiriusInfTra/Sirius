@@ -23,7 +23,6 @@
 #include "colserve.grpc.pb.h"
 #include "infer_model_store.h"
 #include "train_launcher.h"
-#include "cache.h"
 #include "resource_manager.h"
 #include "controller.h"
 #include "profiler.h"
@@ -80,7 +79,7 @@ void init_cli_options() {
       "use xsched, default is false");
   app.add_option("--train-profile", colserve::Config::train_profile, 
     "train timeline path, default is train-timeline");
-  app.add_option("--max-cache-nbytes", colserve::Config::max_cache_nbytes, 
+  app.add_option("--max-cache-nbytes", colserve::Config::max_warm_cache_nbytes, 
     "max cache nbytes, default is 1*1024*1024*1024(1G).");
   app.add_option("--memory-pressure-mb", colserve::Config::memory_pressure_mb,
       "memory pressure in MB, default is 0");
@@ -195,7 +194,6 @@ int main(int argc, char *argv[]) {
   colserve::ResourceManager::Init();
   colserve::Controller::Init();
   colserve::Profiler::Init(colserve::Config::profile_log_path);
-  colserve::GraphCache::Init(colserve::Config::max_cache_nbytes);
   colserve::TrainLauncher::Init("train");
   colserve::InferModelStore::Init("server/models");
   colserve::Profiler::Start();

@@ -1,5 +1,6 @@
 #include "logging_as_glog.h"
 #include "common/tvm_allocator.h"
+#include "tvm/graph.h"
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/c_runtime_api.h>
 #include <tvm/runtime/packed_func.h>
@@ -20,14 +21,18 @@
 #include <server/tvm/executor.h>
 #include <server/tvm/texture.h>
 
+#include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <numeric>
 #include <string>
 #include <thread>
 #include <regex>
+#include <utility>
 
 
 namespace colserve {
@@ -126,7 +131,7 @@ void Executor::Init(bool load_param) {
       if (!Config::colocate_config.skip_malloc) AllocStorage();
       PROFILE_END(InferAllocStorage);
     }
-    
+     
     if (!Config::colocate_config.skip_malloc)
       ReSetupDataEntry();
 
@@ -157,12 +162,29 @@ void Executor::FakeInit(bool malloc, bool load_param) {
   }
 }
 
-void Executor::DeInit() {
+void Executor::DeInit(const std::vector<size_t> &keep_cold_cached_group_id) {
   CHECK(initialized_);
+  cold_cached_group_.clear();
+  size_t cold_cached_nbytes = 0;
+  for (size_t k : keep_cold_cached_group_id) {
+    CHECK(cold_cached_group_.emplace(std::make_pair(k, storage_group_.at(k))).second == true);
+    cold_cached_nbytes += storage_group_.at(k)->nbytes;
+  }
+  cold_cached_nbytes_.store(cold_cached_nbytes, std::memory_order_relaxed);
   if (!Config::colocate_config.skip_malloc) {
     ResetStorage();
   }
   initialized_ = false;
+}
+
+void Executor::ClearColdCached(const std::vector<size_t> &cold_cached_group_id) {
+  CHECK(!initialized_);
+  CHECK_EQ(cold_cached_group_.size(), cold_cached_group_id.size());
+  for (size_t group_id : cold_cached_group_id) {
+    CHECK_EQ(cold_cached_group_.count(group_id), 1);
+  }
+  cold_cached_group_.clear();
+  cold_cached_nbytes_.store(0, std::memory_order_relaxed);
 }
 
 void Executor::Run() {
@@ -389,6 +411,7 @@ void Executor::AllocStorage() {
           CHECK(tensor.IsNull());
           auto aligned_nbytes = sta::ComputeStorageNbytes(
               tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
+          aligned_nbytes = sta::detail::GetAlignedNbytes(aligned_nbytes);
           model_storage_nbytes[k] = aligned_nbytes;
         }
         size_t model_nbytes1 = std::accumulate(model_storage_nbytes.cbegin(), model_storage_nbytes.cend(), 0U);
@@ -417,8 +440,12 @@ void Executor::AllocStorage() {
           aligned_nbytes = sta::detail::GetAlignedNbytes(aligned_nbytes);
           group_nbytes += aligned_nbytes;
         }
-        auto mdata_group = sta::CUDAMemPool::Get()->Alloc(
-            group_nbytes, sta::MemType::kInfer, false);
+        std::shared_ptr<sta::CUDAMemPool::PoolEntry> mdata_group;
+        if (auto iter = cold_cached_group_.find(k); iter != cold_cached_group_.cend()) {
+          mdata_group = iter->second;
+        } else {
+          mdata_group = sta::CUDAMemPool::Get()->Alloc(group_nbytes, sta::MemType::kInfer, false);
+        }
         size_t off = 0;
         for (; i < j; i++) {
           auto tensor = storage_pool_[storage_alloc_order[i]];
@@ -509,6 +536,11 @@ void Executor::LoadParams(bool pipeline, bool force) {
     size_t sg_id = 0;
     size_t sg_off = 0;
     auto storage_group = storage_group_[sg_id++];
+    if (cold_cached_group_.empty()) {
+      Profiler::Get()->RecordPerf(Profiler::PerfItem::InferModelColdCacheHit, 0.0);
+    } else {
+      Profiler::Get()->RecordPerf(Profiler::PerfItem::InferModelColdCacheHit, 1.0);
+    }
     for (size_t pg_id = 0; pg_id < param_storage_group_.size(); pg_id++) {
       auto & pg = param_storage_group_[pg_id];
       auto & param_group = pg.first;
@@ -518,10 +550,12 @@ void Executor::LoadParams(bool pipeline, bool force) {
         auto load_nbytes = std::min(param_group_nbytes - pg_off, storage_group->nbytes - sg_off);
         // auto t0 = Profiler::Now();
         CUDA_CALL(cudaSetDevice(devices_[0].device_id));
-        CUDA_CALL(cudaMemcpyAsync(
-            static_cast<char*>(storage_group->addr) + sg_off,
-            static_cast<char*>(param_group->data) + pg_off,
-            load_nbytes, cudaMemcpyDefault, (cudaStream_t)load_param_stream_));
+        if (cold_cached_group_.count(pg_id) == 0) {
+          CUDA_CALL(cudaMemcpyAsync(
+              static_cast<char*>(storage_group->addr) + sg_off,
+              static_cast<char*>(param_group->data) + pg_off,
+              load_nbytes, cudaMemcpyDefault, (cudaStream_t)load_param_stream_));
+        }
         // api_1_ms += Profiler::MilliFrom(t0);
         CHECK(param_ready_event_ids_[param_ids[0]] == pg_id);
         // auto t1 = Profiler::Now();
@@ -817,7 +851,7 @@ void Executor::AllocStorageMaybeAdjust() {
 
       PROFILE_START(TrainAdjust);
       auto adjust_batch_size = TrainLauncher::Get()->
-          GetAdjustBatchSize(sta::ByteToMB(GetStorageSizeAlign()));
+          GetAdjustBatchSize(sta::ByteToMB(GetMissingStorageSizeAlign()));
       auto cmd_id = Controller::Get()->
           ColocateAdjust(this->tvm_graph_.model_rank_, adjust_batch_size);
       Controller::Get()->WaitColocateAdjustDone(cmd_id);
@@ -848,15 +882,16 @@ void Executor::AllocStorageMaybeAdjust() {
 
   double free_memory_mb = ResourceManager::GetFreeMemoryMB();
 
-  size_t total_storage_nbytes = 0;
-  std::vector<size_t> storage_nbytes(storage_pool_.size());
-  for (size_t sid = 0; sid < storage_pool_.size(); sid++) {
-    auto tensor = storage_pool_[sid];
-    auto nbytes = sta::ComputeStorageNbytes(tensor.Shape(), tensor.Stride(), 
-        tensor->dtype, tensor.StorageOffset());
-    storage_nbytes[sid] = nbytes;
-    total_storage_nbytes += sta::detail::GetAlignedNbytes(nbytes);
-  }
+  size_t total_storage_nbytes = GetMissingStorageSizeAlign();
+  // std::vector<size_t> storage_nbytes(storage_pool_.size());
+  // for (size_t sid = 0; sid < storage_pool_.size(); sid++) {
+  //   auto tensor = storage_pool_[sid];
+  //   auto nbytes = sta::ComputeStorageNbytes(tensor.Shape(), tensor.Stride(), 
+  //       tensor->dtype, tensor.StorageOffset());
+  //   storage_nbytes[sid] = nbytes;
+  //   total_storage_nbytes += sta::detail::GetAlignedNbytes(nbytes);
+  // }
+
 
   LOG(INFO) << "infer require " << sta::ByteDisplay(total_storage_nbytes)
             << " free memory " << free_memory_mb << " MB";

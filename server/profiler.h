@@ -87,6 +87,8 @@ class Profiler {
 
     InferModelLoad,
 
+    InferModelColdCacheHit,
+
     NumPerfItem,
   };
 
