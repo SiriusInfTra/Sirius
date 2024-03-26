@@ -50,7 +50,7 @@ double Config::train_memory_over_predict_mb = 0;
 
 int Config::train_mps_thread_percent = -1;
 
-size_t Config::max_cold_cache_nbytes = 1 * 1024 * 1024 * 1024;
+size_t Config::max_cold_cache_nbytes = 2UL * 1024 * 1024 * 1024;
 size_t Config::max_warm_cache_nbytes = 0 * 1024 * 1024 * 1024;
 double Config::cold_cache_ratio = 0.3;
 

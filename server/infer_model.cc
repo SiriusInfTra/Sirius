@@ -179,6 +179,7 @@ bool Model::SetupMemory(size_t rank, std::unique_lock<std::mutex> &lock) {
   CHECK(status_[rank] == Status::kWithoutMemory);
   auto cold_cache_lock = ColdModelCache::Get().Lock();
   ColdModelCache::Get().PopCacheItem(name_, rank, cold_cache_lock);
+  LOG(INFO) << name_ << "Init";
   executors_[rank]->Init(false);
   cold_cache_lock.unlock();
   ChangeStatus(rank, Status::kWithoutParam);

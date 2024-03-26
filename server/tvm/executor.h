@@ -105,14 +105,7 @@ class Executor {
   }
 
   std::vector<size_t> GetGroupsNbytes() const {
-    std::vector<size_t> groups_nbytes;
-    if (Config::group_param_load) {
-      std::transform(storage_group_.cbegin(), storage_group_.cend(), std::back_inserter(groups_nbytes), 
-        [](auto &&entry) { return entry->nbytes; });
-    } else {
-      groups_nbytes.push_back(GetStorageSize());
-    }
-    return groups_nbytes;
+    return storage_group_nbytes_;
   }
 
   // size_t 
@@ -189,11 +182,12 @@ class Executor {
   std::atomic<size_t> cold_cached_nbytes_;
 
   // [ param storage group, [param ids ...] ]
-  std::vector<std::pair<TVMArray, std::vector<uint32_t>>> param_storage_group_;
+  std::vector<std::pair<TVMArray, std::vector<uint32_t>>> host_param_storage_group_;
 
   
   TVMStreamHandle exec_stream_;
   TVMStreamHandle load_param_stream_;
+
 
   size_t param_storage_size_ = 0;
   size_t buffer_storage_size_ = 0;

@@ -30,6 +30,7 @@
 #include <fstream>
 #include <memory>
 #include <numeric>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <regex>
@@ -97,7 +98,7 @@ Executor::Executor(TVMGraph &factory, size_t worker_id, const std::vector<DLDevi
         auto aligned_nbytes = sta::detail::GetAlignedNbytes(GetDataSize(*p.second.operator->()));
         total_nbytes += aligned_nbytes;
         param_ids.push_back(p.first);
-        param_ready_event_ids_[p.first] = param_storage_group_.size();
+        param_ready_event_ids_[p.first] = host_param_storage_group_.size();
       }
       auto param_group = TVMArray::Empty(ShapeTuple({static_cast<int64_t>(total_nbytes)}),
          DLDataType{kDLInt, 8, 1}, DLDevice{kDLCUDAHost, 0});
@@ -108,7 +109,7 @@ Executor::Executor(TVMGraph &factory, size_t worker_id, const std::vector<DLDevi
         auto aligned_nbytes = sta::detail::GetAlignedNbytes(GetDataSize(*p.second.operator->()));
         off += aligned_nbytes;
       }
-      this->param_storage_group_.push_back(std::make_pair(param_group, param_ids));
+      this->host_param_storage_group_.push_back(std::make_pair(param_group, param_ids));
     }
   } else {
     for (auto &p : tvm_graph_.params_) {
@@ -372,44 +373,9 @@ void Executor::AllocStorage() {
         s.AllocForNull(sta::MemType::kInfer);
       }
     } else {
-      auto storage_alloc_order = get_storage_alloc_order();
-      param_groups_nbytes_ = 0;
-      if (Config::group_param_dump) {
-        std::vector<size_t> model_storage_nbytes(storage_alloc_order.size());
-        for (uint32_t k : storage_alloc_order) {
-          auto tensor = storage_pool_[storage_alloc_order[k]];
-          CHECK(tensor.IsNull());
-          auto aligned_nbytes = sta::ComputeStorageNbytes(
-              tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
-          aligned_nbytes = sta::detail::GetAlignedNbytes(aligned_nbytes);
-          model_storage_nbytes[k] = aligned_nbytes;
-        }
-        size_t model_nbytes1 = std::accumulate(model_storage_nbytes.cbegin(), model_storage_nbytes.cend(), 0U);
-        std::string file_name = "nbytes_" + std::to_string(model_nbytes1) + ".txt";
-        if (!std::filesystem::exists(file_name)) {
-          std::ofstream handle(file_name);
-          CHECK(handle.is_open());
-          for (size_t nbytes : model_storage_nbytes) {
-            handle << nbytes << "\n";
-          }
-          handle.close();
-        }
-      }
-      size_t model_nbytes = 0, fragment_nbytes = 0;
-      CHECK_GE(tvm_graph_.param_group_parti_.size(), 2);
-      CHECK_EQ(tvm_graph_.param_group_parti_.front(), 0);
-      CHECK_EQ(tvm_graph_.param_group_parti_.back(), storage_pool_.size());
-      for (size_t k = 0; k < tvm_graph_.param_group_parti_.size() - 1; ++k) {
-        size_t i = tvm_graph_.param_group_parti_[k], j = tvm_graph_.param_group_parti_[k + 1];
-        size_t group_nbytes = 0;
-        for (auto iter = storage_alloc_order.cbegin() + i; iter != storage_alloc_order.cbegin() + j; ++iter) {
-          auto tensor = storage_pool_[*iter];
-          CHECK(tensor.IsNull());
-          auto aligned_nbytes = sta::ComputeStorageNbytes(
-              tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
-          aligned_nbytes = sta::detail::GetAlignedNbytes(aligned_nbytes);
-          group_nbytes += aligned_nbytes;
-        }
+      for (size_t k = 0; k < tvm_graph_.storage_group_parti_.size() - 1; ++k) {
+        size_t i = tvm_graph_.storage_group_parti_[k], j = tvm_graph_.storage_group_parti_[k + 1];
+        auto group_nbytes = storage_group_nbytes_[k];
         std::shared_ptr<sta::CUDAMemPool::PoolEntry> mdata_group;
         if (auto iter = cold_cached_group_.find(k); iter != cold_cached_group_.cend()) {
           mdata_group = iter->second;
@@ -461,6 +427,9 @@ void Executor::LoadParams(bool pipeline, bool force) {
     for (auto &p : tvm_graph_.params_)
       param_ready_[p.first]->store(false);
   }
+  bool cold_cache_hit = false;
+  auto t_a = Profiler::Now();
+
 
   if (!Config::group_param_load) {
     for (auto &p : tvm_graph_.params_) {
@@ -481,18 +450,14 @@ void Executor::LoadParams(bool pipeline, bool force) {
   } else {
     // double api_1_ms = 0;
     // double api_2_ms = 0;
-    // auto t_b = Profiler::Now();
 
-    size_t sg_id = 0;
+    size_t sg_id = 0; /*  next storage group index */
     size_t sg_off = 0;
     auto storage_group = storage_group_[sg_id++];
-    if (cold_cached_group_.empty()) {
-      Profiler::Get()->RecordPerf(Profiler::PerfItem::InferModelColdCacheHit, 0.0);
-    } else {
-      Profiler::Get()->RecordPerf(Profiler::PerfItem::InferModelColdCacheHit, 1.0);
-    }
-    for (size_t pg_id = 0; pg_id < param_storage_group_.size(); pg_id++) {
-      auto & pg = param_storage_group_[pg_id];
+    cold_cache_hit = !cold_cached_group_.empty();
+    Profiler::Get()->RecordPerf(Profiler::PerfItem::InferModelColdCacheHit, cold_cache_hit);
+    for (size_t pg_id = 0; pg_id < host_param_storage_group_.size(); pg_id++) {
+      auto & pg = host_param_storage_group_[pg_id];
       auto & param_group = pg.first;
       auto param_group_nbytes = static_cast<size_t>(param_group->shape[0]);
       auto & param_ids = pg.second;
@@ -500,11 +465,24 @@ void Executor::LoadParams(bool pipeline, bool force) {
         auto load_nbytes = std::min(param_group_nbytes - pg_off, storage_group->nbytes - sg_off);
         // auto t0 = Profiler::Now();
         CUDA_CALL(cudaSetDevice(devices_[0].device_id));
-        if (cold_cached_group_.count(pg_id) == 0) {
+        if (auto sg_it = cold_cached_group_.find(sg_id - 1); sg_it == cold_cached_group_.cend()) {
           CUDA_CALL(cudaMemcpyAsync(
               static_cast<char*>(storage_group->addr) + sg_off,
               static_cast<char*>(param_group->data) + pg_off,
               load_nbytes, cudaMemcpyDefault, (cudaStream_t)load_param_stream_));
+          std::stringstream ss;
+          for (auto &&[id, arr] : cold_cached_group_) {
+            ss << id  << "," << arr->nbytes << "|";
+          }
+          for (auto nbytes : storage_group_nbytes_) {
+            ss << nbytes << "@";
+          }
+          if (Config::cold_cache_ratio == 1.0) {
+            CHECK(cold_cached_group_.empty()) << sg_id << " not cached, cold_cached_group = " << ss.str() << ", storage group size" << storage_group_.size() << ".";
+          }
+        } else {
+          CHECK_LE(sg_id, cold_cached_group_.size());
+          CHECK_EQ(sg_it->second, storage_group);
         }
         // api_1_ms += Profiler::MilliFrom(t0);
         CHECK(param_ready_event_ids_[param_ids[0]] == pg_id);
@@ -514,8 +492,9 @@ void Executor::LoadParams(bool pipeline, bool force) {
         sg_off += load_nbytes;
         pg_off += load_nbytes;
         if (sg_off == storage_group->nbytes) {
-          CHECK(sg_id < storage_group_.size());
-          storage_group = storage_group_[sg_id++]; sg_off = 0;
+          CHECK_LT(sg_id, storage_group_.size());
+          storage_group = storage_group_[sg_id++];
+          sg_off = 0;
         }
       }
       if (pipeline) {
@@ -526,9 +505,9 @@ void Executor::LoadParams(bool pipeline, bool force) {
     }
     // auto tot_ms = Profiler::MilliFrom(t_b);
     // LOG(INFO) << "Load Params" << " api_1_ms " << api_1_ms << " api_2_ms " << api_2_ms << " tot_ms " << tot_ms;
-    // LOG(INFO) << "LoadParams" << " tot_ms " << Profiler::MilliFrom(t_b);
-  }
 
+  }
+     
   // because we load params in async thread in pipeline mode,
   // it's ok to sync to calculate loading time
   ::tvm::runtime::DeviceAPI::Get(devices_[0])
@@ -537,6 +516,7 @@ void Executor::LoadParams(bool pipeline, bool force) {
     for (auto &p : tvm_graph_.params_)
       param_ready_[p.first]->store(true);
   }
+  LOG(INFO) << "LoadParams" << " load = " << Profiler::MilliFrom(t_a) << " ms, cold cache hit = " << cold_cache_hit << ".";
 }
 
 void Executor::ReSetupDataEntry() {

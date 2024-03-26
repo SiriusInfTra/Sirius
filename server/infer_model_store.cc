@@ -454,7 +454,7 @@ void InferModelStore::TaskSwitchMonitor() {
 
 std::tuple<std::vector<size_t>, std::vector<std::pair<std::string, std::vector<size_t>>>, bool>
 ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<size_t> groups_nbytes, size_t total_nbytes, std::unique_lock<std::mutex> &lock) {
-  LOG(INFO) << "PushCacheItem, name = " << name << ", rank = " << rank << ", groups_nbytes = " << groups_nbytes << ", total_nbytes = " << total_nbytes;
+  DLOG(INFO) << "PushCacheItem, name = " << name << ", rank = " << rank << ", groups_nbytes = " << groups_nbytes << ", total_nbytes = " << total_nbytes;
   if (cold_cache_.count(name) != 0) { return {{}, {}, false}; }
   std::vector<std::pair<std::string, std::vector<size_t>>> evict_models;
   auto* cache_item = new CacheItem();
@@ -462,7 +462,7 @@ ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<
   cache_item->model = InferModelStore::Get()->GetModel(name);
   size_t model_max_cached_nbytes = static_cast<size_t>(total_nbytes * Config::cold_cache_ratio);;
   for (size_t k = 0; k < groups_nbytes.size(); ++k) {
-    LOG(INFO) << "k = " << k << ".";
+    DLOG(INFO) << "k = " << k << ".";
     if ((k == 0 || cache_item->cached_group_nbytes + groups_nbytes[k] / 2 <= model_max_cached_nbytes) 
       && (cache_item->cached_group_nbytes + groups_nbytes[k] < Config::max_cold_cache_nbytes)) {
       cache_item->cached_groups_id.push_back(k);
@@ -471,19 +471,19 @@ ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<
       break;
     }
   }
-  LOG(INFO) << "decide to cache group = " << cache_item->cached_groups_id << ".";
+  LOG(INFO) << "decide to cache group = " << cache_item->cached_groups_id << ", total" << groups_nbytes.size() << ".";
 
   std::vector<Model*> coldest_model;
   for (auto &&[name, cache_item] : cold_cache_) {
     coldest_model.push_back(cache_item->model);
   }
 
-  LOG(INFO) << "check whether should evict models.";
+  DLOG(INFO) << "check whether should evict models.";
   // TODO: make snapshot
   std::sort(coldest_model.begin(), coldest_model.end(), 
       [](Model *a, Model *b) { return a->GetHotness() > b->GetHotness(); /* descending */ });
   while (cold_cached_nbytes_ + cache_item->cached_group_nbytes > Config::max_cold_cache_nbytes) {
-    LOG(INFO) << "should evict models.";
+    DLOG(INFO) << "should evict models.";
     auto &model_id = coldest_model.back()->GetName();
     auto &&[cached_groups_id, succ] = PopCacheItem(model_id, rank, lock);
     CHECK(succ);
@@ -491,9 +491,9 @@ ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<
     coldest_model.pop_back();
   }
   cold_cached_nbytes_.fetch_add(cache_item->cached_group_nbytes, std::memory_order_relaxed);
-  LOG(INFO) << "put to cold_cache_.";
+  DLOG(INFO) << "put to cold_cache_.";
   CHECK(cold_cache_.emplace(std::make_pair(name, cache_item)).second == true);
-  LOG(INFO) << "cached_groups_id = " << cache_item->cached_groups_id;
+  DLOG(INFO) << "cached_groups_id = " << cache_item->cached_groups_id;
   return {cache_item->cached_groups_id, evict_models, true};
 }
 
