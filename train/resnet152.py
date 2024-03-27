@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 from torch.optim.lr_scheduler import StepLR
 from torchvision import models
 from torch.utils.data import DataLoader
@@ -10,13 +11,36 @@ from torch_col import MemoryPool, EventManager, TrainMode, HookMode
 from torch_col import ColocateAdjustL1Exception, SwitchL1Exception
 from torch_col import CustomeDynamicBatchDataset
 
+import random
+random.seed(42)
+
 # torch_col.disable_release_saved_tensor()
+class SimpleConvNet(nn.Module):
+    def __init__(self):
+        super(SimpleConvNet, self).__init__()
+        # 输入图像大小为224x224x3
+        self.conv1 = nn.Conv2d(3, 32, kernel_size=3, padding=1)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.fc1 = nn.Linear(32 * 112 * 112, 50)
+
+    def forward(self, x):
+        x = x + 1
+        x = self.conv1(x)
+        x = F.relu(x)
+        x = self.pool(x)
+        x = x.view(-1, 32 * 112 * 112)
+        # if random.uniform(0, 1) > 0.5:
+
+        #     raise ColocateAdjustL1Exception()
+        x = self.fc1(x)
+        return x
 
 def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size: int):
     if torch_col.use_shared_tensor():
         torch_col.tag_model_start()
     
-    model = models.resnet101().cuda()
+    torch_col.train_model = model = models.resnet101().cuda()
+    # torch_col.train_model = model = SimpleConvNet().cuda()
     print(f"Train params memory usage: {torch_col.MemoryPool.get_memory_usage() * 1024:.2f}M")
 
     criterion = nn.CrossEntropyLoss().cuda(0)
@@ -41,6 +65,8 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
     total_tried_batch = 0
 
     model.train()
+    
+    
     hook.train_start()
     if torch_col.use_shared_tensor():
         torch_col.tag_model_end()
@@ -67,7 +93,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
             try:
                 tried_batch += 1
                 total_tried_batch += 1
-                optimizer.zero_grad(set_to_none=False)
+                optimizer.zero_grad()
                 output = model(images)
                 loss = criterion(output, targets)
                 loss.backward()
