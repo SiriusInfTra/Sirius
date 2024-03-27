@@ -71,6 +71,7 @@ void TrainLauncher::Init(const std::filesystem::path &train_store_path) {
 
 bool TrainLauncher::Shutdown() {
   if (train_launcher_->train_pid_ != -1) {
+    LOG(INFO) << "[TrainLauncher]: Shutdown, train_pid(" << train_launcher_->train_pid_ << ") = -1.";
     CHECK_EQ(kill(train_launcher_->train_pid_, SIGKILL), 0);
     waitpid(train_launcher_->train_pid_, NULL, 0);
   }
@@ -292,7 +293,8 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
   close(to_child_pipe[1]);
 
   int status;
-  waitpid(pid, &status, 0);
+  int ret = waitpid(pid, &status, 0);
+  LOG(INFO) << "[TrainLauncher]: wait pid return, ret = " << ret << ", status = " << status << "."; 
   train_pid_ = -1;
   batch_start_ = false;
   // target_batch_size_ = -1;

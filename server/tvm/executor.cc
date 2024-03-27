@@ -522,8 +522,13 @@ void Executor::LoadParams(bool pipeline, bool force) {
       param_ready_[p.first]->store(true);
   }
 
-  DLOG(INFO) << "[Executor] Load Param" << " call_api_ms " << call_api_ms
-            << " tot_ms " << Profiler::MilliFrom(load_param_t);
+  LOG(INFO) << "[Executor] [LoadParamas] "
+            << tvm_graph_.model_name_
+            << " call_api_ms " << call_api_ms
+            << " tot_ms " << Profiler::MilliFrom(load_param_t)
+            << " cold_cache_hit " << cold_cache_hit
+            << " total_nbytes " << GetParamStorageSize()
+            << " cached_nbytes " << cold_cached_nbytes_.load(std::memory_order_relaxed);
 }
 
 void Executor::ReSetupDataEntry() {

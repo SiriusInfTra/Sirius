@@ -27,6 +27,35 @@ enum class ServeMode {
   kColocateL2,    // adjust batch at end of mini-batch
 };
 
+inline std::ostream & operator<<(std::ostream &os, const ServeMode &mode) {
+  switch (mode) {
+    case ServeMode::kNormal:
+      os << "kNormal";
+      break;
+    case ServeMode::kTaskSwitchL0:
+      os << "kTaskSwitchL0";
+      break;
+    case ServeMode::kTaskSwitchL1:
+      os << "kTaskSwitchL0";
+      break;
+    case ServeMode::kTaskSwitchL2:
+      os << "kTaskSwitchL2";
+      break;
+    case ServeMode::kTaskSwitchL3:
+      os << "kTaskSwitchL3";
+      break;
+    case ServeMode::kColocateL1:
+      os << "kColocateL1";
+    case ServeMode::kColocateL2:
+      os << "kColocateL2";
+      break;
+    default:
+      os << "Unknown(" << static_cast<int>(mode) << ")";
+      break;
+  }
+  return os;
+}
+
 struct ColocateConfig {
   bool skip_malloc;
   bool skip_loading;

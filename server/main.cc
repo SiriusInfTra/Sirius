@@ -28,6 +28,8 @@
 #include "profiler.h"
 #include "config.h"
 
+#define STREAM_OUTPUT(field) std::cerr << "cfg::" #field "=" << cfg::field << std::endl
+
 CLI::App app{"ColServe"};
 std::string mode = "normal";
 std::string port = "8080";
@@ -79,8 +81,12 @@ void init_cli_options() {
       "use xsched, default is false");
   app.add_option("--train-profile", colserve::Config::train_profile, 
     "train timeline path, default is train-timeline");
-  app.add_option("--max-cache-nbytes", colserve::Config::max_warm_cache_nbytes, 
-    "max cache nbytes, default is 1*1024*1024*1024(1G).");
+  app.add_option("--max-warm-cache-nbytes", colserve::Config::max_warm_cache_nbytes, 
+    "max warm cache nbytes, default is 0*1024*1024*1024(0G).");
+  app.add_option("--max-cold-cache-nbytes", colserve::Config::max_cold_cache_nbytes, 
+    "max cold cache nbytes, default is 0*1024*1024*1024(0G).");
+  app.add_option("--cold-cache-ratio", colserve::Config::cold_cache_ratio, 
+    "cold cache ratio, default is 0.3(30%).");
   app.add_option("--memory-pressure-mb", colserve::Config::memory_pressure_mb,
       "memory pressure in MB, default is 0");
   app.add_option("--ondemand-adjust", colserve::Config::ondemand_adjust,
@@ -142,22 +148,25 @@ void init_config() {
     cfg::group_param_load = false;
   }
 
-  std::cerr << "cfg::serve_mode=" << static_cast<int>(cfg::serve_mode) << std::endl
-            << "cfg::use_shared_tensor=" << cfg::use_shared_tensor << std::endl
-            << "cfg::use_shared_tensor_infer=" << cfg::use_shared_tensor_infer << std::endl
-            << "cfg::use_shared_tensor_train=" << cfg::use_shared_tensor_train << std::endl
-            << "cfg::ondemand_adjust=" << cfg::ondemand_adjust << std::endl
-            << "cfg::better_alloc=" << cfg::better_alloc << std::endl
-            << "cfg::group_param_load=" << cfg::group_param_load << std::endl
-            << "cfg::pipeline_load=" << cfg::pipeline_load << std::endl
-            << "cfg::has_warmup=" << cfg::has_warmup << std::endl
-            << "cfg::colocate_config.skip_malloc=" << cfg::colocate_config.skip_malloc << std::endl
-            << "cfg::colocate_config.skip_loading=" << cfg::colocate_config.skip_loading << std::endl;
+
+  STREAM_OUTPUT(serve_mode);
+  STREAM_OUTPUT(use_shared_tensor);
+  STREAM_OUTPUT(use_shared_tensor_infer);
+  STREAM_OUTPUT(ondemand_adjust);
+  STREAM_OUTPUT(better_alloc);
+  STREAM_OUTPUT(group_param_load);
+  STREAM_OUTPUT(pipeline_load);
+  STREAM_OUTPUT(has_warmup);
+  STREAM_OUTPUT(max_warm_cache_nbytes);
+  STREAM_OUTPUT(max_cold_cache_nbytes);
+  STREAM_OUTPUT(cold_cache_ratio);
+  STREAM_OUTPUT(colocate_config.skip_malloc);
+  STREAM_OUTPUT(colocate_config.skip_loading);
 
 }
 
 void Shutdown(int sig) {
-  LOG(INFO) <<"signal " <<  strsignal(sig) << " received, shutting down...";
+  LOG(INFO) <<"signal " <<  strsignal(sig) << "(" << sig << ")" << " received, shutting down...";
   colserve::Config::running = false;
   colserve::InferModelStore::Shutdown();
   colserve::TrainLauncher::Shutdown();
