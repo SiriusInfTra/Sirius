@@ -97,9 +97,10 @@ private:
     //   mapped_mem_list_.pop_back();
     // }
 
-    LOG(INFO) << log_prefix_ << "Free " << ready_to_free_mem.size() << " physical memory page(s),"
-              << " current allocated: " << ByteToMB(allocated_nbytes) 
-              << " current physical: " << ByteToMB(physical_nbytes) << ".";
+    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ 
+        << "Free " << ready_to_free_mem.size() << " physical memory page(s),"
+        << " current allocated: " << ByteToMB(allocated_nbytes) 
+        << " current physical: " << ByteToMB(physical_nbytes) << ".";
   }
 
   void EnsurePhyMemAlloc(MemEntry *entry, bip::scoped_lock<bip::interprocess_mutex> &lock) {

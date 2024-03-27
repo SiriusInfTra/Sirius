@@ -164,7 +164,10 @@ class Executor {
   std::vector<uint32_t> param_ready_event_ids_; // for group param pipeline
   // std::vector<cudaEvent_t> pipeline_op_exec_starts_, pipeline_op_exec_ends_;
 
+  // pipeline load params and exec
   std::future<void> load_params_future_;
+  std::mutex pipeline_load_params_mut_;
+  std::condition_variable pipeline_load_params_cv_;
 
   // void* blob_mem_{nullptr};
   std::shared_ptr<sta::CUDAMemPool::PoolEntry> blob_mem_{nullptr};

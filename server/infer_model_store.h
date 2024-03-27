@@ -193,9 +193,11 @@ class InferModelStore {
   std::atomic<int> num_infering_model_{0};
 
   std::mutex task_switch_mutex_;
+  bool task_switch_to_infer_{false};
   // std::atomic<int> task_switch_ctrl_{static_cast<int>(TaskSwitchStatus::kNotInfering)};
   // std::condition_variable task_switch_cv_;
   
+  // simulate global infer request queue
   std::set<size_t> queing_infer_reqs_;
 
   std::unique_ptr<std::thread> monitor_thread_;

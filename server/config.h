@@ -94,8 +94,8 @@ class Config {
 
   static bool system_initialized;
 
-  static bool log_model_init_info;
-  static bool log_grpc;
+  static constexpr bool log_model_init_info = true;
+  static constexpr bool log_grpc = false;
 
   inline static bool IsSwitchMode() {
     return Config::serve_mode == ServeMode::kTaskSwitchL1

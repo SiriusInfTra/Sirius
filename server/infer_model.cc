@@ -20,7 +20,6 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
   CHECK(std::filesystem::exists(model_path / "mod.json"));
   CHECK(std::filesystem::exists(model_path / "mod.params"));
 
-  // rmod_ = tvm::runtime::Module::LoadFromFile((model_path / "mod.so").c_str(), "so");
   auto rmod = 
       ::tvm::runtime::Module::LoadFromFile((model_path / "mod.so").c_str(), "so");
 
@@ -136,21 +135,14 @@ void Model::InitMetaInfo() {
 
 bool Model::AddJob(network::InferHandler::InferData* data) {
   // LOG(INFO) << "model " << name_ << " add job";
-  if (name_ == "dummy") {
-    data->GetResponse().set_result("dummy result");
-    data->GetResponder().Finish(data->GetResponse(), grpc::Status::OK, data);
-    return true;
-  }
-  Controller::Get()->InferRequestInc();
-  // InterruptTrain check whether to interrupt train
-  Controller::Get()->InterruptTrain(); 
   infer_count_.fetch_add(1, std::memory_order_relaxed);
   return job_queue_.Put(std::make_shared<InferJob>(data));
 }
 
 bool Model::ReclaimMemory(size_t rank) {
+  if (name_ == "dummy") return false;
   CHECK_LT(rank, muts_.size());
-  CHECK_LT(rank, executors_.size());
+  CHECK_LT(rank, executors_.size()) << name_;
   CHECK_LT(rank, status_.size());
   if (status_[rank] == Status::kWithoutMemory) {
     return false; 
