@@ -277,7 +277,9 @@ public:
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
     auto in_time_t = std::chrono::system_clock::to_time_t(now);
     std::stringstream ss;
-    ss << "./" << "mempool_dump_" << policy_ << "_" << std::put_time(std::localtime(&in_time_t), "%Y-%m-%d_%H-%M-%S") << "_" << ms.count();
+    ss << "./" << "mempool_dump_log" << "/"
+        << "mempool_dump_" << policy_ << "_" 
+        << std::put_time(std::localtime(&in_time_t), "%Y-%m-%d_%H-%M-%S") << "_" << ms.count();
     std::filesystem::path output_dir{ss.str()};
     CHECK(std::filesystem::create_directory(output_dir));
     LOG(INFO) << log_prefix_ << "Dump has been written to: " << ss.str() << ".";

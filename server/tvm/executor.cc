@@ -198,15 +198,11 @@ void Executor::PipelineRun() {
     if (op_execs_[i]) {
       auto t0 = Profiler::Now();
       // 1. wait load begin
-      for (bool param_ready = false; !param_ready; ) {
-        param_ready = true;
-        for (auto nid : input_param_nid_[i]) {
-          if (!param_ready_[nid]->load()) {
-            param_ready = false;
-            break;
-          }
-        }
-        std::this_thread::sleep_for(std::chrono::microseconds(1));
+      for (auto nid : input_param_nid_[i]) {
+        std::unique_lock pipeline_load_param_lock{pipeline_load_params_mut_};
+        pipeline_load_params_cv_.wait(pipeline_load_param_lock, [this, nid] {
+          return param_ready_[nid]->load();
+        });
       }
       wait_load_ms += Profiler::MilliFrom(t0);
 
@@ -238,7 +234,9 @@ void Executor::PipelineRun() {
     }
   }
   DeviceAPI::Get(devices_[0])->StreamSync(devices_[0], exec_stream_);
-  LOG(INFO) << "wait_load_ms " << wait_load_ms << " wait_ms " << wait_ms << " record_exec_ms " << record_exec_ms
+  LOG(INFO) << "[Executor] [PipelineRun] " << tvm_graph_.model_name_
+            << " wait_load_ms " << wait_load_ms 
+            << " wait_ms " << wait_ms
             << " tot " << Profiler::MilliFrom(begin);
 }
 
@@ -394,11 +392,14 @@ void Executor::AllocStorage() {
 }
 
 void Executor::LoadParams(bool pipeline, bool force) {
-    using namespace ::tvm::runtime;
+  using namespace ::tvm::runtime;
   if (force) {
     for (auto &p : tvm_graph_.params_)
       param_ready_[p.first]->store(false);
   }
+
+  auto load_param_t = Profiler::Now();
+  auto call_api_t = Profiler::Now();
 
   if (!Config::group_param_load) {
     for (auto &p : tvm_graph_.params_) {
@@ -411,6 +412,7 @@ void Executor::LoadParams(bool pipeline, bool force) {
           // ::tvm::runtime::DeviceAPI::Get(tvm_graph_.devices_[0])
           //     ->StreamSync(tvm_graph_.devices_[0], load_param_stream_);
           param_ready_[p.first]->store(true);
+          pipeline_load_params_cv_.notify_all();
           CHECK(param_ready_event_ids_[p.first] == p.first);
           CUDA_CALL(cudaEventRecord(param_ready_events_[p.first], (cudaStream_t)load_param_stream_));
         }
@@ -453,12 +455,15 @@ void Executor::LoadParams(bool pipeline, bool force) {
         for (auto & pid : param_ids) {
           param_ready_[pid]->store(true);
         }
+        pipeline_load_params_cv_.notify_all();
       }
     }
     // auto tot_ms = Profiler::MilliFrom(t_b);
     // LOG(INFO) << "Load Params" << " api_1_ms " << api_1_ms << " api_2_ms " << api_2_ms << " tot_ms " << tot_ms;
     // LOG(INFO) << "LoadParams" << " tot_ms " << Profiler::MilliFrom(t_b);
   }
+
+  auto call_api_ms = Profiler::MilliFrom(call_api_t);
 
   // because we load params in async thread in pipeline mode,
   // it's ok to sync to calculate loading time
@@ -468,6 +473,9 @@ void Executor::LoadParams(bool pipeline, bool force) {
     for (auto &p : tvm_graph_.params_)
       param_ready_[p.first]->store(true);
   }
+
+  DLOG(INFO) << "[Executor] Load Param" << " call_api_ms " << call_api_ms
+            << " tot_ms " << Profiler::MilliFrom(load_param_t);
 }
 
 void Executor::ReSetupDataEntry() {
