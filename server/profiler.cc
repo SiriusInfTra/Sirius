@@ -154,7 +154,7 @@ Profiler::Profiler(const std::string &profile_log_path)
   }
 
 #if defined(USE_NVML_V3) && USE_NVML_V3 == 0
-  LOG(WARNING) << "USE_NVML_V3 is set to 0, profiler will not record memory info, mps server will not be checked";
+  LOG(FATAL) << "USE_NVML_V3 is set to 0, profiler will not record memory info, mps server will not be checked";
 #endif
 
   thread_.reset(new std::thread([this, device]() {
@@ -168,34 +168,29 @@ Profiler::Profiler(const std::string &profile_log_path)
     nvmlProcessInfo_t infos[32];
     while (Config::running) {
       size_t infer_mem = 0, train_mem = 0, train_all_mem = 0, total_mem = 0;
-
-      if (!Config::use_shared_tensor) {
+      if (!Config::use_shared_tensor || !Config::use_shared_tensor_train) {
         uint32_t info_cnt = max_info_cnt;
-#if !defined(USE_NVML_V3) || USE_NVML_V3 != 0
         NVML_CALL(nvmlDeviceGetComputeRunningProcesses_v3(device, &info_cnt, infos));
-        // CHECK(info_cnt <= 2) << "found " << infos[0].pid << " " << infos[1].pid << " " << infos[2].pid << " ...";
         for (uint32_t i = 0; i < info_cnt; i++) {
-          if (infos[i].pid == pid) {
+          if (!Config::use_shared_tensor_train && infos[i].pid == pid) {
             infer_mem = infos[i].usedGpuMemory;
           } else if (infos[i].pid == TrainLauncher::Get()->GetTrainPid()) {
             train_mem = infos[i].usedGpuMemory;
+            train_all_mem = train_mem;
           }
         }
-#else
-        infer_mem = 0;
-        train_mem = 0;
-#endif
-        train_all_mem = train_mem;
         size_t free, total;
         CUDA_CALL(cudaMemGetInfo(&free, &total));
         total_mem = total - free;
+        if (Config::use_shared_tensor) {
+          infer_mem = sta::CUDAMemPool::InferMemUsage();
+        }
       } else {
         infer_mem = sta::CUDAMemPool::InferMemUsage();
         train_mem = sta::CUDAMemPool::TrainMemUsage();
         train_all_mem = sta::CUDAMemPool::TrainAllMemUsage();
         total_mem = static_cast<size_t>(Config::cuda_memory_pool_gb * 1_GB);
       }
-
       this->last_infer_mem_ = infer_mem;
       this->last_train_mem_ = train_mem;
       this->resource_info_.push_back({this->Passed(), Profiler::GetTimeStamp(),

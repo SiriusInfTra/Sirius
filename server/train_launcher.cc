@@ -278,6 +278,7 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
       close(from_child_pipe[1]);
     }
     // train_running_ = true;
+    // 
     LOG(INFO) << "[TrainLauncher]: " << "Train " << job << " pid " << pid;
   }
 
