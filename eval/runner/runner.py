@@ -56,6 +56,7 @@ class System:
 '''
 
     def __init__(self, mode: str, use_sta: bool, 
+                 use_sta_train: Optional[bool] = None,
                  cuda_memory_pool_gb: str = None,
                  memory_pool_policy: str = MemoryPoolPolicy.BestFit,
                  profile_log: str = "profile-log", 
@@ -69,7 +70,9 @@ class System:
                  train_mps_thread_percent: Optional[int] = None,
                  colocate_skip_malloc: bool = False,
                  colocate_skip_loading: bool = False,
-                 max_cache_nbytes: int = 0 * 1024 * 1024 * 1024,
+                 max_warm_cache_nbytes: int = 0 * 1024 * 1024 * 1024,
+                 max_cold_cache_nbytes: int = 0 * 1024 * 1024 * 1024,
+                 cold_cache_ratio: float = 0.0,
                  memory_pressure_mb: str | float = None,
                  ondemand_adjust: bool = True,
                  pipeline_load: bool = True,
@@ -81,6 +84,7 @@ class System:
                  max_live_minute: Optional[int] = None) -> None:
         self.mode = mode
         self.use_sta = use_sta
+        self.use_sta_train = use_sta_train if use_sta_train is not None else use_sta
         self.cuda_memory_pool_gb = cuda_memory_pool_gb
         self.memory_pool_policy = memory_pool_policy
         self.profile_log = profile_log
@@ -103,7 +107,9 @@ class System:
         self.train_mps_thread_percent = train_mps_thread_percent
         self.colocate_skip_malloc = colocate_skip_malloc
         self.colocate_skip_loading = colocate_skip_loading
-        self.max_cache_nbytes = max_cache_nbytes
+        self.max_warm_cache_nbytes = max_warm_cache_nbytes
+        self.max_cold_cache_nbytes = max_cold_cache_nbytes
+        self.cold_cache_ratio = cold_cache_ratio
         self.memory_pressure_mb = memory_pressure_mb
         self.ondemand_adjust = ondemand_adjust
         self.pipeline_load = pipeline_load
@@ -152,6 +158,7 @@ class System:
             "-p", self.port, 
             "--mode", self.mode, 
             "--use-sta", "1" if self.use_sta else "0", 
+            "--use-sta-train", "1" if self.use_sta_train else "0",
             "--profile-log", profile_log
         ]
         if self.cuda_memory_pool_gb is not None:
@@ -194,7 +201,10 @@ class System:
             cmd += ["--colocate-skip-loading"]
 
         cmd += ['--train-profile', str(train_profile)]
-        cmd += ['--max-cache-nbytes', str(self.max_cache_nbytes)]
+        
+        cmd += ['--max-warm-cache-nbytes', str(self.max_warm_cache_nbytes)]
+        cmd += ['--max-cold-cache-nbytes', str(self.max_cold_cache_nbytes)]
+        cmd += ['--cold-cache-ratio', str(self.cold_cache_ratio)]
 
         if self.memory_pressure_mb:
             cmd += ["--memory-pressure-mb", str(self.memory_pressure_mb)]
@@ -261,10 +271,22 @@ class System:
                 else:
                     break
     
-    def stop(self):
+    def stop(self, kill_train: bool = False):
         if self.server is not None:
             self.server.send_signal(subprocess.signal.SIGINT)
             self.server = None
+        if kill_train:
+            train_pids = set()
+            print('Force to kill train.')
+            with open(f'{self.log_dir}/{self.server_log}.log') as f:
+                for line in f:
+                    if "[TrainLauncher]: Train TrainJob" in line:
+                        _, pid = line.rsplit(' ', 1)
+                        train_pids.add(pid)
+            for pid in train_pids:
+                cmd = f'kill -9 {pid}'
+                print(f'Execute {cmd}')
+                os.system(cmd)
         self.infer_model_config_path = None
         if self.mps_server is not None:
             self.quit_mps()
@@ -279,7 +301,7 @@ class System:
         ]))
         with open(f'{self.log_dir}/cmd-trace', 'w') as f:
             f.write("\n\n".join(self.cmd_trace))
-        self.exit_log_dir = self.log_dir                                                                                                                               
+        self.exit_log_dir = self.log_dir                                                                                                                                   
         self.log_dir = None
     
     def draw_memory_usage(self):
@@ -447,5 +469,5 @@ class HyperWorkload:
                     raise Exception(f"Workload exited with code {completed.returncode}")
         except Exception as e:
             print(f"Workload exited with exception, see detail in {server.log_dir}/{server.server_log}.log and {client_log}")
-            server.stop()
+            server.stop(kill_train=True)
             raise e
