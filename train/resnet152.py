@@ -10,6 +10,7 @@ import torch_col
 from torch_col import MemoryPool, EventManager, TrainMode, HookMode
 from torch_col import ColocateAdjustL1Exception, SwitchL1Exception
 from torch_col import CustomeDynamicBatchDataset
+import math
 
 import random
 random.seed(42)
@@ -39,14 +40,14 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
     if torch_col.use_shared_tensor():
         torch_col.tag_model_start()
     
-    torch_col.train_model = model = models.resnet101().cuda()
+    torch_col.train_model = model = models.resnet152().cuda()
     # torch_col.train_model = model = SimpleConvNet().cuda()
     print(f"Train params memory usage: {torch_col.MemoryPool.get_memory_usage() * 1024:.2f}M")
 
     criterion = nn.CrossEntropyLoss().cuda(0)
     optimizer = torch.optim.SGD(model.parameters(), 0.1, 
                                 momentum=0.9, weight_decay=1e-4)
-    scheduler = StepLR(optimizer, step_size=30, gamma=0.1)
+    scaler = torch.cuda.amp.GradScaler()
 
     print(f"Train after init memory pool usage: {MemoryPool.get_memory_usage() * 1024:.2f}M")
     
@@ -68,12 +69,10 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
     
     
     hook.train_start()
-    if torch_col.use_shared_tensor():
-        torch_col.tag_model_end()
+
 
     for epoch in range(num_epoch):
         epoch_event = EventManager.record_event(f'epoch_{epoch:02d}')
-
         batch_cnt = 0
         killed_batch = 0
         finished_batch = 0
@@ -84,22 +83,22 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
         finished_imgs = 0
         for i, (images, targets) in enumerate(train_loader):
             batch_event = EventManager.record_event(f'batch_{epoch:02d}_{i:03d}_{len(images):02d}')
-            images:torch.Tensor = images.to('cuda:0', non_blocking=True)
-            targets:torch.Tensor = targets.to('cuda:0', non_blocking=True)
-            if torch_col.use_shared_tensor():
-                torch_col.untag_interm_memory()
+            images: torch.Tensor = images.to('cuda:0', non_blocking=True)
+            targets: torch.Tensor = targets.to('cuda:0', non_blocking=True)
             # micro_batch_size = random.randint(1, batch_size)
             # print(micro_batch_size)
             try:
                 tried_batch += 1
                 total_tried_batch += 1
                 optimizer.zero_grad()
-                output = model(images)
-                loss = criterion(output, targets)
-                loss.backward()
+                with torch.cuda.amp.autocast():
+                    output = model(images)
+                    loss = criterion(output, targets)
+                scaler.scale(loss).backward()
                 with hook.steps_no_interrupt():
                     event = EventManager.record_event('optimizer_step')
-                    optimizer.step()
+                    scaler.step(optimizer)
+                    scaler.update()
                 event = EventManager.record_event('', event)
                 # finished_time += time.time() - micro_batch_begin
                 finished_batch += 1
@@ -114,16 +113,20 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
                     # cuda has alreadly synced
                     hook.release_and_reply()
                     print(f'[{e}] batch_size: {len(images)} -> {train_dataset.batch_size}.')
+                if epoch == 0 and i == 0:
+                    raise RuntimeError("micro batch 0 could not be interrupted.")
             else:
-                torch.cuda.current_stream().synchronize()
+                # torch.cuda.current_stream().synchronize()
                 batch_event.tag = 'finish'
                 train_dataset.next_batch()
+                if epoch == 0 and i == 0:
+                    if torch_col.use_shared_tensor():
+                        torch_col.tag_model_end()
             EventManager.record_event('', batch_event)
             if hook_mode.use_xsched():
                 from torch_col import xsched
                 xsched.initial_kill_batch(epoch, i)
         EventManager.record_event('', epoch_event)
-        scheduler.step()
 
         mem_info = f'mem {MemoryPool.get_memory_usage():.2f}Gb'
         batch_info = f'batch cnt {batch_cnt} avg {epoch_event.duration/batch_cnt:.1f}ms'

@@ -27,13 +27,29 @@ std::unique_ptr<TrainLauncher> TrainLauncher::train_launcher_;
 std::pair<double, double> TrainLauncher::GetModelMemParam() {
   if (Config::use_shared_tensor_train) {
     if (cur_model_name_ == "resnet152") {
-      return {560, 125};
+      /*
+          8   1.50
+         32   3.75
+        128  11.75
+        150  13.50
+      
+        AFTER EMPTY CACHE: 0.81 ~ 1.22
+      */
+      return {1150, 85};
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
   } else {
+    /*
+        8     2.64
+        32    4.97
+        128  13.75
+        150  15.68
+
+        AFTER EMPTY CACHE: 2.28 ~ 2.37
+    */
     if (cur_model_name_ == "resnet152") {
-      return {3512, 145};
+      return {2396, 145};
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
