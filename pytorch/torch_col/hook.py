@@ -285,7 +285,7 @@ class ColocateHook(HookABC):
             yield
             self._stub.StepsNoInteruptEnd()
 
-    def register_pytorch_hook(self, module):
+    def register_pytorch_hook(self, module_list: list[torch.nn.Module]):
         if self.train_mode == TrainMode.COLOCATE_L1:
             match self.hook_mode:
                 case HookMode.SYNC:
@@ -318,9 +318,11 @@ class ColocateHook(HookABC):
                             # torch_col.cuda_memory_pool_reset_train_alloc_ms()
                 case _:
                     raise RuntimeError(f"Unsupported hook_mode: {self.hook_mode.name}")
-            HookABC.register_fbward_hook(module, fwd_hook, bwd_hook)
+            for module in module_list:
+                HookABC.register_fbward_hook(module, fwd_hook, bwd_hook)
             if torch_col.release_interm_memory_v2():
-                torch_col.register_saved_tensor_hook()
+                torch_col.SetUpTorchColEngine()
+                # torch_col.register_saved_tensor_hook()
         else:
             pass
     

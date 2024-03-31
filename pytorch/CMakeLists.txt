@@ -12,6 +12,7 @@ add_library(new_torch_col SHARED
   torch_col/csrc/mem_tagging.cc
   torch_col/csrc/util.cc
   torch_col/csrc/config.cc
+  torch_col/csrc/fake_engine.cc
 )
 
 add_dependencies(new_torch_col xsched_lib)
@@ -22,11 +23,13 @@ target_include_directories(new_torch_col PRIVATE ${CMAKE_SOURCE_DIR}/pytorch)
 target_include_directories(new_torch_col PRIVATE ${CMAKE_BINARY_DIR}/xsched/include)
 target_link_directories(new_torch_col PRIVATE ${CMAKE_BINARY_DIR}/xsched/lib)
 
+message("torch lib: ${TORCH_LIBRARIES}")
 target_link_libraries(new_torch_col PRIVATE 
   sta
   ${TORCH_LIBRARIES}
   Python::Python
   PySched
+  /home/wyk/miniforge3/envs/dev2/lib/python3.10/site-packages/torch/lib/libtorch_python.so
 )
 
 set_target_properties(new_torch_col PROPERTIES BUILD_RPATH $ORIGIN)

@@ -52,8 +52,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
     print(f"Train after init memory pool usage: {MemoryPool.get_memory_usage() * 1024:.2f}M")
     
     hook = torch_col.get_hook(train_mode, hook_mode, num_epoch, batch_size)
-    hook.register_pytorch_hook(model)
-    hook.register_pytorch_hook(criterion)
+    hook.register_pytorch_hook([model, criterion])
 
     # dummy data, todo: learning rate auto scaling
     train_dataset = CustomeDynamicBatchDataset(1000, (3, 224, 224), 50, batch_size, hook)
@@ -106,6 +105,8 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
                 batch_cnt += 1
                 finished_imgs += len(images)
             except (ColocateAdjustL1Exception, SwitchL1Exception) as e:
+                if epoch == 0 and i == 0:
+                    raise RuntimeError("micro batch 0 could not be interrupted.")
                 killed_batch += 1
                 total_killed_batch += 1
                 batch_event.tag = 'cancel'
@@ -113,8 +114,6 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
                     # cuda has alreadly synced
                     hook.release_and_reply()
                     print(f'[{e}] batch_size: {len(images)} -> {train_dataset.batch_size}.')
-                if epoch == 0 and i == 0:
-                    raise RuntimeError("micro batch 0 could not be interrupted.")
             else:
                 # torch.cuda.current_stream().synchronize()
                 batch_event.tag = 'finish'

@@ -5,3 +5,6 @@ include "./ctrl_stub.pxi"
 
 cdef extern from "<csrc/config.h>" namespace "torch_col":
     cpdef void ConfigTorchCol()
+
+cdef extern from "<csrc/fake_engine.h>" namespace "torch_col":
+    cpdef void SetUpTorchColEngine()

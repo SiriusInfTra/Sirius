@@ -30,6 +30,15 @@ def use_fbward_hook():
     global __use_fbward_hook
     return __use_fbward_hook
 
+def print_module_dataptr(module):
+    from torch import nn
+    # module: nn.Module
+    # for name, tensor in module.named_parameters():
+    #     print(f'parm: {name} - {tensor.data_ptr()}')
+    # for name, tensor in module.named_buffers():
+    #     print(f'buff: {name} - {tensor.data_ptr()}')
+    
+
 
 from ._C import *
 
@@ -50,3 +59,5 @@ def __setup_torch_col():
 
 
 __setup_torch_col()
+
+print('torch_col init')

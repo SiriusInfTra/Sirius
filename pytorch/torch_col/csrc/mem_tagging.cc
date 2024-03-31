@@ -1,8 +1,10 @@
 #include <ATen/Tensor.h>
 #include <torch/csrc/autograd/python_variable.h>
 
+#include "common/controlling.h"
 #include "mem_tagging.h"
 #include "cuda_allocator_plugin.h"
+#include "torch_col/csrc/fake_engine.h"
 
 namespace torch_col {
 
@@ -46,4 +48,16 @@ void RearrangeMemory() {
 
 
 
+void TorchColSavedVariableHooks::call_pack_hook(const at::Tensor& tensor) {
+  CUDAColAllocator::Get()->TagIntermMemory(tensor);
+  data_ = tensor;
+  if (static_cast<ctrl::CtrlEvent>(GetColocateStub().Cmd()) == ctrl::CtrlEvent::kColocateAdjustL1) {
+    
+  }
+
 }
+
+at::Tensor TorchColSavedVariableHooks::call_unpack_hook() {
+  return data_;
+}
+}  // namespace torch_col
