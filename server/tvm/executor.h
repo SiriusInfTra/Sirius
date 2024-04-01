@@ -5,6 +5,7 @@
 #include <common/tensor.h>
 #include <common/mempool.h>
 #include <common/tvm_allocator.h>
+#include <common/cuda_allocator.h>
 
 #include <server/tvm/graph.h>
 #include <server/config.h>
@@ -15,9 +16,6 @@
 #include <unordered_map>
 #include <memory>
 #include <atomic>
-#include "common/cuda_allocator.h"
-#include "common/tvm_allocator.h"
-#include "config.h"
 
 
 namespace colserve {

@@ -1,10 +1,10 @@
+#include "logging_as_glog.h"
+#include <common/util.h>
 #include <server/train_launcher.h>
 #include <server/resource_manager.h>
-#include "common/util.h"
-#include "infer_model_store.h"
-#include "logging_as_glog.h"
-#include "controller.h"
-#include "config.h"
+#include <server/infer_model_store.h>
+#include <server/controller.h>
+#include <server/config.h>
 
 #include <signal.h>
 #include <algorithm>
