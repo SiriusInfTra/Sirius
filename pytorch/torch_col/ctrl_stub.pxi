@@ -152,6 +152,9 @@ cdef class PyColocateStub:
 
     def StepsNoInteruptEnd(self):
         self._stub.StepsNoInteruptEnd()
+    
+    def EnableTorchColEngine(self):
+        self._stub.EnableTorchColEngine()
 
     def __dealloc__(self):
         del self._stub

@@ -51,6 +51,7 @@ class ColocateStub {
   void ReportBatchSize(int batch_size);
   void StepsNoInteruptBegin();
   void StepsNoInteruptEnd();
+  void EnableTorchColEngine();
 
  private:
   bool running_{true};

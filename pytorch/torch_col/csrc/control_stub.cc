@@ -8,6 +8,7 @@
 #include "control_stub.h"
 #include "config.h"
 #include "util.h"
+#include "fake_engine.h"
 
 
 namespace torch_col {
@@ -254,6 +255,10 @@ void ColocateStub::StepsNoInteruptEnd() {
   step_mutex_.unlock();
 }
 
+void ColocateStub::EnableTorchColEngine() {
+  torch_col::SetUpTorchColEngine(this);
+}
+
 void StubProfiler::RecordAdjustRequest() {
   std::unique_lock lock{StubProfiler::mutex_};
   StubProfiler::adjust_request_time_stamp_.push_back(torch_col::get_unix_timestamp_us());
@@ -263,5 +268,6 @@ void StubProfiler::RecordAdjustDone() {
   std::unique_lock lock{StubProfiler::mutex_};
   StubProfiler::adjsut_done_time_stamp_.push_back(torch_col::get_unix_timestamp_us());
 }
+
 
 }  // namespace torch_col

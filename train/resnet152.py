@@ -93,6 +93,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
                 with torch.cuda.amp.autocast():
                     output = model(images)
                     loss = criterion(output, targets)
+                print(loss)
                 scaler.scale(loss).backward()
                 with hook.steps_no_interrupt():
                     event = EventManager.record_event('optimizer_step')
@@ -104,9 +105,12 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
                 total_finished_batch += 1
                 batch_cnt += 1
                 finished_imgs += len(images)
-            except (ColocateAdjustL1Exception, SwitchL1Exception) as e:
+            except (ColocateAdjustL1Exception, SwitchL1Exception, torch_col.EngineColocateAdjustL1Exception) as e:
                 if epoch == 0 and i == 0:
                     raise RuntimeError("micro batch 0 could not be interrupted.")
+                # for fast develop, should merge to hook.py
+                if isinstance(e, torch_col.EngineColocateAdjustL1Exception):
+                    xsched.kill_batch()
                 killed_batch += 1
                 total_killed_batch += 1
                 batch_event.tag = 'cancel'
@@ -147,21 +151,20 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
 
 
 def main():
-    train_mode_value = [train_mode.value for train_mode in TrainMode]
-    hook_mode_value = [hook_mode.value for hook_mode in HookMode]
     parser = argparse.ArgumentParser('Train Resnet')    
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--num-epoch', type=int, default=15)
-    parser.add_argument('--train-mode', type=str, default=TrainMode.COLOCATE_L1.value, choices=train_mode_value)
+    parser.add_argument('--train-mode', type=str, default=TrainMode.COLOCATE_L1.value, choices=[train_mode.value for train_mode in TrainMode])
     parser.add_argument('--train-profile', type=str, default='train-profile.csv')
-    parser.add_argument('--hook-mode', default=HookMode.XSCHED_SYNC.value, choices=hook_mode_value)
+    parser.add_argument('--hook-mode', default=HookMode.XSCHED_SYNC.value, choices=[hook_mode.value for hook_mode in HookMode])
     parser.add_argument('--use-xsched', type=bool)
     args = parser.parse_args()
     
     batch_size = args.batch_size
     num_epoch = args.num_epoch
-    train_mode = list(TrainMode)[train_mode_value.index(args.train_mode)]
-    hook_mode = list(HookMode)[hook_mode_value.index(args.hook_mode)]
+    train_mode = [train_mode for train_mode in TrainMode if train_mode.value == args.train_mode][0]
+    hook_mode = [hook_mode for hook_mode in HookMode if hook_mode.value == args.hook_mode][0]
+    
     print(f"ResNet152 training, batch-size={batch_size}, num-epoch={num_epoch}, train-mode={train_mode}, hook-mode={hook_mode}.")
     stream = torch.cuda.Stream()
     if hook_mode.use_xsched():

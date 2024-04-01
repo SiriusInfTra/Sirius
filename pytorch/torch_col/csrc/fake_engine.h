@@ -1,7 +1,7 @@
 #ifndef TORCH_COL_FAKE_ENGINE_H
 #define TORCH_COL_FAKE_ENGINE_H
 #include "mem_tagging.h"
-#include "torch_col/csrc/control_stub.h"
+#include "control_stub.h"
 #include <torch/csrc/autograd/engine.h>
 #include <torch/csrc/autograd/python_engine.h>
 #include <memory>
@@ -61,7 +61,7 @@ Engine& GetTorchColEngine();
 
 void SetUpTorchColEngine();
 
-void SetupColocateStub(size_t batch_size);
+void SetUpTorchColEngine(ColocateStub *colocate_stub);
 
 ColocateStub& GetColocateStub();
 }

@@ -49,6 +49,9 @@ from .hook import register_saved_tensor_hook, get_hook, HookMode, DummyHook,\
 from .debug_server import DebugServer
 
 
+class EngineColocateAdjustL1Exception(Exception):
+    pass
+
 def __setup_torch_col():
     import os, sys
     if os.environ.get('USE_SHARED_TENSOR', '0') == '1':

@@ -181,7 +181,7 @@ bool TrainLauncher::Train() {
   if (Config::serve_mode == ServeMode::kColocateL1 || Config::serve_mode == ServeMode::kTaskSwitchL1) {
     if (Config::use_xsched) {
       args_str.push_back("--hook-mode");
-      args_str.push_back("xsched-sync");
+      args_str.push_back("xsched-sync2");
     } else {
       args_str.push_back("--hook-mode");
       args_str.push_back("sync");

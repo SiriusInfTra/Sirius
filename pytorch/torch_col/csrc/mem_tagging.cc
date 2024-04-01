@@ -1,5 +1,11 @@
+#include <Python.h>
 #include <ATen/Tensor.h>
+#include <moduleobject.h>
+#include <object.h>
+#include <torch/csrc/Exceptions.h>
+#include <torch/csrc/autograd/engine.h>
 #include <torch/csrc/autograd/python_variable.h>
+#include <torch/csrc/utils/object_ptr.h>
 
 #include "common/controlling.h"
 #include "mem_tagging.h"
@@ -48,16 +54,37 @@ void RearrangeMemory() {
 
 
 
+
+
 void TorchColSavedVariableHooks::call_pack_hook(const at::Tensor& tensor) {
   CUDAColAllocator::Get()->TagIntermMemory(tensor);
   data_ = tensor;
   if (static_cast<ctrl::CtrlEvent>(GetColocateStub().Cmd()) == ctrl::CtrlEvent::kColocateAdjustL1) {
-    
+    pybind11::gil_scoped_acquire gil;
+    LOG(INFO) << "throw python exception!";
+    // THPObjectPtr torch_col(PyImport_ImportModule("torch_col"));
+    // CHECK(torch_col != nullptr);
+    // THPObjectPtr exception(PyObject_GetAttrString(torch_col, "TorchColEngineException"));
+    // HANDLE_TH_ERRORS
+    throw EngineColocateAdjustL1Exception("TorchColEngine");
+    // END_HANDLE_TH_ERRORS_PYBIND
   }
-
 }
 
+
+
+
 at::Tensor TorchColSavedVariableHooks::call_unpack_hook() {
+  if (static_cast<ctrl::CtrlEvent>(GetColocateStub().Cmd()) == ctrl::CtrlEvent::kColocateAdjustL1) {
+    pybind11::gil_scoped_acquire gil;
+    LOG(INFO) << "throw python exception!";
+    // THPObjectPtr torch_col(PyImport_ImportModule("torch_col"));
+    // CHECK(torch_col != nullptr);
+    // THPObjectPtr exception(PyObject_GetAttrString(torch_col, "TorchColEngineException"));
+    // HANDLE_TH_ERRORS
+    throw EngineColocateAdjustL1Exception("TorchColEngine");
+    // END_HANDLE_TH_ERRORS_PYBIND
+  }
   return data_;
 }
 }  // namespace torch_col
