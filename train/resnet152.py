@@ -1,3 +1,9 @@
+import os
+# os.environ['COLOCATE_HAS_SERVER'] = '1'
+# os.environ['HAS_SHARED_TENSOR_SERVER'] = '0'
+# os.environ['USE_SHARED_TENSOR'] = '0'
+# os.environ['SHARED_TENSOR_POOL_GB'] = '13.5'
+import random
 from typing import Optional
 import pandas as pd
 import torch
@@ -14,10 +20,6 @@ import numpy as np
 from torch_col import MemoryPool, EventManager, TrainMode, HookMode
 from torch_col import ColocateAdjustL1Exception, SwitchL1Exception
 from torch_col import CustomeDynamicBatchDataset
-import math
-
-import random
-random.seed(42)
 
 
 # torch_col.disable_release_saved_tensor()
@@ -27,7 +29,7 @@ class SimpleConvNet(nn.Module):
         # 输入图像大小为224x224x3
         self.conv1 = nn.Conv2d(3, 32, kernel_size=3, padding=1)
         self.pool = nn.MaxPool2d(2, 2)
-        self.fc1 = nn.Linear(32 * 112 * 112, 50)
+        self.fc1 = nn.Linear(32 * 112 * 112, 10)
 
     def forward(self, x):
         x = x + 1
@@ -44,7 +46,9 @@ class SimpleConvNet(nn.Module):
 def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size: int, trace_output: Optional[list], trace_input: Optional[list]):
     if torch_col.use_shared_tensor():
         torch_col.tag_model_start()
-    torch_col.train_model = model = models.resnet152().cuda()
+
+    torch_col.train_model = model = models.resnet152(weights=models.ResNet152_Weights.DEFAULT).cuda()
+
     # torch_col.train_model = model = SimpleConvNet().cuda()
     print(f"Train params memory usage: {torch_col.MemoryPool.get_memory_usage() * 1024:.2f}M")
 
@@ -59,7 +63,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
     hook.register_pytorch_hook([model, criterion])
 
     # dummy data, todo: learning rate auto scaling
-    train_dataset = CustomeDynamicBatchDataset(1000, (3, 224, 224), 50, batch_size, hook, trace_input)
+    train_dataset = CustomeDynamicBatchDataset(1000, (3, 224, 224), 10, batch_size, hook, trace_input)
     train_loader = DataLoader(train_dataset, batch_size=None, 
                               shuffle=False, pin_memory=True, drop_last=False, num_workers=0)
     
@@ -88,8 +92,6 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
             batch_event = EventManager.record_event(f'batch_{epoch:02d}_{i:03d}_{len(images):02d}')
             images: torch.Tensor = images.to('cuda:0', non_blocking=True)
             targets: torch.Tensor = targets.to('cuda:0', non_blocking=True)
-            # micro_batch_size = random.randint(1, batch_size)
-            # print(micro_batch_size)
             if trace_output is not None or trace_input is not None:
                 rng_cuda = torch.cuda.get_rng_state()
                 rng_cpu = torch.get_rng_state()
@@ -102,6 +104,8 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
                 with torch.cuda.amp.autocast():
                     output = model(images)
                     loss = criterion(output, targets)
+                if trace_input is not None or trace_output is not None:
+                    print(f'batch_size = {len(images)} loss = fp{loss.item()}')
                 scaler.scale(loss).backward()
                 with hook.steps_no_interrupt():
                     event = EventManager.record_event('optimizer_step')
@@ -118,8 +122,8 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
                     assert maybe_trace_item['epoch'] == epoch, f"{maybe_trace_item['epoch']} vs {epoch}, {epoch}:{i}"
                     # assert maybe_trace_item['micro_epoch'] == i, f"{maybe_trace_item['micro_epoch']} vs {i}, {epoch}:{i}"
                     assert maybe_trace_item['batch_size'] == len(images)
-                    maybe_trace_item['loss_ground_truth'] = loss.item()
-                    maybe_trace_item['correct'] = 1 if loss.item() == maybe_trace_item['loss'] else 0
+                    maybe_trace_item['loss_ground_truth'] = f'fp{loss.item()}'
+                    maybe_trace_item['correct'] = 1 if maybe_trace_item['loss_ground_truth'] == maybe_trace_item['loss'] else 0
             except (ColocateAdjustL1Exception, SwitchL1Exception, torch_col.EngineColocateAdjustL1Exception) as e:
                 if epoch == 0 and i == 0:
                     raise RuntimeError("micro batch 0 could not be interrupted.")
@@ -143,7 +147,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
                 batch_event.tag = 'finish'
                 train_dataset.next_batch()
                 if trace_output is not None:
-                    new_data = {'epoch': epoch, 'micro_epoch': i, 'batch_size': len(images), 'loss': loss.item()} 
+                    new_data = {'epoch': epoch, 'micro_epoch': i, 'batch_size': len(images), 'loss': f'fp{loss.item()}'} 
                     trace_output.append(new_data)
                 if epoch == 0 and i == 0:
                     if torch_col.use_shared_tensor():
@@ -158,10 +162,10 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
         batch_info = f'batch cnt {batch_cnt} avg {epoch_event.duration/batch_cnt:.1f}ms'
         if train_mode.is_kill_batch():
             batch_info += f' | try {tried_batch} kill {killed_batch}, {killed_time*1e3:.1f}ms finish {finished_batch}, {finished_time*1e3:.1f}ms'
-        print('[{} epoch {}] {:.3f}s | {} | batch-size {} | micro-batch-size {} | {} | thpt {:.2f} | wait_bs_valid {:.3f}s'.format(
+        print('[{} epoch {}] {:.3f}s | {} | batch-size {} | micro-batch-size {} | {} | thpt {:.2f} | wait_bs_valid {:.3f}s | loss {:.6f}'.format(
                 model.__class__.__name__, epoch, epoch_event.duration / 1e3,
                 batch_info, batch_size, train_dataset.batch_size,
-                mem_info, finished_imgs / (epoch_event.duration / 1e3), wait_bs_valid_sec), flush=True)
+                mem_info, finished_imgs / (epoch_event.duration / 1e3), wait_bs_valid_sec, loss.item()), flush=True)
     
 
     if train_mode.is_kill_batch():
