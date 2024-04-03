@@ -1,6 +1,4 @@
 #include "logging_as_glog.h"
-#include "common/tvm_allocator.h"
-#include "tvm/graph.h"
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/c_runtime_api.h>
 #include <tvm/runtime/packed_func.h>
@@ -21,6 +19,7 @@
 #include <server/config.h>
 #include <server/tvm/executor.h>
 #include <server/tvm/texture.h>
+#include <server/tvm/graph.h>
 
 #include <algorithm>
 #include <atomic>
