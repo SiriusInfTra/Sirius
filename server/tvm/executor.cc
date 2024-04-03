@@ -457,7 +457,7 @@ void Executor::LoadParams(bool pipeline, bool force) {
     auto storage_group = storage_group_[sg_id++];
     cold_cache_hit = !cold_cached_group_.empty();
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferModelColdCacheHit, cold_cache_hit);
-    
+
     for (size_t pg_id = 0; pg_id < host_param_storage_group_.size(); pg_id++) {
       auto & pg = host_param_storage_group_[pg_id];
       auto & param_group = pg.first;
@@ -485,8 +485,6 @@ void Executor::LoadParams(bool pipeline, bool force) {
           CHECK_LE(sg_id, cold_cached_group_.size());
           CHECK_EQ(sg_it->second, storage_group);
         }
-        CHECK(param_ready_event_ids_[param_ids[0]] == pg_id);
-        CUDA_CALL(cudaEventRecord(param_ready_events_[pg_id], (cudaStream_t)load_param_stream_));
         sg_off += load_nbytes;
         pg_off += load_nbytes;
         if (sg_off == storage_group->nbytes) {
@@ -495,6 +493,10 @@ void Executor::LoadParams(bool pipeline, bool force) {
           sg_off = 0;
         }
       }
+      // because we iterate param group in out loop, 
+      // we only need to record after param group transited
+      CHECK(param_ready_event_ids_[param_ids[0]] == pg_id);
+      CUDA_CALL(cudaEventRecord(param_ready_events_[pg_id], (cudaStream_t)load_param_stream_));
       if (pipeline) {
         for (auto & pid : param_ids) {
           param_ready_[pid]->store(true);
