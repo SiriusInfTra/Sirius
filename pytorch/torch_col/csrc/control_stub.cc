@@ -1,14 +1,14 @@
-#include <cstddef>
-#include <PySched.h>
-
 #include <common/log_as_glog_sta.h>
 #include <common/cuda_allocator.h>
 #include <common/mempool.h>
 
-#include "control_stub.h"
-#include "config.h"
-#include "util.h"
-#include "fake_engine.h"
+#include <torch_col/csrc/control_stub.h>
+#include <torch_col/csrc/config.h>
+#include <torch_col/csrc/util.h>
+#include <torch_col/csrc/fake_engine.h>
+
+#include <PySched.h>
+#include <cstddef>
 
 
 namespace torch_col {
