@@ -54,7 +54,7 @@ class Config {
   static size_t better_alloc_threshold;
 
   static bool group_param_load;
-  static bool group_param_dump;
+  static bool group_param_dump; // enable at the first time to get mod.group
   static bool group_param_nbytes_with_fragment;
   static size_t group_param_load_threshold;
 
