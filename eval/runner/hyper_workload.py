@@ -16,6 +16,8 @@ class InferModel:
     DenseNet161 = "densenet161"
     InceptionV3 = "inception_v3"
     DistilBertBase = "distilbert_base"
+    ViT_b_16 = "vit_b_16"
+    ViT_s_16 = "vit_s_16"
 
     model_cnt = 0
 

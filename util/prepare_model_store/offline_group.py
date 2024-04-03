@@ -5,7 +5,15 @@ from functools import total_ordering
 from typing import Optional
 import numpy as np
 
-filename = 'nbytes_146846700.txt'
+import argparse
+
+parser = argparse.ArgumentParser(description='Offline group')
+parser.add_argument('--storage-nbytes-file', type=str, help='nbytes file')
+parser.add_argument('--output', type=str, help='output file')
+args = parser.parse_args()
+
+# filename = 'nbytes_357309776.txt'
+filename = args.storage_nbytes_file
 with open(filename) as f:
     nbytes_ordered_list = np.array([np.int64(line) for line in f])
 print(f'Max tensor {np.sort(nbytes_ordered_list)[-5:] / 1024 / 1024} MB')
@@ -106,3 +114,12 @@ for i, solution in enumerate(sorted(final_solutions)):
     print(f'{i + 1}\t{solution}')
     if i + 1 >= 10:
         break
+
+if args.output is not None:
+    assert len(final_solutions) > 0
+    solution = sorted(final_solutions)[0]
+    with open(args.output, 'w') as f:
+        for i in range(len(solution.partitions_before)):
+            print(solution.partitions_before[i], file=f, 
+                  end='\n' if i+1 != len(solution.partitions_before) else '')
+    print(f'Output to {args.output}')

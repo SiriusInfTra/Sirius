@@ -4,7 +4,7 @@ import numpy as np
 from tvm.contrib import graph_executor
 import time
 
-model_name = "resnet152-b1"
+model_name = "vit_s_16-b1"
 
 input_data = np.fromfile('client/data/resnet/input-0.bin', dtype=np.float32)
 input_data = input_data.reshape(1, 3, 224, 224)
@@ -22,3 +22,9 @@ output = module.get_output(0).numpy()
 output = output.reshape(-1)
 
 print(output[:10])
+
+for i in range(10):
+    t0 = time.time()
+    module.run()
+    t1 = time.time()
+    print(t1 - t0)
