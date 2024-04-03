@@ -33,29 +33,19 @@ void TagIntermMemory(PyObject* py_tensor) {
   // tensor.unsafeGetTensorImpl()->set_storage_keep_dtype(zero_storage);
   // tensor.unsafeGetTensorImpl().
   CUDAColAllocator::Get()->TagIntermMemory(tensor);
-
-  // auto col_tensor = GetColTensorImpl(tensor);
-  // DLOG(INFO) << "[TORCH_COL STA] " << "tas as saved tensor " << col_tensor->Handle() << " " << col_tensor->CTensor().MData()->addr;
-  // colserve::sta::TensorPool::Get()->AddTrainIntermediateTensor(col_tensor->Handle());
 }
 
 void ReleaseIntermMemory() {
-  // colserve::sta::TensorPool::Get()->ReleaseTrainIntermediateTensorMemory();
   CUDAColAllocator::Get()->ReleaseIntermMemory();
 }
 
 void UntagIntermMemory() {
-    CUDAColAllocator::Get()->UntagIntermMemory();
-  // colserve::sta::TensorPool::Get()->ClearTrainIntermediateTensor();
+  CUDAColAllocator::Get()->UntagIntermMemory();
 }
 
 void RearrangeMemory() {
-  // colserve::sta::TensorPool::Get()->RearrangeTrainMemory();
+  LOG(FATAL) << "RearrangeMemory is deprecated currently";
 }
-
-
-
-
 
 void TorchColSavedVariableHooks::call_pack_hook(const at::Tensor& tensor) {
   CUDAColAllocator::Get()->TagIntermMemory(tensor);
@@ -71,9 +61,6 @@ void TorchColSavedVariableHooks::call_pack_hook(const at::Tensor& tensor) {
     // END_HANDLE_TH_ERRORS_PYBIND
   }
 }
-
-
-
 
 at::Tensor TorchColSavedVariableHooks::call_unpack_hook() {
   if (static_cast<ctrl::CtrlEvent>(GetColocateStub().Cmd()) == ctrl::CtrlEvent::kColocateAdjustL1) {
