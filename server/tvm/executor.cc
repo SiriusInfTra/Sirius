@@ -60,7 +60,7 @@ std::string GetModelNameWithoutDuplicatedId(const std::string &model_name) {
 }
 
 Executor::Executor(TVMGraph &factory, size_t worker_id, const std::vector<DLDevice> &devs)
-    : tvm_graph_(factory), infer_model_worker_id_(worker_id), devices_(devs), initialized_(false) {
+    : tvm_graph_(factory), infer_model_worker_id_(worker_id), devices_(devs), initialized_(false), cold_cached_nbytes_(0) {
   using namespace ::tvm::runtime;
   auto t0 = std::chrono::steady_clock::now();
   SetupStorage(false);
@@ -172,6 +172,9 @@ void Executor::DeInit(const std::vector<size_t> &keep_cold_cached_group_id) {
     CHECK(cold_cached_group_.emplace(std::make_pair(k, storage_group_.at(k))).second == true);
     cold_cached_nbytes += storage_group_.at(k)->nbytes;
   }
+
+  auto model_name_without_dup_id = GetModelNameWithoutDuplicatedId(tvm_graph_.model_name_);
+  LOG(INFO) << "[Executor] " << model_name_without_dup_id << " deinit, cold_cached_nbytes = " << sta::ByteDisplay(cold_cached_nbytes) << ".";
   cold_cached_nbytes_.store(cold_cached_nbytes, std::memory_order_relaxed);
   if (!Config::colocate_config.skip_malloc) {
     ResetStorage();
@@ -979,5 +982,11 @@ void Executor::AllocStorageMaybeAdjust() {
   // Controller::Get()->ExitInferChangeMemory(tvm_graph_.model_rank_);
 }
 
+size_t Executor::GetMissingStorageSizeAlign() const {
+  CHECK_GE(GetStorageSizeAlign(),
+           cold_cached_nbytes_.load(std::memory_order_relaxed));
+  return GetStorageSizeAlign() -
+         cold_cached_nbytes_.load(std::memory_order_relaxed);
+}
 }  // namespace tvm
 }

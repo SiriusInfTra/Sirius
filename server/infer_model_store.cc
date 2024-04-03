@@ -154,7 +154,7 @@ void InferModelCache::ReserveCacheInternal(
     size_t reclaim_nbytes = 0;
     ss << " | evict";
     for (auto cm : coldest_model) {
-      if (nbytes - reclaim_nbytes > Config::max_warm_cache_nbytes) {
+      if (nbytes > Config::max_warm_cache_nbytes + reclaim_nbytes) {
         auto &cm_name = cm->GetName();
         std::unique_lock item_lock{infer_model_cache_->warm_cache_[cm_name]->mut};
         bool res = cm->ReclaimMemory(rank);
@@ -429,6 +429,7 @@ void InferModelStore::ClearColdCache() {
 }
 
 void InferModelStore::ColocateMonitor() {
+  LOG(INFO) << "Start ColocateMonitor";
   using namespace std::chrono_literals;
   while (true) {
     int num_exit = 0;

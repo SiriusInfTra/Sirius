@@ -1,3 +1,5 @@
+from typing import Optional
+import pandas as pd
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -6,7 +8,9 @@ from torchvision import models
 from torch.utils.data import DataLoader
 import argparse
 
+import os
 import torch_col
+import numpy as np
 from torch_col import MemoryPool, EventManager, TrainMode, HookMode
 from torch_col import ColocateAdjustL1Exception, SwitchL1Exception
 from torch_col import CustomeDynamicBatchDataset
@@ -14,6 +18,7 @@ import math
 
 import random
 random.seed(42)
+
 
 # torch_col.disable_release_saved_tensor()
 class SimpleConvNet(nn.Module):
@@ -36,10 +41,9 @@ class SimpleConvNet(nn.Module):
         x = self.fc1(x)
         return x
 
-def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size: int):
+def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size: int, trace_output: Optional[list], trace_input: Optional[list]):
     if torch_col.use_shared_tensor():
         torch_col.tag_model_start()
-    
     torch_col.train_model = model = models.resnet152().cuda()
     # torch_col.train_model = model = SimpleConvNet().cuda()
     print(f"Train params memory usage: {torch_col.MemoryPool.get_memory_usage() * 1024:.2f}M")
@@ -55,7 +59,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
     hook.register_pytorch_hook([model, criterion])
 
     # dummy data, todo: learning rate auto scaling
-    train_dataset = CustomeDynamicBatchDataset(1000, (3, 224, 224), 50, batch_size, hook)
+    train_dataset = CustomeDynamicBatchDataset(1000, (3, 224, 224), 50, batch_size, hook, trace_input)
     train_loader = DataLoader(train_dataset, batch_size=None, 
                               shuffle=False, pin_memory=True, drop_last=False, num_workers=0)
     
@@ -86,6 +90,11 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
             targets: torch.Tensor = targets.to('cuda:0', non_blocking=True)
             # micro_batch_size = random.randint(1, batch_size)
             # print(micro_batch_size)
+            if trace_output is not None or trace_input is not None:
+                rng_cuda = torch.cuda.get_rng_state()
+                rng_cpu = torch.get_rng_state()
+                rng_py = random.getstate()
+                rng_np = np.random.get_state()
             try:
                 tried_batch += 1
                 total_tried_batch += 1
@@ -93,7 +102,6 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
                 with torch.cuda.amp.autocast():
                     output = model(images)
                     loss = criterion(output, targets)
-                print(loss)
                 scaler.scale(loss).backward()
                 with hook.steps_no_interrupt():
                     event = EventManager.record_event('optimizer_step')
@@ -105,6 +113,13 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
                 total_finished_batch += 1
                 batch_cnt += 1
                 finished_imgs += len(images)
+                if trace_input is not None:
+                    maybe_trace_item = trace_input[train_dataset.trace_idx]
+                    assert maybe_trace_item['epoch'] == epoch, f"{maybe_trace_item['epoch']} vs {epoch}, {epoch}:{i}"
+                    # assert maybe_trace_item['micro_epoch'] == i, f"{maybe_trace_item['micro_epoch']} vs {i}, {epoch}:{i}"
+                    assert maybe_trace_item['batch_size'] == len(images)
+                    maybe_trace_item['loss_ground_truth'] = loss.item()
+                    maybe_trace_item['correct'] = 1 if loss.item() == maybe_trace_item['loss'] else 0
             except (ColocateAdjustL1Exception, SwitchL1Exception, torch_col.EngineColocateAdjustL1Exception) as e:
                 if epoch == 0 and i == 0:
                     raise RuntimeError("micro batch 0 could not be interrupted.")
@@ -118,10 +133,18 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
                     # cuda has alreadly synced
                     hook.release_and_reply()
                     print(f'[{e}] batch_size: {len(images)} -> {train_dataset.batch_size}.')
+                if trace_output is not None or trace_input is not None:
+                    torch.cuda.set_rng_state(rng_cuda)
+                    torch.set_rng_state(rng_cpu)
+                    random.setstate(rng_py)
+                    np.random.set_state(rng_np)
             else:
                 # torch.cuda.current_stream().synchronize()
                 batch_event.tag = 'finish'
                 train_dataset.next_batch()
+                if trace_output is not None:
+                    new_data = {'epoch': epoch, 'micro_epoch': i, 'batch_size': len(images), 'loss': loss.item()} 
+                    trace_output.append(new_data)
                 if epoch == 0 and i == 0:
                     if torch_col.use_shared_tensor():
                         torch_col.tag_model_end()
@@ -165,7 +188,19 @@ def main():
     train_mode = [train_mode for train_mode in TrainMode if train_mode.value == args.train_mode][0]
     hook_mode = [hook_mode for hook_mode in HookMode if hook_mode.value == args.hook_mode][0]
     
+    trace_output = [] if 'COL_TRACE_OUTPUT' in os.environ else None
+    trace_input = pd.read_csv(os.environ['COL_TRACE_INPUT']).to_dict(orient='records') if 'COL_TRACE_INPUT' in os.environ else None
     print(f"ResNet152 training, batch-size={batch_size}, num-epoch={num_epoch}, train-mode={train_mode}, hook-mode={hook_mode}.")
+    
+    if trace_output is not None or trace_input is not None:  
+        torch.backends.cudnn.benchmark = False   
+        torch.use_deterministic_algorithms(True)
+        torch.manual_seed(42)
+        torch.cuda.manual_seed(42)
+        random.seed(42)
+        np.random.seed(42)
+        print('Enable deterministic validation.')
+
     stream = torch.cuda.Stream()
     if hook_mode.use_xsched():
         from torch_col import xsched
@@ -174,9 +209,11 @@ def main():
     else:
         print("CUDA Stream create without xsched.")
     with torch.cuda.stream(stream):
-        train(train_mode, hook_mode, num_epoch, batch_size)
+        train(train_mode, hook_mode, num_epoch, batch_size, trace_output, trace_input)
     EventManager.dump(args.train_profile, train_mode)
-
-
+    if trace_output is not None:
+        pd.DataFrame(trace_output).to_csv(os.environ['COL_TRACE_OUTPUT'], index=None)
+    if trace_input is not None:
+        pd.DataFrame(trace_input).to_csv(os.environ['COL_TRACE_INPUT'], index=None)
 if __name__ == '__main__':
     main()

@@ -100,9 +100,7 @@ class Executor {
     }
   }
 
-  size_t GetMissingStorageSizeAlign() const {
-    return GetStorageSizeAlign() - cold_cached_nbytes_.load(std::memory_order_relaxed);
-  }
+  size_t GetMissingStorageSizeAlign() const;
 
   std::vector<size_t> GetGroupsNbytes() const {
     return storage_group_nbytes_;

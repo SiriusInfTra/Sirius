@@ -2,6 +2,7 @@
 #include <server/infer_model.h>
 #include <server/controller.h>
 #include <server/config.h>
+#include <chrono>
 #include <mutex>
 #include <vector>
 
@@ -199,10 +200,11 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
   LOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") start inference";
-
   {
     auto reserved_lock = InferModelCache::ReserveCache(name_, rank);
+    CHECK(status_[rank] == Status::kWithoutMemory);
     executors_[rank]->Init(true);
+    ChangeStatus(rank, Status::kReady);
   }
 
   // bool first_exec = true;
@@ -210,30 +212,6 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
   // auto last_get_batch_time = std::chrono::steady_clock::now();
   auto last_infer_time = Profiler::Now();
   while (true) {{                  
-    // if (Config::IsColocateMode() && Profiler::MilliFrom(last_get_batch_time) >= GetMaxIdleMill()) {
-    //   uint32_t num_worker = num_worker_;
-    //   if (num_worker - 0 > 0) { /* check if num_worker reduce */
-    //     // LOG(INFO) << "num_worker " << num_worker;
-    //     auto ok = num_worker_.compare_exchange_strong(num_worker, num_worker - 1,
-    //         std::memory_order_relaxed);
-    //     if (ok) break;
-    //   }
-    // } else if (Config::IsSwitchMode() && InferModelStore::Get()->TaskSwitchControlCnter() == 
-    //     static_cast<int>(InferModelStore::TaskSwitchStatus::kPrepareExit)) {
-    //   // wait all infer enter task switch prepare exit stage
-    //   pthread_barrier_wait(&InferModelStore::Get()->task_switch_barrier);
-    //   // wait task switch result
-    //   pthread_barrier_wait(&InferModelStore::Get()->task_switch_barrier);
-    //   if (InferModelStore::Get()->TaskSwitchControlCnter() == 
-    //       static_cast<int>(InferModelStore::TaskSwitchStatus::kCancelExit)) { // not exit
-    //     // do cancel exit        
-    //     pthread_barrier_wait(&InferModelStore::Get()->task_switch_barrier);
-    //   } else { // exit
-    //     num_worker_.fetch_sub(1, std::memory_order_relaxed);
-    //     break;
-    //   }
-    // }
-
     auto jobs = job_queue_.GetBatch(batch_size_, 10, 10);
     if (jobs.empty()) {
       auto idle_mill = Profiler::MilliFrom(last_infer_time);

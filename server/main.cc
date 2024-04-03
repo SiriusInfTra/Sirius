@@ -152,6 +152,7 @@ void init_config() {
   STREAM_OUTPUT(serve_mode);
   STREAM_OUTPUT(use_shared_tensor);
   STREAM_OUTPUT(use_shared_tensor_infer);
+  STREAM_OUTPUT(use_shared_tensor_train);
   STREAM_OUTPUT(cuda_memory_pool_gb);
   STREAM_OUTPUT(ondemand_adjust);
   STREAM_OUTPUT(better_alloc);
