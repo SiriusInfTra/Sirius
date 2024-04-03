@@ -39,13 +39,13 @@ std::vector<std::string> ParseModelName(const std::string &model) {
 }
 }
 
-std::unique_ptr<InferModelCache> InferModelCache::infer_model_cache_ = nullptr;
+std::unique_ptr<WarmModelCache> WarmModelCache::infer_model_cache_ = nullptr;
 std::unique_ptr<ColdModelCache> ColdModelCache::cold_model_cache_ = nullptr;
 std::unique_ptr<InferModelStore> InferModelStore::infer_model_store_ = nullptr;
 
-std::unique_lock<std::mutex> InferModelCache::ReserveCache(
+std::unique_lock<std::mutex> WarmModelCache::ReserveCache(
     const std::string &model_name, size_t rank) {
-  if (!InferModelCache::Enable()) {
+  if (!WarmModelCache::Enable()) {
     return std::unique_lock<std::mutex>{};
   }
 
@@ -62,10 +62,10 @@ std::unique_lock<std::mutex> InferModelCache::ReserveCache(
   return reserved_lock;
 }
 
-std::unique_lock<std::mutex> InferModelCache::OrderedReserveCache(
+std::unique_lock<std::mutex> WarmModelCache::OrderedReserveCache(
     const std::string &model_name, size_t rank,
     const std::vector<std::shared_ptr<Job>> &jobs) {
-  if (!InferModelCache::Enable()) {
+  if (!WarmModelCache::Enable()) {
     return std::unique_lock<std::mutex>{};
   }
   CHECK(!jobs.empty());
@@ -112,7 +112,7 @@ std::unique_lock<std::mutex> InferModelCache::OrderedReserveCache(
   return reserved_lock;
 }
 
-void InferModelCache::MaybeAddCacheItem(const std::string &model_name, 
+void WarmModelCache::MaybeAddCacheItem(const std::string &model_name, 
                                         Model *model) {
   if (warm_cache_.count(model_name) == 0) {
     warm_cache_[model_name] = std::make_unique<CacheItem>();
@@ -121,7 +121,7 @@ void InferModelCache::MaybeAddCacheItem(const std::string &model_name,
   }
 }
 
-void InferModelCache::ReserveCacheInternal(
+void WarmModelCache::ReserveCacheInternal(
     const std::string &model_name, size_t rank,
     std::unique_lock<std::mutex> &reserved_lock) {
   auto model = InferModelStore::Get()->GetModel(model_name);
@@ -185,7 +185,7 @@ InferModelStore* InferModelStore::Get() {
 void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
   LOG(INFO) << "InferModelStore start initializing";
 
-  InferModelCache::Init();
+  WarmModelCache::Init();
   ColdModelCache::Init();
   infer_model_store_ = std::make_unique<InferModelStore>();
 
@@ -510,7 +510,7 @@ ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<
   for (size_t k = 0; k < groups_nbytes.size(); ++k) {
     DLOG(INFO) << "k = " << k << ".";
     if ((k == 0 || cache_item->cached_group_nbytes + groups_nbytes[k] / 2 <= model_max_cached_nbytes) 
-      && (cache_item->cached_group_nbytes + groups_nbytes[k] < Config::max_cold_cache_nbytes)) {
+      && (cache_item->cached_group_nbytes + groups_nbytes[k] < Config::cold_cache_min_capability_nbytes)) {
       cache_item->cached_groups_id.push_back(k);
       cache_item->cached_group_nbytes += groups_nbytes[k];
     } else {
@@ -528,7 +528,7 @@ ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<
   // TODO: make snapshot
   std::sort(coldest_model.begin(), coldest_model.end(), 
       [](Model *a, Model *b) { return a->GetHotness() > b->GetHotness(); /* descending */ });
-  while (cold_cached_nbytes_ + cache_item->cached_group_nbytes > Config::max_cold_cache_nbytes) {
+  while (current_cached_nbytes_ + cache_item->cached_group_nbytes > Config::cold_cache_min_capability_nbytes) {
     DLOG(INFO) << "should evict models.";
     auto &model_id = coldest_model.back()->GetName();
     auto &&[cached_groups_id, succ] = PopCacheItem(model_id, rank, lock);
@@ -536,7 +536,7 @@ ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<
     evict_models.emplace_back(model_id, std::move(cached_groups_id));
     coldest_model.pop_back();
   }
-  cold_cached_nbytes_.fetch_add(cache_item->cached_group_nbytes, std::memory_order_relaxed);
+  current_cached_nbytes_.fetch_add(cache_item->cached_group_nbytes, std::memory_order_relaxed);
   DLOG(INFO) << "put to cold_cache_.";
   CHECK(cold_cache_.emplace(std::make_pair(name, cache_item)).second == true);
   DLOG(INFO) << "cached_groups_id = " << cache_item->cached_groups_id;
@@ -549,7 +549,7 @@ std::pair<std::vector<size_t>, bool> ColdModelCache::PopCacheItem(const std::str
   if (iter == cold_cache_.cend()) { return {{}, false}; }
   CHECK(iter != cold_cache_.cend());
   auto cached_groups_id = iter->second->cached_groups_id;
-  cold_cached_nbytes_.fetch_sub(iter->second->cached_group_nbytes, std::memory_order_relaxed);
+  current_cached_nbytes_.fetch_sub(iter->second->cached_group_nbytes, std::memory_order_relaxed);
   cold_cache_.erase(iter);
   return {cached_groups_id, true};
 }

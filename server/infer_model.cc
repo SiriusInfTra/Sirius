@@ -201,7 +201,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
   }
   LOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") start inference";
   {
-    auto reserved_lock = InferModelCache::ReserveCache(name_, rank);
+    auto reserved_lock = WarmModelCache::ReserveCache(name_, rank);
     CHECK(status_[rank] == Status::kWithoutMemory);
     executors_[rank]->Init(true);
     ChangeStatus(rank, Status::kReady);
@@ -222,7 +222,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
 
     // let cache serve models in a fifo manner
     auto reserve_cache_begin = Profiler::Now();
-    auto reserved_lock = InferModelCache::OrderedReserveCache(name_, rank, jobs);
+    auto reserved_lock = WarmModelCache::OrderedReserveCache(name_, rank, jobs);
     auto reserve_cache_ms = Profiler::MilliFrom(reserve_cache_begin);
 
     // [switch mode] before infering, first claim infering execution
@@ -324,7 +324,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     if (load_param) { ss << " loading_ms=" << loading_ms; }
 
     ss << " total_infer_ms=" << std::chrono::duration<double, std::milli>(infer_end - infer_begin).count();
-    if (InferModelCache::Enable()) { ss << " | reserve_cache_ms=" << reserve_cache_ms; }
+    if (WarmModelCache::Enable()) { ss << " | reserve_cache_ms=" << reserve_cache_ms; }
     LOG(INFO) << ss.str();
 
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferRealBatchSize, jobs.size());

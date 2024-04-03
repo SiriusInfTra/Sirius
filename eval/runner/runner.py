@@ -203,7 +203,7 @@ class System:
         cmd += ['--train-profile', str(train_profile)]
         
         cmd += ['--max-warm-cache-nbytes', str(self.max_warm_cache_nbytes)]
-        cmd += ['--max-cold-cache-nbytes', str(self.max_cold_cache_nbytes)]
+        cmd += ['--cold-cache-min-capability-nbytes', str(self.max_cold_cache_nbytes)]
         cmd += ['--cold-cache-ratio', str(self.cold_cache_ratio)]
 
         if self.memory_pressure_mb:

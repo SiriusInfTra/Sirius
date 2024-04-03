@@ -83,8 +83,8 @@ void init_cli_options() {
     "train timeline path, default is train-timeline");
   app.add_option("--max-warm-cache-nbytes", colserve::Config::max_warm_cache_nbytes, 
     "max warm cache nbytes, default is 0*1024*1024*1024(0G).");
-  app.add_option("--max-cold-cache-nbytes", colserve::Config::max_cold_cache_nbytes, 
-    "max cold cache nbytes, default is 0*1024*1024*1024(0G).");
+  app.add_option("--cold-cache-min-capability-nbytes", colserve::Config::cold_cache_min_capability_nbytes, 
+    "min cold cache capability nbytes, default is 0*1024*1024*1024(0G).");
   app.add_option("--cold-cache-ratio", colserve::Config::cold_cache_ratio, 
     "cold cache ratio, default is 0.3(30%).");
   app.add_option("--memory-pressure-mb", colserve::Config::memory_pressure_mb,
@@ -160,7 +160,9 @@ void init_config() {
   STREAM_OUTPUT(pipeline_load);
   STREAM_OUTPUT(has_warmup);
   STREAM_OUTPUT(max_warm_cache_nbytes);
-  STREAM_OUTPUT(max_cold_cache_nbytes);
+  STREAM_OUTPUT(cold_cache_max_capability_nbytes);
+  STREAM_OUTPUT(cold_cache_min_capability_nbytes);
+  STREAM_OUTPUT(train_over_adjust_nbytes);
   STREAM_OUTPUT(cold_cache_ratio);
   STREAM_OUTPUT(colocate_config.skip_malloc);
   STREAM_OUTPUT(colocate_config.skip_loading);

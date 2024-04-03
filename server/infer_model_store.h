@@ -34,9 +34,9 @@ class InferModelStore;
  *   2. cold cache: cache idle model in gpu to avoid some
  *      cold start
  */
-class InferModelCache {
+class WarmModelCache {
  public:
-  InferModelCache() : cached_nbytes_(0) {};
+  WarmModelCache() : cached_nbytes_(0) {};
   static std::unique_lock<std::mutex> ReserveCache(const std::string &name, size_t rank);
   static std::unique_lock<std::mutex> OrderedReserveCache(
       const std::string &name, size_t rank,
@@ -54,13 +54,13 @@ class InferModelCache {
   };
 
   static void Init() {
-    infer_model_cache_ = std::make_unique<InferModelCache>();
+    infer_model_cache_ = std::make_unique<WarmModelCache>();
   }
   void MaybeAddCacheItem(const std::string &name, Model *model);
   void ReserveCacheInternal(const std::string &name, size_t rank,
                             std::unique_lock<std::mutex> &reserved_lock);
 
-  static std::unique_ptr<InferModelCache> infer_model_cache_;
+  static std::unique_ptr<WarmModelCache> infer_model_cache_;
 
   std::mutex mut_;
   std::condition_variable fifo_cv_;
@@ -71,7 +71,7 @@ class InferModelCache {
 
 class ColdModelCache {
  public:
-  ColdModelCache(): cold_cached_nbytes_(0) {}
+  ColdModelCache(): current_cached_nbytes_(0) {}
 
   friend class InferModelStore;
 
@@ -85,7 +85,7 @@ class ColdModelCache {
   }
 
   inline size_t GetCachedNbytes() {
-    return cold_cached_nbytes_.load(std::memory_order_relaxed);
+    return current_cached_nbytes_.load(std::memory_order_relaxed);
   }
 
   static void Init() {
@@ -98,7 +98,7 @@ class ColdModelCache {
   }
 
  private:
-  std::atomic<size_t> cold_cached_nbytes_;
+  std::atomic<size_t> current_cached_nbytes_;
   std::mutex mut_;
   struct CacheItem {
     Model *model;
@@ -166,7 +166,7 @@ class InferModelStore {
     kReclaimInfer = 2, 
   };
 
-  friend class InferModelCache;
+  friend class WarmModelCache;
 
  private:
   void ColocateMonitor();
