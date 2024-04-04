@@ -23,13 +23,25 @@ target_include_directories(new_torch_col PRIVATE ${CMAKE_SOURCE_DIR}/pytorch)
 target_include_directories(new_torch_col PRIVATE ${CMAKE_BINARY_DIR}/xsched/include)
 target_link_directories(new_torch_col PRIVATE ${CMAKE_BINARY_DIR}/xsched/lib)
 
-message("torch lib: ${TORCH_LIBRARIES}")
+set(torch_python_lib)
+foreach(torch_lib IN ITEMS ${TORCH_LIBRARIES})
+  if(torch_lib MATCHES ".*torch/lib/libc10.so")
+    string(REPLACE "torch/lib/libc10.so" "torch/lib/libtorch_python.so" torch_python_lib ${torch_lib})
+  endif()
+endforeach()
+
+if (NOT torch_python_lib)
+  message(FATAL_ERROR "torch_python_lib not found")
+endif()
+
+message("torch lib: ${TORCH_LIBRARIES}, torch_python_lib: ${torch_python_lib}")
+
 target_link_libraries(new_torch_col PRIVATE 
   sta
   ${TORCH_LIBRARIES}
+  ${torch_python_lib}
   Python::Python
   PySched
-  /home/wyk/miniforge3/envs/dev2/lib/python3.10/site-packages/torch/lib/libtorch_python.so
 )
 
 set_target_properties(new_torch_col PROPERTIES BUILD_RPATH $ORIGIN)

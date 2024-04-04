@@ -1,15 +1,17 @@
-#include "fake_engine.h" 
 #include <torch/csrc/autograd/python_engine.h>
-#include "torch_col/csrc/control_stub.h"
+
+#include <torch_col/csrc/fake_engine.h>
+#include <torch_col/csrc/control_stub.h>
+
 
 namespace torch_col {
+
+static ColocateStub* colocate_stub_ = nullptr;
+
 Engine& GetTorchColEngine() {
   static FakeEngine *engine = new FakeEngine(python::PythonEngine::get_python_engine());
   return *engine;
 }
-
-
-static ColocateStub* colocate_stub_ = nullptr;
 
 void SetUpTorchColEngine(ColocateStub *colocate_stub) {
   LOG(INFO) << "Register TorchCol Engine!";
@@ -17,7 +19,6 @@ void SetUpTorchColEngine(ColocateStub *colocate_stub) {
   CHECK(colocate_stub_ == nullptr);
   colocate_stub_ = colocate_stub;
 }
-
 
 ColocateStub& GetColocateStub() {
   CHECK(colocate_stub_ != nullptr);

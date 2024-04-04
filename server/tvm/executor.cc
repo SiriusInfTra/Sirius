@@ -452,14 +452,12 @@ void Executor::LoadParams(bool pipeline, bool force) {
       }
     }
   } else {
-    // double api_1_ms = 0;
-    // double api_2_ms = 0;
-
     size_t sg_id = 0; /*  next storage group index */
     size_t sg_off = 0;
     auto storage_group = storage_group_[sg_id++];
     cold_cache_hit = !cold_cached_group_.empty();
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferModelColdCacheHit, cold_cache_hit);
+
     for (size_t pg_id = 0; pg_id < host_param_storage_group_.size(); pg_id++) {
       auto & pg = host_param_storage_group_[pg_id];
       auto & param_group = pg.first;
@@ -467,7 +465,6 @@ void Executor::LoadParams(bool pipeline, bool force) {
       auto & param_ids = pg.second;
       for (size_t pg_off = 0; pg_off < param_group_nbytes; ) {
         auto load_nbytes = std::min(param_group_nbytes - pg_off, storage_group->nbytes - sg_off);
-        // auto t0 = Profiler::Now();
         CUDA_CALL(cudaSetDevice(devices_[0].device_id));
         if (auto sg_it = cold_cached_group_.find(sg_id - 1); sg_it == cold_cached_group_.cend()) {
           CUDA_CALL(cudaMemcpyAsync(
@@ -488,11 +485,6 @@ void Executor::LoadParams(bool pipeline, bool force) {
           CHECK_LE(sg_id, cold_cached_group_.size());
           CHECK_EQ(sg_it->second, storage_group);
         }
-        // api_1_ms += Profiler::MilliFrom(t0);
-        CHECK(param_ready_event_ids_[param_ids[0]] == pg_id);
-        // auto t1 = Profiler::Now();
-        CUDA_CALL(cudaEventRecord(param_ready_events_[pg_id], (cudaStream_t)load_param_stream_));
-        // api_2_ms += Profiler::MilliFrom(t1);
         sg_off += load_nbytes;
         pg_off += load_nbytes;
         if (sg_off == storage_group->nbytes) {
@@ -501,6 +493,10 @@ void Executor::LoadParams(bool pipeline, bool force) {
           sg_off = 0;
         }
       }
+      // because we iterate param group in out loop, 
+      // we only need to record after param group transited
+      CHECK(param_ready_event_ids_[param_ids[0]] == pg_id);
+      CUDA_CALL(cudaEventRecord(param_ready_events_[pg_id], (cudaStream_t)load_param_stream_));
       if (pipeline) {
         for (auto & pid : param_ids) {
           param_ready_[pid]->store(true);
