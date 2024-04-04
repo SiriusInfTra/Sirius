@@ -45,7 +45,7 @@ def __setup_torch_col():
     if os.environ.get('USE_SHARED_TENSOR', '0') == '1':
         global __use_shared_tensor
         __use_shared_tensor = 1
-    ConfigTorchCol()
+    ConfigTorchCol(use_shared_tensor())
     init_col_allocator(use_shared_tensor())
 
 
