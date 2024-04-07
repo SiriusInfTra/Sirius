@@ -294,6 +294,11 @@ class System:
         print(f'execute {cmd}')
         os.system(cmd)
 
+    def calcuate_train_thpt(self):
+        cmd = f'python util/profile/throughput.py --log-dir {self.exit_log_dir} > {self.exit_log_dir}/train_thpt 2>&1'
+        print(f'execute {cmd}')
+        os.system(cmd)
+
     def quit_mps(self):
         quit_mps = subprocess.run([
             'sudo', '/opt/mps-control/quit-mps-daemon-private.sh', 
@@ -320,6 +325,8 @@ class HyperWorkload:
             - concurrency: 
                 busy loop -> max number of outgoing requests
                 workload  -> initial number of outgoing requests
+            - duration: workload duration
+                for trace workload, duration will be according to the trace
         """
         self.enable_infer = True
         self.enable_train = True

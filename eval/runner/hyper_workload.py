@@ -384,17 +384,34 @@ class DynamicPoissonInferWorkload(RandomInferWorkload):
 class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
     def __init__(self, 
                  model_list: List[InferModel],
-                 max_request_sec: float | int,
                  interval_sec: float | int,
+                 max_request_sec: Optional[float | int] = None,
+                 fix_request_sec: Optional[float | int] = None,
                  duration: Optional[float | int] = None,
                  period_num: Optional[int] = None,
-                 rps_fn = None, # post process rps, Fn(i, rps) -> rps
+                 rps_fn = None, # post process rps, Fn(i, rps) -> rps,
                  seed: Optional[int] = None) -> None:
         super().__init__(None, None, seed)
         if duration is None and period_num is None:
             raise Exception("duration, period_num and interval_sec cannot be all None")
         if duration is not None and period_num is not None:
             raise Exception("duration and period_num cannot be both specified")
+        if max_request_sec is None and fix_request_sec is None:
+            raise Exception("max_request_sec and fix_request_sec cannot be both None")
+        if max_request_sec is not None and fix_request_sec is not None:
+            raise Exception("max_request_sec and fix_request_sec cannot be both specified")
+        
+        def get_num_request(i):
+            if max_request_sec is not None:
+                num_request = self.rs.uniform(0, max_request_sec)
+            elif fix_request_sec is not None:
+                num_request = fix_request_sec
+            else:
+                raise Exception("max_request_sec and fix_request_sec are None")
+            if rps_fn is not None:
+                num_request = rps_fn(i, num_request)
+            return num_request
+
         if period_num is None:
             period_num = int(duration / interval_sec + 0.5)
             self.duration = duration
@@ -406,9 +423,10 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
         for i in range(period_num):
             # first select a few models to send requests
             num_model = self.rs.randint(1, len(model_list) + 1)
-            num_request = self.rs.uniform(0, max_request_sec)
-            if rps_fn is not None:
-                num_request = rps_fn(i, num_request)
+            # num_request = self.rs.uniform(0, max_request_sec)
+            # if rps_fn is not None:
+            #     num_request = rps_fn(i, num_request)
+            num_request = get_num_request(i)
             num_model_to_requests.append(num_model)
             model_req_list = self.rs.choice(np.arange(len(model_list)), num_model, replace=False)
             model_num_req = self._split_request(num_request, num_model)

@@ -55,6 +55,7 @@ int main(int argc, char** argv) {
   if (app.enable_infer && !app.infer_models.empty()) {
     if (app.warmup > 0) {
       std::vector<std::future<void>> warm_up_futures;
+      warm_up_futures.reserve(app.infer_models.size());
       for (auto &model : app.infer_models) {
         warm_up_futures.push_back(std::async(std::launch::async, 
             [&workload, &model, &app](){
