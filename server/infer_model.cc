@@ -1,3 +1,4 @@
+#include <pthread.h>
 #include <server/infer_model_store.h>
 #include <server/infer_model.h>
 #include <server/controller.h>
@@ -101,7 +102,9 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
     infer_workers_[i].reset(new std::thread{&Model::Inference, this, i, &barrier});
     // if (Config::IsSwitchMode()) pthread_barrier_wait(&barrier);
     pthread_barrier_wait(&barrier);
+    pthread_barrier_destroy(&barrier);
   }
+
 
   // if (Config::IsColocateMode() || Config::IsSwitchMode()) {
   //   job_monitor_.reset(new std::thread{&Model::MonitorJob, this});
@@ -160,7 +163,6 @@ bool Model::ReclaimMemory(size_t rank, std::unique_lock<std::mutex> &cold_cache_
   for (auto &&[name, evict_groups_id] : evict_group_list) {
     InferModelStore::Get()->GetModel(name)->ClearColdCache(evict_groups_id, rank, cold_cache_lock);
   }
-  cold_cache_lock.unlock();
   executor->DeInit(cached_groups_id);
   ChangeStatus(rank, Status::kWithoutMemory);
   return true;
@@ -245,6 +247,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     executors_[rank]->Init(true);
     ChangeStatus(rank, Status::kReady);
   }
+  LOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") Init Success";
 
   // bool first_exec = true;
   
