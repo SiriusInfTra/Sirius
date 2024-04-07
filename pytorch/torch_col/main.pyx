@@ -4,4 +4,4 @@ include "./memory.pxi"
 include "./ctrl_stub.pxi"
 
 cdef extern from "<csrc/config.h>" namespace "torch_col":
-    cpdef void ConfigTorchCol()
+    cpdef void ConfigTorchCol(bint)

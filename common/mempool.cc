@@ -246,7 +246,7 @@ MemPool::MemPool(size_t nbytes, bool cleanup): mempool_nbytes(nbytes) {
   CHECK_EQ(nbytes % MEM_BLOCK_NBYTES, 0);
   size_t mem_block_num = nbytes / MEM_BLOCK_NBYTES;
   auto *gpu_id = std::getenv("CUDA_VISIBLE_DEVICES");
-  CHECK(gpu_id != nullptr);
+  CHECK(gpu_id != nullptr) << "env CUDA_VISIBLE_DEVICES is nullptr";
   auto *username = std::getenv("USER");
   CHECK(username != nullptr);
   shared_memory_name_ = "gpu-colocate-shared-memory-" + std::string(username) +

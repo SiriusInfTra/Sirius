@@ -366,8 +366,8 @@ void Executor::AllocStorage() {
         s.AllocForNull(sta::MemType::kInfer);
       }
     } else {
-      for (size_t k = 0; k < tvm_graph_.storage_group_parti_.size() - 1; ++k) {
-        size_t i = tvm_graph_.storage_group_parti_[k], j = tvm_graph_.storage_group_parti_[k + 1];
+      for (size_t k = 0; k < storage_group_parti_.size() - 1; ++k) {
+        size_t i = storage_group_parti_[k], j = storage_group_parti_[k + 1];
         auto group_nbytes = storage_group_nbytes_[k];
         std::shared_ptr<sta::CUDAMemPool::PoolEntry> mdata_group;
         if (auto iter = cold_cached_group_.find(k); iter != cold_cached_group_.cend()) {
@@ -705,6 +705,9 @@ void Executor::SetupStorageGroup() {
     size_t model_nbytes_acc = std::accumulate(model_storage_nbytes.cbegin(), 
                                               model_storage_nbytes.cend(), 0U);
     std::string file_name = "nbytes_" + std::to_string(model_nbytes_acc) + ".txt";
+    file_name = (tvm_graph_.model_path_ / file_name).string();
+    LOG(INFO) << "[Executor] " << tvm_graph_.model_name_ 
+              << " dump storage nbytes to " << file_name;
     if (!std::filesystem::exists(file_name)) {
       std::ofstream handle(file_name);
       CHECK(handle.is_open());
@@ -712,17 +715,27 @@ void Executor::SetupStorageGroup() {
         handle << nbytes << "\n";
       }
       handle.close();
+      CHECK_EQ(system(
+        ("python util/prepare_model_store/offline_group.py --storage-nbytes-file "
+          + file_name + " --output "
+          + (tvm_graph_.model_path_ / TVMGraph::mod_group).string()
+        ).c_str()
+      ), 0) << " generate storage group failed";
+    } else {
+      LOG(WARNING) << "[Executor] " << tvm_graph_.model_name_ 
+                   << " storage nbytes file " << file_name << " already exists, skip dump";
     }
   }
+  LoadParamGroupParti((tvm_graph_.model_path_ / TVMGraph::mod_group).string());
 
   model_nbytes_with_group_fragment_ = 0;
   size_t model_nbytes = 0, fragment_nbytes = 0;
-  CHECK_GE(tvm_graph_.storage_group_parti_.size(), 2);
-  CHECK_EQ(tvm_graph_.storage_group_parti_.front(), 0);
-  CHECK_EQ(tvm_graph_.storage_group_parti_.back(), storage_pool_.size());
+  CHECK_GE(storage_group_parti_.size(), 2);
+  CHECK_EQ(storage_group_parti_.front(), 0);
+  CHECK_EQ(storage_group_parti_.back(), storage_pool_.size());
 
-  for (size_t k = 0; k < tvm_graph_.storage_group_parti_.size() - 1; ++k) {
-    size_t i = tvm_graph_.storage_group_parti_[k], j = tvm_graph_.storage_group_parti_[k + 1];
+  for (size_t k = 0; k < storage_group_parti_.size() - 1; ++k) {
+    size_t i = storage_group_parti_[k], j = storage_group_parti_[k + 1];
     size_t group_nbytes = 0;
     for (auto iter = storage_alloc_order.cbegin() + i; iter != storage_alloc_order.cbegin() + j; ++iter) {
       auto tensor = storage_pool_[*iter];
@@ -762,6 +775,17 @@ void Executor::SetupStorageGroup() {
               << sta::ByteDisplay(fragment_nbytes) << " / " << sta::ByteDisplay(model_nbytes)
               << " | model with group fragment "
               << sta::ByteDisplay(model_nbytes_with_group_fragment_);
+  }
+}
+
+void Executor::LoadParamGroupParti(const std::string &path) {
+  std::ifstream handle(path);
+  CHECK(handle.is_open()) << "Cannot open file " << path
+                          << ", enable `group_param_dump` to generate it";
+  LOG(INFO) << "load from mod.group from " << path; 
+  std::string buf;
+  while (handle >> buf) {
+    storage_group_parti_.push_back(std::stoul(buf));
   }
 }
 

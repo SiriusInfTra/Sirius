@@ -118,6 +118,7 @@ class Executor {
  private:
   void SetupStorage(bool alloc);
   void SetupStorageGroup();
+  void LoadParamGroupParti(const std::string &path);
   void SetupOpExecs();
   std::pair<std::function<void()>, std::shared_ptr<OpArgs>> CreateTVMOp(
     const TVMOpParam &param, const std::vector<DLTensor*>& args);
@@ -182,6 +183,8 @@ class Executor {
 
   // [ param storage group, [param ids ...] ]
   std::vector<std::pair<TVMArray, std::vector<uint32_t>>> host_param_storage_group_;
+
+  std::vector<size_t> storage_group_parti_;
 
   
   TVMStreamHandle exec_stream_;

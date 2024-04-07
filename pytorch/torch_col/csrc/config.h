@@ -13,7 +13,7 @@ extern int has_shared_tensor_server;
 
 extern double shared_tensor_pool_gb;
 
-void ConfigTorchCol();
+void ConfigTorchCol(int use_shared_tensor);
 
 }
 
