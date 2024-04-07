@@ -110,6 +110,9 @@ cdef class PySwitchStub:
             self._stub.Cmd(-1)
         else:
             self._stub.Cmd(cmd)
+    
+    def EnableTorchColEngine(self):
+        self._stub.EnableTorchColEngine()
 
     def __dealloc__(self):
         del self._stub
