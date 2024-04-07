@@ -6,22 +6,22 @@
 
 namespace torch_col {
 
-static ColocateStub* colocate_stub_ = nullptr;
+static StubBase* stub_ptr_ = nullptr;
 
 Engine& GetTorchColEngine() {
   static FakeEngine *engine = new FakeEngine(python::PythonEngine::get_python_engine());
   return *engine;
 }
 
-void SetUpTorchColEngine(ColocateStub *colocate_stub) {
+void SetUpTorchColEngine(StubBase *stub_ptr) {
   LOG(INFO) << "Register TorchCol Engine!";
   set_default_engine_stub(GetTorchColEngine);
-  CHECK(colocate_stub_ == nullptr);
-  colocate_stub_ = colocate_stub;
+  CHECK(stub_ptr_ == nullptr);
+  stub_ptr_ = stub_ptr;
 }
 
-ColocateStub& GetColocateStub() {
-  CHECK(colocate_stub_ != nullptr);
-  return *colocate_stub_;
+StubBase& GetColocateStub() {
+  CHECK(stub_ptr_ != nullptr);
+  return *stub_ptr_;
 }
 }  // namespace torch_col

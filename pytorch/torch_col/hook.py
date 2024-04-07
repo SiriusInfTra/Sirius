@@ -46,7 +46,7 @@ class HookABC(abc.ABC):
         register forwards and backwards hook
     '''
     @abc.abstractmethod
-    def register_pytorch_hook(self, module):
+    def register_pytorch_hook(self, module_list: list[torch.nn.Module]):
         pass
         
     def release_and_reply(self):
@@ -125,12 +125,17 @@ class SwitchHook(HookABC):
             # since we sync, no kernel is executing
             self.switch()
 
-    def register_pytorch_hook(self, module):
+    def register_pytorch_hook(self, module_list: list[torch.nn.Module]):
         if self.train_mode == TrainMode.TASKSWITCH_L0:
             return
-        HookABC.register_fbward_hook(module, self.get_fwd_hook(), self.get_bwd_hook())
-        if torch_col.release_interm_memory_v2():
-            torch_col.register_saved_tensor_hook()
+        if self.train_mode == TrainMode.TASKSWITCH_L1 and self.hook_mode == HookMode.XSCHED_SYNC2:
+            print("SetUpTorchColEngine")
+            self._stub.EnableTorchColEngine()
+        else:
+            for module in module_list:
+                HookABC.register_fbward_hook(module, self.get_fwd_hook(), self.get_bwd_hook())
+            if torch_col.release_interm_memory_v2():
+                torch_col.register_saved_tensor_hook()
 
     def get_fwd_hook(self):
         # def hook(module, input, output):
@@ -419,7 +424,7 @@ class DummyHook(HookABC):
     def check_async_killed_batch(self):
         pass
     
-    def register_pytorch_hook(self, module):
+    def register_pytorch_hook(self, module_list: list[torch.nn.Module]):
         pass
     
     def report_batch_size(self, batch_size):

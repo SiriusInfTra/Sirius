@@ -43,13 +43,10 @@ class MemoryPool:
     
     @classmethod
     def empty_cache(cls):
-        t0 = time.time()
         if torch_col.use_shared_tensor():
             torch_col.cuda_memory_pool_free_train_local()
         else:
             torch.cuda.empty_cache()
-        t1 = time.time()
-        print(f'empty cache cost {t1 - t0}')
 
 
 @dataclass

@@ -64,8 +64,8 @@ Engine& GetTorchColEngine();
 
 void SetUpTorchColEngine();
 
-void SetUpTorchColEngine(ColocateStub *colocate_stub);
+void SetUpTorchColEngine(StubBase *stub_ptr);
 
-ColocateStub& GetColocateStub();
+StubBase& GetColocateStub();
 }
 #endif

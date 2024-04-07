@@ -166,8 +166,7 @@ void Executor::DeInit(const std::vector<size_t> &keep_cold_cached_group_id) {
     cold_cached_nbytes += storage_group_.at(k)->nbytes;
   }
 
-  auto model_name_without_dup_id = GetModelNameWithoutDuplicatedId(tvm_graph_.model_name_);
-  LOG(INFO) << "[Executor] " << model_name_without_dup_id << " deinit, cold_cached_nbytes = " << sta::ByteDisplay(cold_cached_nbytes) << ".";
+  LOG(INFO) << "[Executor] " << tvm_graph_.model_name_ << " deinit, cold_cached_nbytes = " << sta::ByteDisplay(cold_cached_nbytes) << ".";
   cold_cached_nbytes_.store(cold_cached_nbytes, std::memory_order_relaxed);
   if (!Config::colocate_config.skip_malloc) {
     ResetStorage();
