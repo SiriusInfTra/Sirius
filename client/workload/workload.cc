@@ -476,12 +476,18 @@ std::function<void(InferRequest&)> Workload::GetSetRequestFn(const std::string &
 }
 
 std::function<void(InferRequest&)> Workload::SetMnistRequestFn(const std::string &model) {
+  static std::mutex mnist_input_datas_mutex;
   static std::vector<std::string> mnist_input_datas;
-  if (mnist_input_datas.empty()) {
-    for (size_t i = 0; i < 10; i++) {
-      mnist_input_datas.push_back(ReadInput("mnist/input-" + std::to_string(i) + ".bin"));
+
+  {
+    std::unique_lock lock{mnist_input_datas_mutex};
+    if (mnist_input_datas.empty()) {
+      for (size_t i = 0; i < 10; i++) {
+        mnist_input_datas.push_back(ReadInput("mnist/input-" + std::to_string(i) + ".bin"));
+      }
     }
   }
+
   auto set_mnist_request_fn = [&](InferRequest &request) {
     static uint32_t i = 0;
     request.set_model(model);
@@ -499,10 +505,15 @@ std::function<void(InferRequest&)> Workload::SetMnistRequestFn(const std::string
 
 
 std::function<void(InferRequest&)> Workload::SetResnetRequestFn(const std::string &model) {
+  static std::mutex resnet_input_datas_mutex;
   static std::vector<std::string> resnet_input_datas;
-  if (resnet_input_datas.empty()) {
-    for (size_t i = 0; i < 1; i++) {
-      resnet_input_datas.push_back(ReadInput("resnet/input-" + std::to_string(i) + ".bin"));
+
+  {
+    std::unique_lock lock(resnet_input_datas_mutex);
+    if (resnet_input_datas.empty()) {
+      for (size_t i = 0; i < 1; i++) {
+        resnet_input_datas.push_back(ReadInput("resnet/input-" + std::to_string(i) + ".bin"));
+      }
     }
   }
 
@@ -523,34 +534,45 @@ std::function<void(InferRequest&)> Workload::SetResnetRequestFn(const std::strin
 
 
 std::function<void(InferRequest&)> Workload::SetInceptionRequestFn(const std::string &model) {
-      static std::vector<std::string> resnet_input_datas;
+  static  std::mutex inception_input_datas_mutex;
+  static std::vector<std::string> resnet_input_datas;
+
+  {
+    std::unique_lock lock{inception_input_datas_mutex};
     if (resnet_input_datas.empty()) {
       for (size_t i = 0; i < 1; i++) {
         resnet_input_datas.push_back(ReadInput("inception/input-" + std::to_string(i) + ".bin"));
       }
     }
-    auto set_resnet_request_fn = [&](InferRequest &request) {
-      static uint32_t i = 0;
-      request.set_model(model);
-      request.add_inputs();
-      request.mutable_inputs(0)->set_dtype("float32");
-      request.mutable_inputs(0)->add_shape(1);
-      request.mutable_inputs(0)->add_shape(3);
-      request.mutable_inputs(0)->add_shape(299);
-      request.mutable_inputs(0)->add_shape(299);
-      request.mutable_inputs(0)->set_data(resnet_input_datas[0]);
-      i++;
-    };
-    return set_resnet_request_fn;
+  }
+
+  auto set_resnet_request_fn = [&](InferRequest &request) {
+    static uint32_t i = 0;
+    request.set_model(model);
+    request.add_inputs();
+    request.mutable_inputs(0)->set_dtype("float32");
+    request.mutable_inputs(0)->add_shape(1);
+    request.mutable_inputs(0)->add_shape(3);
+    request.mutable_inputs(0)->add_shape(299);
+    request.mutable_inputs(0)->add_shape(299);
+    request.mutable_inputs(0)->set_data(resnet_input_datas[0]);
+    i++;
+  };
+  return set_resnet_request_fn;
 }
 
 std::function<void(InferRequest&)> Workload::SetBertRequestFn(const std::string &model) {
+  static std::mutex bert_input_datas_mutex;
   static std::vector<std::string> bert_input_datas;
   static std::vector<std::string> bert_mask_datas;
-  if (bert_input_datas.empty()) {
-    for (size_t i = 0; i < 1; i++) {
-      bert_input_datas.push_back(ReadInput("bert/input-" + std::to_string(i) + ".bin"));
-      bert_mask_datas.push_back(ReadInput("bert/mask-" + std::to_string(i) + ".bin"));
+
+  {
+    std::unique_lock lock(bert_input_datas_mutex);
+    if (bert_input_datas.empty()) {
+      for (size_t i = 0; i < 1; i++) {
+        bert_input_datas.push_back(ReadInput("bert/input-" + std::to_string(i) + ".bin"));
+        bert_mask_datas.push_back(ReadInput("bert/mask-" + std::to_string(i) + ".bin"));
+      }
     }
   }
   
