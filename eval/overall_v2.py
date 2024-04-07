@@ -6,6 +6,7 @@ from dataclasses import dataclass
 set_global_seed(42)
 
 use_time_stamp = True
+retry_if_fail = True
 
 run_colsys  = False
 run_um_mps = False
@@ -78,7 +79,7 @@ class UniformConfig:
 ## =========================================================== ##
 
 def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
-            train_model='resnet', train_epoch=25, train_batch_size=96):
+            train_model='resnet', train_epoch=40, train_batch_size=140):
     workload = HyperWorkload(concurrency=2048,
                              warmup=5,
                              wait_warmup_done_sec=5,
@@ -97,14 +98,27 @@ def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
 
 
 def run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
-    system.launch(unit, tag, time_stamp=use_time_stamp,
-                  infer_model_config=server_model_config)
-    workload.launch_workload(system)
+    try:
+        system.launch(unit, tag, time_stamp=use_time_stamp,
+                    infer_model_config=server_model_config)
+        workload.launch_workload(system)
+    except Exception as e:
+        print(f"Failed to run {unit} {tag}: {e}")
+        system.stop()
+        if retry_if_fail:
+            print(f"\n### Retry [{unit} {tag}] ###")
+            system.launch(unit, tag, time_stamp=use_time_stamp,
+                    infer_model_config=server_model_config)
+            workload.launch_workload(system)
+        else:
+            raise e
     system.stop()
     time.sleep(5)
     system.draw_memory_usage()
     system.draw_trace_cfg()
     system.calcuate_train_thpt()
+    
+        
 
 ## =========================================================== ##
 

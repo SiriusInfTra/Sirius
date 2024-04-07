@@ -10,6 +10,7 @@ import subprocess
 from typing import List, Dict, Optional
 from types import NoneType
 from dataclasses import dataclass
+import re
 
 from .hyper_workload import InferWorkloadBase, TrainWorkload, InferTraceDumper, InferModel, RandomInferWorkload
 from .config import get_global_seed
@@ -275,14 +276,17 @@ class System:
         if self.server is not None:
             self.server.send_signal(subprocess.signal.SIGINT)
             self.server = None
-        if kill_train:
+        if kill_train and self.log_dir is not None:
             train_pids = set()
             print('Force to kill train.')
             with open(f'{self.log_dir}/{self.server_log}.log') as f:
                 for line in f:
                     if "[TrainLauncher]: Train TrainJob" in line:
-                        _, pid = line.rsplit(' ', 1)
-                        train_pids.add(pid)
+                        regex = r'pid (\d+)'
+                        m = re.search(regex, line)
+                        if m is not None:
+                            pid = int(m.group(1))
+                            train_pids.add(pid)
             for pid in train_pids:
                 cmd = f'kill -9 {pid}'
                 print(f'Execute {cmd}')
@@ -295,14 +299,15 @@ class System:
         if self.dcgmi_monitor is not None:
             self.dcgmi_monitor.send_signal(subprocess.signal.SIGINT)
             self.dcgmi_monitor = None
-        self.cmd_trace.append(" ".join([
-            'sudo', '/opt/mps-control/quit-mps-daemon-private.sh',
-            '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']
-        ]))
-        with open(f'{self.log_dir}/cmd-trace', 'w') as f:
-            f.write("\n\n".join(self.cmd_trace))
-        self.exit_log_dir = self.log_dir                                                                                                                                   
-        self.log_dir = None
+        if self.log_dir is not None:
+            self.cmd_trace.append(" ".join([
+                'sudo', '/opt/mps-control/quit-mps-daemon-private.sh',
+                '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']
+            ]))
+            with open(f'{self.log_dir}/cmd-trace', 'w') as f:
+                f.write("\n\n".join(self.cmd_trace))
+            self.exit_log_dir = self.log_dir                                                                                                                                   
+            self.log_dir = None
     
     def draw_memory_usage(self):
         cmd = f'python util/profile/memory_trace.py  -l {self.exit_log_dir}/profile-log.log  -o {self.exit_log_dir}'
