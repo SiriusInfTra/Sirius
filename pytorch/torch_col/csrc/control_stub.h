@@ -12,11 +12,18 @@
 namespace torch_col {
 using namespace colserve;
 
-class SwitchStub {
+class StubBase {
+public:
+  virtual int Cmd() = 0;
+  virtual ~StubBase() = default;
+  void EnableTorchColEngine();
+};
+
+class SwitchStub: public StubBase {
  public:
   SwitchStub();
   void Stop();
-  int Cmd();
+  int Cmd() override;
   void Cmd(int cmd);
   void TrainStart();
   void TrainEnd();
@@ -37,11 +44,11 @@ class SwitchStub {
   std::unique_ptr<std::thread> thread_;
 };
 
-class ColocateStub {
+class ColocateStub: public StubBase {
  public:
   ColocateStub(int batch_size);
   void Stop();
-  int Cmd();
+  int Cmd() override;
   int TargetBatchSize();
   void ColocateAdjustL1Done();
   void ColocateAdjustL2Done();
@@ -51,7 +58,6 @@ class ColocateStub {
   void ReportBatchSize(int batch_size);
   void StepsNoInteruptBegin();
   void StepsNoInteruptEnd();
-  void EnableTorchColEngine();
 
  private:
   bool running_{true};

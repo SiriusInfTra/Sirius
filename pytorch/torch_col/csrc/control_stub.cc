@@ -105,6 +105,7 @@ void SwitchStub::StepsNoInteruptEnd() {
   exec_step_ = false;
 }
 
+
 ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_(batch_size) {
   // char *has_server_env = std::getenv("HAS_INFER_SERVER");
   // bool has_server = has_server_env == nullptr ? true : (std::string(has_server_env) == "1");
@@ -255,9 +256,6 @@ void ColocateStub::StepsNoInteruptEnd() {
   step_mutex_.unlock();
 }
 
-void ColocateStub::EnableTorchColEngine() {
-  torch_col::SetUpTorchColEngine(this);
-}
 
 void StubProfiler::RecordAdjustRequest() {
   std::unique_lock lock{StubProfiler::mutex_};
@@ -269,5 +267,7 @@ void StubProfiler::RecordAdjustDone() {
   StubProfiler::adjsut_done_time_stamp_.push_back(torch_col::get_unix_timestamp_us());
 }
 
-
+void StubBase::EnableTorchColEngine() {
+  torch_col::SetUpTorchColEngine(this);
+}
 }  // namespace torch_col

@@ -1,4 +1,4 @@
-#include <Python.h>
+  #include <Python.h>
 #include <object.h>
 #include <moduleobject.h>
 #include <ATen/Tensor.h>
@@ -52,13 +52,7 @@ void TorchColSavedVariableHooks::call_pack_hook(const at::Tensor& tensor) {
   data_ = tensor;
   if (static_cast<ctrl::CtrlEvent>(GetColocateStub().Cmd()) == ctrl::CtrlEvent::kColocateAdjustL1) {
     pybind11::gil_scoped_acquire gil;
-    LOG(INFO) << "throw python exception!";
-    // THPObjectPtr torch_col(PyImport_ImportModule("torch_col"));
-    // CHECK(torch_col != nullptr);
-    // THPObjectPtr exception(PyObject_GetAttrString(torch_col, "TorchColEngineException"));
-    // HANDLE_TH_ERRORS
     throw EngineColocateAdjustL1Exception("TorchColEngine");
-    // END_HANDLE_TH_ERRORS_PYBIND
   }
 }
 
@@ -66,12 +60,7 @@ at::Tensor TorchColSavedVariableHooks::call_unpack_hook() {
   if (static_cast<ctrl::CtrlEvent>(GetColocateStub().Cmd()) == ctrl::CtrlEvent::kColocateAdjustL1) {
     pybind11::gil_scoped_acquire gil;
     LOG(INFO) << "throw python exception!";
-    // THPObjectPtr torch_col(PyImport_ImportModule("torch_col"));
-    // CHECK(torch_col != nullptr);
-    // THPObjectPtr exception(PyObject_GetAttrString(torch_col, "TorchColEngineException"));
-    // HANDLE_TH_ERRORS
     throw EngineColocateAdjustL1Exception("TorchColEngine");
-    // END_HANDLE_TH_ERRORS_PYBIND
   }
   return data_;
 }
