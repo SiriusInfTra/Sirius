@@ -57,8 +57,8 @@ class LowLoad:
 class HybridLoad:
     high_rps = HighLoad.rps
     low_rps = LowLoad.rps
-    mps_infer: int = 50
-    mps_train: int = 50
+    mps_infer: int = HighLoad.rps
+    mps_train: int = HighLoad.rps
     enable: bool = True
     
 
@@ -71,7 +71,7 @@ class UniformConfig:
     port = str(18100 + (os.getpid() % 10) * 10)
     enable = True
 
-    low_load = LowLoad(enable=True)
+    low_load = LowLoad(enable=False)
     high_load = HighLoad(enable=True)
     hybrid_load = HybridLoad(enable=False)
 
@@ -116,10 +116,12 @@ if run_colsys:
         'mps' : True, 
         'use_xsched' : True, 
         'has_warmup' : True,
+        'ondemand_adjust' : True,
         'cuda_memory_pool_gb' : "13.5",
         'train_memory_over_predict_mb' : 1500,
         'infer_model_max_idle_ms' : 5000,
-        'ondemand_adjust' : True,
+        'cold_cache_ratio': 0.5, 
+        'max_cold_cache_nbytes': 1 * 1024 * 1024 * 1024,
     }
 
     if UniformConfig.enable and UniformConfig.high_load.enable:
@@ -222,7 +224,7 @@ if run_static_partition:
         'mps': True,
         'use_xsched': False,
         'has_warmup': True,
-        'max_cache_nbytes': int(8.5 * 1024 ** 3),
+        'max_warm_cache_nbytes': int(8.5 * 1024 ** 3),
         'cuda_memory_pool_gb': '10',
         'use_sta_train': False
     }

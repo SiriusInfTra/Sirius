@@ -517,7 +517,7 @@ ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<
       break;
     }
   }
-  LOG(INFO) << "decide to cache group = " << cache_item->cached_groups_id << ", total" << groups_nbytes.size() << ".";
+  LOG(INFO) << "decide to cache group = " << cache_item->cached_groups_id << ", total " << groups_nbytes.size() << ".";
 
   std::vector<Model*> coldest_model;
   for (auto &&[name, cache_item] : cold_cache_) {
