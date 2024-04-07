@@ -9,6 +9,7 @@
 #include <server/infer_model.h>
 #include <server/config.h>
 
+#include <atomic>
 #include <iostream>
 #include <memory>
 #include <unordered_map>
@@ -17,6 +18,7 @@
 #include <optional>
 #include <cstdlib>
 #include <condition_variable>
+#include <utility>
 
 namespace colserve {
 
@@ -32,15 +34,15 @@ class InferModelStore;
  *   2. cold cache: cache idle model in gpu to avoid some
  *      cold start
  */
-class InferModelCache {
+class WarmModelCache {
  public:
-  InferModelCache() : cached_nbytes_(0) {};
+  WarmModelCache() : cached_nbytes_(0) {};
   static std::unique_lock<std::mutex> ReserveCache(const std::string &name, size_t rank);
   static std::unique_lock<std::mutex> OrderedReserveCache(
       const std::string &name, size_t rank,
       const std::vector<std::shared_ptr<Job>> &jobs);
   
-  static bool Enable() { return Config::max_cache_nbytes != 0; }
+  static bool Enable() { return Config::max_warm_cache_nbytes != 0; }
 
   friend class InferModelStore;
 
@@ -52,19 +54,59 @@ class InferModelCache {
   };
 
   static void Init() {
-    infer_model_cache_ = std::make_unique<InferModelCache>();
+    infer_model_cache_ = std::make_unique<WarmModelCache>();
   }
   void MaybeAddCacheItem(const std::string &name, Model *model);
   void ReserveCacheInternal(const std::string &name, size_t rank,
                             std::unique_lock<std::mutex> &reserved_lock);
 
-  static std::unique_ptr<InferModelCache> infer_model_cache_;
+  static std::unique_ptr<WarmModelCache> infer_model_cache_;
 
   std::mutex mut_;
   std::condition_variable fifo_cv_;
   size_t cached_nbytes_;
-  
   std::unordered_map<std::string, std::unique_ptr<CacheItem>> warm_cache_;
+
+};
+
+class ColdModelCache {
+ public:
+  ColdModelCache(): current_cached_nbytes_(0) {}
+
+  friend class InferModelStore;
+
+  std::tuple<std::vector<size_t>, std::vector<std::pair<std::string, std::vector<size_t>>>, bool>
+  PushCacheItem(const std::string& name, size_t rank, std::vector<size_t> groups_nbytes, size_t total_nbytes, std::unique_lock<std::mutex> &lock);
+
+  std::pair<std::vector<size_t>, bool> PopCacheItem(const std::string& name, size_t rank, std::unique_lock<std::mutex> &lock);
+
+  std::unique_lock<std::mutex> Lock() {
+    return std::unique_lock{mut_};
+  }
+
+  inline size_t GetCachedNbytes() {
+    return current_cached_nbytes_.load(std::memory_order_relaxed);
+  }
+
+  static void Init() {
+    cold_model_cache_ = std::make_unique<ColdModelCache>();
+  }
+
+  static ColdModelCache &Get() {
+    CHECK(cold_model_cache_ != nullptr);
+    return *cold_model_cache_;
+  }
+
+ private:
+  std::atomic<size_t> current_cached_nbytes_;
+  std::mutex mut_;
+  struct CacheItem {
+    Model *model;
+    std::vector<size_t> cached_groups_id;
+    size_t cached_group_nbytes;
+  };
+  static std::unique_ptr<ColdModelCache> cold_model_cache_;
+  std::unordered_map<std::string, std::unique_ptr<CacheItem>> cold_cache_;
 };
 
 class InferModelStore {
@@ -73,7 +115,6 @@ class InferModelStore {
   static void Init(const std::filesystem::path &infer_store_path);
   static bool Initialized() { return Get()->initialized_; }
   static bool Shutdown() { return true; }
-
 
   static void WarmupDone();
   static bool AddJob(const std::string &model_name, 
@@ -99,6 +140,8 @@ class InferModelStore {
   Model* GetModel(const std::string &name);
   size_t NumJobs();
 
+  void ClearColdCache();
+
   // void TaskSwitchEnter() { task_switch_enter_cnt_++; }
   // void TaskSwitchExit() { task_switch_enter_cnt_--; }
   // std::mutex &TaskSwitchMutex() { return task_switch_mutex_; }
@@ -123,7 +166,7 @@ class InferModelStore {
     kReclaimInfer = 2, 
   };
 
-  friend class InferModelCache;
+  friend class WarmModelCache;
 
  private:
   void ColocateMonitor();

@@ -22,9 +22,10 @@ class HookMode(Enum):
     SYNC = 'sync'
     # XSCHED_ASYNC_SIGNAL = 'xsched-async-signal'  
     XSCHED_SYNC = 'xsched-sync'
+    XSCHED_SYNC2 = 'xsched-sync2'
     
     def use_xsched(self):
-        return self == HookMode.XSCHED_SYNC
+        return self in {HookMode.XSCHED_SYNC, HookMode.XSCHED_SYNC2}
 
 
 class HookABC(abc.ABC):
@@ -45,7 +46,7 @@ class HookABC(abc.ABC):
         register forwards and backwards hook
     '''
     @abc.abstractmethod
-    def register_pytorch_hook(self, module):
+    def register_pytorch_hook(self, module_list: list[torch.nn.Module]):
         pass
         
     def release_and_reply(self):
@@ -124,12 +125,17 @@ class SwitchHook(HookABC):
             # since we sync, no kernel is executing
             self.switch()
 
-    def register_pytorch_hook(self, module):
+    def register_pytorch_hook(self, module_list: list[torch.nn.Module]):
         if self.train_mode == TrainMode.TASKSWITCH_L0:
             return
-        HookABC.register_fbward_hook(module, self.get_fwd_hook(), self.get_bwd_hook())
-        if torch_col.release_interm_memory_v2():
-            torch_col.register_saved_tensor_hook()
+        if self.train_mode == TrainMode.TASKSWITCH_L1 and self.hook_mode == HookMode.XSCHED_SYNC2:
+            print("SetUpTorchColEngine")
+            self._stub.EnableTorchColEngine()
+        else:
+            for module in module_list:
+                HookABC.register_fbward_hook(module, self.get_fwd_hook(), self.get_bwd_hook())
+            if torch_col.release_interm_memory_v2():
+                torch_col.register_saved_tensor_hook()
 
     def get_fwd_hook(self):
         # def hook(module, input, output):
@@ -285,7 +291,7 @@ class ColocateHook(HookABC):
             yield
             self._stub.StepsNoInteruptEnd()
 
-    def register_pytorch_hook(self, module):
+    def register_pytorch_hook(self, module_list: list[torch.nn.Module]):
         if self.train_mode == TrainMode.COLOCATE_L1:
             match self.hook_mode:
                 case HookMode.SYNC:
@@ -316,9 +322,14 @@ class ColocateHook(HookABC):
                                 xsched.kill_batch()
                                 raise ColocateAdjustL1Exception('[Adjust XSCHED_SYNC BWD]')
                             # torch_col.cuda_memory_pool_reset_train_alloc_ms()
+                case HookMode.XSCHED_SYNC2:
+                    print("SetUpTorchColEngine")
+                    self._stub.EnableTorchColEngine()
+                    return
                 case _:
                     raise RuntimeError(f"Unsupported hook_mode: {self.hook_mode.name}")
-            HookABC.register_fbward_hook(module, fwd_hook, bwd_hook)
+            for module in module_list:
+                HookABC.register_fbward_hook(module, fwd_hook, bwd_hook)
             if torch_col.release_interm_memory_v2():
                 torch_col.register_saved_tensor_hook()
         else:
@@ -413,7 +424,7 @@ class DummyHook(HookABC):
     def check_async_killed_batch(self):
         pass
     
-    def register_pytorch_hook(self, module):
+    def register_pytorch_hook(self, module_list: list[torch.nn.Module]):
         pass
     
     def report_batch_size(self, batch_size):

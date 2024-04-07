@@ -1,13 +1,14 @@
-#include <cstddef>
-#include <PySched.h>
-
 #include <common/log_as_glog_sta.h>
 #include <common/cuda_allocator.h>
 #include <common/mempool.h>
 
-#include "control_stub.h"
-#include "config.h"
-#include "util.h"
+#include <torch_col/csrc/control_stub.h>
+#include <torch_col/csrc/config.h>
+#include <torch_col/csrc/util.h>
+#include <torch_col/csrc/fake_engine.h>
+
+#include <PySched.h>
+#include <cstddef>
 
 
 namespace torch_col {
@@ -103,6 +104,7 @@ void SwitchStub::StepsNoInteruptEnd() {
   // std::unique_lock lock{mutex_};
   exec_step_ = false;
 }
+
 
 ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_(batch_size) {
   // char *has_server_env = std::getenv("HAS_INFER_SERVER");
@@ -254,6 +256,7 @@ void ColocateStub::StepsNoInteruptEnd() {
   step_mutex_.unlock();
 }
 
+
 void StubProfiler::RecordAdjustRequest() {
   std::unique_lock lock{StubProfiler::mutex_};
   StubProfiler::adjust_request_time_stamp_.push_back(torch_col::get_unix_timestamp_us());
@@ -264,4 +267,7 @@ void StubProfiler::RecordAdjustDone() {
   StubProfiler::adjsut_done_time_stamp_.push_back(torch_col::get_unix_timestamp_us());
 }
 
+void StubBase::EnableTorchColEngine() {
+  torch_col::SetUpTorchColEngine(this);
+}
 }  // namespace torch_col

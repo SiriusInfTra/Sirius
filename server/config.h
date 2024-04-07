@@ -27,6 +27,35 @@ enum class ServeMode {
   kColocateL2,    // adjust batch at end of mini-batch
 };
 
+inline std::ostream & operator<<(std::ostream &os, const ServeMode &mode) {
+  switch (mode) {
+    case ServeMode::kNormal:
+      os << "kNormal";
+      break;
+    case ServeMode::kTaskSwitchL0:
+      os << "kTaskSwitchL0";
+      break;
+    case ServeMode::kTaskSwitchL1:
+      os << "kTaskSwitchL0";
+      break;
+    case ServeMode::kTaskSwitchL2:
+      os << "kTaskSwitchL2";
+      break;
+    case ServeMode::kTaskSwitchL3:
+      os << "kTaskSwitchL3";
+      break;
+    case ServeMode::kColocateL1:
+      os << "kColocateL1";
+    case ServeMode::kColocateL2:
+      os << "kColocateL2";
+      break;
+    default:
+      os << "Unknown(" << static_cast<int>(mode) << ")";
+      break;
+  }
+  return os;
+}
+
 struct ColocateConfig {
   bool skip_malloc;
   bool skip_loading;
@@ -74,7 +103,11 @@ class Config {
 
   static int train_mps_thread_percent;
 
-  static size_t max_cache_nbytes;
+  static size_t cold_cache_min_capability_nbytes;
+  static size_t cold_cache_max_capability_nbytes;
+  static size_t train_over_adjust_nbytes;
+  static size_t max_warm_cache_nbytes;
+  static double cold_cache_ratio;
 
   static double task_switch_delay_ms;
 

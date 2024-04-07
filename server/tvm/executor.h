@@ -5,10 +5,14 @@
 #include <common/tensor.h>
 #include <common/mempool.h>
 #include <common/tvm_allocator.h>
+#include <common/cuda_allocator.h>
 
 #include <server/tvm/graph.h>
 #include <server/config.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <iterator>
 #include <unordered_map>
 #include <memory>
 #include <atomic>
@@ -31,7 +35,9 @@ class Executor {
   void Init(bool load_param);
   bool Initialized() const { return initialized_; }
   void FakeInit(bool malloc, bool load_param); // used for simulating unlimted get gpu resource
-  void DeInit();
+  void DeInit(const std::vector<size_t> &keep_cold_cached_group_id);
+  void ClearColdCached(const std::vector<size_t> &cold_cached_group_id);
+
   void Run();
   void PipeLineLoad();
   void PipelineRun();
@@ -90,6 +96,12 @@ class Executor {
     } else {
       return GetStorageSize();
     }
+  }
+
+  size_t GetMissingStorageSizeAlign() const;
+
+  std::vector<size_t> GetGroupsNbytes() const {
+    return storage_group_nbytes_;
   }
 
   // size_t 
@@ -164,14 +176,20 @@ class Executor {
   size_t model_nbytes_with_group_fragment_;
   std::vector<size_t> storage_group_nbytes_;
   std::vector<std::shared_ptr<sta::CUDAMemPool::PoolEntry>> storage_group_;
+
+  // cached group, used for SetupMemory/Init(false)
+  std::unordered_map<size_t, std::shared_ptr<sta::CUDAMemPool::PoolEntry>> cold_cached_group_;
+  std::atomic<size_t> cold_cached_nbytes_;
+
   // [ param storage group, [param ids ...] ]
-  std::vector<std::pair<TVMArray, std::vector<uint32_t>>> param_storage_group_;
+  std::vector<std::pair<TVMArray, std::vector<uint32_t>>> host_param_storage_group_;
 
   std::vector<size_t> storage_group_parti_;
 
   
   TVMStreamHandle exec_stream_;
   TVMStreamHandle load_param_stream_;
+
 
   size_t param_storage_size_ = 0;
   size_t buffer_storage_size_ = 0;

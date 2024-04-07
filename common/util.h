@@ -47,7 +47,7 @@ constexpr size_t operator ""_KB(unsigned long long n) {
 }
 
 constexpr size_t operator ""_KB(long double n) {
-  return static_cast<size_t>(n) * 1024;
+  return static_cast<size_t>(n * 1024);
 }
 
 constexpr size_t operator ""_MB(unsigned long long n) {
@@ -55,7 +55,7 @@ constexpr size_t operator ""_MB(unsigned long long n) {
 }
 
 constexpr size_t operator ""_MB(long double n) {
-  return static_cast<size_t>(n) * 1024 * 1024;
+  return static_cast<size_t>(n * 1024 * 1024);
 }
 
 constexpr size_t operator ""_GB(unsigned long long n) {
@@ -63,7 +63,7 @@ constexpr size_t operator ""_GB(unsigned long long n) {
 }
 
 constexpr size_t operator ""_GB(long double n) {
-  return static_cast<size_t>(n) * 1024 * 1024 * 1024;
+  return static_cast<size_t>(n * 1024 * 1024 * 1024);
 }
 }
 

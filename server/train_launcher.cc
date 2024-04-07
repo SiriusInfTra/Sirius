@@ -27,13 +27,29 @@ std::unique_ptr<TrainLauncher> TrainLauncher::train_launcher_;
 std::pair<double, double> TrainLauncher::GetModelMemParam() {
   if (Config::use_shared_tensor_train) {
     if (cur_model_name_ == "resnet152") {
-      return {560, 125};
+      /*
+          8   1.50
+         32   3.75
+        128  11.75
+        150  13.50
+      
+        AFTER EMPTY CACHE: 0.81 ~ 1.22
+      */
+      return {1150, 85};
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
   } else {
+    /*
+        8     2.64
+        32    4.97
+        128  13.75
+        150  15.68
+
+        AFTER EMPTY CACHE: 2.28 ~ 2.37
+    */
     if (cur_model_name_ == "resnet152") {
-      return {3512, 145};
+      return {2396, 145};
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
@@ -71,6 +87,7 @@ void TrainLauncher::Init(const std::filesystem::path &train_store_path) {
 
 bool TrainLauncher::Shutdown() {
   if (train_launcher_->train_pid_ != -1) {
+    LOG(INFO) << "[TrainLauncher]: Shutdown, train_pid(" << train_launcher_->train_pid_ << ") = -1.";
     CHECK_EQ(kill(train_launcher_->train_pid_, SIGKILL), 0);
     waitpid(train_launcher_->train_pid_, NULL, 0);
   }
@@ -164,7 +181,7 @@ bool TrainLauncher::Train() {
   if (Config::serve_mode == ServeMode::kColocateL1 || Config::serve_mode == ServeMode::kTaskSwitchL1) {
     if (Config::use_xsched) {
       args_str.push_back("--hook-mode");
-      args_str.push_back("xsched-sync");
+      args_str.push_back("xsched-sync2");
     } else {
       args_str.push_back("--hook-mode");
       args_str.push_back("sync");
@@ -277,6 +294,7 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
       close(from_child_pipe[1]);
     }
     // train_running_ = true;
+    // 
     LOG(INFO) << "[TrainLauncher]: " << "Train " << job << " pid " << pid;
   }
 
@@ -292,7 +310,8 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
   close(to_child_pipe[1]);
 
   int status;
-  waitpid(pid, &status, 0);
+  int ret = waitpid(pid, &status, 0);
+  LOG(INFO) << "[TrainLauncher]: wait pid return, ret = " << ret << ", status = " << status << "."; 
   train_pid_ = -1;
   batch_start_ = false;
   // target_batch_size_ = -1;
