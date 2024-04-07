@@ -13,7 +13,7 @@ run_task_switch = False
 run_static_partition = False
 run_infer_only = False
 
-infer_only_without_mps = True
+infer_only_without_mps = False
 
 # args parser
 parser = argparse.ArgumentParser()
@@ -145,7 +145,15 @@ if run_colsys:
             run(system, workload, server_model_config, "overall-uniform", "colsys-low")
 
     if UniformConfig.enable and UniformConfig.hybrid_load.enable:
-        pass
+        with mps_thread_percent(UniformConfig.hybrid_load.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                UniformConfig.model_list, UniformConfig.num_model, 1)
+            workload = uniform(rps=UniformConfig.hybrid_load.high_rps, 
+                               client_model_list=client_model_list, infer_only=False)
+            system = System(train_mps_thread_percent=UniformConfig.hybrid_load.mps_train,
+                            port=UniformConfig.port,
+                            **system_config)
+            run(system, workload, server_model_config, "overall-uniform", "colsys-hybrid")
 
 
 ## MARK: Task Switch
