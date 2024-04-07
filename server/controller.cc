@@ -1,10 +1,13 @@
+#include "logging_as_glog.h"
+#include <common/util.h>
 #include <server/train_launcher.h>
 #include <server/resource_manager.h>
-#include "logging_as_glog.h"
-#include "controller.h"
-#include "config.h"
+#include <server/infer_model_store.h>
+#include <server/controller.h>
+#include <server/config.h>
 
 #include <signal.h>
+#include <algorithm>
 
 
 namespace colserve
@@ -185,7 +188,7 @@ uint64_t Controller::InferExit() {
       double train_avail_memory_mb;
       {
         ResourceManager::InferMemoryChangingLock();
-        train_avail_memory_mb = ResourceManager::GetTrainAvailMemoryMB();
+        train_avail_memory_mb = std::max(ResourceManager::GetTrainAvailMemoryMB(), 0.0);
         train_target_bs = TrainLauncher::Get()->PredictTargetBatchSize(train_avail_memory_mb);
         TrainLauncher::Get()->SetTargetBatchSize(train_target_bs);
         ResourceManager::InferMemoryChangingUnlock();
