@@ -12,14 +12,22 @@
 namespace colserve {
 namespace tvm {
 
+std::string TVMGraph::mod_json = "mod.json";
+std::string TVMGraph::mod_so = "mod.so";
+std::string TVMGraph::mod_params = "mod.params";
+std::string TVMGraph::mod_group = "mod.group";
+
 TVMGraph::TVMGraph(
     size_t rank, ::colserve::Model *model,
     const std::string &model_name,
+    const std::filesystem::path &model_path,
     const std::string &graph_json,
     const std::string &group_txt,
     const ::tvm::runtime::Module mod,
     const std::string &params_file,
-    const std::vector<DLDevice> &devs) : model_rank_(rank), infer_model_(model), model_name_(model_name) {
+    const std::vector<DLDevice> &devs) 
+  : model_rank_(rank), infer_model_(model), model_name_(model_name), model_path_(model_path) {
+
   std::ifstream graph_json_ifs{graph_json};
   std::string graph_json_str{(std::istreambuf_iterator<char>(graph_json_ifs)),
                              std::istreambuf_iterator<char>()};
@@ -47,20 +55,22 @@ TVMGraph::TVMGraph(
   // load_param_stream_ = ::tvm::runtime::DeviceAPI::Get(devices_[0])
   //     ->CreateStream(devices_[0]);
   LoadParams(params_file);
-  if (Config::group_param_load) {
-    LoadParamGroupParti(group_txt);
-  }
+  // if (Config::group_param_load) {
+  //   LoadParamGroupParti(group_txt);
+  // }
   // SetupStorage();
 }
 
 TVMGraph::TVMGraph(
     size_t rank, ::colserve::Model *model,
     const std::string &model_name,
+    const std::filesystem::path &model_path,
     const std::string &graph_json,
     const std::string &group_txt,
     const ::tvm::runtime::Module mod,
     const std::map<std::string, TVMArray> &params,
-    const std::vector<DLDevice> &devs) : model_rank_(rank), infer_model_(model), model_name_(model_name) {
+    const std::vector<DLDevice> &devs) 
+    : model_rank_(rank), infer_model_(model), model_name_(model_name), model_path_(model_path) {
   std::ifstream graph_json_ifs{graph_json};
   std::string graph_json_str{(std::istreambuf_iterator<char>(graph_json_ifs)),
                              std::istreambuf_iterator<char>()};
@@ -88,9 +98,9 @@ TVMGraph::TVMGraph(
   // load_param_stream_ = ::tvm::runtime::DeviceAPI::Get(devices_[0])
   //     ->CreateStream(devices_[0]);
   LoadParams(params);
-  if (Config::group_param_load) {
-    LoadParamGroupParti(group_txt);
-  }
+  // if (Config::group_param_load) {
+  //   LoadParamGroupParti(group_txt);
+  // }
   // SetupStorage();
 }
 

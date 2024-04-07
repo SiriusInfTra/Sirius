@@ -1,0 +1,240 @@
+import os
+import argparse
+from runner import *
+from dataclasses import dataclass
+
+set_global_seed(42)
+
+use_time_stamp = True
+
+run_colsys  = False
+run_um_mps = False
+run_task_switch = False
+run_static_partition = False
+run_infer_only = False
+
+# args parser
+parser = argparse.ArgumentParser()
+parser.add_argument('--run-colsys', action='store_true')
+parser.add_argument('--run-um-mps', action='store_true')
+parser.add_argument('--run-task-switch', action='store_true')
+parser.add_argument('--run-static-partition', action='store_true')
+parser.add_argument('--run-infer-only', action='store_true')
+args = parser.parse_args()
+
+if args.run_colsys:
+    run_colsys = True
+if args.run_um_mps:
+    run_um_mps = True
+if args.run_task_switch:
+    run_task_switch = True
+if args.run_static_partition:
+    run_static_partition = True
+if args.run_infer_only:
+    run_infer_only = True
+
+## MARK: Configurations
+## =========================================================== ##
+
+@dataclass
+class HighLoad:
+    rps: int = 75
+    mps_infer: int = 60
+    mps_train: int = 40
+    enable: bool = True
+
+@dataclass
+class LowLoad:
+    rps: int = 5
+    mps_infer: int = 30
+    mps_train: int = 70
+    enable: bool = True
+
+@dataclass
+class HybridLoad:
+    high_rps = HighLoad.rps
+    low_rps = LowLoad.rps
+    mps_infer: int = 50
+    mps_train: int = 50
+    enable: bool = True
+    
+
+class UniformConfig:
+    model_list = [InferModel.InceptionV3, InferModel.ResNet152, 
+                  InferModel.DenseNet161, InferModel.DistilBertBase]
+    num_model = 60
+    interval_sec = 15
+    duration = 120
+    port = str(18100 + (os.getpid() % 10) * 10)
+    enable = True
+
+    low_load = LowLoad(enable=False)
+    high_load = HighLoad(enable=True)
+    hybrid_load = HybridLoad(enable=False)
+
+## =========================================================== ##
+
+def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
+            train_model='resnet', train_epoch=15, train_batch_size=96):
+    workload = HyperWorkload(concurrency=2048,
+                             warmup=5,
+                             wait_warmup_done_sec=5,
+                             wait_train_setup_sec=30,
+                             wait_stable_before_start_profiling_sec=10)
+    InferModel.reset_model_cnt()
+    if not infer_only:
+        workload.set_train_workload(
+            train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
+    workload.set_infer_workloads(MicrobenchmarkInferWorkload(
+        model_list=client_model_list,
+        interval_sec=UniformConfig.interval_sec, fix_request_sec=rps, rps_fn=rps_fn,
+        duration=UniformConfig.duration + workload.infer_extra_infer_sec,
+    ))
+    return workload
+
+
+def run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
+    system.launch(unit, tag, time_stamp=use_time_stamp,
+                  infer_model_config=server_model_config)
+    workload.launch_workload(system)
+    system.stop()
+    time.sleep(5)
+    system.draw_memory_usage()
+    system.draw_trace_cfg()
+    system.calcuate_train_thpt()
+
+## =========================================================== ##
+
+## MARK: COLSYS
+if run_colsys:
+    system_config = {
+        'mode' : System.ServerMode.ColocateL1,
+        'use_sta' : True, 
+        'mps' : True, 
+        'use_xsched' : True, 
+        'has_warmup' : True,
+        'cuda_memory_pool_gb' : "13.5",
+        'train_memory_over_predict_mb' : 1500,
+        'infer_model_max_idle_ms' : 5000,
+        'ondemand_adjust' : True,
+    }
+
+    if UniformConfig.enable and UniformConfig.high_load.enable:
+        with mps_thread_percent(UniformConfig.high_load.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                UniformConfig.model_list, UniformConfig.num_model, 1)
+            workload = uniform(rps=UniformConfig.high_load.rps, 
+                               client_model_list=client_model_list, infer_only=False)
+            system = System(train_mps_thread_percent=UniformConfig.high_load.mps_train,
+                            port=UniformConfig.port,
+                            **system_config)
+            run(system, workload, server_model_config, "overall-uniform", "colsys-high")
+
+    if UniformConfig.enable and UniformConfig.low_load.enable:
+        with mps_thread_percent(UniformConfig.high_load.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                UniformConfig.model_list, UniformConfig.num_model, 1)
+            workload = uniform(rps=UniformConfig.low_load.rps, 
+                               client_model_list=client_model_list, infer_only=False)
+            system = System(train_mps_thread_percent=UniformConfig.low_load.mps_train,
+                            port=UniformConfig.port,
+                            **system_config)
+            run(system, workload, server_model_config, "overall-uniform", "colsys-low")
+
+    if UniformConfig.enable and UniformConfig.hybrid_load.enable:
+        pass
+
+
+## MARK: Task Switch
+if run_task_switch:
+    system_config = {
+        'mode': System.ServerMode.TaskSwitchL1,
+        'use_sta': True,
+        'mps': False,
+        'use_xsched': False,
+        'has_warmup' : True,
+        'cuda_memory_pool_gb': '13',
+        'train_memory_over_predict_mb': 1500,
+    }
+
+    if UniformConfig.enable and UniformConfig.high_load.enable:
+        client_model_list, server_model_config = InferModel.get_multi_model(
+            UniformConfig.model_list, UniformConfig.num_model, 1)
+        workload = uniform(rps=UniformConfig.high_load.rps, 
+                           client_model_list=client_model_list, infer_only=False)
+        system = System(port=UniformConfig.port, **system_config)
+        run(system, workload, server_model_config, "overall-uniform", "task-switch-high")
+
+    if UniformConfig.enable and UniformConfig.low_load.enable:
+        client_model_list, server_model_config = InferModel.get_multi_model(
+            UniformConfig.model_list, UniformConfig.num_model, 1)
+        workload = uniform(rps=UniformConfig.low_load.rps, 
+                           client_model_list=client_model_list, infer_only=False)
+        system = System(port=UniformConfig.port, **system_config)
+        run(system, workload, server_model_config, "overall-uniform", "task-switch-low")
+
+
+## MARK: UM+MPS
+if run_um_mps:
+    system_config = {
+        'mode' : System.ServerMode.Normal,
+        'use_sta': False,
+        'mps': True,
+        'use_xsched': False,
+        'has_warmup': True,
+    }
+
+    if UniformConfig.enable and UniformConfig.high_load.enable:
+        with um_mps(UniformConfig.high_load.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                UniformConfig.model_list, UniformConfig.num_model, 1)
+            workload = uniform(UniformConfig.high_load.rps, client_model_list, infer_only=False)
+            system = System(train_mps_thread_percent=UniformConfig.high_load.mps_train,
+                            port=UniformConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-uniform", "um-mps-high")
+
+
+## MARK: Static Partition
+if run_static_partition:
+    system_config = {
+        'mode' : System.ServerMode.Normal,
+        'use_sta': True,
+        'mps': True,
+        'use_xsched': False,
+        'has_warmup': True,
+        'max_cache_nbytes': int(10 * 1024 ** 3),
+        'cuda_memory_pool_gb': '11',
+    }
+
+    if UniformConfig.enable and UniformConfig.high_load.enable:
+        with mps_thread_percent(UniformConfig.high_load.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                UniformConfig.model_list, UniformConfig.num_model, 1)
+            workload = uniform(rps=UniformConfig.high_load.rps, 
+                               client_model_list=client_model_list, infer_only=False,
+                               train_batch_size=4)
+            system = System(train_mps_thread_percent=UniformConfig.high_load.mps_train,
+                            port=UniformConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-uniform", "static-partition-high")
+
+
+## MARK: Infer Only
+if run_infer_only:
+    system_config = {
+        'mode' : System.ServerMode.Normal,
+        'use_sta' : False,
+        'mps': True,
+        'use_xsched': False,
+        'has_warmup': True,
+    }
+
+    if UniformConfig.enable and UniformConfig.high_load.enable:
+        with mps_thread_percent(UniformConfig.high_load.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                UniformConfig.model_list, UniformConfig.num_model, 1)
+            workload = uniform(UniformConfig.high_load.rps, client_model_list, infer_only=True)
+            system = System(port=UniformConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-uniform", "infer-only-high")
+
+    if UniformConfig.enable and UniformConfig.low_load.enable:
+        pass

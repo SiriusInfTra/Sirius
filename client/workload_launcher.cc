@@ -112,9 +112,10 @@ int main(int argc, char** argv) {
     auto groups = GroupByModel(trace_cfg);
     if (app.warmup > 0) {
       std::vector<std::future<void>> warm_up_futures;
+      warm_up_futures.reserve(groups.size());
       for (auto &[model_id, _] : groups) {
         auto &model = trace_cfg.models[model_id];
-        warm_up_futures.push_back(std::async(std::launch::async, 
+        warm_up_futures.emplace_back(std::async(std::launch::async, 
             [&workload, &model, &app](){
               workload.WarmupModel(model.model_name, app.warmup);
             }
