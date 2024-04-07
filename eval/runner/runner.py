@@ -56,6 +56,7 @@ class System:
 '''
 
     def __init__(self, mode: str, use_sta: bool, 
+                 use_sta_train: Optional[bool] = None,
                  cuda_memory_pool_gb: str = None,
                  memory_pool_policy: str = MemoryPoolPolicy.BestFit,
                  profile_log: str = "profile-log", 
@@ -81,6 +82,7 @@ class System:
                  max_live_minute: Optional[int] = None) -> None:
         self.mode = mode
         self.use_sta = use_sta
+        self.use_sta_train = use_sta_train if use_sta_train is not None else use_sta
         self.cuda_memory_pool_gb = cuda_memory_pool_gb
         self.memory_pool_policy = memory_pool_policy
         self.profile_log = profile_log
@@ -152,6 +154,7 @@ class System:
             "-p", self.port, 
             "--mode", self.mode, 
             "--use-sta", "1" if self.use_sta else "0", 
+            "--use-sta-train", "1" if self.use_sta_train else "0",
             "--profile-log", profile_log
         ]
         if self.cuda_memory_pool_gb is not None:

@@ -152,6 +152,7 @@ void init_config() {
             << "cfg::group_param_load=" << cfg::group_param_load << std::endl
             << "cfg::pipeline_load=" << cfg::pipeline_load << std::endl
             << "cfg::has_warmup=" << cfg::has_warmup << std::endl
+            << "cfg::max_cache_nbytes=" << cfg::max_cache_nbytes << std::endl
             << "cfg::colocate_config.skip_malloc=" << cfg::colocate_config.skip_malloc << std::endl
             << "cfg::colocate_config.skip_loading=" << cfg::colocate_config.skip_loading << std::endl;
 

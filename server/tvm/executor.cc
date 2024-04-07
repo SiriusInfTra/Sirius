@@ -474,7 +474,7 @@ void Executor::LoadParams(bool pipeline, bool force) {
       param_ready_[p.first]->store(true);
   }
 
-  DLOG(INFO) << "[Executor] Load Param" << " call_api_ms " << call_api_ms
+  LOG(INFO) << "[Executor] Load Param" << " call_api_ms " << call_api_ms
             << " tot_ms " << Profiler::MilliFrom(load_param_t);
 }
 
