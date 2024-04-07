@@ -123,15 +123,9 @@ Executor::Executor(TVMGraph &factory, size_t worker_id, const std::vector<DLDevi
 
 void Executor::Init(bool load_param) {
   if (!initialized_) {   
-    if (Config::IsColocateMode() && Config::ondemand_adjust) {
-      PROFILE_START(InferAdjustAlloc);
-      if (!Config::colocate_config.skip_malloc) AllocStorageMaybeAdjust();
-      PROFILE_END(InferAdjustAlloc);
-    } else {
-      PROFILE_START(InferAllocStorage);
-      if (!Config::colocate_config.skip_malloc) AllocStorage();
-      PROFILE_END(InferAllocStorage);
-    }
+    PROFILE_START(InferAllocStorage);
+    if (!Config::colocate_config.skip_malloc) AllocStorage();
+    PROFILE_END(InferAllocStorage);
      
     if (!Config::colocate_config.skip_malloc)
       ReSetupDataEntry();
@@ -896,7 +890,7 @@ void Executor::AllocStorageMaybeAdjust() {
 
       PROFILE_START(TrainAdjust);
       auto adjust_batch_size = TrainLauncher::Get()->
-          GetAdjustBatchSize(sta::ByteToMB(GetMissingStorageSizeAlign()));
+          GetAdjustBatchSize(sta::ByteToMB(GetMissingStorageSizeAlign() ));
       auto cmd_id = Controller::Get()->
           ColocateAdjust(this->tvm_graph_.model_rank_, adjust_batch_size);
       Controller::Get()->WaitColocateAdjustDone(cmd_id);

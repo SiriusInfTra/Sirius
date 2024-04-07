@@ -105,6 +105,8 @@ class Config {
 
   static size_t cold_cache_min_capability_nbytes;
   static size_t cold_cache_max_capability_nbytes;
+
+  static size_t infer_alloc_buffer_nbytes;
   static size_t train_over_adjust_nbytes;
   static size_t max_warm_cache_nbytes;
   static double cold_cache_ratio;
