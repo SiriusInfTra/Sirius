@@ -10,7 +10,7 @@ std::unique_ptr<TVMAllocator> TVMAllocator::instance_ = nullptr;
 
 
 TVMAllocator::TVMAllocator(MemPool &mempool, bool for_train, bip::scoped_lock<bip::interprocess_mutex> &lock)
-    : GenericAllocator(mempool, Belong::kInfer, lock) {
+    : GenericAllocator(mempool, Belong::kInfer, 2_MB, lock) {
   LOG(INFO) << log_prefix_ << "Init TVMAllocator with args: for_train = " << for_train << ".";
   std::vector<PhyMem *> phy_mem_list;
   for(auto && phymem : mempool.GetPhyMemList()) {

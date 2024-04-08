@@ -128,8 +128,8 @@ bool EntryList::CheckState() {
 }
 
 
-FreeList::FreeList(EntryList &list_index, bool is_small, const std::string &log_prefix, Belong policy)
-    : list_index_(list_index), is_small_(is_small), policy_(policy), log_prefix_(log_prefix) {
+FreeList::FreeList(EntryList &list_index, bool is_small, const std::string &log_prefix, Belong policy, size_t small_block_nbytes)
+    : list_index_(list_index), is_small_(is_small), policy_(policy), log_prefix_(log_prefix), small_block_nbytes_(small_block_nbytes) {
           auto &shared_memory = MemPool::Get().GetSharedMemory();
   auto atomic_init = [&] {
     std::string name = "FL_entry_by_nbytes_" + std::to_string(is_small) + "_" 
@@ -169,9 +169,9 @@ MemEntry *FreeList::PopFreeEntry(MemEntry *free_entry) {
   free_entry->is_free = false;
   CHECK_EQ(free_entry->is_small, is_small_);
   CHECK(!alloc_conf::STRICT_CHECK_STATE || CheckState());
-  if (!is_small_) {
-    CHECK_GE(free_entry->nbytes, SMALL_BLOCK_NBYTES);
-  }
+  // if (!is_small_) {
+  //   CHECK_GE(free_entry->nbytes, small_block_nbytes_) << free_entry;
+  // }
   return free_entry;
 }
 
@@ -212,7 +212,7 @@ MemEntry* FreeList::PushFreeEntry(MemEntry *entry) {
   entry->pos_freelist =
       entry_by_nbytes_->insert(std::make_pair(entry->nbytes, shm_handle<MemEntry>(entry)));
   // if (!is_small_) {
-  //   CHECK_GE(entry->nbytes, SMALL_BLOCK_NBYTES);
+  //   CHECK_GE(entry->nbytes, small_block_nbytes_);
   // }
   CHECK(!alloc_conf::STRICT_CHECK_STATE || CheckState());
   return entry;
@@ -252,13 +252,13 @@ bool FreeList::CheckState() {
 
 
 GenericAllocator::GenericAllocator(
-    MemPool &mempool, Belong policy, bip::scoped_lock<bip::interprocess_mutex> &lock) 
+    MemPool &mempool, Belong policy, size_t small_block_nbytes, bip::scoped_lock<bip::interprocess_mutex> &lock) 
     : mempool_(mempool), 
       log_prefix_("[Memory Allocator] [" + ToString(policy) + "] "), 
       entry_list_(log_prefix_, policy), 
-      free_list_small_(entry_list_, true, log_prefix_, policy),
-      free_list_large_(entry_list_, false, log_prefix_, policy), 
-      policy_(policy) {
+      free_list_small_(entry_list_, true, log_prefix_, policy, small_block_nbytes),
+      free_list_large_(entry_list_, false, log_prefix_, policy, small_block_nbytes), 
+      policy_(policy), small_block_nbytes_(small_block_nbytes) {
   CHECK(lock.owns());
   CU_CALL(cuMemAddressReserve(reinterpret_cast<CUdeviceptr *>(&base_ptr_),
                               mempool_.mempool_nbytes * VA_RESERVE_SCALE, MEM_BLOCK_NBYTES, 0, 0));

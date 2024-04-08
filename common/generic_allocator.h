@@ -25,7 +25,6 @@
 #include <utility>
 
 namespace colserve::sta {
-static const constexpr size_t SMALL_BLOCK_NBYTES = 2_MB;
 static const constexpr size_t VA_RESERVE_SCALE = 16;
 
 namespace alloc_conf {
@@ -104,13 +103,6 @@ inline std::string ToString(const MemEntry *entry) {
   return ss.str();
 }
 
-inline void CheckNBytes(const MemEntry *entry) {
-  if (entry->is_small) {
-    CHECK_LT(entry->nbytes, SMALL_BLOCK_NBYTES) << entry;
-  } else {
-    CHECK_GE(entry->nbytes, SMALL_BLOCK_NBYTES) << entry;
-  }
-}
 
 inline std::ostream & operator<<(std::ostream &os, const MemEntry *entry)  {
   os << ToString(entry);
@@ -204,11 +196,12 @@ private:
   EntryList& list_index_;
   const bool is_small_;
   const Belong policy_;
+  const size_t small_block_nbytes_;
   entry_nbytes_map *entry_by_nbytes_;
 public:
 
 
-  FreeList(EntryList &list_index, bool is_small, const std::string &log_prefix, Belong policy);
+  FreeList(EntryList &list_index, bool is_small, const std::string &log_prefix, Belong policy, size_t small_block_nbytes);
 
   MemEntry *PopFreeEntry(size_t nbytes, bool do_split = true);
 
@@ -228,6 +221,8 @@ public:
 class GenericAllocator {
 public:
   const Belong policy_;
+  const size_t small_block_nbytes_;
+  const std::string log_prefix_;
 protected:
   MemPool &mempool_;
   std::vector<PhyMem *> mapped_mem_list_;
@@ -240,7 +235,7 @@ protected:
 
 
 
-  const std::string log_prefix_;
+
 
 
   void ExpandMemorySpace(const std::vector<PhyMem *> &phy_mem_list, size_t len) {
@@ -315,7 +310,7 @@ public:
   }
 
 
-  GenericAllocator(MemPool &mempool, Belong policy, bip::scoped_lock<bip::interprocess_mutex> &lock);
+  GenericAllocator(MemPool &mempool, Belong policy, size_t small_block_nbytes, bip::scoped_lock<bip::interprocess_mutex> &lock);
 
   virtual ~GenericAllocator();
 
@@ -390,15 +385,15 @@ public:
     if (entry->addr_offset < addr_offset) {
       auto *prev_entry = entry;
       entry = entry_list_.SplitEntry(prev_entry, addr_offset - entry->addr_offset);
-      prev_entry->is_small = prev_entry->nbytes < SMALL_BLOCK_NBYTES;
+      prev_entry->is_small = prev_entry->nbytes < small_block_nbytes_;
       (prev_entry->is_small ? free_list_small_ : free_list_large_).PushFreeEntry(prev_entry);
     }
     if (entry->addr_offset + entry->nbytes > addr_offset + nbytes) {
       auto *next_entry = entry_list_.SplitEntry(entry, addr_offset + nbytes - entry->addr_offset);
-      next_entry->is_small = next_entry->nbytes < SMALL_BLOCK_NBYTES;
+      next_entry->is_small = next_entry->nbytes < small_block_nbytes_;
       (next_entry->is_small ? free_list_small_ : free_list_large_).PushFreeEntry(next_entry);
     }
-    entry->is_small = entry->nbytes < SMALL_BLOCK_NBYTES;
+    entry->is_small = entry->nbytes < small_block_nbytes_;
     CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
     return entry;
   }
@@ -424,7 +419,7 @@ public:
         total_nbytes += next_entry->nbytes;
       }
     }
-    if (put_free_list_large && total_nbytes < SMALL_BLOCK_NBYTES) {
+    if (put_free_list_large && total_nbytes < small_block_nbytes_) {
       put_free_list_large = false;
     }
     if (put_free_list_large) {

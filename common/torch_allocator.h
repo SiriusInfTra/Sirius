@@ -184,7 +184,7 @@ private:
     nbytes = detail::AlignedNBytes<ALIGN_NBYTES>(nbytes);
     MemEntry *free_entry = nullptr;
     // 1. normal case, alloc in train small/large mem pool
-    if (nbytes < SMALL_BLOCK_NBYTES) {
+    if (nbytes < small_block_nbytes_) {
       free_entry = free_list_small_.PopFreeEntry(nbytes, true);
       CHECK(!alloc_conf::ALWAYS_CHECK_STATE || free_entry == nullptr || CheckState());
     }
