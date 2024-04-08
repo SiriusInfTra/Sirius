@@ -185,19 +185,29 @@ uint64_t Controller::InferExit() {
     if (Config::IsColocateMode()) {
       // Controller::Get()->EnterInferChangeMemory();
       int train_target_bs;
+      int train_bs;
+      int train_bs_predict_by_avail_memory;
       double train_avail_memory_mb;
+      double free_memory_mb;
       {
         ResourceManager::InferMemoryChangingLock();
         train_avail_memory_mb = std::max(ResourceManager::GetTrainAvailMemoryMB(), 0.0);
-        train_target_bs = TrainLauncher::Get()->PredictTargetBatchSize(train_avail_memory_mb);
+        free_memory_mb = std::max(ResourceManager::GetFreeMemoryMB(), 0.0);
+        auto adjsut_bs = TrainLauncher::Get()->GetAdjustBatchSize(free_memory_mb);
+        train_bs_predict_by_avail_memory = TrainLauncher::Get()->PredictTargetBatchSize(train_avail_memory_mb);
+        train_bs = TrainLauncher::Get()->GetTargetBatchSize();
+        train_target_bs = std::min(train_bs + adjsut_bs, train_bs_predict_by_avail_memory);
+        // train_target_bs = TrainLauncher::Get()->PredictTargetBatchSize(train_avail_memory_mb);
         TrainLauncher::Get()->SetTargetBatchSize(train_target_bs);
         ResourceManager::InferMemoryChangingUnlock();
         // TrainLauncher::Get()->AddTargetBatchSize(batch_size);
       }
 
       LOG(INFO) << "[Controller] Infer Exit"
-                << " train avail memory " << train_avail_memory_mb
-                << " target batch size " << train_target_bs;
+                << " train avail memory " << train_avail_memory_mb 
+                << " (predict bs " << train_bs_predict_by_avail_memory << ")"
+                << " free memory " << free_memory_mb 
+                << " batch size " << train_bs << " -> " << train_target_bs;
       train_cmd_event_mq_->Put({cmd_id, 
                                 static_cast<int>(ctrl::CtrlEvent::kInferExit), 
                                 train_target_bs});

@@ -121,7 +121,7 @@ int TrainLauncher::PredictTargetBatchSize(double memory_mb) {
 
 int TrainLauncher::GetAdjustBatchSize(double memory_mb) {
   auto [base, slope] = GetModelMemParam();
-  return static_cast<int>((memory_mb + slope) / slope);
+  return static_cast<int>(std::ceil(memory_mb / slope));
 }
 
 bool TrainLauncher::Train() {
