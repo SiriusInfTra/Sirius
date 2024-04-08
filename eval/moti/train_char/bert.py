@@ -82,6 +82,7 @@ def train():
     dataloader = DataLoader(dataset, shuffle=False, batch_size=batch_size)
 
     model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=5)
+    # model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=5)
     model = model.cuda(0)
     for param in model.parameters():
         IntermMemoryStat.model_param_add(param)
@@ -91,11 +92,15 @@ def train():
 
 
     eval_batch_size = [128, 64, 32, 16, 8, 4]
+    # eval_batch_size = [64, 32, 16, 8, 4]
     # eval_batch_size = [32, 16, 8, 4]
     # eval_batch_size = [128, ]
     epoch_micro_batch_size = [batch_size, ] # warmup
     for bs in eval_batch_size:
         epoch_micro_batch_size.extend([bs] * 3)
+
+    print(batch_size)
+    print(epoch_micro_batch_size)
 
     scaler = torch.cuda.amp.GradScaler()
 

@@ -5,6 +5,7 @@ import torch
 from torch.utils.data import IterableDataset, get_worker_info
 from typing import Iterator, Optional
 
+import sys
 import torch_col
 from torch_col.hook import HookABC, HookMode
 from torch_col.util import TrainMode, MemoryPool
