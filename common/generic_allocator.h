@@ -79,6 +79,7 @@ struct MemEntry {
     bool            is_free:  1;
     bool            is_train: 1;
     bool            is_small: 1;
+    bool            is_alloc: 1;
   };
 
   entry_linklist::iterator    pos_entrylist;
@@ -171,6 +172,7 @@ public:
       if (!entry) { break; }
       if (entry->addr_offset + entry->nbytes >= addr_offset + nbytes) { break; }
       entry = GetNextEntry(entry);
+      if (!entry) { break; }
     }
     return entry;
   }
@@ -203,7 +205,7 @@ public:
 
   FreeList(EntryList &list_index, bool is_small, const std::string &log_prefix, Belong policy, size_t small_block_nbytes);
 
-  MemEntry *PopFreeEntry(size_t nbytes, bool do_split = true);
+  MemEntry *PopFreeEntry(size_t nbytes, bool do_split = true, size_t require_allocated = 0);
 
   MemEntry *PopFreeEntry(MemEntry *free_entry);
 
@@ -236,7 +238,19 @@ protected:
 
 
 
+  void UpdateAllocFlag(MemEntry *entry) {
+    if (!entry->is_free) { return; }
+    bool real_allocated = true;
 
+    auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(entry);
+    for (size_t k = index_begin; k < index_end; ++k) {
+      if (mapped_mem_list_[k] == nullptr) {
+        real_allocated = false;
+        break;
+      }
+    }
+    entry->is_alloc = real_allocated;
+  }
 
   void ExpandMemorySpace(const std::vector<PhyMem *> &phy_mem_list, size_t len) {
     if( (mapped_mem_list_.size() + len) * MEM_BLOCK_NBYTES > mempool_.mempool_nbytes * VA_RESERVE_SCALE) {
