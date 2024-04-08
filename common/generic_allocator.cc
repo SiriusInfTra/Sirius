@@ -60,6 +60,7 @@ EntryList::SplitEntry(MemEntry *origin_entry,
   entry_split->is_free  = origin_entry->is_free;
   entry_split->is_small = origin_entry->is_small;
   entry_split->is_train = origin_entry->is_train;
+  entry_split->is_alloc = origin_entry->is_alloc;
   
   /* [origin: remain] [split: nbytes - remain] */
   entry_split->nbytes = origin_entry->nbytes - remain;
@@ -84,6 +85,7 @@ EntryList::MergeMemEntry(MemEntry *first_entry,
   CHECK_EQ(first_entry->is_free, secound_entry->is_free);
   CHECK_EQ(first_entry->is_train, secound_entry->is_train);
   CHECK_EQ(first_entry->is_small, secound_entry->is_small);
+  first_entry->is_alloc = first_entry->is_alloc && secound_entry->is_alloc;
   first_entry->nbytes += secound_entry->nbytes;
   entry_list_->erase(secound_entry->pos_entrylist);
   entry_by_addr->erase(secound_entry->pos_entrytable);
@@ -142,12 +144,23 @@ FreeList::FreeList(EntryList &list_index, bool is_small, const std::string &log_
 
 
 
-MemEntry *FreeList::PopFreeEntry(size_t nbytes, bool do_split) {
+MemEntry *FreeList::PopFreeEntry(size_t nbytes, bool do_split, size_t require_allocated) {
   auto iter = entry_by_nbytes_->lower_bound(nbytes);
   if (iter == entry_by_nbytes_->cend()) {
     return nullptr;
   }
   auto *free_entry = iter->second.ptr();
+  for (auto iter1 = iter; iter1 != entry_by_nbytes_->cend() && require_allocated != 0; ++iter1, --require_allocated) {
+    auto *entry1 = iter1->second.ptr();
+    CHECK_GE(entry1->nbytes, nbytes);
+    CHECK(entry1->is_free);
+    if (entry1->is_alloc) { 
+      free_entry = entry1;
+      iter = iter1;
+      break;
+    }
+  }
+
   CHECK_GE(free_entry->nbytes, nbytes);
   if (do_split && free_entry->nbytes > nbytes ) {
     auto split_entry = list_index_.SplitEntry(free_entry, nbytes);
