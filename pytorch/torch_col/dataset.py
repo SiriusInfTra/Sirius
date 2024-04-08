@@ -1,12 +1,18 @@
+from enum import IntEnum
 import time
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, Dataset, Sampler, IterableDataset, get_worker_info
+from torch.utils.data import IterableDataset, get_worker_info
 from typing import Iterator, Optional
 
 import torch_col
 from torch_col.hook import HookABC, HookMode
-from torch_col.util import TrainMode, EventManager
+from torch_col.util import TrainMode, MemoryPool
+
+class DatasetState(IntEnum):
+    INIT = 0
+    ITER = 1
+    NEXT = 2
 
 class CustomeDynamicBatchDataset(IterableDataset):
     def __init__(self, size, input_shape, num_class, max_batch_size, hook: HookABC, trace: Optional[list[dict]]) -> None:
@@ -18,6 +24,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
         self.last_batch_size = None
         self.iter_idx = 0
         self.hook = hook
+        self.state = DatasetState.INIT
         self.all_inputs = torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_inputs.npy')).pin_memory()
         self.all_targets = torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_targets.npy')).pin_memory()
         assert num_class == torch.max(self.all_targets).item() + 1, f"expect num of class: {torch.max(self.all_targets).item() + 1}."
@@ -59,9 +66,9 @@ class CustomeDynamicBatchDataset(IterableDataset):
                 #     print('batch {} adjust : bs {} -> {} | {:.1f}ms | {:.1f}ms | {}'.format(
                 #         i, train_dataset.last_batch_size, train_dataset.batch_size, (time.time()-batch_begin) * 1000, (t1 - t0) * 1000, 
                 #         mem_info))
-        assert self.last_batch_size is not None
+        assert self.state == DatasetState.ITER
+        self.state = DatasetState.NEXT
         self.iter_idx += self.last_batch_size
-        self.last_batch_size = None
         self.trace_idx += 1
         # if torch_col.use_shared_tensor():
         #     torch_col.MemoryPool.empty_cache() # to avoid memory fragmentation
@@ -84,9 +91,9 @@ class CustomeDynamicBatchDataset(IterableDataset):
         elif self.trace is not None:
             trace_item = self.trace[self.trace_idx]
             assert batch_size == trace_item['batch_size'], f"{batch_size} vs {trace_item['batch_size']}"
-        # self.iter_idx += batch_size
-        if self.hook.train_mode == TrainMode.NORMAL or self.hook.train_mode == TrainMode.COLOCATE_L2:
-            assert self.last_batch_size is None
+        if self.state != DatasetState.INIT and self.last_batch_size < batch_size and torch_col.use_shared_tensor():
+            MemoryPool.empty_cache()
+        self.state = DatasetState.ITER
         self.last_batch_size = batch_size
         # inputs = torch.randn(batch_size, *self.input_shape)
         # targets = torch.randint(0, self.num_class, size=(batch_size,), dtype=torch.long)
@@ -94,14 +101,6 @@ class CustomeDynamicBatchDataset(IterableDataset):
         targets = self.all_targets[self.iter_idx:self.iter_idx+batch_size]
         if self.hook is not None:
             self.hook.report_batch_size(batch_size)
-        return inputs, targets
-    
-    def iter_batch_with_trace(self) -> Iterator:
-        trace_item = self.trace[self.trace_idx]
-        batch_size = trace_item['batch_size']
-        inputs = self.all_inputs[self.iter_idx:self.iter_idx+batch_size]
-        targets = self.all_targets[self.iter_idx:self.iter_idx+batch_size]
-        self.last_batch_size = batch_size
         return inputs, targets
     
     def __iter__(self) -> Iterator:
