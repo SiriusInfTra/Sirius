@@ -1,18 +1,10 @@
-import os
-import random
-from typing import Optional
-import pandas as pd
 import torch
 from torch import nn
-import torch.nn.functional as F
-from torch.optim.lr_scheduler import StepLR
 from torchvision import models
 from torch.utils.data import DataLoader
 import argparse
 
-import os
 import torch_col
-import numpy as np
 from torch_col import MemoryPool, EventManager, TrainMode, HookMode
 from torch_col import ColocateAdjustL1Exception, SwitchL1Exception
 from torch_col import CustomeDynamicBatchDataset
@@ -38,21 +30,17 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
     hook = torch_col.get_hook(train_mode, hook_mode, num_epoch, batch_size)
     hook.register_pytorch_hook([model, criterion])
 
-    # dummy data, todo: learning rate auto scaling
+    # dummy data
     train_dataset = CustomeDynamicBatchDataset(1000, (3, 224, 224), 10, batch_size, hook, train_valiation.get_trace_input())
     train_loader = DataLoader(train_dataset, batch_size=None, 
                               shuffle=False, pin_memory=True, drop_last=False, num_workers=0)
-    
 
     total_killed_batch = 0
     total_finished_batch = 0
     total_tried_batch = 0
 
     model.train()
-    
-    
     hook.train_start()
-
 
     for epoch in range(num_epoch):
         epoch_event = EventManager.record_event(f'epoch_{epoch:02d}')
@@ -135,7 +123,6 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
     hook.train_end()
     hook.stop()
 
-
 def main():
     parser = argparse.ArgumentParser('Train Resnet')    
     parser.add_argument('--batch-size', type=int, default=64)
@@ -143,7 +130,7 @@ def main():
     parser.add_argument('--train-mode', type=str, default=TrainMode.COLOCATE_L1.value, choices=[train_mode.value for train_mode in TrainMode])
     parser.add_argument('--train-profile', type=str, default='train-profile.csv')
     parser.add_argument('--hook-mode', default=HookMode.XSCHED_SYNC.value, choices=[hook_mode.value for hook_mode in HookMode])
-    parser.add_argument('--use-xsched', type=bool)
+    parser.add_argument('--use-xsched', type=bool) # not used args
     args = parser.parse_args()
     
     batch_size = args.batch_size
