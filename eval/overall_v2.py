@@ -7,6 +7,7 @@ set_global_seed(42)
 
 use_time_stamp = True
 retry_if_fail = True
+skip_fail = False
 
 run_colsys  = False
 run_um_mps = False
@@ -72,14 +73,18 @@ class UniformConfig:
     port = str(18100 + (os.getpid() % 10) * 10)
     enable = True
 
-    low_load = LowLoad(enable=False)
+    low_load = LowLoad(enable=True)
     high_load = HighLoad(enable=True)
     hybrid_load = HybridLoad(enable=False)
 
+# MARK: Workload
 ## =========================================================== ##
 
 def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
-            train_model='resnet', train_epoch=40, train_batch_size=140):
+            train_model='resnet', 
+            # train_epoch=UniformConfig.duration / 3, 
+            train_epoch=20,
+            train_batch_size=140):
     workload = HyperWorkload(concurrency=2048,
                              warmup=5,
                              wait_warmup_done_sec=5,
@@ -97,7 +102,7 @@ def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
     return workload
 
 
-def run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
+def _run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
     try:
         system.launch(unit, tag, time_stamp=use_time_stamp,
                     infer_model_config=server_model_config)
@@ -106,8 +111,8 @@ def run(system: System, workload: HyperWorkload, server_model_config: str, unit:
         print(f"Failed to run {unit} {tag}: {e}")
         system.stop()
         if retry_if_fail:
-            print(f"\n### Retry [{unit} {tag}] ###")
-            system.launch(unit, tag, time_stamp=use_time_stamp,
+            print(f"\n\x1b[33;1m### Retry [{unit} {tag}] ###\x1b[0m")
+            system.launch(unit, f'{tag}-retry', time_stamp=use_time_stamp,
                     infer_model_config=server_model_config)
             workload.launch_workload(system)
         else:
@@ -118,7 +123,15 @@ def run(system: System, workload: HyperWorkload, server_model_config: str, unit:
     system.draw_trace_cfg()
     system.calcuate_train_thpt()
     
-        
+
+def run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
+    if skip_fail:
+        try:
+            _run(system, workload, server_model_config, unit, tag)
+        except Exception as e:
+            print(f"\n\x1b[33;1m### Skip {unit} {tag}: {e} ###\x1b[0m")
+    else:
+        _run(system, workload, server_model_config, unit, tag)
 
 ## =========================================================== ##
 
