@@ -326,14 +326,21 @@ public:
   }
 
   void PrintStatus() {
+    bool is_training = policy_ == Belong::kTrain;
     enum class MemEntryType { kFreeLarge, kFreeSmall,  kTrainLarge, kTrainSmall, kNotAllocatedLarge, kNotAllocatedSmall, kUsed };
     std::unordered_map<MemEntryType, std::pair<std::vector<size_t>, std::string>> groupby = {
-      {MemEntryType::kFreeLarge, std::make_pair(std::vector<size_t>{}, "FreeListLarge")},
-      {MemEntryType::kFreeSmall, std::make_pair(std::vector<size_t>{}, "FreeListSmall")},
-      {MemEntryType::kTrainLarge, std::make_pair(std::vector<size_t>{}, "TrainLarge")},
-      {MemEntryType::kTrainSmall, std::make_pair(std::vector<size_t>{}, "TrainSmall")},
-      {MemEntryType::kNotAllocatedLarge, std::make_pair(std::vector<size_t>{}, "NotAllocatedLarge")},
-      {MemEntryType::kNotAllocatedSmall, std::make_pair(std::vector<size_t>{}, "NotAllocatedSmall")},
+      {MemEntryType::kFreeLarge, std::make_pair(std::vector<size_t>{}, 
+          std::string("FreeListLarge") + (is_training ? ", free entry w/ phy page" : ""))},
+      {MemEntryType::kFreeSmall, std::make_pair(std::vector<size_t>{}, 
+          std::string("FreeListSmall") + (is_training ? ", free entry w/ phy page" : ""))},
+      {MemEntryType::kTrainLarge, std::make_pair(std::vector<size_t>{}, 
+          std::string("TrainLarge") + (is_training ? " (training allocated)" : (" (phy page allocated to train)")))},
+      {MemEntryType::kTrainSmall, std::make_pair(std::vector<size_t>{}, 
+          std::string("TrainSmall") + (is_training ? " (training allocated)" : (" (phy page allocated to train)")))},
+      {MemEntryType::kNotAllocatedLarge, std::make_pair(std::vector<size_t>{}, 
+          std::string("NotAllocatedLarge (free entry w/o phy page)") + (is_training ? "" : ", should be empty for Infer"))},
+      {MemEntryType::kNotAllocatedSmall, std::make_pair(std::vector<size_t>{}, 
+          std::string("NotAllocatedSmall (free entry w/o phy page)") + (is_training ? "" : ", should be empty for Infer"))},
       {MemEntryType::kUsed, std::make_pair(std::vector<size_t>{}, "Used")},
     };
     for(auto *entry= entry_list_.GetEntry(0); entry !=nullptr; entry = entry_list_.GetNextEntry(entry)) {
