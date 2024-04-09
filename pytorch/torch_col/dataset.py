@@ -8,7 +8,7 @@ from typing import Iterator, Optional
 import sys
 import torch_col
 from torch_col.hook import HookABC, HookMode
-from torch_col.util import TrainMode, MemoryPool
+from torch_col.util import TrainMode, MemoryPool, EventManager
 
 class DatasetState(IntEnum):
     INIT = 0
