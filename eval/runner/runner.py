@@ -72,7 +72,8 @@ class System:
                  colocate_skip_malloc: bool = False,
                  colocate_skip_loading: bool = False,
                  max_warm_cache_nbytes: int = 0 * 1024 * 1024 * 1024,
-                 max_cold_cache_nbytes: int = 0 * 1024 * 1024 * 1024,
+                 cold_cache_min_capability_nbytes: int = 0 * 1024 * 1024 * 1024,
+                 cold_cache_max_capability_nbytes: int = 0 * 1024 * 1024 * 1024,
                  cold_cache_ratio: float = 0.0,
                  memory_pressure_mb: str | float = None,
                  ondemand_adjust: bool = True,
@@ -109,7 +110,8 @@ class System:
         self.colocate_skip_malloc = colocate_skip_malloc
         self.colocate_skip_loading = colocate_skip_loading
         self.max_warm_cache_nbytes = max_warm_cache_nbytes
-        self.max_cold_cache_nbytes = max_cold_cache_nbytes
+        self.cold_cache_min_capability_nbytes = cold_cache_min_capability_nbytes
+        self.cold_cache_max_capability_nbytes = cold_cache_max_capability_nbytes
         self.cold_cache_ratio = cold_cache_ratio
         self.memory_pressure_mb = memory_pressure_mb
         self.ondemand_adjust = ondemand_adjust
@@ -204,7 +206,8 @@ class System:
         cmd += ['--train-profile', str(train_profile)]
         
         cmd += ['--max-warm-cache-nbytes', str(self.max_warm_cache_nbytes)]
-        cmd += ['--cold-cache-min-capability-nbytes', str(self.max_cold_cache_nbytes)]
+        cmd += ['--cold-cache-min-capability-nbytes', str(self.cold_cache_min_capability_nbytes)]
+        cmd += ['--cold-cache-max-capability-nbytes', str(self.cold_cache_max_capability_nbytes)]
         cmd += ['--cold-cache-ratio', str(self.cold_cache_ratio)]
 
         if self.memory_pressure_mb:

@@ -31,7 +31,7 @@ size_t Config::better_alloc_threshold = 64_MB;
 
 bool Config::group_param_load = true;
 bool Config::group_param_dump = false;
-bool Config::group_param_nbytes_with_fragment = true;
+bool Config::group_param_nbytes_with_fragment = false;
 size_t Config::group_param_load_threshold = 8_MB;
 
 double Config::cuda_memory_pool_gb = 12;
@@ -52,6 +52,7 @@ int Config::train_mps_thread_percent = -1;
 
 size_t Config::cold_cache_min_capability_nbytes = 0_GB;
 size_t Config::cold_cache_max_capability_nbytes = 0_GB;
+
 double Config::cold_cache_ratio = 0.3;
 size_t Config::train_over_adjust_nbytes = 500_MB;
 

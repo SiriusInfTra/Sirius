@@ -1,4 +1,5 @@
 from __future__ import annotations
+import sys
 
 from dataclasses import dataclass
 from functools import total_ordering
@@ -19,6 +20,7 @@ with open(filename) as f:
 print(f'Max tensor {np.sort(nbytes_ordered_list)[-5:] / 1024 / 1024} MB')
 print(f'Min tensor {np.sort(nbytes_ordered_list)[: 5]} B')
 nbytes_ordered_cumsum = np.cumsum(nbytes_ordered_list)
+AVAILABLE_GROUP_NBYTES = np.array([16, 32, 64, 96, 128]) * 1024 * 1024
 GROUP_NBYTES_MIN  = 32 * 1024 * 1024
 GROUP_NBYTES_MAX  = 128 * 1024 * 1024
 GROUP_NBYTES_ALIGN = 16 * 1024 * 1024
@@ -28,6 +30,17 @@ GROUP_NBYTES_ALIGN = 16 * 1024 * 1024
 def align(i: int | float):
     assert i % 1 == 0
     return (i + GROUP_NBYTES_ALIGN - 1) // GROUP_NBYTES_ALIGN * GROUP_NBYTES_ALIGN
+
+def align_div(nbytes: int | float, div_align: int):
+    assert nbytes % 1 == 0
+    assert div_align % 1 == 0
+    return (nbytes + div_align - 1) // div_align * div_align
+
+def align_near(nbytes: int | float, align_near_sorted: np.ndarray[int]):
+    assert nbytes % 1 == 0
+    assert nbytes <= align_near_sorted[-1]
+    i = np.searchsorted(align_near_sorted, nbytes, side='left')
+    return align_near_sorted[i]
 
 @total_ordering
 class Solution:
@@ -41,7 +54,7 @@ class Solution:
             group_size = nbytes_ordered_cumsum[new_parti_pos - 1] \
                 - (nbytes_ordered_cumsum[solution.partitions_before[-1] - 1] if solution.partitions_before[-1] > 0 else 0)
             self.partitions_before = [*solution.partitions_before, new_parti_pos]
-            self.fragment_nbytes = solution.fragment_nbytes + (align(group_size) - group_size)
+            self.fragment_nbytes = solution.fragment_nbytes + (align_near(group_size, AVAILABLE_GROUP_NBYTES) - group_size)
             self.groups_size = np.array([*solution.groups_size, group_size])
 
     def is_final(self) -> bool:
@@ -94,7 +107,7 @@ while len(q) > 0:
         #     print(solution, min_fragment)
         #     raise "a"
     else:
-        for group_size in range(GROUP_NBYTES_MIN, GROUP_NBYTES_MAX + GROUP_NBYTES_ALIGN, GROUP_NBYTES_ALIGN):
+        for group_size in AVAILABLE_GROUP_NBYTES:
             next_parti_pos = np.searchsorted(nbytes_ordered_cumsum, group_size + \
                 (nbytes_ordered_cumsum[solution.partitions_before[-1] - 1] if solution.partitions_before[-1] > 0 else 0))
             if next_parti_pos == solution.partitions_before[-1]:
@@ -103,6 +116,9 @@ while len(q) > 0:
             if new_solution.fragment_nbytes > min_fragment:
                 cut_cnt += 1
                 continue
+            # if len(new_solution.groups_size) > 2 and np.all(new_solution.groups_size[-2:] <= 16 * 1024 * 1024):
+            #     cut_cnt += 1
+            #     continue
             q.appendleft(new_solution)
             if next_parti_pos == len(nbytes_ordered_cumsum):
                 break
