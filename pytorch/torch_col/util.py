@@ -70,7 +70,7 @@ class EventManager:
     @classmethod
     def set_log_path(cls, path: str):
         cls.event_log_path = path
-    
+
     @classmethod
     def record_event(cls, name: str, prev_event: Optional[Event]=None) -> Event:
         timestamp = torch_col.get_unix_timestamp_us()

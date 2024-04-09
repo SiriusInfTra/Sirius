@@ -8,7 +8,7 @@ from typing import Iterator, Optional
 import sys
 import torch_col
 from torch_col.hook import HookABC, HookMode
-from torch_col.util import TrainMode, MemoryPool
+from torch_col.util import TrainMode, MemoryPool, EventManager
 
 class DatasetState(IntEnum):
     INIT = 0
@@ -19,22 +19,32 @@ class CustomeDynamicBatchDataset(IterableDataset):
     def __init__(self, size, input_shape, num_class, max_batch_size, 
                  hook: HookABC, trace: Optional[list[dict]], 
                  max_global_batch_size = None,
-                 empty_cache_at_larger_batch_size = False) -> None:
+                 empty_cache_at_larger_batch_size = False,
+                 fake_data=False) -> None:
         super().__init__()
         self.size = size
         self.input_shape = input_shape
         self.num_class = num_class
         self.max_batch_size = max_batch_size
         self.max_global_batch_size = max_global_batch_size
+        self.enable_accumulation = max_global_batch_size is not None
         self.global_batch_size = None
-        self.accumulate_idx = None if max_global_batch_size is None else 0
+        self.accumulate_iter_idx = None if max_global_batch_size is None else 0
         self.last_batch_size = None
         self.micro_batch_iter_idx = 0
         self.global_batch_iter_idx = None if max_global_batch_size is None else 0
+        self.global_batch_id_in_epoch = None if max_global_batch_size is None else 0
+        self.num_rollback_samples_in_epoch = None if max_global_batch_size is None else 0
         self.hook = hook
         self.state = DatasetState.INIT
-        self.all_inputs = torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_inputs.npy')).pin_memory()
-        self.all_targets = torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_targets.npy')).pin_memory()
+        self.global_batch_event = None
+        self.batch_event = None
+        if not fake_data:
+            self.all_inputs = torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_inputs.npy')).pin_memory()
+            self.all_targets = torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_targets.npy')).pin_memory()
+        else:
+            self.all_inputs = torch.randn(size, *input_shape).pin_memory()
+            self.all_targets = torch.randint(0, num_class, size=(size,), dtype=torch.long).pin_memory()
         assert num_class == torch.max(self.all_targets).item() + 1, f"expect num of class: {torch.max(self.all_targets).item() + 1}."
         assert size == len(self.all_inputs), f"expect size {len(self.all_inputs)}."
         assert input_shape == self.all_inputs.shape[1:], f"expect input shape: {self.all_inputs.shape[1:]}"
@@ -58,7 +68,17 @@ class CustomeDynamicBatchDataset(IterableDataset):
         else:
             return self.max_batch_size
 
+    def record_batch_event(self, epoch, i, batch_size, global_batch_size=None):
+        self.batch_event = EventManager.record_event(f'batch_{epoch:02d}_{i:03d}_{batch_size:02d}')
+        if self.enable_accumulation:
+            if self.global_batch_event is None:
+                assert global_batch_size is not None
+                self.global_batch_event = EventManager.record_event(f'global_batch_{epoch:02d}_{i:03d}_{global_batch_size:02d}')
+
     def next_batch(self):
+        if self.is_do_step():
+            torch.cuda.current_stream().synchronize()
+
         if self.hook.train_mode == TrainMode.COLOCATE_L2:
             if self.hook._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL2:
                 self.hook.release_and_reply()
@@ -76,23 +96,53 @@ class CustomeDynamicBatchDataset(IterableDataset):
                 #         i, train_dataset.last_batch_size, train_dataset.batch_size, (time.time()-batch_begin) * 1000, (t1 - t0) * 1000, 
                 #         mem_info))
         assert self.state == DatasetState.ITER
+        self.batch_event.tag = 'finish'
+        EventManager.record_event('', self.batch_event)
+        self.batch_event = None
+        if self.enable_accumulation and self.at_global_batch_end():
+            self.global_batch_event.tag = 'finish'
+            EventManager.record_event('', self.global_batch_event)
+            self.global_batch_event = None
+
         self.state = DatasetState.NEXT
         self.micro_batch_iter_idx += self.last_batch_size
-        if self.max_global_batch_size is not None:
-            self.accumulate_idx += self.last_batch_size
-            if self.accumulate_idx == self.max_global_batch_size:
-                self.accumulate_idx = 0
-                self.global_batch_iter_idx += self.max_global_batch_size
+        if self.enable_accumulation:
+            self.accumulate_iter_idx += self.last_batch_size
+            if self.accumulate_iter_idx == self.global_batch_size:
+                self.accumulate_iter_idx = 0
+                self.global_batch_iter_idx += self.global_batch_size
                 self.global_batch_size = None
         self.trace_idx += 1
         # if torch_col.use_shared_tensor():
         #     torch_col.MemoryPool.empty_cache() # to avoid memory fragmentation
 
+    def at_global_batch_end(self):
+        assert self.enable_accumulation, "only used for accumulation"
+        # print(f'{self.accumulate_iter_idx}, {self.last_batch_size}, {self.global_batch_size} ')
+        return self.accumulate_iter_idx + self.last_batch_size == self.global_batch_size        
+
+    def is_do_step(self):
+        if self.enable_accumulation:
+            return self.at_global_batch_end()
+        else:
+            return True
+
     def rollback_micro_batch(self):
-        assert self.max_global_batch_size is not None, "only used for accumulation"
+        assert self.enable_accumulation, "only used for accumulation"
+        assert self.micro_batch_iter_idx >= self.global_batch_iter_idx, f"{self.micro_batch_iter_idx} vs {self.global_batch_iter_idx}"
+        self.num_rollback_samples_in_epoch += self.micro_batch_iter_idx - self.global_batch_iter_idx
         self.micro_batch_iter_idx = self.global_batch_iter_idx
-        self.accumulate_idx = 0
-        
+        self.accumulate_iter_idx = 0
+
+        self.global_batch_event.tag = 'cancel'
+        EventManager.record_event('', self.global_batch_event)
+        self.global_batch_event = None
+    
+    def cancel_micro_batch(self, checkpoint_micro_batch):
+        self.batch_event.tag = 'cancel'
+        if self.enable_accumulation and not checkpoint_micro_batch:
+            self.rollback_micro_batch()
+
     def iter_batch(self) -> Iterator:
         def _get_batch_size():
             if self.max_global_batch_size is None: # not use accumulation
@@ -100,7 +150,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
             else:
                 if self.global_batch_size is None:
                     self.global_batch_size = min(self.size - self.global_batch_iter_idx, self.max_global_batch_size)
-                batch_size = min(self.batch_size, self.global_batch_size - self.accumulate_idx)
+                batch_size = min(self.batch_size, self.global_batch_size - self.accumulate_iter_idx)
             return batch_size
         
         batch_size = _get_batch_size()
@@ -132,6 +182,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
         targets = self.all_targets[self.micro_batch_iter_idx:self.micro_batch_iter_idx+batch_size]
         if self.hook is not None:
             self.hook.report_batch_size(batch_size)
+        # print(f'micro batch iter {self.micro_batch_iter_idx} acc iter {self.accumulate_iter_idx}', file=sys.stderr, flush=True)
         return inputs, targets
     
     def __iter__(self) -> Iterator:
@@ -140,6 +191,10 @@ class CustomeDynamicBatchDataset(IterableDataset):
         while True:
             if self.micro_batch_iter_idx == self.size:
                 self.micro_batch_iter_idx = 0
+                if self.global_batch_iter_idx is not None:
+                    assert self.global_batch_iter_idx == self.size, f"{self.global_batch_iter_idx} vs {self.size}"
+                    self.global_batch_iter_idx = 0
+                    self.num_rollback_samples_in_epoch = 0
                 break
             yield self.iter_batch()
             
