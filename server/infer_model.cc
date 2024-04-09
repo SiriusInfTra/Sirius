@@ -196,6 +196,7 @@ void Model::MaybeAdjustTrainAndCache(size_t rank, std::unique_lock<std::mutex> &
       PROFILE_START(TrainAdjust);
       bool is_first_adjust = !Controller::Get()->HasFlyingColocateAdjust();
       auto adjust_batch_size = TrainLauncher::Get()->GetAdjustBatchSize(adjust_batch_buffer_mb);
+      CHECK_GE(adjust_batch_size, 0);
       int cmd_id = Controller::Get()->ColocateAdjust(0, adjust_batch_size);
       Controller::Get()->WaitColocateAdjustDone(cmd_id);
       PROFILE_END(TrainAdjust);
@@ -203,9 +204,9 @@ void Model::MaybeAdjustTrainAndCache(size_t rank, std::unique_lock<std::mutex> &
         Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, PROFILE_DURATRION(TrainAdjust));
       }
       LOG(INFO) << "[Model, Cold Cache] AllocStorageMaybeAdjust: model " << rank
-          << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
-          << " wait train pid " << wait_train_pid
-          << " delta batch size " << adjust_batch_size << ".";
+                << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
+                << " wait train pid " << wait_train_pid
+                << " delta batch size " << adjust_batch_size << ".";
     } else {
       LOG(INFO) << "[Model, Cold Cache] AllocStorageMaybeAdjust: model " << rank << " , skip adjust";
     }

@@ -20,13 +20,13 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
     if torch_col.use_shared_tensor():
         torch_col.tag_model_start()
 
-    torch_col.train_model = model = models.swin_b(weights=models.Swin_B_Weights.DEFAULT).cuda()
+    torch_col.train_model = model = models.resnet152(weights=models.ResNet152_Weights.DEFAULT).cuda()
 
     print(f"Train params memory usage: {torch_col.MemoryPool.get_memory_usage() * 1024:.2f}M")
 
     criterion = nn.CrossEntropyLoss().cuda(0)
     optimizer = torch.optim.SGD(model.parameters(), 0.1, 
-                                momentum=0.0, weight_decay=1e-4)
+                                momentum=0.9, weight_decay=1e-4)
     scaler = torch.cuda.amp.GradScaler()
 
     print(f"Train after init memory pool usage: {MemoryPool.get_memory_usage() * 1024:.2f}M")
@@ -63,6 +63,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
             train_dataset.record_batch_event(epoch, i, len(images), train_dataset.global_batch_size)
             images: torch.Tensor = images.to('cuda:0', non_blocking=True)
             targets: torch.Tensor = targets.to('cuda:0', non_blocking=True)
+            train_valiation.make_rng_state_checkpoint()
             try:
                 tried_batch += 1
                 total_tried_batch += 1

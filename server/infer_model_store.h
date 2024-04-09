@@ -139,9 +139,7 @@ class ColdModelCache {
 
 
   inline double GetColdCacheFreeMemoryMB(double free_memory_MB, std::unique_lock<std::mutex> &lock) {
-    if (current_cached_nbytes_ < Config::cold_cache_min_capability_nbytes) {
-      free_memory_MB -= sta::ByteToMB(Config::cold_cache_min_capability_nbytes - current_cached_nbytes_);
-    } else if (current_cached_nbytes_ < Config::cold_cache_max_capability_nbytes ){
+    if (current_cached_nbytes_ > Config::cold_cache_min_capability_nbytes){
       free_memory_MB += sta::ByteToMB(current_cached_nbytes_ - Config::cold_cache_min_capability_nbytes);
     }
     LOG(INFO) << "[ColdModelCache] FreeMemory " << free_memory_MB << "MB";
