@@ -246,6 +246,8 @@ class SwitchHook(HookABC):
         self._stub.train_start()
 
     def train_end(self):
+        if torch_col.use_shared_tensor():
+            torch_col.MemoryPool.empty_cache()
         return self._stub.train_end()
 
     def stop(self):
@@ -410,6 +412,8 @@ class ColocateHook(HookABC):
         self._stub.train_start()
 
     def train_end(self):
+        if torch_col.use_shared_tensor():
+            torch_col.MemoryPool.empty_cache()
         self._stub.train_end()
 
     def stop(self):

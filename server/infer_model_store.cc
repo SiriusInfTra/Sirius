@@ -513,7 +513,7 @@ ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<
   auto* cache_item = new CacheItem();
   cache_item->cached_group_nbytes = 0;
   cache_item->model = InferModelStore::Get()->GetModel(name);
-  size_t model_max_cached_nbytes = static_cast<size_t>(total_nbytes * Config::cold_cache_ratio);;
+  size_t model_max_cached_nbytes = static_cast<size_t>(total_nbytes * Config::cold_cache_ratio);
   for (size_t k = 0; k < groups_nbytes.size(); ++k) {
     DLOG(INFO) << "k = " << k << ".";
     if ((k == 0 || cache_item->cached_group_nbytes + groups_nbytes[k] / 2 <= model_max_cached_nbytes) 
@@ -524,7 +524,8 @@ ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<
       break;
     }
   }
-  LOG(INFO) << "decide to cache group = " << cache_item->cached_groups_id << ", total" << groups_nbytes.size() << ".";
+  LOG(INFO) << "decide to cache group = [ " << cache_item->cached_groups_id << " ],"
+            << " total " << groups_nbytes.size() << ".";
 
   std::vector<Model*> coldest_model;
   for (auto &&[name, cache_item] : cold_cache_) {

@@ -36,17 +36,12 @@ void Workload::WarmupModel(const std::string& model_name, int warmup) {
   LOG(INFO) << "Start to send " <<  warmup << " warmup infer request(s) for " << model_name << ".";
   auto set_request_fn = GetSetRequestFn(model_name);
   for(decltype(warmup) k = 0; k < warmup; ++k) {
-    // LOG(INFO) << "Warmup infer request A " << k << " for " << model_name << ".";
     grpc::ClientContext context;
     InferResult result;
     InferRequest request;
-    // LOG(INFO) << "Warmup infer request B " << k << " for " << model_name << ".";
     set_request_fn(request);
-    // LOG(INFO) << "Warmup infer request C " << k << " for " << model_name << ".";
     grpc::Status status = stub_->Inference(&context, request, &result);
-    // LOG(INFO) << "Warmup infer request D " << k << " for " << model_name << ".";
     CHECK(status.ok());
-    // LOG(INFO) << "Warmup infer request E " << k << " for " << model_name << ".";
   }
   LOG(INFO) << "Complete sending " <<  warmup << " warmup infer request(s) for " << model_name << ".";
 }

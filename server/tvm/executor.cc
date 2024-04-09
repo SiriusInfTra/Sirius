@@ -911,6 +911,10 @@ void Executor::AllocStorageMaybeAdjust() {
       //           << " begin wait train pid " << wait_train_pid;
       // this->tvm_graph_.infer_model_->SetWaitTrainPid(this->infer_model_worker_id_, wait_train_pid);
 
+      auto adjust_memory_mb = sta::ByteToMB(GetMissingStorageSizeAlign()) - ResourceManager::GetFreeMemoryMB();
+      adjust_memory_mb = std::max(0.0, adjust_memory_mb);
+      if (adjust_memory_mb == 0) return;
+
       PROFILE_START(TrainAdjust);
       auto adjust_batch_size = TrainLauncher::Get()->
           GetAdjustBatchSize(sta::ByteToMB(GetMissingStorageSizeAlign() ));
@@ -922,6 +926,8 @@ void Executor::AllocStorageMaybeAdjust() {
         Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, PROFILE_DURATRION(TrainAdjust));        
       }
       LOG(INFO) << "[Executor] AllocStorageMaybeAdjust: model " << this->tvm_graph_.model_rank_ 
+                << " adjust memory mb " << adjust_memory_mb
+                << " adjust batch size " << adjust_batch_size
                 << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
                 << " wait train pid " << wait_train_pid;
                 
