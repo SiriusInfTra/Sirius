@@ -23,14 +23,14 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
     if torch_col.use_shared_tensor():
         torch_col.tag_model_start()
 
-    torch_col.train_model = model = models.resnet152(weights=models.ResNet152_Weights.DEFAULT).cuda()
+    torch_col.train_model = model = models.swin_b(weights=models.Swin_B_Weights.DEFAULT).cuda()
 
     # torch_col.train_model = model = SimpleConvNet().cuda()
     print(f"Train params memory usage: {torch_col.MemoryPool.get_memory_usage() * 1024:.2f}M")
 
     criterion = nn.CrossEntropyLoss().cuda(0)
     optimizer = torch.optim.SGD(model.parameters(), 0.1, 
-                                momentum=0.9, weight_decay=1e-4)
+                                momentum=0.0, weight_decay=1e-4)
     scaler = torch.cuda.amp.GradScaler()
 
     print(f"Train after init memory pool usage: {MemoryPool.get_memory_usage() * 1024:.2f}M")
@@ -68,12 +68,11 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
             batch_event = EventManager.record_event(f'batch_{epoch:02d}_{i:03d}_{len(images):02d}')
             images: torch.Tensor = images.to('cuda:0', non_blocking=True)
             targets: torch.Tensor = targets.to('cuda:0', non_blocking=True)
-            train_valiation.make_rng_state_checkpoint()
             try:
                 tried_batch += 1
                 total_tried_batch += 1
-                optimizer.zero_grad()
-                with torch.cuda.amp.autocast():
+                optimizer.zero_grad(set_to_none=True)
+                with torch.cuda.amp.autocast(cache_enabled=False):
                     output = model(images)
                     loss = criterion(output, targets)
                 train_valiation.debug_print_loss(len(images), loss)
