@@ -296,7 +296,8 @@ public:
         << std::put_time(std::localtime(&in_time_t), "%Y-%m-%d_%H-%M-%S") << "_" << ms.count();
     std::filesystem::path output_dir{ss.str()};
     CHECK(std::filesystem::create_directories(output_dir));
-    LOG(INFO) << log_prefix_ << "Dump has been written to: " << ss.str() << ".";
+    LOG(INFO) << log_prefix_ << "Dump has been written to: " << ss.str() << ".\n";
+    LOG(INFO) << log_prefix_ << policy_ << " memory pool status:";
     PrintStatus();
     if (MemPool::IsInit()) {
       mempool_.PrintStatus();
