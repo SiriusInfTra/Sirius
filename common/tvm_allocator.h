@@ -25,7 +25,7 @@ namespace colserve::sta {
 
 class TVMAllocator : public GenericAllocator {
 public:
-  static const constexpr size_t ALIGN_NBYTES = 2_MB;
+  static const constexpr size_t ALIGN_NBYTES = 16_MB;
   static const constexpr size_t DUPLICATE_SHUFFLE_K = 1;
   static_assert(VA_RESERVE_SCALE >= DUPLICATE_SHUFFLE_K, "Must reserve enough virtual memory for duplicate shuffle.");
 
@@ -62,12 +62,12 @@ private:
   MemEntry *Alloc0(size_t nbytes) {
     CHECK_GT(nbytes, 0);
     LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Alloc, nbytes = " << ByteDisplay(nbytes) << ".";
-    // if (nbytes >= MEM_BLOCK_NBYTES) {
-    //   nbytes = detail::AlignedNBytes<MEM_BLOCK_NBYTES>(nbytes);
-    // } else {
-    //   nbytes = detail::AlignedNBytes<ALIGN_NBYTES>(nbytes);
-    // }
-    nbytes = detail::AlignedNBytes<ALIGN_NBYTES>(nbytes);
+    if (nbytes >= MEM_BLOCK_NBYTES) {
+      nbytes = detail::AlignedNBytes<MEM_BLOCK_NBYTES>(nbytes);
+    } else {
+      nbytes = detail::AlignedNBytes<ALIGN_NBYTES>(nbytes);
+    }
+    // nbytes = detail::AlignedNBytes<ALIGN_NBYTES>(nbytes);
     MemEntry *free_entry = nullptr;
     if (nbytes < small_block_nbytes_) {
       free_entry = free_list_small_.PopFreeEntry(nbytes, true);

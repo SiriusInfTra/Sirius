@@ -272,7 +272,12 @@ protected:
     };
     CU_CALL(cuMemSetAccess(reinterpret_cast<CUdeviceptr>(mapping_begin),
                            len * MEM_BLOCK_NBYTES, &acc_desc, 1));
-    // cached_nbytes_ += len * MEM_BLOCK_NBYTES;
+
+  }
+
+  void ExpandMemorySpace(size_t new_len) {
+    CHECK_GE(new_len, mapped_mem_list_.size());
+    CHECK_LE(new_len, mempool_.mempool_nbytes / MEM_BLOCK_NBYTES * VA_RESERVE_SCALE);
   }
   
 
