@@ -42,6 +42,14 @@ class MemoryPool:
             return (total - free) / 1024 / 1024 / 1024
     
     @classmethod
+    def get_allocated_memory(cls):
+        if torch_col.use_shared_tensor():
+            return torch_col.cuda_memory_pool_train_usage() / 1024 / 1024 / 1024
+        else:
+            free, total = torch.cuda.mem_get_info(0)
+            return (total - free) / 1024 / 1024 / 1024
+    
+    @classmethod
     def empty_cache(cls):
         if torch_col.use_shared_tensor():
             torch_col.cuda_memory_pool_free_train_local()
