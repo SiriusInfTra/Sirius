@@ -3,6 +3,7 @@ from torch import nn
 from torchvision import models
 from torch.utils.data import DataLoader
 import argparse
+import sys
 
 import torch_col
 from torch_col import MemoryPool, EventManager, TrainMode, HookMode
@@ -10,6 +11,7 @@ from torch_col import ColocateAdjustL1Exception, SwitchL1Exception
 from torch_col import CustomeDynamicBatchDataset
 import train_valiation
 
+checkpoint_micro_batch = False
 
 def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size: int):
     if torch_col.use_shared_tensor():
@@ -17,7 +19,6 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
 
     torch_col.train_model = model = models.resnet152(weights=models.ResNet152_Weights.DEFAULT).cuda()
 
-    # torch_col.train_model = model = SimpleConvNet().cuda()
     print(f"Train params memory usage: {torch_col.MemoryPool.get_memory_usage() * 1024:.2f}M")
 
     criterion = nn.CrossEntropyLoss().cuda(0)
@@ -31,7 +32,8 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
     hook.register_pytorch_hook([model, criterion])
 
     # dummy data
-    train_dataset = CustomeDynamicBatchDataset(1000, (3, 224, 224), 10, batch_size, hook, train_valiation.get_trace_input())
+    train_dataset = CustomeDynamicBatchDataset(1000, (3, 224, 224), 10, batch_size, hook, 
+                                               train_valiation.get_trace_input())
     train_loader = DataLoader(train_dataset, batch_size=None, 
                               shuffle=False, pin_memory=True, drop_last=False, num_workers=0)
 
@@ -90,6 +92,8 @@ def train(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size
                     # cuda has alreadly synced
                     hook.release_and_reply()
                     print(f'[{e}] batch_size: {len(images)} -> {train_dataset.batch_size}.')
+                if not checkpoint_micro_batch:
+                    train_dataset.rollback_micro_batch()
                 train_valiation.recover_rng_state()
             else:
                 # torch.cuda.current_stream().synchronize()

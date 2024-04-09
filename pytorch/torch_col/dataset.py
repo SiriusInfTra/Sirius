@@ -87,6 +87,11 @@ class CustomeDynamicBatchDataset(IterableDataset):
         self.trace_idx += 1
         # if torch_col.use_shared_tensor():
         #     torch_col.MemoryPool.empty_cache() # to avoid memory fragmentation
+
+    def rollback_micro_batch(self):
+        assert self.max_global_batch_size is not None, "only used for accumulation"
+        self.micro_batch_iter_idx = self.global_batch_iter_idx
+        self.accumulate_idx = 0
         
     def iter_batch(self) -> Iterator:
         def _get_batch_size():
