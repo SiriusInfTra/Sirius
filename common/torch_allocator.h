@@ -58,12 +58,14 @@ private:
       }
       return entry;
     });
+    LOG(INFO) << "ReleaseFreePhyMem 1";
     // some physical memory pages already free
     for (size_t k = 0; k < ready_to_free_mask.size(); ++k) {
       if (mapped_mem_list_[k] == nullptr) { 
         ready_to_free_mask[k] = false; 
       }
     }
+
 
     std::vector<PhyMem *> ready_to_free_mem;
     for (size_t k = 0; k < ready_to_free_mask.size(); ++k) {
@@ -88,9 +90,12 @@ private:
       std::fill(mapped_mem_list_.begin() + k0, mapped_mem_list_.begin() + k, nullptr);
     }
     entry_list_.IterateRange(0, mempool_.mempool_nbytes, [&](MemEntry *entry){
-      UpdateAllocFlag(entry);
+      bool is_alloc = entry->is_alloc;
+      entry_list_.UpdateAllocFlag(entry);
+      CHECK((is_alloc == false && entry->is_alloc == false) || is_alloc == true) << entry << " " << is_alloc;
       return entry;
     });
+    LOG(INFO) << "ReleaseFreePhyMem 2";
     mempool_.DeallocPhyMem(ready_to_free_mem);
     TVMAllocator::Get().SyncFreeTrain(ready_to_free_mem, lock);
     size_t physical_nbytes = std::count_if(
@@ -111,6 +116,12 @@ private:
   }
 
   void EnsurePhyMemAlloc(MemEntry *entry, bip::scoped_lock<bip::interprocess_mutex> &lock) {
+    // entry_list_.IterateRange(0, mempool_.mempool_nbytes, [&](MemEntry *entry){
+    //   bool is_alloc = entry->is_alloc;
+    //   entry_list_.UpdateAllocFlag(entry);
+    //   CHECK_EQ(is_alloc, entry->is_alloc) << entry << "error1";
+    //   return entry;
+    // });
     std::vector<size_t> missing_phy_mem_index_list;
     auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(entry);
     for (size_t k = index_begin; k < index_end; ++k) {
@@ -126,7 +137,7 @@ private:
         << "missing " << missing_phy_mem_index_list.size() 
         << " physical memory page(s), try allocate.";
     EnsureUnmap();
-    std::vector<PhyMem *> request_phy_mem_list =mempool_.AllocNumPhyMem( policy_, missing_phy_mem_index_list.size());
+    std::vector<PhyMem *> request_phy_mem_list = mempool_.AllocNumPhyMem( policy_, missing_phy_mem_index_list.size());
     if (request_phy_mem_list.size() < missing_phy_mem_index_list.size()) {
       DumpState();
       TVMAllocator::Get().DumpState();
@@ -146,12 +157,42 @@ private:
       CU_CALL(cuMemSetAccess(reinterpret_cast<CUdeviceptr>(target_addr), MEM_BLOCK_NBYTES, &acc_desc, 1));
     }
     entry->is_alloc = true;
-    if (auto *prev_entry = entry_list_.GetPrevEntry(entry); prev_entry && prev_entry->is_free) {
-      UpdateAllocFlag(prev_entry);
+    for (auto *prev_entry = entry_list_.GetPrevEntry(entry); prev_entry && prev_entry->is_free && !prev_entry->is_alloc; prev_entry = entry_list_.GetPrevEntry(prev_entry)) {
+      entry_list_.UpdateAllocFlag(prev_entry);
+      if (prev_entry->is_alloc) {
+        if (prev_entry->is_small) {
+          free_list_small_.PopFreeEntry(prev_entry);
+          prev_entry = free_list_small_.PushFreeEntry(prev_entry);
+          prev_entry = MaybeMerge(prev_entry);
+        } else {
+          free_list_large_.PopFreeEntry(prev_entry);
+          prev_entry = free_list_large_.PushFreeEntry(prev_entry);
+        }
+      } else {
+        break;
+      }
     }
-    if (auto *next_entry = entry_list_.GetNextEntry(entry); next_entry && next_entry->is_free) {
-      UpdateAllocFlag(next_entry);
+    for (auto *next_entry = entry_list_.GetNextEntry(entry); next_entry && next_entry->is_free && !next_entry->is_alloc; next_entry = entry_list_.GetNextEntry(next_entry)) {
+      entry_list_.UpdateAllocFlag(next_entry);
+      if (next_entry->is_alloc) {
+        if (next_entry->is_small) {
+          free_list_small_.PopFreeEntry(next_entry);
+          next_entry = free_list_small_.PushFreeEntry(next_entry);
+          next_entry = MaybeMerge(next_entry);
+        } else {
+          free_list_large_.PopFreeEntry(next_entry);
+          next_entry = free_list_large_.PushFreeEntry(next_entry);
+        }
+      } else {
+        break;
+      }
     }
+    // entry_list_.IterateRange(0, mempool_.mempool_nbytes, [&](MemEntry *entry){
+    //   bool is_alloc = entry->is_alloc;
+    //   entry_list_.UpdateAllocFlag(entry);
+    //   CHECK_EQ(is_alloc, entry->is_alloc) << entry;
+    //   return entry;
+    // });
   }
 
   MemEntry *Free0(MemEntry *entry, bip::scoped_lock<bip::interprocess_mutex> &lock) {
@@ -198,11 +239,11 @@ private:
     nbytes = detail::AlignedNBytes<ALIGN_NBYTES>(nbytes);
     MemEntry *free_entry = nullptr;
     // 1. normal case, alloc in train small/large mem pool
-    if (nbytes < SMALL_BLOCK_NBYTES) {
-      free_entry = free_list_small_.PopFreeEntry(nbytes, true, 1000);
+    if (nbytes < small_block_nbytes_) {
+      free_entry = free_list_small_.PopFreeEntry(nbytes, true, 50);
       CHECK(!alloc_conf::ALWAYS_CHECK_STATE || free_entry == nullptr || CheckState());
     }
-    if (free_entry == nullptr && (free_entry = free_list_large_.PopFreeEntry(nbytes, false, 1000)) != nullptr) {
+    if (free_entry == nullptr && (free_entry = free_list_large_.PopFreeEntry(nbytes, false, 50)) != nullptr) {
       free_entry = Split(free_entry, free_entry->addr_offset, nbytes);
       CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
     }
@@ -228,6 +269,7 @@ private:
         expand_entry->is_small = false;
         expand_entry->is_train = true;
         expand_entry->is_alloc = true;
+        expand_entry->rank = 0;
         ExpandMemorySpace(phy_mem_list, allocated);
         entry_list_.LinkNewEntry(expand_entry);
         free_list_large_.PushFreeEntry(expand_entry);
@@ -246,6 +288,23 @@ private:
       std::memory_order_relaxed);
     CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
     return free_entry;
+  }
+
+  void AllocExpandVirtualMemory(size_t nbytes, bip::scoped_lock<bip::interprocess_mutex> &lock) {
+    // TVMAllocator::Get().SyncAllocTrain(phy_mem_list, lock);
+    // auto *expand_entry = reinterpret_cast<MemEntry *>(
+    //     MemPool::Get().GetSharedMemory().allocate(sizeof(MemEntry)));
+    // expand_entry->addr_offset = MEM_BLOCK_NBYTES * mapped_mem_list_.size();
+    // expand_entry->nbytes = allocated * MEM_BLOCK_NBYTES;
+    // expand_entry->is_free = false;
+    // expand_entry->is_small = false;
+    // expand_entry->is_train = true;
+    // expand_entry->is_alloc = true;
+    // expand_entry->rank = 0;
+    // ExpandMemorySpace(phy_mem_list, allocated);
+    // entry_list_.LinkNewEntry(expand_entry);
+    // free_list_large_.PushFreeEntry(expand_entry);
+    // CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
   }
 
 public:

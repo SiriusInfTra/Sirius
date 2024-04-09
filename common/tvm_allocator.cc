@@ -10,25 +10,33 @@ std::unique_ptr<TVMAllocator> TVMAllocator::instance_ = nullptr;
 
 
 TVMAllocator::TVMAllocator(MemPool &mempool, bool for_train, bip::scoped_lock<bip::interprocess_mutex> &lock)
-    : GenericAllocator(mempool, Belong::kInfer, lock) {
+    : GenericAllocator(mempool, Belong::kInfer, 2_MB, lock) {
   LOG(INFO) << log_prefix_ << "Init TVMAllocator with args: for_train = " << for_train << ".";
   std::vector<PhyMem *> phy_mem_list;
   for(auto && phymem : mempool.GetPhyMemList()) {
     phy_mem_list.push_back(&phymem);
   }
+  auto &real_phymem_list = mempool.GetPhyMemList();
+  std::vector<PhyMem *> mapping_phymem_list(duplicate_shuffle_map_.size()); 
+  for (size_t k = 0; k < mapping_phymem_list.size(); ++k) {
+    mapping_phymem_list[k] = &real_phymem_list[duplicate_shuffle_map_[k][0]];
+  }
   ExpandMemorySpace(phy_mem_list, phy_mem_list.size());
   if (entry_list_.GetEntry(0) == nullptr) {
     LOG(INFO) << log_prefix_ << "Init TVMAllocator entires.";
-    auto *first_entry = reinterpret_cast<MemEntry *>(MemPool::Get().GetSharedMemory().allocate(sizeof(MemEntry)));
-    first_entry->nbytes = mempool.mempool_nbytes;
-    first_entry->addr_offset = 0;
-    
-    first_entry->is_free = false;
-    first_entry->is_small = false;
-    first_entry->is_train = false;
-    first_entry->is_alloc = true;
-    entry_list_.LinkNewEntry(first_entry);
-    free_list_large_.PushFreeEntry(first_entry);
+    for (size_t rank = 0; rank < DUPLICATE_SHUFFLE_K; ++rank) {
+      auto *first_entry = reinterpret_cast<MemEntry *>(MemPool::Get().GetSharedMemory().allocate(sizeof(MemEntry)));
+      first_entry->nbytes = mempool.mempool_nbytes;
+      first_entry->addr_offset = mempool.mempool_nbytes * rank;
+      first_entry->is_free = false;
+      first_entry->is_small = false;
+      first_entry->is_train = false;
+      first_entry->is_alloc = true;
+      first_entry->rank = rank;
+      entry_list_.LinkNewEntry(first_entry);
+      free_list_large_.PushFreeEntry(first_entry);
+    }
+
   }
 
 }

@@ -7,6 +7,7 @@
 #include <glog/logging.h>
 #include <algorithm>
 #include <cstddef>
+#include <cstring>
 #include <iterator>
 #include <memory>
 #include <mutex>
@@ -15,6 +16,7 @@
 #include <map>
 #include <ostream>
 #include <list>
+#include <random>
 #include <utility>
 #include <vector>
 
@@ -23,19 +25,51 @@ namespace colserve::sta {
 
 class TVMAllocator : public GenericAllocator {
 public:
-  static const constexpr size_t ALIGN_NBYTES = 16_MB; 
+  static const constexpr size_t ALIGN_NBYTES = 16_MB;
+  static const constexpr size_t DUPLICATE_SHUFFLE_K = 1;
+  static_assert(VA_RESERVE_SCALE >= DUPLICATE_SHUFFLE_K, "Must reserve enough virtual memory for duplicate shuffle.");
 
 private:
   static std::unique_ptr<TVMAllocator> instance_;
   std::mutex mutex_;
+  std::vector<std::vector<size_t>> duplicate_shuffle_map_;
+
+  void InitDuplicate() {
+    size_t phy_num = mempool_.GetPhyMemList().size(); // number of physical memory pages
+    size_t vir_num = phy_num * DUPLICATE_SHUFFLE_K;   // number of virtual memory pages
+    size_t vir_num_per = DUPLICATE_SHUFFLE_K;         // number of virtual memory pages per physical memory pages
+    duplicate_shuffle_map_ = std::vector<std::vector<size_t>>(vir_num, std::vector<size_t>(vir_num_per));
+    // init
+    std::vector<size_t> duplicate_shuffle_map0(vir_num);
+    for (size_t i = 0; i < vir_num; ++i) { duplicate_shuffle_map0[i] = i; }
+    std::shuffle(
+      duplicate_shuffle_map0.begin() + phy_num,
+      duplicate_shuffle_map0.end(), std::mt19937{42});
+    for (size_t i = 0; i < phy_num; ++i) {
+      for (size_t j = 0; j < vir_num_per; ++j) {
+        duplicate_shuffle_map_[i][j] = duplicate_shuffle_map0[i + j * phy_num];
+      }
+    }
+    for (size_t i = 0; i < phy_num; ++i) {
+      for (size_t j = 1; j < vir_num_per; ++j) {
+        size_t k = duplicate_shuffle_map_[i][j];
+        duplicate_shuffle_map_[k] = duplicate_shuffle_map_[i];
+      }
+    }
+
+  }
 
   MemEntry *Alloc0(size_t nbytes) {
     CHECK_GT(nbytes, 0);
     LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Alloc, nbytes = " << ByteDisplay(nbytes) << ".";
-  
-    nbytes = detail::AlignedNBytes<ALIGN_NBYTES>(nbytes);
+    if (nbytes >= MEM_BLOCK_NBYTES) {
+      nbytes = detail::AlignedNBytes<MEM_BLOCK_NBYTES>(nbytes);
+    } else {
+      nbytes = detail::AlignedNBytes<ALIGN_NBYTES>(nbytes);
+    }
+    // nbytes = detail::AlignedNBytes<ALIGN_NBYTES>(nbytes);
     MemEntry *free_entry = nullptr;
-    if (nbytes < SMALL_BLOCK_NBYTES) {
+    if (nbytes < small_block_nbytes_) {
       free_entry = free_list_small_.PopFreeEntry(nbytes, true);
       CHECK(!alloc_conf::ALWAYS_CHECK_STATE || free_entry == nullptr || CheckState());
     }
@@ -54,7 +88,14 @@ private:
       if (*mapped_mem_list_[k]->belong == Belong::kFree) {
         phy_mem_list.push_back(mapped_mem_list_[k]);
       }
+      // for (size_t i : duplicate_shuffle_map_[k]) {
+      //   if (i == k) { continue; }
+      //   ptrdiff_t addr_offset = i * MEM_BLOCK_NBYTES; 
+      //   auto *entry1 = entry_list_.GetEntry(addr_offset);
+      //   Split(entry1, addr_offset, MEM_BLOCK_NBYTES);
+      // }
     }
+
     mempool_.AllocSpecifiedPhyMem(phy_mem_list, policy_);
     mempool_.AddAllocatedNbytes(nbytes, policy_);
     CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
@@ -118,30 +159,19 @@ private:
     // 2. free list
     if (entry->is_small) {
       entry = free_list_small_.PushFreeEntry(entry);
-      entry = MaybeMerge(entry);
+      if (entry->addr_offset % MEM_BLOCK_NBYTES == 0 && entry->nbytes % MEM_BLOCK_NBYTES == 0) {
+        free_list_small_.PopFreeEntry(entry);
+        entry->is_small = false;
+        free_list_large_.PushFreeEntry(entry);
+      } else if (entry->nbytes > MEM_BLOCK_NBYTES) {
+        free_list_small_.PopFreeEntry(entry);
+        entry = Split(entry, (entry->addr_offset + MEM_BLOCK_NBYTES - 1) / MEM_BLOCK_NBYTES * MEM_BLOCK_NBYTES, entry->nbytes / MEM_BLOCK_NBYTES * MEM_BLOCK_NBYTES);
+        entry->is_small = false;
+        free_list_large_.PushFreeEntry(entry);
+      }
     } else { // large
       // 2.0. merge with large
       entry = free_list_large_.PushFreeEntry(entry);
-
-      // 2.1. try merge with prev small entry
-      auto *prev_entry_nbytes = entry_list_.GetPrevEntry(entry);
-      if (prev_entry_nbytes && prev_entry_nbytes->is_small && prev_entry_nbytes->is_free) {
-        size_t prev_nbytes = prev_entry_nbytes->nbytes;
-        auto *maybe_merged_entry = MaybeMerge(prev_entry_nbytes);
-        if (maybe_merged_entry->nbytes > prev_nbytes) {
-          entry = maybe_merged_entry;
-        }
-      }
-
-      // 2.2. try merge with next small entry
-      auto *next_entry = entry_list_.GetNextEntry(entry);
-      if (next_entry && next_entry->is_small && next_entry->is_free) {
-        size_t next_entry_nbytes = next_entry->nbytes;
-        auto *maybe_merged_entry = MaybeMerge(next_entry);
-        if (maybe_merged_entry->nbytes > next_entry_nbytes) {
-          entry = maybe_merged_entry;
-        }
-      }
     }
     CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
     return entry;

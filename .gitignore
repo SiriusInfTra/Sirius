@@ -4,10 +4,12 @@ build_*/
 /cmake-*
 /.cache
 /log
+/log-*
 /.idea
 
 *.gz
 *.tar
+*.xz
 *.onnx
 
 server/models/*/

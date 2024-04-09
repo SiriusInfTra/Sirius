@@ -187,26 +187,41 @@ uint64_t Controller::InferExit() {
       int train_target_bs;
       int train_bs;
       int train_bs_predict_by_avail_memory;
-      double train_avail_memory_mb;
-      double free_memory_mb;
+      double free_memory_MB;
+      double reserve_memory_MB;
+      double train_avail_memory_MB;
       {
+        auto cold_cache_lock = ColdModelCache::Get().Lock();
         ResourceManager::InferMemoryChangingLock();
-        train_avail_memory_mb = std::max(ResourceManager::GetTrainAvailMemoryMB(), 0.0);
-        free_memory_mb = std::max(ResourceManager::GetFreeMemoryMB(), 0.0);
-        auto adjsut_bs = TrainLauncher::Get()->GetAdjustBatchSize(free_memory_mb);
-        train_bs_predict_by_avail_memory = TrainLauncher::Get()->PredictTargetBatchSize(train_avail_memory_mb);
-        train_bs = TrainLauncher::Get()->GetTargetBatchSize();
-        train_target_bs = std::min(train_bs + adjsut_bs, train_bs_predict_by_avail_memory);
-        // train_target_bs = TrainLauncher::Get()->PredictTargetBatchSize(train_avail_memory_mb);
+        // size_t reserve_memory_MB = sta::ByteToMB(Config::cold_cache_max_capability_nbytes - ColdModelCache::Get().GetCachedNbytes(cold_cache_lock));
+        // train_avail_memory_MB = ResourceManager::GetTrainAvailMemoryMB() - reserve_memory_MB;
+        // train_avail_memory_MB = std::max(train_avail_memory_MB, 0.0);
+        // train_target_bs = TrainLauncher::Get()->PredictTargetBatchSize(train_avail_memory_MB);
+
+        // min of bs predicted based on the actual and the predict
+        train_avail_memory_MB = std::max(ResourceManager::GetTrainAvailMemoryMB(), 0.0);
+        free_memory_MB = std::max(ResourceManager::GetFreeMemoryMB(), 0.0);
+        reserve_memory_MB = sta::ByteToMB(Config::cold_cache_max_capability_nbytes 
+                                          - ColdModelCache::Get().GetCachedNbytes(cold_cache_lock));
+        auto adjust_bs = TrainLauncher::Get()->PredictTargetBatchSize(std::max(free_memory_MB - reserve_memory_MB, 0.0));
+        train_bs_predict_by_avail_memory = TrainLauncher::Get()->PredictTargetBatchSize(
+            std::max(train_avail_memory_MB - reserve_memory_MB, 0.0));
+        train_bs = TrainLauncher::Get()->GetCurBatchSize();
+        train_target_bs = std::min(train_bs + adjust_bs, train_bs_predict_by_avail_memory);
+
         TrainLauncher::Get()->SetTargetBatchSize(train_target_bs);
         ResourceManager::InferMemoryChangingUnlock();
         // TrainLauncher::Get()->AddTargetBatchSize(batch_size);
       }
 
+      // LOG(INFO) << "[Controller] Infer Exit"
+      //           << " train avail memory " << train_avail_memory_MB
+      //           << " target batch size " << train_target_bs;
       LOG(INFO) << "[Controller] Infer Exit"
-                << " train avail memory " << train_avail_memory_mb 
+                << " cold cache reserve memory " << reserve_memory_MB
+                << " train avail memory " << train_avail_memory_MB
                 << " (predict bs " << train_bs_predict_by_avail_memory << ")"
-                << " free memory " << free_memory_mb 
+                << " free memory " << free_memory_MB
                 << " batch size " << train_bs << " -> " << train_target_bs;
       train_cmd_event_mq_->Put({cmd_id, 
                                 static_cast<int>(ctrl::CtrlEvent::kInferExit), 
