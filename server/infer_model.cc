@@ -185,24 +185,30 @@ void Model::MaybeAdjustTrainAndCache(size_t rank, std::unique_lock<std::mutex> &
   double total_storage_MB = sta::ByteToMB(executors_[rank]->GetMissingStorageSizeAlign());
   if (total_storage_MB > cold_cache_free_memory_MB && !Controller::Get()->IsTrainIdle()) {
     auto wait_train_pid = TrainLauncher::Get()->GetTrainPid();
-    PROFILE_START(TrainAdjust);
-    size_t adjust_batch_buffer_nbytes = std::min(
-      Config::cold_cache_max_capability_nbytes - Config::cold_cache_min_capability_nbytes,
-      Config::cold_cache_max_capability_nbytes - ColdModelCache::Get().GetCachedNbytes(cold_cache_lock) 
-    );
-    bool is_first_adjust = !Controller::Get()->HasFlyingColocateAdjust();
-    auto adjust_batch_size = TrainLauncher::Get()->GetAdjustBatchSize( total_storage_MB + 
-      sta::ByteToMB(Config::cold_cache_max_capability_nbytes - ColdModelCache::Get().GetCachedNbytes(cold_cache_lock)));
-    int cmd_id = Controller::Get()->ColocateAdjust(0, adjust_batch_size);
-    Controller::Get()->WaitColocateAdjustDone(cmd_id);
-    PROFILE_END(TrainAdjust);
-    if (is_first_adjust) {
-      Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, PROFILE_DURATRION(TrainAdjust));
+    // size_t adjust_batch_buffer_nbytes = std::min(
+    //   Config::cold_cache_max_capability_nbytes - Config::cold_cache_min_capability_nbytes,
+    //   Config::cold_cache_max_capability_nbytes - ColdModelCache::Get().GetCachedNbytes(cold_cache_lock) 
+    // );
+    double adjust_batch_buffer_mb = total_storage_MB
+         + sta::ByteToMB(Config::cold_cache_max_capability_nbytes - ColdModelCache::Get().GetCachedNbytes(cold_cache_lock)) 
+         - cold_cache_free_memory_MB;
+    if (adjust_batch_buffer_mb > 0) {
+      PROFILE_START(TrainAdjust);
+      bool is_first_adjust = !Controller::Get()->HasFlyingColocateAdjust();
+      auto adjust_batch_size = TrainLauncher::Get()->GetAdjustBatchSize(adjust_batch_buffer_mb);
+      int cmd_id = Controller::Get()->ColocateAdjust(0, adjust_batch_size);
+      Controller::Get()->WaitColocateAdjustDone(cmd_id);
+      PROFILE_END(TrainAdjust);
+      if (is_first_adjust) {
+        Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, PROFILE_DURATRION(TrainAdjust));
+      }
+      LOG(INFO) << "[Model, Cold Cache] AllocStorageMaybeAdjust: model " << rank
+          << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
+          << " wait train pid " << wait_train_pid
+          << " delta batch size " << adjust_batch_size << ".";
+    } else {
+      LOG(INFO) << "[Model, Cold Cache] AllocStorageMaybeAdjust: model " << rank << " , skip adjust";
     }
-    LOG(INFO) << "[Executor] AllocStorageMaybeAdjust: model " << rank
-        << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
-        << " wait train pid " << wait_train_pid
-        << " delta batch size " << adjust_batch_size << ".";
     free_memory_MB = ResourceManager::GetFreeMemoryMB();
   }
   if (total_storage_MB > free_memory_MB) {
@@ -211,6 +217,9 @@ void Model::MaybeAdjustTrainAndCache(size_t rank, std::unique_lock<std::mutex> &
     for (auto &&[name, cached_groups_id] : evict_models) {
       InferModelStore::Get()->GetModel(name)->ClearColdCache(cached_groups_id, rank, cold_cache_lock);
     }
+    LOG(INFO) << "[Model, Cold Cache] after adjust, furthur evict model to make room for model "
+              << name_ << " rank " << rank
+              << " current cache nbytes " << ColdModelCache::Get().GetCachedNbytes(cold_cache_lock);
   }
   ResourceManager::InferMemoryChangingUnlock();
 }
