@@ -201,13 +201,19 @@ uint64_t Controller::InferExit() {
         // min of bs predicted based on the actual and the predict
         train_avail_memory_MB = std::max(ResourceManager::GetTrainAvailMemoryMB(), 0.0);
         free_memory_MB = std::max(ResourceManager::GetFreeMemoryMB(), 0.0);
-        reserve_memory_MB = sta::ByteToMB(Config::cold_cache_max_capability_nbytes 
-                                          - ColdModelCache::Get().GetCachedNbytes(cold_cache_lock));
+        if (Config::cold_cache_max_capability_nbytes > ColdModelCache::Get().GetCachedNbytes(cold_cache_lock)) {
+          reserve_memory_MB = sta::ByteToMB(Config::cold_cache_max_capability_nbytes 
+                                            - ColdModelCache::Get().GetCachedNbytes(cold_cache_lock));
+        } else {
+          LOG(WARNING) << "Unexpected cold cache nbytes: "
+                       << sta::ByteDisplay(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock));
+          reserve_memory_MB = 0.0;
+        }
         auto adjust_bs = TrainLauncher::Get()->PredictTargetBatchSize(std::max(free_memory_MB - reserve_memory_MB, 0.0));
         train_bs_predict_by_avail_memory = TrainLauncher::Get()->PredictTargetBatchSize(
             std::max(train_avail_memory_MB - reserve_memory_MB, 0.0));
         train_bs = TrainLauncher::Get()->GetCurBatchSize();
-        train_target_bs = std::min(train_bs + adjust_bs, train_bs_predict_by_avail_memory);
+        train_target_bs = std::max(train_bs, std::min(train_bs + adjust_bs, train_bs_predict_by_avail_memory));
 
         TrainLauncher::Get()->SetTargetBatchSize(train_target_bs);
         ResourceManager::InferMemoryChangingUnlock();

@@ -443,7 +443,9 @@ void InferModelStore::ColocateMonitor() {
         bool res = model->ReclaimMemory(0, cold_cache_lock, model_lock);
         if (res) {
           num_exit++;
-          LOG(INFO) << "[InferModelStore] " << model_name << " reclaim memory";
+          LOG(INFO) << "[InferModelStore] " << model_name << " reclaim memory"
+                    << " cold cache nbytes " 
+                    << sta::ByteDisplay(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock));
         }
       }
     }
