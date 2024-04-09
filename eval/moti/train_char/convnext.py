@@ -71,8 +71,9 @@ def allocated_memory(device_id):
 
 def train():
     # model = models.resnet152().cuda()
-    model = models.vit_b_16().cuda()
+    # model = models.vit_b_16().cuda()
     # model = models.vit_l_16().cuda()
+    model = models.convnext_base().cuda()
     for param in model.parameters():
         IntermMemoryStat.model_param_add(param)
 
@@ -80,10 +81,12 @@ def train():
     optimizer = torch.optim.SGD(model.parameters(), 0.1, 
                                 momentum=0.9, weight_decay=1e-4)
 
-    batch_size = 128
+    # batch_size = 128
+    batch_size = 64
 
-    eval_batch_size = [128, 64, 32, 16, 8, 4]
-    # eval_batch_size = [64, 32, 16, 8, 4]
+
+    # eval_batch_size = [128, 64, 32, 16, 8, 4]
+    eval_batch_size = [64, 32, 16, 8, 4]
     # eval_batch_size = [32, 16, 8, 4]
     # eval_batch_size = [128, ]
     epoch_micro_batch_size = [batch_size, ] # warmup
