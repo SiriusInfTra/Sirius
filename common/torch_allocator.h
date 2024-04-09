@@ -289,6 +289,23 @@ private:
     return free_entry;
   }
 
+  void AllocExpandVirtualMemory(size_t nbytes, bip::scoped_lock<bip::interprocess_mutex> &lock) {
+    // TVMAllocator::Get().SyncAllocTrain(phy_mem_list, lock);
+    // auto *expand_entry = reinterpret_cast<MemEntry *>(
+    //     MemPool::Get().GetSharedMemory().allocate(sizeof(MemEntry)));
+    // expand_entry->addr_offset = MEM_BLOCK_NBYTES * mapped_mem_list_.size();
+    // expand_entry->nbytes = allocated * MEM_BLOCK_NBYTES;
+    // expand_entry->is_free = false;
+    // expand_entry->is_small = false;
+    // expand_entry->is_train = true;
+    // expand_entry->is_alloc = true;
+    // expand_entry->rank = 0;
+    // ExpandMemorySpace(phy_mem_list, allocated);
+    // entry_list_.LinkNewEntry(expand_entry);
+    // free_list_large_.PushFreeEntry(expand_entry);
+    // CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
+  }
+
 public:
   static TorchAllocator &Get();
 
