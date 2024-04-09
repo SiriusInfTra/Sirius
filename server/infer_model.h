@@ -49,7 +49,7 @@ class Model {
   }
 
   size_t GetMemoryNbytes(size_t rank) {
-    return executors_[rank]->GetStorageSize();
+    return executors_[rank]->GetStorageSizeAlign();
   }
 
   // void SetWaitTrainPid(size_t worker_id, pid_t train_pid) {
