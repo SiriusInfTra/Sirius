@@ -80,6 +80,7 @@ struct MemEntry {
     bool            is_train: 1;
     bool            is_small: 1;
     bool            is_alloc: 1;
+    size_t          rank: 8;
   };
 
   entry_linklist::iterator    pos_entrylist;
@@ -100,7 +101,9 @@ inline std::string ToString(const MemEntry *entry) {
     << ", nbytes=" << entry->nbytes
     << ", is_free=" << entry->is_free
     << ", is_train=" << entry->is_train
-    << ", is_small=" << entry->is_small << "}";
+    << ", is_small=" << entry->is_small 
+    << ", is_alloc=" << entry->is_alloc
+    << ", rank=" << entry->rank << "}";
   return ss.str();
 }
 
@@ -115,10 +118,11 @@ inline std::ostream & operator<<(std::ostream &os, const MemEntry *entry)  {
 class EntryList {
 private:
   const std::string &log_prefix_;
+  const std::vector<PhyMem *> &mapped_mem_list_;
   entry_linklist *entry_list_;
   entry_addr_map *entry_by_addr;
 public:
-  EntryList(const std::string &log_prefix, Belong policy): log_prefix_(log_prefix) {
+  EntryList(const std::string &log_prefix, const std::vector<PhyMem *> &mapped_mem_list, Belong policy): log_prefix_(log_prefix), mapped_mem_list_(mapped_mem_list) {
     auto &shared_memory = MemPool::Get().GetSharedMemory();
     auto atomic_init = [&] {
       {
@@ -135,6 +139,18 @@ public:
   }
   
   void LinkNewEntry(MemEntry *entry);
+
+  void UpdateAllocFlag(MemEntry *entry) {
+    bool real_allocated = true;
+    auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(entry);
+    for (size_t k = index_begin; k < index_end; ++k) {
+      if (mapped_mem_list_[k] == nullptr) {
+        real_allocated = false;
+        break;
+      }
+    }
+    entry->is_alloc = real_allocated;
+  }
 
   MemEntry *GetEntry(std::ptrdiff_t addr_offset);
 
@@ -235,22 +251,6 @@ protected:
   FreeList  free_list_large_;
   std::function<void()>       oom_handler_;
 
-
-
-
-  void UpdateAllocFlag(MemEntry *entry) {
-    if (!entry->is_free) { return; }
-    bool real_allocated = true;
-
-    auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(entry);
-    for (size_t k = index_begin; k < index_end; ++k) {
-      if (mapped_mem_list_[k] == nullptr) {
-        real_allocated = false;
-        break;
-      }
-    }
-    entry->is_alloc = real_allocated;
-  }
 
   void ExpandMemorySpace(const std::vector<PhyMem *> &phy_mem_list, size_t len) {
     if( (mapped_mem_list_.size() + len) * MEM_BLOCK_NBYTES > mempool_.mempool_nbytes * VA_RESERVE_SCALE) {
@@ -400,7 +400,8 @@ public:
       auto *prev_entry = entry;
       entry = entry_list_.SplitEntry(prev_entry, addr_offset - entry->addr_offset);
       prev_entry->is_small = prev_entry->nbytes < small_block_nbytes_;
-      (prev_entry->is_small ? free_list_small_ : free_list_large_).PushFreeEntry(prev_entry);
+      prev_entry = (prev_entry->is_small ? free_list_small_ : free_list_large_).PushFreeEntry(prev_entry);
+
     }
     if (entry->addr_offset + entry->nbytes > addr_offset + nbytes) {
       auto *next_entry = entry_list_.SplitEntry(entry, addr_offset + nbytes - entry->addr_offset);
@@ -413,13 +414,14 @@ public:
   }
 
   MemEntry *MaybeMerge(MemEntry *entry) {
+    if (!entry->is_alloc) { return entry; }
     CHECK(entry->is_small);
     bool put_free_list_large = true;
     size_t total_nbytes = entry->nbytes;
     MemEntry *prev_entry, *next_entry;
     if ((prev_entry = entry_list_.GetPrevEntry(entry)) != nullptr) {
       if (prev_entry->is_small) {
-        CHECK(!prev_entry->is_free);
+        CHECK(!prev_entry->is_free || !prev_entry->is_alloc) << prev_entry;
         put_free_list_large = false;
       } else {
         total_nbytes += prev_entry->nbytes;
@@ -427,7 +429,7 @@ public:
     }
     if ((next_entry = entry_list_.GetNextEntry(entry)) != nullptr) {
       if (next_entry->is_small) {
-        CHECK(!next_entry->is_free);
+        CHECK(!next_entry->is_free || !next_entry->is_alloc) << next_entry;
         put_free_list_large = false;
       } else {
         total_nbytes += next_entry->nbytes;
@@ -443,7 +445,6 @@ public:
     }
     return entry;
   }
-
 
   // size_t GetCachedNBytes() {
   //   return cached_nbytes_;

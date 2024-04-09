@@ -60,7 +60,7 @@ EntryList::SplitEntry(MemEntry *origin_entry,
   entry_split->is_free  = origin_entry->is_free;
   entry_split->is_small = origin_entry->is_small;
   entry_split->is_train = origin_entry->is_train;
-  entry_split->is_alloc = origin_entry->is_alloc;
+  entry_split->rank = origin_entry->rank;
   
   /* [origin: remain] [split: nbytes - remain] */
   entry_split->nbytes = origin_entry->nbytes - remain;
@@ -71,6 +71,8 @@ EntryList::SplitEntry(MemEntry *origin_entry,
   origin_entry->nbytes = remain;
   std::tie(entry_split->pos_entrytable, insert_success) = entry_by_addr->insert(
       std::make_pair(entry_split->addr_offset, shm_handle<MemEntry>(entry_split)));
+  UpdateAllocFlag(origin_entry);
+  UpdateAllocFlag(entry_split);
   CHECK(insert_success);
   CHECK(!alloc_conf::STRICT_CHECK_STATE || CheckState());
   return entry_split;
@@ -209,6 +211,7 @@ MemEntry* FreeList::PushFreeEntry(MemEntry *entry) {
     && prev_entry->is_free 
     && prev_entry->is_small == entry->is_small
     && prev_entry->is_alloc == entry->is_alloc
+    // && prev_entry->rank == entry->rank
     && (policy_ == Belong::kTrain || (policy_ == Belong::kInfer && !entry->is_train && !prev_entry->is_train))
   ) {
     entry_by_nbytes_->erase(prev_entry->pos_freelist);
@@ -218,6 +221,7 @@ MemEntry* FreeList::PushFreeEntry(MemEntry *entry) {
     && next_entry->is_free 
     && next_entry->is_small == entry->is_small
     && next_entry->is_alloc == entry->is_alloc
+    // && next_entry->rank == entry->rank
     && (policy_ == Belong::kTrain || (policy_ == Belong::kInfer && !entry->is_train && !next_entry->is_train))
   ) {
     entry_by_nbytes_->erase(next_entry->pos_freelist);
@@ -270,7 +274,7 @@ GenericAllocator::GenericAllocator(
     MemPool &mempool, Belong policy, size_t small_block_nbytes, bip::scoped_lock<bip::interprocess_mutex> &lock) 
     : mempool_(mempool), 
       log_prefix_("[Memory Allocator] [" + ToString(policy) + "] "), 
-      entry_list_(log_prefix_, policy), 
+      entry_list_(log_prefix_, mapped_mem_list_, policy), 
       free_list_small_(entry_list_, true, log_prefix_, policy, small_block_nbytes),
       free_list_large_(entry_list_, false, log_prefix_, policy, small_block_nbytes), 
       policy_(policy), small_block_nbytes_(small_block_nbytes) {
@@ -300,5 +304,4 @@ bool GenericAllocator::CheckState() {
   return true;
 }
 
-}
-
+}  // namespace colserve::sta
