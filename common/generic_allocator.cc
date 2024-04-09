@@ -208,6 +208,7 @@ MemEntry* FreeList::PushFreeEntry(MemEntry *entry) {
   if (auto prev_entry = list_index_.GetPrevEntry(entry); prev_entry 
     && prev_entry->is_free 
     && prev_entry->is_small == entry->is_small
+    && prev_entry->is_alloc == entry->is_alloc
     && (policy_ == Belong::kTrain || (policy_ == Belong::kInfer && !entry->is_train && !prev_entry->is_train))
   ) {
     entry_by_nbytes_->erase(prev_entry->pos_freelist);
@@ -216,6 +217,7 @@ MemEntry* FreeList::PushFreeEntry(MemEntry *entry) {
   if (auto next_entry = list_index_.GetNextEntry(entry); next_entry 
     && next_entry->is_free 
     && next_entry->is_small == entry->is_small
+    && next_entry->is_alloc == entry->is_alloc
     && (policy_ == Belong::kTrain || (policy_ == Belong::kInfer && !entry->is_train && !next_entry->is_train))
   ) {
     entry_by_nbytes_->erase(next_entry->pos_freelist);
