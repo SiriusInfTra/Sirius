@@ -70,6 +70,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
                 with torch.cuda.amp.autocast(cache_enabled=False):
                     output = model(images)
                     loss = criterion(output, targets)
+                    train_dataset.scale_loss(loss)
                 train_valiation.debug_print_loss(len(images), loss)
                 scaler.scale(loss).backward()
                 if train_dataset.is_do_step():

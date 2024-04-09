@@ -143,6 +143,12 @@ class CustomeDynamicBatchDataset(IterableDataset):
         if self.enable_accumulation and not checkpoint_micro_batch:
             self.rollback_micro_batch()
 
+    def scale_loss(self, loss):
+        if self.enable_accumulation:
+            loss = loss * self.last_batch_size / self.global_batch_size
+        else:
+            pass
+
     def iter_batch(self) -> Iterator:
         def _get_batch_size():
             if self.max_global_batch_size is None: # not use accumulation
