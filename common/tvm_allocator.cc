@@ -26,6 +26,7 @@ TVMAllocator::TVMAllocator(MemPool &mempool, bool for_train, bip::scoped_lock<bi
     first_entry->is_free = false;
     first_entry->is_small = false;
     first_entry->is_train = false;
+    first_entry->is_alloc = true;
     entry_list_.LinkNewEntry(first_entry);
     free_list_large_.PushFreeEntry(first_entry);
   }

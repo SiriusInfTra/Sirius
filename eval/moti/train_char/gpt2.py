@@ -2,18 +2,18 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-from torchvision import models
-from torchvision import transforms
-from torchvision.datasets import FakeData
+from datasets import load_dataset, Dataset
+from transformers import BertTokenizer, BertForPreTraining, BertConfig, BertForTokenClassification
+from transformers import DataCollatorForLanguageModeling
+from transformers import AutoModelForSequenceClassification
+from transformers import GPT2LMHeadModel
 
 import numpy as np
 import time
 import argparse
 
-# torch_col.disable_release_saved_tensor()
 
 g_enable_cuda_sync = True
-
 def cuda_sync():
     global g_enable_cuda_sync
     if not g_enable_cuda_sync:
@@ -41,7 +41,7 @@ class IntermMemoryStat:
         if x.data_ptr() in IntermMemoryStat._model_param_ptr_set:
             return
         IntermMemoryStat._interm_memory_ptr_set.add(x.data_ptr())
-        IntermMemoryStat._nbytes_acc += x.element_size() * x.numel()
+        IntermMemoryStat._nbytes_acc += x.storage().nbytes()
 
     @staticmethod
     def model_param_add(x: torch.Tensor):
@@ -70,32 +70,44 @@ def allocated_memory(device_id):
     return torch.cuda.memory_reserved(device_id) / 1024 / 1024 / 1024
 
 def train():
-    # model = models.resnet152().cuda()
-    model = models.vit_b_16().cuda()
-    # model = models.vit_l_16().cuda()
+    seq_len = 64
+    dataset_size = 128 * 10
+    dummy_data = {
+        "input_ids": np.random.randint(100, 30000, (dataset_size, seq_len)),
+        # "labels": np.random.randint(0, 1, (dataset_size)),
+    }
+    dummy_data['labels'] = dummy_data['input_ids']
+    dataset = Dataset.from_dict(dummy_data)
+    dataset.set_format("pt")
+    
+    # batch_size = 128
+    batch_size = 64
+    # batch_size = 32
+    dataloader = DataLoader(dataset, shuffle=False, batch_size=batch_size)
+
+    model = GPT2LMHeadModel.from_pretrained('gpt2')
+    # model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=5)
+    # model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=5)
+    model = model.cuda(0)
     for param in model.parameters():
         IntermMemoryStat.model_param_add(param)
 
-    criterion = nn.CrossEntropyLoss().cuda(0)
     optimizer = torch.optim.SGD(model.parameters(), 0.1, 
                                 momentum=0.9, weight_decay=1e-4)
 
-    batch_size = 128
 
-    eval_batch_size = [128, 64, 32, 16, 8, 4]
-    # eval_batch_size = [64, 32, 16, 8, 4]
+    # eval_batch_size = [128, 64, 32, 16, 8, 4]
+    eval_batch_size = [64, 32, 16, 8, 4]
     # eval_batch_size = [32, 16, 8, 4]
     # eval_batch_size = [128, ]
     epoch_micro_batch_size = [batch_size, ] # warmup
     for bs in eval_batch_size:
         epoch_micro_batch_size.extend([bs] * 3)
 
-    train_dataset = FakeData(128 * 10, (3, 224, 224), 50, transforms.ToTensor())
-    data_loader = DataLoader(train_dataset, batch_size=128, 
-                              shuffle=False, pin_memory=True, drop_last=False, num_workers=0)
-    scaler = torch.cuda.amp.GradScaler()
+    print(batch_size)
+    print(epoch_micro_batch_size)
 
-    persist_memory = 0
+    scaler = torch.cuda.amp.GradScaler()
 
     model.train()
     for epoch, mbs in enumerate(epoch_micro_batch_size):
@@ -105,21 +117,19 @@ def train():
         update_param_times = []
         batch_times = []
 
-        # remove dataset prepare time
-        xy = [(img, target) for img, target, in data_loader] 
-
         epoch_begin_time = time.time()
-        for b, (images, targets) in enumerate(xy):
+        for b, batch in enumerate(dataloader):
             batch_begin = time.time()
 
-            images = images.cuda(non_blocking=True)
-            targets = targets.cuda(non_blocking=True)
+            inputs = {k: v.cuda(non_blocking=True) for k, v in batch.items()}
+
             optimizer.zero_grad()
-            for mb in range(128 // mbs):
+            for mb in range(batch_size // mbs):
                 IntermMemoryStat.reset()
                 with torch.cuda.amp.autocast():
-                    outputs = model(images[mb * mbs: (mb + 1) * mbs])
-                    loss = criterion(outputs, targets[mb * mbs: (mb + 1) * mbs])
+                    outputs = model(**{k: v[mb * mbs: (mb + 1) * mbs] 
+                                       for k, v in inputs.items()})
+                    loss = outputs.loss
                 scaler.scale(loss).backward()
                 interm_memorys.append(IntermMemoryStat.get())
             cuda_sync()
@@ -138,15 +148,16 @@ def train():
         epoch_end_time = time.time()
 
         epoch_time = epoch_end_time - epoch_begin_time
-        thpt = len(train_dataset) / epoch_time
+        thpt = len(dataset) / epoch_time
 
         model_memory = 0
         optimizer_memory = 0
         # calculate model_memory and optimizer_memory here
         for param in model.parameters():
-            model_memory += param.numel() * param.element_size()
+            model_memory += param.storage().nbytes()
         for buffer in model.buffers():
-            model_memory += buffer.numel() * buffer.element_size()
+            buffer: torch.Tensor
+            model_memory += buffer.storage().nbytes()
         
         for state in optimizer.state.values():
             for k, v in state.items():

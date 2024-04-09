@@ -246,6 +246,8 @@ class SwitchHook(HookABC):
         self._stub.train_start()
 
     def train_end(self):
+        if torch_col.use_shared_tensor():
+            torch_col.MemoryPool.empty_cache()
         return self._stub.train_end()
 
     def stop(self):
@@ -383,7 +385,11 @@ class ColocateHook(HookABC):
             self._stub.adjust_l1_done()
             cur_gpu_mem = MemoryPool.get_memory_usage()
         t1 = time.time()
-        print(f'[{torch_col.get_unix_timestamp_us()/1000}] [Adjust L1 {(t1-t0)*1e3:.1f} ms] target batch_size: {self.target_batch_size}, memory usage: {old_gpu_mem:.2f}GB -> {cur_gpu_mem:.2f}GB.', flush=True)
+        mem_usage_str = f'memory usage: {old_gpu_mem:.2f}GB -> {cur_gpu_mem:.2f}GB'
+        if torch_col.use_shared_tensor():
+            allocted_mem = torch_col.cuda_memory_pool_train_usage() / 1024 / 1024 / 1024
+            mem_usage_str += f', cur actual alloc {allocted_mem:.2f}GB'
+        print(f'[{torch_col.get_unix_timestamp_us()/1000}] [Adjust L1 {(t1-t0)*1e3:.1f} ms] target batch_size: {self.target_batch_size}, {mem_usage_str}', flush=True)
 
     def adjust_l2(self):
         t0 = time.time()
@@ -406,6 +412,8 @@ class ColocateHook(HookABC):
         self._stub.train_start()
 
     def train_end(self):
+        if torch_col.use_shared_tensor():
+            torch_col.MemoryPool.empty_cache()
         self._stub.train_end()
 
     def stop(self):

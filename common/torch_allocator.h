@@ -50,18 +50,21 @@ private:
     LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Release free physical memory.";
     size_t allocated_nbytes = 0;
     std::vector<int> ready_to_free_mask(mapped_mem_list_.size(), true);
-    for (auto *entry = entry_list_.GetEntry(0); entry != nullptr; entry = entry_list_.GetNextEntry(entry)) {
-      if (entry->is_free) { continue; }
-      allocated_nbytes += entry->nbytes;
-      auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(entry);
-      std::fill(ready_to_free_mask.begin() + index_begin, ready_to_free_mask.begin() + index_end, false);
-    }
+    entry_list_.IterateRange(0, mempool_.mempool_nbytes, [&](MemEntry *entry){
+      if (!entry->is_free) {
+        allocated_nbytes += entry->nbytes;
+        auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(entry);
+        std::fill(ready_to_free_mask.begin() + index_begin, ready_to_free_mask.begin() + index_end, false);
+      }
+      return entry;
+    });
     // some physical memory pages already free
     for (size_t k = 0; k < ready_to_free_mask.size(); ++k) {
       if (mapped_mem_list_[k] == nullptr) { 
         ready_to_free_mask[k] = false; 
       }
     }
+
     std::vector<PhyMem *> ready_to_free_mem;
     for (size_t k = 0; k < ready_to_free_mask.size(); ++k) {
       if (ready_to_free_mask[k] == false) { continue; }
@@ -84,6 +87,10 @@ private:
                                mapped_mem_list_.cbegin() + k);
       std::fill(mapped_mem_list_.begin() + k0, mapped_mem_list_.begin() + k, nullptr);
     }
+    entry_list_.IterateRange(0, mempool_.mempool_nbytes, [&](MemEntry *entry){
+      UpdateAllocFlag(entry);
+      return entry;
+    });
     mempool_.DeallocPhyMem(ready_to_free_mem);
     TVMAllocator::Get().SyncFreeTrain(ready_to_free_mem, lock);
     size_t physical_nbytes = std::count_if(
@@ -138,6 +145,13 @@ private:
         .flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE};
       CU_CALL(cuMemSetAccess(reinterpret_cast<CUdeviceptr>(target_addr), MEM_BLOCK_NBYTES, &acc_desc, 1));
     }
+    entry->is_alloc = true;
+    if (auto *prev_entry = entry_list_.GetPrevEntry(entry); prev_entry && prev_entry->is_free) {
+      UpdateAllocFlag(prev_entry);
+    }
+    if (auto *next_entry = entry_list_.GetNextEntry(entry); next_entry && next_entry->is_free) {
+      UpdateAllocFlag(next_entry);
+    }
   }
 
   MemEntry *Free0(MemEntry *entry, bip::scoped_lock<bip::interprocess_mutex> &lock) {
@@ -185,10 +199,10 @@ private:
     MemEntry *free_entry = nullptr;
     // 1. normal case, alloc in train small/large mem pool
     if (nbytes < SMALL_BLOCK_NBYTES) {
-      free_entry = free_list_small_.PopFreeEntry(nbytes, true);
+      free_entry = free_list_small_.PopFreeEntry(nbytes, true, 1000);
       CHECK(!alloc_conf::ALWAYS_CHECK_STATE || free_entry == nullptr || CheckState());
     }
-    if (free_entry == nullptr && (free_entry = free_list_large_.PopFreeEntry(nbytes, false)) != nullptr) {
+    if (free_entry == nullptr && (free_entry = free_list_large_.PopFreeEntry(nbytes, false, 1000)) != nullptr) {
       free_entry = Split(free_entry, free_entry->addr_offset, nbytes);
       CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
     }
@@ -213,6 +227,7 @@ private:
         expand_entry->is_free = false;
         expand_entry->is_small = false;
         expand_entry->is_train = true;
+        expand_entry->is_alloc = true;
         ExpandMemorySpace(phy_mem_list, allocated);
         entry_list_.LinkNewEntry(expand_entry);
         free_list_large_.PushFreeEntry(expand_entry);

@@ -24,10 +24,14 @@ def unset_mps_thread_percent():
 
 
 @contextlib.contextmanager
-def mps_thread_percent(percent):
-    set_mps_thread_percent(percent)
-    yield
-    unset_mps_thread_percent()
+def mps_thread_percent(percent, skip=False):
+    if skip:
+        yield
+        return
+    else:
+        set_mps_thread_percent(percent)
+        yield
+        unset_mps_thread_percent()
 
 
 @contextlib.contextmanager

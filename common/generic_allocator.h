@@ -80,6 +80,7 @@ struct MemEntry {
     bool            is_free:  1;
     bool            is_train: 1;
     bool            is_small: 1;
+    bool            is_alloc: 1;
   };
 
   entry_linklist::iterator    pos_entrylist;
@@ -179,6 +180,7 @@ public:
       if (!entry) { break; }
       if (entry->addr_offset + entry->nbytes >= addr_offset + nbytes) { break; }
       entry = GetNextEntry(entry);
+      if (!entry) { break; }
     }
     return entry;
   }
@@ -210,7 +212,7 @@ public:
 
   FreeList(EntryList &list_index, bool is_small, const std::string &log_prefix, Belong policy);
 
-  MemEntry *PopFreeEntry(size_t nbytes, bool do_split = true);
+  MemEntry *PopFreeEntry(size_t nbytes, bool do_split = true, size_t require_allocated = 0);
 
   MemEntry *PopFreeEntry(MemEntry *free_entry);
 
@@ -241,7 +243,19 @@ protected:
 
 
   const std::string log_prefix_;
+  void UpdateAllocFlag(MemEntry *entry) {
+    if (!entry->is_free) { return; }
+    bool real_allocated = true;
 
+    auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(entry);
+    for (size_t k = index_begin; k < index_end; ++k) {
+      if (mapped_mem_list_[k] == nullptr) {
+        real_allocated = false;
+        break;
+      }
+    }
+    entry->is_alloc = real_allocated;
+  }
 
   void ExpandMemorySpace(const std::vector<PhyMem *> &phy_mem_list, size_t len) {
     if( (mapped_mem_list_.size() + len) * MEM_BLOCK_NBYTES > mempool_.mempool_nbytes * VA_RESERVE_SCALE) {
@@ -326,14 +340,21 @@ public:
   }
 
   void PrintStatus() {
+    bool is_training = policy_ == Belong::kTrain;
     enum class MemEntryType { kFreeLarge, kFreeSmall,  kTrainLarge, kTrainSmall, kNotAllocatedLarge, kNotAllocatedSmall, kUsed };
     std::unordered_map<MemEntryType, std::pair<std::vector<size_t>, std::string>> groupby = {
-      {MemEntryType::kFreeLarge, std::make_pair(std::vector<size_t>{}, "FreeListLarge")},
-      {MemEntryType::kFreeSmall, std::make_pair(std::vector<size_t>{}, "FreeListSmall")},
-      {MemEntryType::kTrainLarge, std::make_pair(std::vector<size_t>{}, "TrainLarge")},
-      {MemEntryType::kTrainSmall, std::make_pair(std::vector<size_t>{}, "TrainSmall")},
-      {MemEntryType::kNotAllocatedLarge, std::make_pair(std::vector<size_t>{}, "NotAllocatedLarge")},
-      {MemEntryType::kNotAllocatedSmall, std::make_pair(std::vector<size_t>{}, "NotAllocatedSmall")},
+      {MemEntryType::kFreeLarge, std::make_pair(std::vector<size_t>{}, 
+          std::string("FreeListLarge") + (is_training ? ", free entry w/ phy page" : ""))},
+      {MemEntryType::kFreeSmall, std::make_pair(std::vector<size_t>{}, 
+          std::string("FreeListSmall") + (is_training ? ", free entry w/ phy page" : ""))},
+      {MemEntryType::kTrainLarge, std::make_pair(std::vector<size_t>{}, 
+          std::string("TrainLarge") + (is_training ? " (training allocated)" : (" (phy page allocated to train)")))},
+      {MemEntryType::kTrainSmall, std::make_pair(std::vector<size_t>{}, 
+          std::string("TrainSmall") + (is_training ? " (training allocated)" : (" (phy page allocated to train)")))},
+      {MemEntryType::kNotAllocatedLarge, std::make_pair(std::vector<size_t>{}, 
+          std::string("NotAllocatedLarge (free entry w/o phy page)") + (is_training ? "" : ", should be empty for Infer"))},
+      {MemEntryType::kNotAllocatedSmall, std::make_pair(std::vector<size_t>{}, 
+          std::string("NotAllocatedSmall (free entry w/o phy page)") + (is_training ? "" : ", should be empty for Infer"))},
       {MemEntryType::kUsed, std::make_pair(std::vector<size_t>{}, "Used")},
     };
     for(auto *entry= entry_list_.GetEntry(0); entry !=nullptr; entry = entry_list_.GetNextEntry(entry)) {
