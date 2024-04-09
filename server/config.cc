@@ -31,7 +31,7 @@ size_t Config::better_alloc_threshold = 64_MB;
 
 bool Config::group_param_load = true;
 bool Config::group_param_dump = false;
-bool Config::group_param_nbytes_with_fragment = false;
+bool Config::group_param_nbytes_with_fragment = true;
 size_t Config::group_param_load_threshold = 8_MB;
 
 double Config::cuda_memory_pool_gb = 12;
