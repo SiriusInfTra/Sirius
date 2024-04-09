@@ -25,6 +25,7 @@ class ResourceManager {
   static void InferMemoryChangingUnlock() {
     resource_manager_->infer_memory_changing_mut_.unlock();
   }
+
   static bool InferChangeMemoryTryLock() {
     return resource_manager_->infer_memory_changing_mut_.try_lock();
   }

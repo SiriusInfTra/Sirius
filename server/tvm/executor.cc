@@ -123,15 +123,9 @@ Executor::Executor(TVMGraph &factory, size_t worker_id, const std::vector<DLDevi
 
 void Executor::Init(bool load_param) {
   if (!initialized_) {   
-    if (Config::IsColocateMode() && Config::ondemand_adjust) {
-      PROFILE_START(InferAdjustAlloc);
-      if (!Config::colocate_config.skip_malloc) AllocStorageMaybeAdjust();
-      PROFILE_END(InferAdjustAlloc);
-    } else {
-      PROFILE_START(InferAllocStorage);
-      if (!Config::colocate_config.skip_malloc) AllocStorage();
-      PROFILE_END(InferAllocStorage);
-    }
+    PROFILE_START(InferAllocStorage);
+    if (!Config::colocate_config.skip_malloc) AllocStorage();
+    PROFILE_END(InferAllocStorage);
      
     if (!Config::colocate_config.skip_malloc)
       ReSetupDataEntry();
