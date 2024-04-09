@@ -103,10 +103,6 @@ void CUDAColAllocator::raw_delete(void* ptr) {
   entry_map_.erase(ptr);
   interm_memories_.erase(ptr);
   train_model_params_.erase(ptr);
-  DLOG(INFO) << "CUDAColAllocator raw_delete " << ptr;
-  entry_map_.erase(ptr);
-  interm_memories_.erase(ptr);
-  train_model_params_.erase(ptr);
 }
 
 void CUDAColAllocator::emptyCache() {
