@@ -6,7 +6,7 @@ from dataclasses import dataclass
 set_global_seed(42)
 
 use_time_stamp = True
-retry_if_fail = True
+retry_if_fail = False
 skip_fail = False
 
 run_colsys  = False
@@ -52,7 +52,7 @@ class HighLoad:
 class LowLoad:
     rps: int = 5
     mps_infer: int = 30
-    mps_train: int = 80
+    mps_train: int = 70
     enable: bool = True
 
 @dataclass
@@ -73,7 +73,7 @@ class UniformConfig:
     port = str(18100 + (os.getpid() % 10) * 10)
     enable = True
 
-    low_load = LowLoad(enable=True)
+    low_load = LowLoad(enable=False)
     high_load = HighLoad(enable=True)
     hybrid_load = HybridLoad(enable=False)
 
@@ -81,14 +81,13 @@ class UniformConfig:
 ## =========================================================== ##
 
 def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
-            train_model='resnet', 
-            # train_epoch=UniformConfig.duration / 3, 
-            train_epoch=20,
-            train_batch_size=140):
+            train_model:str ='resnet', 
+            train_epoch:int = int(UniformConfig.duration / 3 + 5), 
+            train_batch_size:int = 130):
     workload = HyperWorkload(concurrency=2048,
                              warmup=5,
                              wait_warmup_done_sec=5,
-                             wait_train_setup_sec=30,
+                             wait_train_setup_sec=40 ,
                              wait_stable_before_start_profiling_sec=10)
     InferModel.reset_model_cnt()
     if not infer_only:
@@ -107,17 +106,17 @@ def _run(system: System, workload: HyperWorkload, server_model_config: str, unit
         system.launch(unit, tag, time_stamp=use_time_stamp,
                     infer_model_config=server_model_config)
         workload.launch_workload(system)
+        system.stop()
     except Exception as e:
         print(f"Failed to run {unit} {tag}: {e}")
-        system.stop()
         if retry_if_fail:
             print(f"\n\x1b[33;1m### Retry [{unit} {tag}] ###\x1b[0m")
             system.launch(unit, f'{tag}-retry', time_stamp=use_time_stamp,
                     infer_model_config=server_model_config)
             workload.launch_workload(system)
+            system.stop()
         else:
             raise e
-    system.stop()
     time.sleep(5)
     system.draw_memory_usage()
     system.draw_trace_cfg()
