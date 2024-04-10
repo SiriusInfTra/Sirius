@@ -20,7 +20,7 @@ if 'CUDA_VISIBLE_DEVICES' in os.environ:
         except:
             CUDA_VISIBLE_DEVICES_UUID.append(id.strip())
     os.environ['CUDA_VISIBLE_DEVICES'] = ",".join(CUDA_VISIBLE_DEVICES_UUID)
-    os.environ['CUDA_MPS_PIPE_DIRECTORY'] = os.path.join(os.environ['HOME'], f'cuda_mps_{CUDA_VISIBLE_DEVICES_UUID}')
+    os.environ['CUDA_MPS_PIPE_DIRECTORY'] = os.path.join(os.environ['HOME'], f'cuda_mps_{CUDA_VISIBLE_DEVICES_UUID[0]}')
 
 os.environ['GLOG_logtostderr'] = "1"
 if 'https_proxy' in os.environ:
