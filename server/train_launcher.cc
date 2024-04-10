@@ -36,6 +36,8 @@ std::pair<double, double> TrainLauncher::GetModelMemParam() {
         AFTER EMPTY CACHE: 0.81 ~ 1.22
       */
       return {1150, 85};
+    } else if (cur_model_name_ == "swin_b") {
+      return {1350, 135};
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
@@ -49,7 +51,7 @@ std::pair<double, double> TrainLauncher::GetModelMemParam() {
         AFTER EMPTY CACHE: 2.28 ~ 2.37
     */
     if (cur_model_name_ == "resnet152") {
-      return {2396, 145};
+      return {2396, 85s};
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
@@ -100,7 +102,7 @@ bool TrainLauncher::AddJob(network::TrainHandler::TrainData* data) {
 }
 
 double TrainLauncher::PredictMemUsageMB() {
-  // LOG(INFO) << "Predict train memory, target batch size " << target_batch_size_;
+  LOG(INFO) << "Predict train memory, target batch size " << target_batch_size_;
   if (target_batch_size_ <= 0) {
     return 0;
   } else {
