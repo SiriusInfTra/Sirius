@@ -208,16 +208,16 @@ private:
       entry = MaybeMerge(entry);
     } else {
       entry = free_list_large_.PushFreeEntry(entry);
-      auto *prev_entry_nbytes = entry_list_.GetPrevEntry(entry);
-      if (prev_entry_nbytes && prev_entry_nbytes->is_small && prev_entry_nbytes->is_free) {
-        size_t prev_nbytes = prev_entry_nbytes->nbytes;
-        auto *maybe_merged_entry = MaybeMerge(prev_entry_nbytes);
-        if (maybe_merged_entry->nbytes > prev_nbytes) {
+      auto *prev_entry = entry_list_.GetPrevEntry(entry);
+      if (prev_entry && prev_entry->is_small && prev_entry->is_free && prev_entry->is_alloc) {
+        size_t prev_entry_nbytes = prev_entry->nbytes;
+        auto *maybe_merged_entry = MaybeMerge(prev_entry);
+        if (maybe_merged_entry->nbytes > prev_entry_nbytes) {
           entry = maybe_merged_entry;
         }
       }
       auto *next_entry = entry_list_.GetNextEntry(entry);
-      if (next_entry && next_entry->is_small && next_entry->is_free) {
+      if (next_entry && next_entry->is_small && next_entry->is_free && next_entry->is_alloc) {
         size_t next_entry_nbytes = next_entry->nbytes;
         auto *maybe_merged_entry = MaybeMerge(next_entry);
         if (maybe_merged_entry->nbytes > next_entry_nbytes) {

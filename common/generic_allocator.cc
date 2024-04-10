@@ -218,8 +218,8 @@ MemEntry* FreeList::PushFreeEntry(MemEntry *entry) {
     && prev_entry->rank == entry->rank
     && (policy_ == Belong::kTrain || ( policy_ == Belong::kInfer 
       && (!is_small_ || entry->addr_offset / MEM_BLOCK_NBYTES == prev_entry->addr_offset / MEM_BLOCK_NBYTES)
-      && !entry->is_train && !prev_entry->is_train 
-  ))) {
+      && !entry->is_train && !prev_entry->is_train ))
+  ) {
     entry_by_nbytes_->erase(prev_entry->pos_freelist);
     entry = list_index_.MergeMemEntry(prev_entry, entry);
   }
