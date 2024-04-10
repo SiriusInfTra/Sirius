@@ -14,7 +14,6 @@ from typing import Optional
 
 checkpoint_micro_batch = False
 
-
 def train(train_mode: TrainMode, hook_mode: HookMode, 
           num_epoch: int, batch_size: int, global_batch_size: Optional[int] = None):
     if torch_col.use_shared_tensor():
@@ -48,6 +47,10 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
     model.train()
     hook.train_start()
 
+    torch_col.util.initialize_sgd_optimizer(model, optimizer)
+
+    # print_opt(optimizer)
+
     for epoch in range(num_epoch):
         epoch_event = EventManager.record_event(f'epoch_{epoch:02d}_{train_dataset.size}')
         batch_cnt = 0
@@ -67,7 +70,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
             try:
                 tried_batch += 1
                 total_tried_batch += 1
-                optimizer.zero_grad()
+                optimizer.zero_grad(set_to_none=False)
                 with torch.cuda.amp.autocast(cache_enabled=False):
                     output = model(images)
                     loss = criterion(output, targets)
@@ -159,7 +162,7 @@ def main():
     else:
         print("CUDA Stream create without xsched.")
     with torch.cuda.stream(stream):
-        train(train_mode, hook_mode, num_epoch, batch_size, global_batch_size=500)
+        train(train_mode, hook_mode, num_epoch, batch_size, global_batch_size=None)
     train_valiation.val_end()
     EventManager.dump(args.train_profile, train_mode)
 
