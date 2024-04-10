@@ -63,7 +63,7 @@ class Model {
   bool AddJob(network::InferHandler::InferData* data);
 
   void InitMetaInfo();
-  void MaybeAdjustTrainAndCache(size_t rank, std::unique_lock<std::mutex> &cold_cache_lock, std::unique_lock<std::mutex> &model_lock);
+  bool MaybeAdjustTrainAndCache(size_t rank, std::unique_lock<std::mutex> &cold_cache_lock, std::unique_lock<std::mutex> &model_lock);
   bool SetupMemory(size_t rank, std::unique_lock<std::mutex> &cold_cache_lock, std::unique_lock<std::mutex> &model_lock);
   bool Inference(uint32_t rank, pthread_barrier_t* barrier);
   bool SetInput(tvm::Executor &graph_executor, size_t idx, const std::string &input_id, 

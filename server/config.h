@@ -143,6 +143,8 @@ class Config {
 
 };
 
+#define ADJUST_WITH_FLYING 0
+
 }
 
 #endif

@@ -37,3 +37,5 @@ log_*/*
 .gdb_history
 
 mempool_dump*/*
+
+cifar-10-batches-py/*

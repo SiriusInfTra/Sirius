@@ -12,7 +12,7 @@ from torch_col import CustomeDynamicBatchDataset
 import train_valiation
 from typing import Optional
 
-checkpoint_micro_batch = False
+checkpoint_micro_batch = True
 
 def train(train_mode: TrainMode, hook_mode: HookMode, 
           num_epoch: int, batch_size: int, global_batch_size: Optional[int] = None):
@@ -36,7 +36,8 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
     # dummy data
     train_dataset = CustomeDynamicBatchDataset(1000, (3, 224, 224), 10, batch_size, hook, 
                                                train_valiation.get_trace_input(),
-                                               max_global_batch_size=global_batch_size)
+                                               max_global_batch_size=global_batch_size,
+                                               checkpoint_micro_batch=checkpoint_micro_batch)
     train_loader = DataLoader(train_dataset, batch_size=None, 
                               shuffle=False, pin_memory=True, drop_last=False, num_workers=0)
 
@@ -48,6 +49,10 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
     hook.train_start()
 
     torch_col.util.initialize_sgd_optimizer(model, optimizer)
+    if train_dataset.checkpoint_micro_batch:
+        grad_accumulator = torch_col.GradAccumulator(model)
+    else:
+        grad_accumulator = None
 
     # print_opt(optimizer)
 
@@ -77,12 +82,19 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
                     train_dataset.scale_loss(loss)
                 train_valiation.debug_print_loss(len(images), loss)
                 scaler.scale(loss).backward()
-                if train_dataset.is_do_step():
-                    with hook.steps_no_interrupt():
-                        step_event = EventManager.record_event('optimizer_step')
-                        scaler.step(optimizer)
-                        scaler.update()
-                    EventManager.record_event('', step_event)
+                train_dataset.step_stage(hook, optimizer, scaler=scaler, grad_accumulator=grad_accumulator)
+                # if train_dataset.is_do_checkpoint_micro_batch():
+                #     with hook.steps_no_interrupt():
+                #         grad_accumulator.accumulate()
+                #         if train_dataset.is_do_step():
+                #             grad_accumulator.step(optimizer, scaler)
+                # else:
+                #     if train_dataset.is_do_step():
+                #         with hook.steps_no_interrupt():
+                #             step_event = EventManager.record_event('optimizer_step')
+                #             scaler.step(optimizer)
+                #             scaler.update()
+                #         EventManager.record_event('', step_event)
                 finished_batch += 1
                 total_finished_batch += 1
                 batch_cnt += 1
@@ -96,7 +108,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
                     xsched.kill_batch()
                 killed_batch += 1
                 total_killed_batch += 1
-                train_dataset.cancel_micro_batch(checkpoint_micro_batch)
+                train_dataset.cancel_micro_batch()
                 with EventManager.record_duration_event(f'batch_exception_{epoch:02d}_{i:03d}_{len(images):02d}'):
                     # cuda has alreadly synced
                     hook.release_and_reply()
@@ -162,7 +174,7 @@ def main():
     else:
         print("CUDA Stream create without xsched.")
     with torch.cuda.stream(stream):
-        train(train_mode, hook_mode, num_epoch, batch_size, global_batch_size=None)
+        train(train_mode, hook_mode, num_epoch, batch_size, global_batch_size=500)
     train_valiation.val_end()
     EventManager.dump(args.train_profile, train_mode)
 

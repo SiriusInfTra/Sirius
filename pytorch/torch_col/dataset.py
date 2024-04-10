@@ -20,6 +20,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
                  hook: HookABC, trace: Optional[list[dict]], 
                  max_global_batch_size = None,
                  empty_cache_at_larger_batch_size = False,
+                 checkpoint_micro_batch = False,
                  fake_data=False) -> None:
         super().__init__()
         self.size = size
@@ -28,6 +29,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
         self.max_batch_size = max_batch_size
         self.max_global_batch_size = max_global_batch_size
         self.enable_accumulation = max_global_batch_size is not None
+        self.checkpoint_micro_batch = self.enable_accumulation and checkpoint_micro_batch
         self.global_batch_size = None
         self.accumulate_iter_idx = None if max_global_batch_size is None else 0
         self.last_batch_size = None
@@ -54,6 +56,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
             assert hook.train_mode == TrainMode.NORMAL and hook.hook_mode == HookMode.NONE, 'only normal train can valid trace.'
         self.empty_cache_at_larger_batch_size = empty_cache_at_larger_batch_size
         print(f'Create CustomeDynamicBatchDataset, hook={type(hook)}.')
+        print(f'enable_accumulation={self.enable_accumulation}, checkpoint_micro_batch={self.checkpoint_micro_batch}.')
 
     @property
     def batch_size(self):
@@ -126,9 +129,16 @@ class CustomeDynamicBatchDataset(IterableDataset):
             return self.at_global_batch_end()
         else:
             return True
+        
+    def is_do_checkpoint_micro_batch(self):
+        if self.enable_accumulation and self.checkpoint_micro_batch:
+            return True
+        else:
+            return False
 
     def rollback_micro_batch(self):
-        assert self.enable_accumulation, "only used for accumulation"
+        assert self.enable_accumulation and not self.checkpoint_micro_batch, \
+            "only used for accumulation without checkpoint"
         assert self.micro_batch_iter_idx >= self.global_batch_iter_idx, f"{self.micro_batch_iter_idx} vs {self.global_batch_iter_idx}"
         self.num_rollback_samples_in_epoch += self.micro_batch_iter_idx - self.global_batch_iter_idx
         self.micro_batch_iter_idx = self.global_batch_iter_idx
@@ -138,16 +148,48 @@ class CustomeDynamicBatchDataset(IterableDataset):
         EventManager.record_event('', self.global_batch_event)
         self.global_batch_event = None
     
-    def cancel_micro_batch(self, checkpoint_micro_batch):
+    def cancel_micro_batch(self):
         self.batch_event.tag = 'cancel'
-        if self.enable_accumulation and not checkpoint_micro_batch:
+        if self.enable_accumulation and not self.checkpoint_micro_batch:
             self.rollback_micro_batch()
 
     def scale_loss(self, loss):
         if self.enable_accumulation:
-            loss = loss * self.last_batch_size / self.global_batch_size
+            scale_factor = self.global_batch_size / self.last_batch_size
+            loss /= scale_factor
+            # loss = loss * self.last_batch_size / self.global_batch_size
         else:
             pass
+
+    def step_stage(self, hook:torch_col.hook.HookABC, 
+                   optimizer: torch.optim.Optimizer, 
+                   scaler: torch.cuda.amp.GradScaler = None, 
+                   grad_accumulator:torch_col.accumulate.GradAccumulator = None):
+        def _step():
+            if scaler is not None:
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                optimizer.step()
+
+        if self.is_do_checkpoint_micro_batch():
+            assert grad_accumulator is not None
+            with hook.steps_no_interrupt():
+                step_event = EventManager.record_event('optimizer_step')
+                grad_accumulator.accumulate()
+                if self.is_do_step():
+                    grad_accumulator.step(optimizer, scaler)
+                    step_event.tag = 'global'
+                else:
+                    step_event.tag = 'local'
+                EventManager.record_event('', step_event)
+        else:
+            if self.is_do_step():
+                with hook.steps_no_interrupt():
+                    step_event = EventManager.record_event('optimizer_step')
+                    _step()
+                    EventManager.record_event('', step_event)
+
 
     def iter_batch(self) -> Iterator:
         def _get_batch_size():

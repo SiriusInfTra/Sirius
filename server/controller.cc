@@ -159,8 +159,13 @@ uint64_t Controller::ResumeTrain() {
 }
 
 uint64_t Controller::ColocateAdjust(size_t model_rank, size_t batch_size) {
+  static std::mutex adjust_batch_mutex; // for quick fix concurrency
+
   auto cmd_id = Controller::adjust_cmd_id.fetch_add(1, std::memory_order_relaxed);
   if (!IsTrainIdle()) {
+#if ADJUST_WITH_FLYING
+    std::lock_guard lock{adjust_batch_mutex};
+#endif
     TrainLauncher::Get()->AddTargetBatchSize(-batch_size);
     if (Config::serve_mode == ServeMode::kColocateL1) {
       train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1), 

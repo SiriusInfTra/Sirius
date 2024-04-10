@@ -33,6 +33,8 @@ def use_fbward_hook():
 from ._C import *
 
 from .util import MemoryPool, TrainMode, EventManager
+from .accumulate import GradAccumulator
+
 from .dataset import CustomeDynamicBatchDataset
 from .hook import register_saved_tensor_hook, get_hook, HookMode, DummyHook,\
       SwitchHook, SwitchL1Exception, ColocateHook, ColocateAdjustL1Exception
@@ -53,4 +55,4 @@ def __setup_torch_col():
 
 __setup_torch_col()
 
-print('torch_col init')
+print('torch_col init') 

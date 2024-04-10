@@ -71,6 +71,20 @@ class UniformConfig:
     interval_sec = 20
     duration = 120
     port = str(18100 + (os.getpid() % 10) * 10)
+    enable = False
+
+    low_load = LowLoad(enable=False)
+    high_load = HighLoad(enable=True)
+    hybrid_load = HybridLoad(enable=False)
+
+class SkewedConfig:
+    model_list = [InferModel.InceptionV3, InferModel.ResNet152,
+                  InferModel.DenseNet161, InferModel.DistilBertBase]
+    num_model = 60
+    interval_sec = 20
+    duration = 120
+    zipf_aplha = 1.2 # large alpha -> more skewed
+    port = str(18100 + (os.getpid() % 10) * 10)
     enable = True
 
     low_load = LowLoad(enable=False)
@@ -81,7 +95,7 @@ class UniformConfig:
 ## =========================================================== ##
 
 def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
-            train_model:str ='resnet', 
+            train_model:str ='resnet152', 
             train_epoch:int = int(UniformConfig.duration / 3 + 5), 
             train_batch_size:int = 130):
     workload = HyperWorkload(concurrency=2048,
@@ -100,6 +114,26 @@ def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
     ))
     return workload
 
+def skewed(rps, client_model_list, infer_only=True, rps_fn=None,
+           train_model:str ='resnet152', 
+           train_epoch:int = int(SkewedConfig.duration / 3 + 5), 
+           train_batch_size:int = 130):
+    workload = HyperWorkload(concurrency=2048,
+                             warmup=5,
+                             wait_warmup_done_sec=5,
+                             wait_train_setup_sec=40,
+                             wait_stable_before_start_profiling_sec=10)
+    InferModel.reset_model_cnt()
+    if not infer_only:
+        workload.set_train_workload(
+            train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
+    workload.set_infer_workloads(MicrobenchmarkInferWorkload(
+        model_list=client_model_list,
+        interval_sec=SkewedConfig.interval_sec, fix_request_sec=rps, rps_fn=rps_fn,
+        zipf_alpha=SkewedConfig.zipf_aplha,
+        duration=SkewedConfig.duration + workload.infer_extra_infer_sec,
+    ))
+    return workload
 
 def _run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
     try:
@@ -184,6 +218,28 @@ if run_colsys:
                             **system_config)
             run(system, workload, server_model_config, "overall-uniform", "colsys-hybrid")
 
+
+    if SkewedConfig.enable and SkewedConfig.high_load.enable:
+        with mps_thread_percent(SkewedConfig.high_load.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                SkewedConfig.model_list, SkewedConfig.num_model, 1)
+            workload = skewed(rps=SkewedConfig.high_load.rps, 
+                              client_model_list=client_model_list, infer_only=False)
+            system = System(train_mps_thread_percent=SkewedConfig.high_load.mps_train,
+                            port=SkewedConfig.port,
+                            **system_config)
+            run(system, workload, server_model_config, "overall-skewed", "colsys-high")
+
+    if SkewedConfig.enable and SkewedConfig.low_load.enable:
+        with mps_thread_percent(SkewedConfig.low_load.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                SkewedConfig.model_list, SkewedConfig.num_model, 1)
+            workload = skewed(rps=SkewedConfig.low_load.rps, 
+                              client_model_list=client_model_list, infer_only=False)
+            system = System(train_mps_thread_percent=SkewedConfig.low_load.mps_train,
+                            port=SkewedConfig.port,
+                            **system_config)
+            run(system, workload, server_model_config, "overall-skewed", "colsys-low")
 
 ## MARK: Task Switch
 if run_task_switch:
