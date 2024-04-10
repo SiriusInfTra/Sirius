@@ -206,14 +206,20 @@ MemEntry *FreeList::PopFreeEntryLarge(size_t nbytes) {
 MemEntry* FreeList::PushFreeEntry(MemEntry *entry) {
   CHECK_EQ(entry->is_free, false);
   CHECK_EQ(entry->is_small, is_small_);
+  if (policy_ == Belong::kInfer && !is_small_) {
+    CHECK_EQ(entry->addr_offset % MEM_BLOCK_NBYTES, 0);
+    CHECK_EQ(entry->nbytes % MEM_BLOCK_NBYTES, 0);
+  }
   entry->is_free = true;
   if (auto prev_entry = list_index_.GetPrevEntry(entry); prev_entry 
     && prev_entry->is_free 
     && prev_entry->is_small == entry->is_small
     && prev_entry->is_alloc == entry->is_alloc
-    // && prev_entry->rank == entry->rank
-    && (policy_ == Belong::kTrain || (policy_ == Belong::kInfer && !entry->is_train && !prev_entry->is_train))
-  ) {
+    && prev_entry->rank == entry->rank
+    && (policy_ == Belong::kTrain || ( policy_ == Belong::kInfer 
+      && (!is_small_ || entry->addr_offset / MEM_BLOCK_NBYTES == prev_entry->addr_offset / MEM_BLOCK_NBYTES)
+      && !entry->is_train && !prev_entry->is_train 
+  ))) {
     entry_by_nbytes_->erase(prev_entry->pos_freelist);
     entry = list_index_.MergeMemEntry(prev_entry, entry);
   }
@@ -221,9 +227,11 @@ MemEntry* FreeList::PushFreeEntry(MemEntry *entry) {
     && next_entry->is_free 
     && next_entry->is_small == entry->is_small
     && next_entry->is_alloc == entry->is_alloc
-    // && next_entry->rank == entry->rank
-    && (policy_ == Belong::kTrain || (policy_ == Belong::kInfer && !entry->is_train && !next_entry->is_train))
-  ) {
+    && next_entry->rank == entry->rank
+    && (policy_ == Belong::kTrain || ( policy_ == Belong::kInfer 
+      && (!is_small_ || entry->addr_offset / MEM_BLOCK_NBYTES == next_entry->addr_offset / MEM_BLOCK_NBYTES)
+      && !entry->is_train && !next_entry->is_train 
+  ))) {
     entry_by_nbytes_->erase(next_entry->pos_freelist);
     entry = list_index_.MergeMemEntry(entry, next_entry);
   }

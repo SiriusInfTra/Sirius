@@ -10,18 +10,15 @@ std::unique_ptr<TVMAllocator> TVMAllocator::instance_ = nullptr;
 
 
 TVMAllocator::TVMAllocator(MemPool &mempool, bool for_train, bip::scoped_lock<bip::interprocess_mutex> &lock)
-    : GenericAllocator(mempool, Belong::kInfer, 2_MB, lock) {
+    : GenericAllocator(mempool, Belong::kInfer, MEM_BLOCK_NBYTES, lock) {
   LOG(INFO) << log_prefix_ << "Init TVMAllocator with args: for_train = " << for_train << ".";
-  std::vector<PhyMem *> phy_mem_list;
-  for(auto && phymem : mempool.GetPhyMemList()) {
-    phy_mem_list.push_back(&phymem);
-  }
-  auto &real_phymem_list = mempool.GetPhyMemList();
+  InitDuplicate();
+  auto &phy_mem_list = mempool.GetPhyMemList();
   std::vector<PhyMem *> mapping_phymem_list(duplicate_shuffle_map_.size()); 
   for (size_t k = 0; k < mapping_phymem_list.size(); ++k) {
-    mapping_phymem_list[k] = &real_phymem_list[duplicate_shuffle_map_[k][0]];
+    mapping_phymem_list[k] = &phy_mem_list[duplicate_shuffle_map_[k][0]];
   }
-  ExpandMemorySpace(phy_mem_list, phy_mem_list.size());
+  ExpandMemorySpace(mapping_phymem_list, mapping_phymem_list.size());
   if (entry_list_.GetEntry(0) == nullptr) {
     LOG(INFO) << log_prefix_ << "Init TVMAllocator entires.";
     for (size_t rank = 0; rank < DUPLICATE_SHUFFLE_K; ++rank) {
@@ -35,6 +32,7 @@ TVMAllocator::TVMAllocator(MemPool &mempool, bool for_train, bip::scoped_lock<bi
       first_entry->rank = rank;
       entry_list_.LinkNewEntry(first_entry);
       free_list_large_.PushFreeEntry(first_entry);
+      LOG(INFO) << "Create free entry: " << first_entry << ".";
     }
 
   }

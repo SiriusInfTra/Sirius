@@ -174,13 +174,18 @@ public:
     return entry;
   }
 
-  MemEntry* IterateRange(ptrdiff_t addr_offset, size_t nbytes, std::function<MemEntry*(MemEntry *)> func, bool do_check = true) {
-        auto *entry = GetEntryLower(addr_offset);
+  MemEntry *GetEntryWithAddr(ptrdiff_t addr_offset) {
+    auto *entry = GetEntryLower(addr_offset);
     if (entry == nullptr) {
       entry = std::prev(entry_list_->cend())->ptr();
     } else if (entry->addr_offset > addr_offset) {
       entry = GetPrevEntry(entry);
     }
+    return entry;
+  }
+
+  MemEntry* IterateRange(ptrdiff_t addr_offset, size_t nbytes, std::function<MemEntry*(MemEntry *)> func, bool do_check = true) {
+    auto *entry = GetEntryWithAddr(addr_offset);
     CHECK(entry != nullptr);
     CHECK_LE(entry->addr_offset, addr_offset);
     while (true) {
