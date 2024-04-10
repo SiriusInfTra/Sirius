@@ -30,6 +30,10 @@ public:
   static const constexpr size_t DUPLICATE_SHUFFLE_K = 1;
   static_assert(VA_RESERVE_SCALE >= DUPLICATE_SHUFFLE_K, "Must reserve enough virtual memory for duplicate shuffle.");
 
+  static size_t AlignNBytes(size_t nbytes) {
+    return nbytes >= MEM_BLOCK_NBYTES ? detail::AlignedNBytes<MEM_BLOCK_NBYTES>(nbytes) : detail::AlignedNBytes<ALIGN_NBYTES>(nbytes);
+  }
+
 private:
   static std::unique_ptr<TVMAllocator> instance_;
   std::mutex mutex_;
@@ -41,23 +45,22 @@ private:
     size_t vir_num_per = DUPLICATE_SHUFFLE_K;         // number of virtual memory pages per physical memory pages
     duplicate_shuffle_map_ = std::vector<std::vector<size_t>>(vir_num, std::vector<size_t>(vir_num_per));
     // init
-    std::vector<size_t> duplicate_shuffle_map0(vir_num);
-    for (size_t i = 0; i < vir_num; ++i) { duplicate_shuffle_map0[i] = i; }
-    std::shuffle(
-      duplicate_shuffle_map0.begin() + phy_num,
-      duplicate_shuffle_map0.end(), std::mt19937{42});
-    for (size_t i = 0; i < phy_num; ++i) {
-      for (size_t j = 0; j < vir_num_per; ++j) {
-        duplicate_shuffle_map_[i][j] = duplicate_shuffle_map0[i + j * phy_num];
+    for (size_t k = 0; k < vir_num_per; ++k) {
+      std::vector<size_t> map_to(phy_num);
+      std::iota(map_to.begin(), map_to.end(), k * phy_num);
+      if (k != 0) { 
+        std::shuffle(map_to.begin(), map_to.end(), std::mt19937{42});
+      }
+      for (size_t i = 0; i < phy_num; ++i) { 
+        duplicate_shuffle_map_[i][k] = map_to[i]; 
       }
     }
-    for (size_t i = 0; i < phy_num; ++i) {
-      for (size_t j = 1; j < vir_num_per; ++j) {
-        size_t k = duplicate_shuffle_map_[i][j];
-        duplicate_shuffle_map_[k] = duplicate_shuffle_map_[i];
+    for (size_t k = 1; k < vir_num_per; ++k) {
+      for (size_t i = 0; i < phy_num; ++i) {
+        size_t j = duplicate_shuffle_map_[i][k];
+        duplicate_shuffle_map_[j] = duplicate_shuffle_map_[i];
       }
     }
-
     LOG(INFO) << log_prefix_ << "Duplicate entry map inited.";
     for (size_t i = 0; i < vir_num; ++i) {
       std::stringstream ss;
@@ -112,11 +115,7 @@ private:
   MemEntry *Alloc0(size_t nbytes) {
     CHECK_GT(nbytes, 0);
     LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Alloc, nbytes = " << ByteDisplay(nbytes) << ".";
-    if (nbytes >= MEM_BLOCK_NBYTES) {
-      nbytes = detail::AlignedNBytes<MEM_BLOCK_NBYTES>(nbytes);
-    } else {
-      nbytes = detail::AlignedNBytes<ALIGN_NBYTES>(nbytes);
-    }
+    nbytes = AlignNBytes(nbytes);
     MemEntry *free_entry = nullptr;
     if (nbytes < small_block_nbytes_) {
       free_entry = free_list_small_.PopFreeEntry(nbytes, true);
