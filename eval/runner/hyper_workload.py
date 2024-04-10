@@ -390,6 +390,7 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
                  duration: Optional[float | int] = None,
                  period_num: Optional[int] = None,
                  rps_fn = None, # post process rps, Fn(i, rps) -> rps,
+                 zipf_alpha: Optional[float] = None,
                  seed: Optional[int] = None) -> None:
         super().__init__(None, None, seed)
         if duration is None and period_num is None:
@@ -411,6 +412,17 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
             if rps_fn is not None:
                 num_request = rps_fn(i, num_request)
             return num_request
+        
+        if zipf_alpha is not None:
+            zipf_seq = self.rs.zipf(zipf_alpha, 10000)
+            zipf_freq = np.zeros(1 + len(model_list))
+            for i in zipf_seq:
+                if i <= len(model_list):
+                    zipf_freq[i] += 1
+            zipf_freq = zipf_freq[1:]
+            zipf_freq = zipf_freq / np.sum(zipf_freq)
+            zipf_freq = self.rs.permutation(zipf_freq)
+            print(f'zipf freq: \n', zipf_freq)
 
         if period_num is None:
             period_num = int(duration / interval_sec + 0.5)
@@ -428,7 +440,8 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
             #     num_request = rps_fn(i, num_request)
             num_request = get_num_request(i)
             num_model_to_requests.append(num_model)
-            model_req_list = self.rs.choice(np.arange(len(model_list)), num_model, replace=False)
+            model_req_list = self.rs.choice(np.arange(len(model_list)), num_model, replace=False, 
+                                            p = None if zipf_alpha is None else zipf_freq)
             model_num_req = self._split_request(num_request, num_model)
             for model, num_req in zip(model_req_list, model_num_req):
                 poisson_params[model].append(PoissonParam(i * interval_sec, num_req))
