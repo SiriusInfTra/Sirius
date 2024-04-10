@@ -81,7 +81,7 @@ class UniformConfig:
 ## =========================================================== ##
 
 def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
-            train_model:str ='resnet', 
+            train_model:str ='resnet152', 
             train_epoch:int = int(UniformConfig.duration / 3 + 5), 
             train_batch_size:int = 130):
     workload = HyperWorkload(concurrency=2048,
