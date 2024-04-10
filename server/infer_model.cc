@@ -189,9 +189,9 @@ void Model::MaybeAdjustTrainAndCache(size_t rank, std::unique_lock<std::mutex> &
     //   Config::cold_cache_max_capability_nbytes - Config::cold_cache_min_capability_nbytes,
     //   Config::cold_cache_max_capability_nbytes - ColdModelCache::Get().GetCachedNbytes(cold_cache_lock) 
     // );
-    double adjust_batch_buffer_mb = total_storage_MB
-         + sta::ByteToMB(Config::cold_cache_max_capability_nbytes - ColdModelCache::Get().GetCachedNbytes(cold_cache_lock)) 
-         - cold_cache_free_memory_MB;
+    double adjust_reserve_mb = ColdModelCache::Get().GetAdjustReserveMemoryMB(cold_cache_lock);
+    double adjust_batch_buffer_mb = total_storage_MB - std::max(0.0, cold_cache_free_memory_MB)
+                                    + adjust_reserve_mb;
     if (adjust_batch_buffer_mb > 0) {
       PROFILE_START(TrainAdjust);
       bool is_first_adjust = !Controller::Get()->HasFlyingColocateAdjust();
@@ -203,24 +203,33 @@ void Model::MaybeAdjustTrainAndCache(size_t rank, std::unique_lock<std::mutex> &
       if (is_first_adjust) {
         Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, PROFILE_DURATRION(TrainAdjust));
       }
-      LOG(INFO) << "[Model, Cold Cache] AllocStorageMaybeAdjust: model " << rank
+      LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
                 << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
                 << " wait train pid " << wait_train_pid
+                << " | before adjust: free memory " << free_memory_MB
+                << " cold cache free memory " << cold_cache_free_memory_MB
+                << " reserve memory " << adjust_reserve_mb
+                << " adjust_batch_buffer_mb " << adjust_batch_buffer_mb
                 << " delta batch size " << adjust_batch_size << ".";
     } else {
-      LOG(INFO) << "[Model, Cold Cache] AllocStorageMaybeAdjust: model " << rank << " , skip adjust";
+      LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank << " , skip adjust";
     }
     free_memory_MB = ResourceManager::GetFreeMemoryMB();
   }
+  LOG(INFO) << "[Model, Cold Cache Adjust] after adjust, "
+            << "free memory " << free_memory_MB
+            << " cold cache free memory " << ColdModelCache::Get().GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock)
+            << " model required " << total_storage_MB;
   if (total_storage_MB > free_memory_MB) {
     long capacity = static_cast<long>(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock)) - static_cast<long>((total_storage_MB - free_memory_MB) * 1024 * 1024);
     auto evict_models = ColdModelCache::Get().GetEvictModels(capacity, name_, cold_cache_lock);
     for (auto &&[name, cached_groups_id] : evict_models) {
       InferModelStore::Get()->GetModel(name)->ClearColdCache(cached_groups_id, rank, cold_cache_lock);
     }
-    LOG(INFO) << "[Model, Cold Cache] after adjust, furthur evict model to make room for model "
+    LOG(INFO) << "[Model, Cold Cache Adjust] after adjust, furthur evict model to make room for model "
               << name_ << " rank " << rank
-              << " current cache nbytes " << ColdModelCache::Get().GetCachedNbytes(cold_cache_lock);
+              << " current cache nbytes " 
+              << sta::ByteDisplay(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock));
   }
   ResourceManager::InferMemoryChangingUnlock();
 }

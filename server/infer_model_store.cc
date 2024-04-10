@@ -43,6 +43,13 @@ std::unique_ptr<WarmModelCache> WarmModelCache::infer_model_cache_ = nullptr;
 std::unique_ptr<ColdModelCache> ColdModelCache::cold_model_cache_ = nullptr;
 std::unique_ptr<InferModelStore> InferModelStore::infer_model_store_ = nullptr;
 
+ColdModelCache::ReservePolicy ColdModelCache::reserve_policy_on_release = \
+    ColdModelCache::ReservePolicy::kMaxCap;
+
+ColdModelCache::ReservePolicy ColdModelCache::reserve_policy_on_adjust = \
+    ColdModelCache::ReservePolicy::kMaxCap;
+
+
 std::unique_lock<std::mutex> WarmModelCache::ReserveCache(
     const std::string &model_name, size_t rank) {
   if (!WarmModelCache::Enable()) {
@@ -577,6 +584,33 @@ ColdModelCache::evict_list ColdModelCache::GetEvictModels(long capacity, const s
   return evict_models;
 }
 
+double ColdModelCache::GetReleaseReserveMemoryMB(std::unique_lock<std::mutex> &lock) {
+  double cached_MB = sta::ByteToMB(current_cached_nbytes_);
+  double min_cap_MB = sta::ByteToMB(Config::cold_cache_min_capability_nbytes);
+  double max_cap_MB = sta::ByteToMB(Config::cold_cache_max_capability_nbytes);
+
+  if (ColdModelCache::reserve_policy_on_release == ReservePolicy::kMaxCap) {
+    return std::max(0.0, max_cap_MB - cached_MB);
+  } else if (ColdModelCache::reserve_policy_on_release == ReservePolicy::kMaxMinDiff) {
+    return cached_MB > min_cap_MB ? std::max(0.0, max_cap_MB - cached_MB) : max_cap_MB - min_cap_MB;
+  } else {
+    return 0.0;
+  }
+}
+
+double ColdModelCache::GetAdjustReserveMemoryMB(std::unique_lock<std::mutex> &lock) {
+  double cached_MB = sta::ByteToMB(current_cached_nbytes_);
+  double min_cap_MB = sta::ByteToMB(Config::cold_cache_min_capability_nbytes);
+  double max_cap_MB = sta::ByteToMB(Config::cold_cache_max_capability_nbytes);
+
+  if (ColdModelCache::reserve_policy_on_adjust == ReservePolicy::kMaxCap) {
+    return std::max(0.0, max_cap_MB - cached_MB);
+  } else if (ColdModelCache::reserve_policy_on_adjust == ReservePolicy::kMaxMinDiff) {
+    return cached_MB > min_cap_MB ? std::max(0.0, max_cap_MB - cached_MB) : max_cap_MB - min_cap_MB;
+  } else {
+    return 0.0;
+  }
+}
 
 
 }  // namespace colserve
