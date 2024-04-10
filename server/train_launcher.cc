@@ -51,7 +51,7 @@ std::pair<double, double> TrainLauncher::GetModelMemParam() {
         AFTER EMPTY CACHE: 2.28 ~ 2.37
     */
     if (cur_model_name_ == "resnet152") {
-      return {2396, 85s};
+      return {2396, 85};
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
