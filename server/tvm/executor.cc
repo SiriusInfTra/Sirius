@@ -763,8 +763,8 @@ void Executor::SetupStorageGroup() {
     // storage_group_.push_back(mdata_group);
 
     model_nbytes += group_nbytes;
-    fragment_nbytes += sta::detail::AlignedNBytes<sta::TVMAllocator::ALIGN_NBYTES>(group_nbytes) - group_nbytes;
-    model_nbytes_with_group_fragment_ += sta::detail::AlignedNBytes<sta::TVMAllocator::ALIGN_NBYTES>(group_nbytes);
+    fragment_nbytes += sta::TVMAllocator::AlignNBytes(group_nbytes) - group_nbytes;
+    model_nbytes_with_group_fragment_ += sta::TVMAllocator::AlignNBytes(group_nbytes);
   }
 
   static std::set<std::string> logged;

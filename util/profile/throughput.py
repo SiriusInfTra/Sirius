@@ -93,7 +93,7 @@ def read_dataframe(log_dir: Path, train_timeline_name: str, infer_timeline_name:
 
         return pd.DataFrame(epoch_info), pd.DataFrame(global_batch_info), pd.DataFrame(batch_info), infer_timeline
     elif not require:
-        return None, None, None
+        return None, None, None, None
     else:
         raise Exception(f"{train_timeline} or {infer_timeline} does not exist.")
     
