@@ -624,6 +624,21 @@ void Workload::InferTrace(const std::string &model, size_t concurrency,
   infer_workers_.push_back(std::move(worker));
 }
 
+void Workload::Train(const std::string &model, size_t num_epoch, size_t batch_size) {
+  auto set_resnet_request_fn = [&](TrainRequest &request) {
+    std::stringstream args;
+    args << "num-epoch=" << num_epoch << ", batch-size=" << batch_size;
+    request.set_model(model);
+    request.set_args(args.str());
+  };
+  
+  auto worker = std::make_unique<TrainWorker>(model, set_resnet_request_fn);
+  threads_.push_back(std::make_unique<std::thread>(
+      &TrainWorker::RequestTrain, worker.get(), std::ref(*this)));
+  train_workers_.push_back(std::move(worker));
+}
+
+
 void Workload::TrainResnet(size_t num_epoch, size_t batch_size) {
   auto set_resnet_request_fn = [&](TrainRequest &request) {
     std::stringstream args;

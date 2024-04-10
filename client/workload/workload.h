@@ -182,6 +182,7 @@ class Workload {
                   const std::vector<double> &start_points, 
                   double delay_before_infer, int warmup,
                   int64_t show_result = 0);
+  void Train(const std::string &model, size_t num_epoch, size_t batch_size);
   void TrainResnet(size_t num_epoch, size_t batch_size);
 
 

@@ -85,6 +85,15 @@ class ColdModelCache {
   std::unordered_map<std::string, std::unique_ptr<CacheItem>> cold_cache_;
 
  public:
+  enum class ReservePolicy {
+    kNotReserve = 0,
+    kMaxCap = 1,
+    kMaxMinDiff = 2,
+  };
+
+  static ReservePolicy reserve_policy_on_release;
+  static ReservePolicy reserve_policy_on_adjust;
+
   using evict_list = std::vector<std::pair<std::string, std::vector<size_t>>>;
   using group_id_list = std::vector<size_t>;
   ColdModelCache(): current_cached_nbytes_(0) {}
@@ -139,15 +148,15 @@ class ColdModelCache {
 
 
   inline double GetColdCacheFreeMemoryMB(double free_memory_MB, std::unique_lock<std::mutex> &lock) {
-    if (current_cached_nbytes_ < Config::cold_cache_min_capability_nbytes) {
-      free_memory_MB -= sta::ByteToMB(Config::cold_cache_min_capability_nbytes - current_cached_nbytes_);
-    } else if (current_cached_nbytes_ < Config::cold_cache_max_capability_nbytes ){
+    if (current_cached_nbytes_ > Config::cold_cache_min_capability_nbytes){
       free_memory_MB += sta::ByteToMB(current_cached_nbytes_ - Config::cold_cache_min_capability_nbytes);
     }
-    LOG(INFO) << "[ColdModelCache] FreeMemory " << free_memory_MB << "MB";
+    // LOG(INFO) << "[ColdModelCache] FreeMemory " << free_memory_MB << "MB";
     return free_memory_MB;
   }
-  
+
+  double GetReleaseReserveMemoryMB(std::unique_lock<std::mutex> &lock);  
+  double GetAdjustReserveMemoryMB(std::unique_lock<std::mutex> &lock);  
 
   static void Init() {
     cold_model_cache_ = std::make_unique<ColdModelCache>();

@@ -35,8 +35,7 @@ std::pair<double, double> TrainLauncher::GetModelMemParam() {
       
         AFTER EMPTY CACHE: 0.81 ~ 1.22
       */
-      // return {1150, 85};
-      return {1318, 145};
+      return {1150, 85};
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }

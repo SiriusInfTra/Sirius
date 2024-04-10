@@ -121,13 +121,13 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
         if (data.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)
             || data.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL2)) {
           std::unique_lock locker{mutex_};
-          this->target_bs_ -= data.value;
-          LOG(INFO) << "[ColocateStub] Adjust batch size, target " << this->target_bs_ 
+          LOG(INFO) << "[ColocateStub] Adjust batch size, target " << data.value
+                    << " cur target " << this->target_bs_
                     << " current " << this->current_bs_
                     << " timestamp: " << torch_col::get_unix_timestamp()
                     << " malloc_ms " << colserve::sta::CUDAMemPool::TrainAllocMs();
           // CHECK_LT(this->target_bs_, this->current_bs_);
-          if (this->target_bs_ >= this->current_bs_) {
+          if (data.value >= this->target_bs_) {
             LOG(INFO) << "[ColocateStub] skip satisfied adjust, reply adjust immediately";
             if (data.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)) {
               status_event_mq_->Put({data.id, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1Done)});
@@ -136,6 +136,7 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
             }
             continue;
           }
+          this->target_bs_ = data.value;
 
           // only used for colocate l1
           if (kill_batch_on_recv && data.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)) {

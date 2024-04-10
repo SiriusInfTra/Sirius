@@ -139,8 +139,13 @@ int main(int argc, char** argv) {
   }
   
   if (app.enable_train) {
-    if (app.train_models.count("resnet"))
-      workload.TrainResnet(app.num_epoch, app.batch_size);
+    // if (app.train_models.count("resnet152"))
+    //   workload.TrainResnet(app.num_epoch, app.batch_size);
+    CHECK(app.train_models.size() <= 1);
+    if (!app.train_models.empty()) {
+      auto model_name = *app.train_models.begin();
+      workload.Train(model_name, app.num_epoch, app.batch_size);
+    }
   }
 
   workload.Run();

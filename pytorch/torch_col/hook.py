@@ -373,6 +373,7 @@ class ColocateHook(HookABC):
         # print(f'[Adjust L1] train alloc cost {torch_col.cuda_memory_pool_train_alloc_ms()}ms', flush=True)
         t0 = time.time()
         with EventManager.record_duration_event('adjust_l1'):
+            old_cached_gpu_mem, old_allocate_gpu_mem = MemoryPool.get_memory_usage(), MemoryPool.get_allocated_memory()
             if torch_col.release_interm_memory_v1():
                 for fn in self._grad_fn:
                     torch_col.release_grad_fn_saved_tensor(fn)
@@ -380,12 +381,11 @@ class ColocateHook(HookABC):
             else:
                 torch_col.release_interm_memory()
             
-            old_cached_gpu_mem, old_allocate_gpu_mem = MemoryPool.get_memory_usage(), MemoryPool.get_allocated_memory()
             MemoryPool.empty_cache()
             self._stub.adjust_l1_done()
             cur_cached_gpu_mem, cur_allocate_gpu_mem = MemoryPool.get_memory_usage(), MemoryPool.get_allocated_memory()
         t1 = time.time()
-        print(f'[{torch_col.get_unix_timestamp_us()/1000}] [Adjust L2 {(t1-t0)*1e3:.1f} ms] target batch_size: {self.target_batch_size},'
+        print(f'[{torch_col.get_unix_timestamp_us()/1000}] [Adjust L1 {(t1-t0)*1e3:.1f} ms] target batch_size: {self.target_batch_size},'
                 + f'memory cached: {old_cached_gpu_mem:.2f}GB -> {cur_cached_gpu_mem:.2f}GB,'
                 + f'memory allocated: {old_allocate_gpu_mem:.2f}GB -> {cur_allocate_gpu_mem:.2f}GB.', flush=True)
 
