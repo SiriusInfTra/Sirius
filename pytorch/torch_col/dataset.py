@@ -56,7 +56,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
             assert hook.train_mode == TrainMode.NORMAL and hook.hook_mode == HookMode.NONE, 'only normal train can valid trace.'
         self.empty_cache_at_larger_batch_size = empty_cache_at_larger_batch_size
         print(f'Create CustomeDynamicBatchDataset, hook={type(hook)}.')
-        print(f'enabel_accumulation={self.enable_accumulation}, checkpoint_micro_batch={self.checkpoint_micro_batch}.')
+        print(f'enable_accumulation={self.enable_accumulation}, checkpoint_micro_batch={self.checkpoint_micro_batch}.')
 
     @property
     def batch_size(self):
@@ -155,7 +155,9 @@ class CustomeDynamicBatchDataset(IterableDataset):
 
     def scale_loss(self, loss):
         if self.enable_accumulation:
-            loss = loss * self.last_batch_size / self.global_batch_size
+            scale_factor = self.global_batch_size / self.last_batch_size
+            loss /= scale_factor
+            # loss = loss * self.last_batch_size / self.global_batch_size
         else:
             pass
 
