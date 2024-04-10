@@ -414,14 +414,16 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
             return num_request
         
         if zipf_alpha is not None:
-            zipf_seq = self.rs.zipf(zipf_alpha, 10000)
+            # do not change self.rs
+            tmp_rs = RandomState(MT19937(SeedSequence(self.seed)))
+            zipf_seq = tmp_rs.zipf(zipf_alpha, 10000)
             zipf_freq = np.zeros(1 + len(model_list))
             for i in zipf_seq:
                 if i <= len(model_list):
                     zipf_freq[i] += 1
             zipf_freq = zipf_freq[1:]
             zipf_freq = zipf_freq / np.sum(zipf_freq)
-            zipf_freq = self.rs.permutation(zipf_freq)
+            zipf_freq = tmp_rs.permutation(zipf_freq)
             print(f'zipf freq: \n', zipf_freq)
 
         if period_num is None:
