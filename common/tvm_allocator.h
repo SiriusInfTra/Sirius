@@ -27,7 +27,7 @@ namespace colserve::sta {
 class TVMAllocator : public GenericAllocator {
 public:
   static const constexpr size_t ALIGN_NBYTES = 16_MB;
-  static const constexpr size_t DUPLICATE_SHUFFLE_K = 2;
+  static const constexpr size_t DUPLICATE_SHUFFLE_K = 1;
   static_assert(VA_RESERVE_SCALE >= DUPLICATE_SHUFFLE_K, "Must reserve enough virtual memory for duplicate shuffle.");
 
 private:
