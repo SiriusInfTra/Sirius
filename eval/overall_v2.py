@@ -446,7 +446,8 @@ if run_static_partition:
         'cuda_memory_pool_gb': '10',
         'use_sta_train': False
     }
-    train_batch_size = 20
+    train_batch_size = 16
+    assert UniformConfig.train_model =='swin_b'
 
     if UniformConfig.enable and UniformConfig.high_load.enable:
         with mps_thread_percent(UniformConfig.high_load.mps_infer):
@@ -471,6 +472,9 @@ if run_static_partition:
                             port=UniformConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-uniform", "static-partition-low")
 
+    train_batch_size = 4
+    assert SkewedConfig.train_model == 'gpt2'
+
     if SkewedConfig.enable and SkewedConfig.high_load.enable:
         with mps_thread_percent(SkewedConfig.high_load.mps_infer):
             client_model_list, server_model_config = InferModel.get_multi_model(
@@ -493,6 +497,9 @@ if run_static_partition:
                             port=SkewedConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-skewed", "static-partition-low")
         
+    train_batch_size = 16
+    assert AzureConfig.train_model == 'swin_b'
+
     if AzureConfig.enable:
         with mps_thread_percent(AzureConfig.mps_infer):
             client_model_list, server_model_config = InferModel.get_multi_model(
