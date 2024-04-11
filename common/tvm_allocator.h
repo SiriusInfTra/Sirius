@@ -72,8 +72,8 @@ private:
   }
 
   void AllocDuplicateEntry(MemEntry *entry) {
-    CHECK_EQ(entry->addr_offset % MEM_BLOCK_NBYTES, 0);
-    CHECK_EQ(entry->nbytes % MEM_BLOCK_NBYTES, 0);
+    CHECK_EQ(entry->addr_offset % MEM_BLOCK_NBYTES, 0) << entry;
+    CHECK_EQ(entry->nbytes % MEM_BLOCK_NBYTES, 0) << entry;
     auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(entry);
     for (size_t k = index_begin; k < index_end; ++k) {
       for (size_t i : duplicate_shuffle_map_[k]) {
@@ -252,8 +252,13 @@ public:
         ptrdiff_t begin = std::max(entry->addr_offset, addr_offset);
         size_t end = std::min(entry->addr_offset + entry->nbytes, addr_offset + nbytes);
         CHECK_GT(end, begin);
-        CHECK(entry->is_free);
-        entry = (entry->is_small ? free_list_small_ : free_list_large_).PopFreeEntry(entry);
+        CHECK(entry->is_free) << entry;
+
+        if (entry->is_small) {
+          DumpState();
+        CHECK(!entry->is_small) << entry;
+        }
+        entry = free_list_large_.PopFreeEntry(entry);
         entry = Split(entry, begin, end - begin);
         entry->is_train = true;
         AllocDuplicateEntry(entry);
@@ -269,8 +274,8 @@ public:
       ptrdiff_t addr_offset = phymem->index * MEM_BLOCK_NBYTES;
       size_t nbytes = MEM_BLOCK_NBYTES;
       entry_list_.IterateRange(addr_offset, nbytes, [&](MemEntry *entry) {
-        CHECK_GE(entry->addr_offset, addr_offset);
-        CHECK_LE(entry->addr_offset + entry->nbytes, addr_offset + nbytes);
+        CHECK_EQ(entry->addr_offset, addr_offset) << entry;
+        CHECK_EQ(entry->nbytes, nbytes) << entry;
         CHECK(entry->is_train) << entry;
         CHECK(!entry->is_free) << entry;
         entry = Free0(entry);

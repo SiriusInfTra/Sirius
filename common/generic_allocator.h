@@ -142,16 +142,18 @@ public:
   void LinkNewEntry(MemEntry *entry);
 
   void UpdateAllocFlag(MemEntry *entry) {
-    if (policy_ != Belong::kTrain) { return; }
-    bool real_allocated = true;
-    auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(entry);
-    for (size_t k = index_begin; k < index_end; ++k) {
-      if (mapped_mem_list_[k] == nullptr) {
-        real_allocated = false;
-        break;
+      bool real_allocated = true;
+      auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(entry);
+      if (policy_ == Belong::kTrain) {
+        for (size_t k = index_begin; k < index_end; ++k) {
+          if (mapped_mem_list_[k] == nullptr) {
+            real_allocated = false;
+            break;
+          }
+        }
       }
-    }
-    entry->is_alloc = real_allocated;
+
+      entry->is_alloc = real_allocated;
   }
 
   MemEntry *GetEntry(std::ptrdiff_t addr_offset);
