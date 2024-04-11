@@ -453,7 +453,8 @@ public:
         // fix me: check failed for task switch
         CHECK(!next_entry->is_free || !next_entry->is_alloc) << next_entry;
 #else
-        LOG_IF(WARNING, !next_entry->is_free || !next_entry->is_alloc) << next_entry;
+        LOG_IF(WARNING, !(!next_entry->is_free || !next_entry->is_alloc))
+          << "CHECK(!next_entry->is_free || !next_entry->is_alloc) failed, " << next_entry;
 #endif
         put_free_list_large = false;
       } else {

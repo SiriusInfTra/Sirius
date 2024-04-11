@@ -278,7 +278,8 @@ private:
     }
     if (free_entry == nullptr) {
       DumpState();
-      LOG(FATAL) << log_prefix_ << "OMM";
+      LOG(FATAL) << log_prefix_ << "OMM, alloc " << sta::ByteDisplay(nbytes) 
+                 << " retry_alloc " << retry_alloc  << ".";
     }
     CHECK(!free_entry->is_free);
     EnsurePhyMemAlloc(free_entry, lock);

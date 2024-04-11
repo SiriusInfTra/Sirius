@@ -37,7 +37,20 @@ std::pair<double, double> TrainLauncher::GetModelMemParam() {
       */
       return {1150, 85};
     } else if (cur_model_name_ == "swin_b") {
-      return {1700, 140};
+      return {1350, 135};
+    } else if (cur_model_name_ == "gpt2") {
+      /*
+       
+        1   3.00Gb
+        4   4.25Gb
+        8   6.50Gb
+        12  8.75Gb
+        16  11.00Gb
+        20  12.25Gb
+
+        AFTER EMPTY CACHE: 2.4 ~ 2.9 
+       */
+      return {2700, 490}; 
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }

@@ -55,6 +55,8 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
     else:
         grad_accumulator = None
 
+    print(f'resnet152 after initialize, allocated {torch_col.MemoryPool.get_allocated_memory()} cached {torch_col.MemoryPool.get_memory_usage()}')
+
     # print_opt(optimizer)
 
     for epoch in range(num_epoch):

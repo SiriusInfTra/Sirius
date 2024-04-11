@@ -60,6 +60,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
         grad_accumulator = torch_col.GradAccumulator(model)
     else:
         grad_accumulator = None
+    print(f'gpt2 after initialize, allocated {torch_col.MemoryPool.get_allocated_memory()} cached {torch_col.MemoryPool.get_memory_usage()}')
 
     # print_opt(optimizer)
 

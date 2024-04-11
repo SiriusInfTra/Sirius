@@ -81,6 +81,7 @@ class System:
                  train_memory_over_predict_mb: str | float = None,
                  infer_model_max_idle_ms : Optional[int] = None,
                  has_warmup: bool = False,
+                 enable_warm_cache_fallback: bool = True, # used for switch and colocate mode
                  dummy_adjust: bool = False,
                  keep_last_time_stamp: bool = True,
                  max_live_minute: Optional[int] = None) -> None:

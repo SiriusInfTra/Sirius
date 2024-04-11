@@ -102,9 +102,9 @@ class UniformConfig:
 
 class SkewedConfig:
     train_model = 'gpt2'
-    train_batch_size = 10
-    train_global_batch_size = 128
-    train_dataset_size = 512
+    train_batch_size = 20
+    train_global_batch_size = 250
+    train_dataset_size = 500
     train_epoch_time = 5
 
     model_list = [InferModel.Swin_t, InferModel.ResNet152,
@@ -169,7 +169,7 @@ def skewed(rps, client_model_list, infer_only=True, rps_fn=None,
     workload = HyperWorkload(concurrency=2048,
                              warmup=5,
                              wait_warmup_done_sec=5,
-                             wait_train_setup_sec=40,
+                             wait_train_setup_sec=60,
                              wait_stable_before_start_profiling_sec=10)
     InferModel.reset_model_cnt()
     if not infer_only:
