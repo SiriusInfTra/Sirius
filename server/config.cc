@@ -58,7 +58,7 @@ size_t Config::train_over_adjust_nbytes = 500_MB;
 
 size_t Config::max_warm_cache_nbytes = 0_GB;
 
-bool Config::enable_warm_cache_fallback = false;
+bool Config::enable_warm_cache_fallback = true;
 
 double Config::memory_pressure_mb = 0;
 
