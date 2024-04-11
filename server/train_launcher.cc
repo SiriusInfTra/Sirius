@@ -37,7 +37,7 @@ std::pair<double, double> TrainLauncher::GetModelMemParam() {
       */
       return {1150, 85};
     } else if (cur_model_name_ == "swin_b") {
-      return {1350, 135};
+      return {1700, 140};
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
