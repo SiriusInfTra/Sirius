@@ -103,6 +103,9 @@ void init_cli_options() {
       "has warmup, default is 0");
   app.add_flag("--dummy-adjust", colserve::Config::dummy_adjust,
       "dummy adjust for eval, default is 0");
+
+  app.add_flag("--enable-warm-cache-fallback", colserve::Config::enable_warm_cache_fallback,
+      "enable warm cache fallback, default is 1");
 }
 
 void init_config() {

@@ -53,6 +53,8 @@ class CustomeDynamicBatchDataset(IterableDataset):
         self.state = DatasetState.INIT
         self.global_batch_event = None
         self.batch_event = None
+        if not _vision_task(self.model_name):
+            fake_data = True
         if not fake_data:
             if _vision_task(self.model_name):
                 self.all_inputs = {

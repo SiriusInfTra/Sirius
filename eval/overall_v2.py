@@ -96,10 +96,10 @@ class UniformConfig:
     train_batch_size = 72
     train_global_batch_size = 500 # not used, hard code for global batch size and dataset size
     train_dataset_size = 1000 
-    train_epoch_time = 3
+    train_epoch_time = 5 # used for predict number epoch
 
-    model_list = [InferModel.InceptionV3, InferModel.ResNet152, 
-                  InferModel.DenseNet161, InferModel.DistilBertBase]
+    model_list = [InferModel.Swin_t, InferModel.ResNet152, 
+                  InferModel.EfficientNetV2_s, InferModel.DistilBertBase]
     num_model = 60
     interval_sec = 20
     duration = 120
@@ -113,13 +113,13 @@ class UniformConfig:
 
 class SkewedConfig:
     train_model = 'gpt2'
-    train_batch_size = 10
-    train_global_batch_size = 128
-    train_dataset_size = 512
+    train_batch_size = 20
+    train_global_batch_size = 250
+    train_dataset_size = 500
     train_epoch_time = 5
 
-    model_list = [InferModel.InceptionV3, InferModel.ResNet152,
-                  InferModel.DenseNet161, InferModel.DistilBertBase]
+    model_list = [InferModel.Swin_t, InferModel.ResNet152,
+                  InferModel.EfficientNetV2_s, InferModel.DistilBertBase]
     num_model = 60
     interval_sec = 20
     duration = 120
@@ -136,8 +136,8 @@ class AzureConfig:
     train_model = 'swin_b'
     train_batch_size = 72
 
-    model_list = [InferModel.InceptionV3, InferModel.ResNet152,
-                  InferModel.DenseNet161, InferModel.DistilBertBase]
+    model_list = [InferModel.Swin_t, InferModel.ResNet152,
+                  InferModel.EfficientNetV2_s, InferModel.DistilBertBase]
     num_model = 60
     interval_sec = 5
     duration = 180 
@@ -180,7 +180,7 @@ def skewed(rps, client_model_list, infer_only=True, rps_fn=None,
     workload = HyperWorkload(concurrency=2048,
                              warmup=5,
                              wait_warmup_done_sec=5,
-                             wait_train_setup_sec=40,
+                             wait_train_setup_sec=60,
                              wait_stable_before_start_profiling_sec=10)
     InferModel.reset_model_cnt()
     if not infer_only:
@@ -516,7 +516,8 @@ if run_static_partition:
             client_model_list, server_model_config = InferModel.get_multi_model(
                 AzureConfig.model_list, AzureConfig.num_model, 1)
             workload = azure(rps=AzureConfig.max_rps, 
-                             client_model_list=client_model_list, infer_only=False)
+                             client_model_list=client_model_list, infer_only=False,
+                             train_batch_size=train_batch_size)
             system = System(train_mps_thread_percent=AzureConfig.mps_train,
                             port=AzureConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-azure", "static-partition")

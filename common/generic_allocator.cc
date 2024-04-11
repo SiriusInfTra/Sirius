@@ -98,7 +98,7 @@ EntryList::MergeMemEntry(MemEntry *first_entry,
 }
 
 void EntryList::DumpMemEntryList(std::ostream &out) {
-  out << "start,len,next,prev,is_free,is_train,is_small"
+  out << "start,len,next,prev,is_free,is_train,is_small,is_alloc,rank"
       << "\n";
   for (auto handle : *entry_list_) {
     auto *entry = handle.ptr();
@@ -109,7 +109,9 @@ void EntryList::DumpMemEntryList(std::ostream &out) {
         << (prev ? prev->addr_offset : -1) << ","
         << entry->is_free << ","
         << entry->is_train << ","
-        << entry->is_small << "\n";
+        << entry->is_small << ","
+        << entry->is_alloc << ","
+        << entry->rank << "\n";
   }
   out << std::flush;
 }
@@ -172,7 +174,10 @@ MemEntry *FreeList::PopFreeEntry(size_t nbytes, bool do_split, size_t require_al
     split_entry->is_free = false;
     PushFreeEntry(split_entry);
   }
-
+  if (policy_ == Belong::kInfer && !is_small_) {
+    CHECK_EQ(free_entry->addr_offset % MEM_BLOCK_NBYTES, 0);
+    CHECK_EQ(free_entry->nbytes % MEM_BLOCK_NBYTES, 0);
+  }
   CHECK_EQ(free_entry->is_small, is_small_);
   CHECK(!alloc_conf::STRICT_CHECK_STATE || CheckState());
   return free_entry;
@@ -232,8 +237,8 @@ MemEntry* FreeList::PushFreeEntry(MemEntry *entry) {
     && next_entry->rank == entry->rank
     && (policy_ == Belong::kTrain || ( policy_ == Belong::kInfer 
       && (!is_small_ || entry->addr_offset / MEM_BLOCK_NBYTES == next_entry->addr_offset / MEM_BLOCK_NBYTES)
-      && !entry->is_train && !next_entry->is_train 
-  ))) {
+      && !entry->is_train && !next_entry->is_train ))
+  ) {
     entry_by_nbytes_->erase(next_entry->pos_freelist);
     entry = list_index_.MergeMemEntry(entry, next_entry);
   }
@@ -249,7 +254,7 @@ MemEntry* FreeList::PushFreeEntry(MemEntry *entry) {
 
 
 void FreeList::DumpFreeList(std::ostream &out) {
-  out << "start,len,next,prev,is_free,is_small"
+  out << "start,len,next,prev,is_free,is_small,is_alloc,rank"
       << "\n";
   for (auto &&[nbytes, shm_handle] : *entry_by_nbytes_) {
     auto *entry = shm_handle.ptr();
@@ -258,8 +263,11 @@ void FreeList::DumpFreeList(std::ostream &out) {
     out << entry->addr_offset << "," << entry->nbytes << ","
         << (next ? next->addr_offset : -1) << ","
         << (prev ? prev->addr_offset : -1) << ","
-        << static_cast<unsigned>(entry->is_free) << ","
-        << static_cast<size_t>(entry->is_small) << "\n";
+        << entry->is_free << ","
+        << entry->is_train << ","
+        << entry->is_small << ","
+        << entry->is_alloc << ","
+        << entry->rank << "\n";
   }
   out << std::flush;
 }
