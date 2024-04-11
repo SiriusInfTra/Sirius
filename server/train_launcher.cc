@@ -142,7 +142,9 @@ bool TrainLauncher::Train() {
       Config::use_shared_tensor &&
       Config::enable_warm_cache_fallback) {
     auto [base, slope] = GetModelMemParam();
-    Config::max_warm_cache_nbytes -= static_cast<size_t>(base * 1_MB);
+    Config::max_warm_cache_nbytes = static_cast<size_t>((
+      Config::cuda_memory_pool_gb * 1024 - Config::train_memory_over_predict_mb - base) * 1_MB);
+    LOG(INFO) << "[Warm Cache Fallback for Colocation] set max warm cache nbytes to " << sta::ByteDisplay(Config::max_warm_cache_nbytes);
   }
 
   std::vector<std::string> args_str;
