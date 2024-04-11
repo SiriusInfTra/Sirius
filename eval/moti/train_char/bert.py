@@ -6,7 +6,6 @@ from datasets import load_dataset, Dataset
 from transformers import BertTokenizer, BertForPreTraining, BertConfig, BertForTokenClassification
 from transformers import DataCollatorForLanguageModeling
 from transformers import AutoModelForSequenceClassification
-from transformers import GPT2LMHeadModel
 
 import numpy as np
 import time
@@ -70,26 +69,20 @@ def allocated_memory(device_id):
     return torch.cuda.memory_reserved(device_id) / 1024 / 1024 / 1024
 
 def train():
-    seq_len = 256
+    seq_len = 512
     dataset_size = 128 * 10
     dummy_data = {
         "input_ids": np.random.randint(100, 30000, (dataset_size, seq_len)),
-        # "labels": np.random.randint(0, 1, (dataset_size)),
+        "labels": np.random.randint(0, 1, (dataset_size)),
     }
-    dummy_data['labels'] = dummy_data['input_ids']
     dataset = Dataset.from_dict(dummy_data)
     dataset.set_format("pt")
     
-    # batch_size = 128
-    # batch_size = 64
-    # batch_size = 32
-    batch_size = 1
-    # batch_size = 2
+    batch_size = 4
     dataloader = DataLoader(dataset, shuffle=False, batch_size=batch_size)
 
-    model = GPT2LMHeadModel.from_pretrained('gpt2')
     # model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=5)
-    # model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=5)
+    model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=5)
     model = model.cuda(0)
     for param in model.parameters():
         IntermMemoryStat.model_param_add(param)
@@ -101,8 +94,8 @@ def train():
     # eval_batch_size = [128, 64, 32, 16, 8, 4]
     # eval_batch_size = [64, 32, 16, 8, 4]
     # eval_batch_size = [32, 16, 8, 4]
-    # eval_batch_size = [24, 16, 8, 4]
-    # eval_batch_size = [10, 8, 4, 2, 1]
+    # eval_batch_size = [28, 16, 8, 4, 1]
+    # eval_batch_size = [16, 8, 4, 1]
     eval_batch_size = [batch_size, ]
     epoch_micro_batch_size = [batch_size, ] # warmup
     for bs in eval_batch_size:

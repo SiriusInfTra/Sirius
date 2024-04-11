@@ -58,7 +58,7 @@ private:
       }
       return entry;
     });
-    LOG(INFO) << "ReleaseFreePhyMem 1";
+    DLOG(INFO) << "ReleaseFreePhyMem 1";
     // some physical memory pages already free
     for (size_t k = 0; k < ready_to_free_mask.size(); ++k) {
       if (mapped_mem_list_[k] == nullptr) { 
@@ -95,7 +95,7 @@ private:
       CHECK((is_alloc == false && entry->is_alloc == false) || is_alloc == true) << entry << " " << is_alloc;
       return entry;
     });
-    LOG(INFO) << "ReleaseFreePhyMem 2";
+    DLOG(INFO) << "ReleaseFreePhyMem 2";
     mempool_.DeallocPhyMem(ready_to_free_mem);
     TVMAllocator::Get().SyncFreeTrain(ready_to_free_mem, lock);
     size_t physical_nbytes = std::count_if(
