@@ -117,12 +117,13 @@ inline std::ostream & operator<<(std::ostream &os, const MemEntry *entry)  {
 
 class EntryList {
 private:
+  const Belong policy_;
   const std::string &log_prefix_;
   const std::vector<PhyMem *> &mapped_mem_list_;
   entry_linklist *entry_list_;
   entry_addr_map *entry_by_addr;
 public:
-  EntryList(const std::string &log_prefix, const std::vector<PhyMem *> &mapped_mem_list, Belong policy): log_prefix_(log_prefix), mapped_mem_list_(mapped_mem_list) {
+  EntryList(const std::string &log_prefix, const std::vector<PhyMem *> &mapped_mem_list, Belong policy): policy_(policy), log_prefix_(log_prefix), mapped_mem_list_(mapped_mem_list) {
     auto &shared_memory = MemPool::Get().GetSharedMemory();
     auto atomic_init = [&] {
       {
@@ -141,6 +142,7 @@ public:
   void LinkNewEntry(MemEntry *entry);
 
   void UpdateAllocFlag(MemEntry *entry) {
+    if (policy_ != Belong::kTrain) { return; }
     bool real_allocated = true;
     auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(entry);
     for (size_t k = index_begin; k < index_end; ++k) {
