@@ -464,6 +464,8 @@ std::function<void(InferRequest&)> Workload::GetSetRequestFn(const std::string &
       || model.find("vgg") != std::string::npos
       || model.find("densenet") != std::string::npos
       || model.find("vit") != std::string::npos
+      || model.find("swin") != std::string::npos
+      || model.find("efficientnet") != std::string::npos
   ) {
     return SetResnetRequestFn(model);
   } else if ( model.find("inception") != std::string::npos) {

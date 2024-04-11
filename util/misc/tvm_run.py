@@ -4,7 +4,10 @@ import numpy as np
 from tvm.contrib import graph_executor
 import time
 
-model_name = "vit_s_16-b1"
+# model_name = "vit_s_16-b1"
+# model_name = "resnet152"
+model_name = "swin_t-b1"
+model_name = "efficientnet_v2_s-b1"
 
 input_data = np.fromfile('client/data/resnet/input-0.bin', dtype=np.float32)
 input_data = input_data.reshape(1, 3, 224, 224)
