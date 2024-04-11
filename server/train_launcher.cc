@@ -36,6 +36,23 @@ std::pair<double, double> TrainLauncher::GetModelMemParam() {
         AFTER EMPTY CACHE: 0.81 ~ 1.22
       */
       return {1150, 85};
+    } else if (cur_model_name_ == "swin_b") {
+      return {1350, 135};
+    } else if (cur_model_name_ == "gpt2") {
+      /*
+       
+        1   3.00Gb
+        4   4.25Gb
+        8   6.50Gb
+        12  8.75Gb
+        16  11.00Gb
+        20  12.25Gb
+
+        AFTER EMPTY CACHE: 2.4 ~ 2.9 
+       */
+      return {2700, 490}; 
+    } else if (cur_model_name_ == "bert_large") {
+      LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
@@ -49,7 +66,7 @@ std::pair<double, double> TrainLauncher::GetModelMemParam() {
         AFTER EMPTY CACHE: 2.28 ~ 2.37
     */
     if (cur_model_name_ == "resnet152") {
-      return {2396, 145};
+      return {2396, 85};
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
@@ -100,7 +117,7 @@ bool TrainLauncher::AddJob(network::TrainHandler::TrainData* data) {
 }
 
 double TrainLauncher::PredictMemUsageMB() {
-  // LOG(INFO) << "Predict train memory, target batch size " << target_batch_size_;
+  LOG(INFO) << "Predict train memory, target batch size " << target_batch_size_;
   if (target_batch_size_ <= 0) {
     return 0;
   } else {
@@ -140,7 +157,9 @@ bool TrainLauncher::Train() {
       Config::use_shared_tensor &&
       Config::enable_warm_cache_fallback) {
     auto [base, slope] = GetModelMemParam();
-    Config::max_warm_cache_nbytes -= static_cast<size_t>(base * 1_MB);
+    Config::max_warm_cache_nbytes = static_cast<size_t>((
+      Config::cuda_memory_pool_gb * 1024 - Config::train_memory_over_predict_mb - base) * 1_MB);
+    LOG(INFO) << "[Warm Cache Fallback for Colocation] set max warm cache nbytes to " << sta::ByteDisplay(Config::max_warm_cache_nbytes);
   }
 
   std::vector<std::string> args_str;

@@ -103,6 +103,9 @@ void init_cli_options() {
       "has warmup, default is 0");
   app.add_flag("--dummy-adjust", colserve::Config::dummy_adjust,
       "dummy adjust for eval, default is 0");
+
+  app.add_flag("--enable-warm-cache-fallback", colserve::Config::enable_warm_cache_fallback,
+      "enable warm cache fallback, default is 1");
 }
 
 void init_config() {
@@ -150,12 +153,14 @@ void init_config() {
     cfg::group_param_load = false;
   }
 
-  if (cfg::IsColocateMode() && 
+  if ((cfg::IsColocateMode() || cfg::IsSwitchMode()) && 
       cfg::use_shared_tensor &&
       cfg::enable_warm_cache_fallback) {
     CHECK_EQ(cfg::max_warm_cache_nbytes, 0);
     cfg::max_warm_cache_nbytes = 
       static_cast<size_t>((cfg::cuda_memory_pool_gb * 1024 - cfg::train_memory_over_predict_mb) * 1_MB);
+    LOG(INFO) << "enable enable_warm_cache_fallback, cache nbytes " 
+              << colserve::sta::ByteDisplay(cfg::max_warm_cache_nbytes);
   }
 
   STREAM_OUTPUT(serve_mode);

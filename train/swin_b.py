@@ -12,14 +12,12 @@ from torch_col import CustomeDynamicBatchDataset
 import train_valiation
 from typing import Optional
 
-checkpoint_micro_batch = True
-
 def train(train_mode: TrainMode, hook_mode: HookMode, 
           num_epoch: int, batch_size: int, global_batch_size: Optional[int] = None):
     if torch_col.use_shared_tensor():
         torch_col.tag_model_start()
 
-    torch_col.train_model = model = models.resnet152(weights=models.ResNet152_Weights.DEFAULT).cuda()
+    torch_col.train_model = model = models.swin_b(weights=models.Swin_B_Weights.DEFAULT).cuda()
 
     print(f"Train params memory usage: {torch_col.MemoryPool.get_memory_usage() * 1024:.2f}M")
 
@@ -32,13 +30,15 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
     
     hook = torch_col.get_hook(train_mode, hook_mode, num_epoch, batch_size)
     hook.register_pytorch_hook([model, criterion])
+    checkpoint_micro_batch = hook.train_mode.is_kill_batch()
 
     # dummy data
-    train_dataset = CustomeDynamicBatchDataset('resnet152', 1000, batch_size, hook,
-                                               train_valiation.get_trace_input(),
-                                               input_shape=(3, 224, 224), num_class=10, 
-                                               max_global_batch_size=global_batch_size,
-                                               checkpoint_micro_batch=checkpoint_micro_batch)
+    train_dataset = CustomeDynamicBatchDataset(
+        model_name='swin_b', size=1000, max_batch_size=batch_size, 
+        hook=hook, trace=train_valiation.get_trace_input(),
+        input_shape=(3, 224, 224), num_class=10, 
+        max_global_batch_size=global_batch_size,
+        checkpoint_micro_batch=checkpoint_micro_batch)
     train_loader = DataLoader(train_dataset, batch_size=None, 
                               shuffle=False, pin_memory=True, drop_last=False, num_workers=0)
 
@@ -55,7 +55,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
     else:
         grad_accumulator = None
 
-    print(f'resnet152 after initialize, allocated {torch_col.MemoryPool.get_allocated_memory()} cached {torch_col.MemoryPool.get_memory_usage()}')
+    print(f'swin after initialize, allocated {torch_col.MemoryPool.get_allocated_memory()} cached {torch_col.MemoryPool.get_memory_usage()}')
 
     # print_opt(optimizer)
 
@@ -72,7 +72,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
         for i, batch in enumerate(train_loader):
             # print(f'[epoch {epoch} batch {i}] batch size {len(images)}', flush=True, file=sys.stderr)
             images = batch['image']
-            targets = batch['label'] 
+            targets = batch['label']
             train_dataset.record_batch_event(epoch, i, len(images), train_dataset.global_batch_size)
             images: torch.Tensor = images.to('cuda:0', non_blocking=True)
             targets: torch.Tensor = targets.to('cuda:0', non_blocking=True)
@@ -154,7 +154,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
 def main():
     parser = argparse.ArgumentParser('Train Resnet')    
     parser.add_argument('--batch-size', type=int, default=64)
-    parser.add_argument('--global-batch-size', type=int)
+    parser.add_argument('--global-batch-size', type=int, default=500)
     parser.add_argument('--num-epoch', type=int, default=15)
     parser.add_argument('--train-mode', type=str, default=TrainMode.COLOCATE_L1.value, choices=[train_mode.value for train_mode in TrainMode])
     parser.add_argument('--train-profile', type=str, default='train-profile.csv')
@@ -169,7 +169,7 @@ def main():
     hook_mode = [hook_mode for hook_mode in HookMode if hook_mode.value == args.hook_mode][0]
     
 
-    print(f"ResNet152 training, batch-size={batch_size}, num-epoch={num_epoch}, train-mode={train_mode}, hook-mode={hook_mode}.")
+    print(f"Swin Transformer training, batch-size={batch_size}, num-epoch={num_epoch}, train-mode={train_mode}, hook-mode={hook_mode}.")
     train_valiation.val_begin()
     stream = torch.cuda.Stream()
     if hook_mode.use_xsched():
@@ -179,7 +179,7 @@ def main():
     else:
         print("CUDA Stream create without xsched.")
     with torch.cuda.stream(stream):
-        train(train_mode, hook_mode, num_epoch, batch_size, global_batch_size=500)
+        train(train_mode, hook_mode, num_epoch, batch_size, global_batch_size=global_batch_size)
     train_valiation.val_end()
     EventManager.dump(args.train_profile, train_mode)
 

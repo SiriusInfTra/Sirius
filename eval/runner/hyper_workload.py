@@ -18,6 +18,8 @@ class InferModel:
     DistilBertBase = "distilbert_base"
     ViT_b_16 = "vit_b_16"
     ViT_s_16 = "vit_s_16"
+    Swin_t = "swin_t"
+    EfficientNetV2_s = "efficientnet_v2_s"
 
     model_cnt = 0
 

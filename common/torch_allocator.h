@@ -58,7 +58,7 @@ private:
       }
       return entry;
     });
-    LOG(INFO) << "ReleaseFreePhyMem 1";
+    DLOG(INFO) << "ReleaseFreePhyMem 1";
     // some physical memory pages already free
     for (size_t k = 0; k < ready_to_free_mask.size(); ++k) {
       if (mapped_mem_list_[k] == nullptr) { 
@@ -95,7 +95,7 @@ private:
       CHECK((is_alloc == false && entry->is_alloc == false) || is_alloc == true) << entry << " " << is_alloc;
       return entry;
     });
-    LOG(INFO) << "ReleaseFreePhyMem 2";
+    DLOG(INFO) << "ReleaseFreePhyMem 2";
     mempool_.DeallocPhyMem(ready_to_free_mem);
     TVMAllocator::Get().SyncFreeTrain(ready_to_free_mem, lock);
     size_t physical_nbytes = std::count_if(
@@ -208,16 +208,16 @@ private:
       entry = MaybeMerge(entry);
     } else {
       entry = free_list_large_.PushFreeEntry(entry);
-      auto *prev_entry_nbytes = entry_list_.GetPrevEntry(entry);
-      if (prev_entry_nbytes && prev_entry_nbytes->is_small && prev_entry_nbytes->is_free) {
-        size_t prev_nbytes = prev_entry_nbytes->nbytes;
-        auto *maybe_merged_entry = MaybeMerge(prev_entry_nbytes);
-        if (maybe_merged_entry->nbytes > prev_nbytes) {
+      auto *prev_entry = entry_list_.GetPrevEntry(entry);
+      if (prev_entry && prev_entry->is_small && prev_entry->is_free && prev_entry->is_alloc) {
+        size_t prev_entry_nbytes = prev_entry->nbytes;
+        auto *maybe_merged_entry = MaybeMerge(prev_entry);
+        if (maybe_merged_entry->nbytes > prev_entry_nbytes) {
           entry = maybe_merged_entry;
         }
       }
       auto *next_entry = entry_list_.GetNextEntry(entry);
-      if (next_entry && next_entry->is_small && next_entry->is_free) {
+      if (next_entry && next_entry->is_small && next_entry->is_free && next_entry->is_alloc) {
         size_t next_entry_nbytes = next_entry->nbytes;
         auto *maybe_merged_entry = MaybeMerge(next_entry);
         if (maybe_merged_entry->nbytes > next_entry_nbytes) {
@@ -278,7 +278,8 @@ private:
     }
     if (free_entry == nullptr) {
       DumpState();
-      LOG(FATAL) << log_prefix_ << "OMM";
+      LOG(FATAL) << log_prefix_ << "OMM, alloc " << sta::ByteDisplay(nbytes) 
+                 << " retry_alloc " << retry_alloc  << ".";
     }
     CHECK(!free_entry->is_free);
     EnsurePhyMemAlloc(free_entry, lock);
