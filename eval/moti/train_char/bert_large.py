@@ -82,8 +82,8 @@ def train():
     dataloader = DataLoader(dataset, shuffle=False, batch_size=batch_size)
 
     # model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=5)
-    model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=5)
-    # model = AutoModelForSequenceClassification.from_pretrained("google-bert/bert-large-uncased", num_labels=5)
+    # model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=5)
+    model = AutoModelForSequenceClassification.from_pretrained("google-bert/bert-large-uncased", num_labels=5)
     model = model.cuda(0)
     for param in model.parameters():
         IntermMemoryStat.model_param_add(param)

@@ -6,7 +6,8 @@ from datasets import load_dataset, Dataset
 from transformers import BertTokenizer, BertForPreTraining, BertConfig, BertForTokenClassification
 from transformers import DataCollatorForLanguageModeling
 from transformers import AutoModelForSequenceClassification
-from transformers import GPT2LMHeadModel
+from transformers import GPT2LMHeadModel, OPTForCausalLM
+from torch.autograd.profiler import record_function
 
 import numpy as np
 import time
@@ -69,7 +70,7 @@ def allocated_memory(device_id):
     # free, total = torch.cuda.mem_get_info(device_id)
     return torch.cuda.memory_reserved(device_id) / 1024 / 1024 / 1024
 
-def train():
+def train(prof=None):
     seq_len = 256
     dataset_size = 128 * 10
     dummy_data = {
@@ -83,11 +84,13 @@ def train():
     # batch_size = 128
     # batch_size = 64
     # batch_size = 32
-    batch_size = 1
+    batch_size = 16
     # batch_size = 2
     dataloader = DataLoader(dataset, shuffle=False, batch_size=batch_size)
 
     model = GPT2LMHeadModel.from_pretrained('gpt2')
+    # model = OPTForCausalLM.from_pretrained("facebook/opt-350m")
+
     # model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=5)
     # model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=5)
     model = model.cuda(0)
@@ -96,13 +99,14 @@ def train():
 
     optimizer = torch.optim.SGD(model.parameters(), 0.1, 
                                 momentum=0.9, weight_decay=1e-4)
-
+    
+    # torch.cuda.memory._record_memory_history(enabled=True)
 
     # eval_batch_size = [128, 64, 32, 16, 8, 4]
     # eval_batch_size = [64, 32, 16, 8, 4]
     # eval_batch_size = [32, 16, 8, 4]
     # eval_batch_size = [24, 16, 8, 4]
-    # eval_batch_size = [10, 8, 4, 2, 1]
+    # eval_batch_size = [16, 8, 4, 2, 1]
     eval_batch_size = [batch_size, ]
     epoch_micro_batch_size = [batch_size, ] # warmup
     for bs in eval_batch_size:
@@ -114,6 +118,7 @@ def train():
     scaler = torch.cuda.amp.GradScaler()
 
     model.train()
+
     for epoch, mbs in enumerate(epoch_micro_batch_size):
         torch.cuda.reset_max_memory_allocated(0)
         interm_memorys = []
@@ -125,14 +130,16 @@ def train():
         for b, batch in enumerate(dataloader):
             batch_begin = time.time()
 
+            # prof.step()
+
             inputs = {k: v.cuda(non_blocking=True) for k, v in batch.items()}
 
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=False)
             for mb in range(batch_size // mbs):
                 IntermMemoryStat.reset()
-                with torch.cuda.amp.autocast():
+                with torch.cuda.amp.autocast(cache_enabled=False):
                     outputs = model(**{k: v[mb * mbs: (mb + 1) * mbs] 
-                                       for k, v in inputs.items()})
+                                    for k, v in inputs.items()})
                     loss = outputs.loss
                 scaler.scale(loss).backward()
                 interm_memorys.append(IntermMemoryStat.get())
@@ -170,6 +177,8 @@ def train():
 
         persist_memory = (model_memory + optimizer_memory) / 1024 / 1024 / 1024
 
+        # print(torch.cuda.memory._snapshot())
+            
         if epoch > 0:
             actual_peak_memory = torch.cuda.max_memory_allocated() / 1024 / 1024 / 1024
             interm_memory = np.mean(interm_memorys)
@@ -193,11 +202,38 @@ def train():
 
     # print(f'persist memory {persist_memory}')
 
+# def trace_handler(prof: torch.profiler.profile):
+#    # Prefix for file names.
+# #    host_name = socket.gethostname()
+# #    timestamp = datetime.now().strftime(TIME_FORMAT_STR)
+# #    file_prefix = f"{host_name}_{timestamp}"
+
+#    # Construct the trace file.
+#    prof.export_chrome_trace(f"gpt2-profile-{16}.json.gz")
+
+#    # Construct the memory timeline file.
+# #    prof.export_memory_timeline(f"gpt2-profile.html", device="cuda:0")
+#     # prof.exp
+
 def main():
     parser = argparse.ArgumentParser('Train Resnet152')    
     args = parser.parse_args()
     register_saved_tensor_hook()
-    train()
+
+
+    # with torch.profiler.profile(
+    #     activities=[
+    #        torch.profiler.ProfilerActivity.CPU,
+    #        torch.profiler.ProfilerActivity.CUDA,
+    #    ],
+    #     record_shapes=True,
+    #     profile_memory=True,
+    #     with_stack=True,
+    #     on_trace_ready=trace_handler,
+
+    # ) as prof:
+        # train(prof)
+    train(None)
 
 
 if __name__ == '__main__':

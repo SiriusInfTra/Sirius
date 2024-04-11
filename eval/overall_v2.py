@@ -101,11 +101,16 @@ class UniformConfig:
 
 
 class SkewedConfig:
-    train_model = 'gpt2'
-    train_batch_size = 20
-    train_global_batch_size = 250
-    train_dataset_size = 500
-    train_epoch_time = 5
+    # train_model = 'gpt2'
+    # train_batch_size = 20
+    # train_global_batch_size = 250
+    # train_dataset_size = 500
+    # train_epoch_time = 5
+    train_model = 'swin_b'
+    train_batch_size = 72
+    train_global_batch_size = 500 # not used, hard code for global batch size and dataset size
+    train_dataset_size = 1000 
+    train_epoch_time = 5 # used for predict number epoch
 
     model_list = [InferModel.Swin_t, InferModel.ResNet152,
                   InferModel.EfficientNetV2_s, InferModel.DistilBertBase]
@@ -169,7 +174,7 @@ def skewed(rps, client_model_list, infer_only=True, rps_fn=None,
     workload = HyperWorkload(concurrency=2048,
                              warmup=5,
                              wait_warmup_done_sec=5,
-                             wait_train_setup_sec=60,
+                             wait_train_setup_sec=40,
                              wait_stable_before_start_profiling_sec=10)
     InferModel.reset_model_cnt()
     if not infer_only:
@@ -447,7 +452,6 @@ if run_static_partition:
         'use_sta_train': False
     }
     train_batch_size = 16
-    assert UniformConfig.train_model =='swin_b'
 
     if UniformConfig.enable and UniformConfig.high_load.enable:
         with mps_thread_percent(UniformConfig.high_load.mps_infer):
@@ -472,8 +476,6 @@ if run_static_partition:
                             port=UniformConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-uniform", "static-partition-low")
 
-    train_batch_size = 4
-    assert SkewedConfig.train_model == 'gpt2'
 
     if SkewedConfig.enable and SkewedConfig.high_load.enable:
         with mps_thread_percent(SkewedConfig.high_load.mps_infer):
@@ -497,9 +499,6 @@ if run_static_partition:
                             port=SkewedConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-skewed", "static-partition-low")
         
-    train_batch_size = 16
-    assert AzureConfig.train_model == 'swin_b'
-
     if AzureConfig.enable:
         with mps_thread_percent(AzureConfig.mps_infer):
             client_model_list, server_model_config = InferModel.get_multi_model(
