@@ -6,14 +6,18 @@ from dataclasses import dataclass
 set_global_seed(42)
 
 use_time_stamp = True
-retry_if_fail = False
-skip_fail = False
+retry_if_fail = True
+skip_fail = True
 
 run_colsys  = False
 run_um_mps = False
 run_task_switch = False
 run_static_partition = False
 run_infer_only = False
+
+enable_uniform = False
+enable_skewed = False
+enable_azure = False
 
 infer_only_without_mps = False
 
@@ -24,19 +28,30 @@ parser.add_argument('--um-mps', action='store_true')
 parser.add_argument('--task-switch', action='store_true')
 parser.add_argument('--static-partition', action='store_true')
 parser.add_argument('--infer-only', action='store_true')
-parser.add_argument('--all', action='store_true')
+parser.add_argument('--uniform', action='store_true')
+parser.add_argument('--skewed', action='store_true')
+parser.add_argument('--azure', action='store_true')
+parser.add_argument('--all-sys', action='store_true')
+parser.add_argument('--all-workload', action='store_true')
 args = parser.parse_args()
 
-if args.colsys or args.all:
+if args.colsys or args.all_sys:
     run_colsys = True
-if args.um_mps or args.all:
+if args.um_mps or args.all_sys:
     run_um_mps = True
-if args.task_switch or args.all:
+if args.task_switch or args.all_sys:
     run_task_switch = True
-if args.static_partition or args.all:
+if args.static_partition or args.all_sys:
     run_static_partition = True
-if args.infer_only or args.all:
+if args.infer_only or args.all_sys:
     run_infer_only = True
+
+if args.uniform or args.all_workload:
+    enable_uniform = True
+if args.skewed or args.all_workload:
+    enable_skewed = True
+if args.azure or args.all_workload:
+    enable_azure = True
 
 ## MARK: Configurations
 ## =========================================================== ##
@@ -65,13 +80,16 @@ class HybridLoad:
     
 
 class UniformConfig:
+    train_model = 'swin_b'
+    train_batch_size = 72
+
     model_list = [InferModel.InceptionV3, InferModel.ResNet152, 
                   InferModel.DenseNet161, InferModel.DistilBertBase]
     num_model = 60
     interval_sec = 20
     duration = 120
     port = str(18100 + (os.getpid() % 10) * 10)
-    enable = False
+    enable = enable_uniform
 
     low_load = LowLoad(enable=False)
     high_load = HighLoad(enable=True)
@@ -79,6 +97,9 @@ class UniformConfig:
 
 
 class SkewedConfig:
+    train_model = 'swin_b'
+    train_batch_size = 72
+
     model_list = [InferModel.InceptionV3, InferModel.ResNet152,
                   InferModel.DenseNet161, InferModel.DistilBertBase]
     num_model = 60
@@ -86,19 +107,38 @@ class SkewedConfig:
     duration = 120
     zipf_aplha = 1.2 # large alpha -> more skewed
     port = str(18100 + (os.getpid() % 10) * 10)
-    enable = True
+    enable = enable_skewed
 
-    low_load = LowLoad(enable=False)
+    low_load = LowLoad(enable=True)
     high_load = HighLoad(enable=True)
     hybrid_load = HybridLoad(enable=False)
+
+
+class AzureConfig:
+    train_model = 'swin_b'
+    train_batch_size = 0
+
+    model_list = [InferModel.InceptionV3, InferModel.ResNet152,
+                  InferModel.DenseNet161, InferModel.DistilBertBase]
+    num_model = 60
+    interval_sec = 5
+    duration = 120 
+    num_period = duration // interval_sec
+    port = str(18100 + (os.getpid() % 10) * 10)
+    enable = enable_azure
+
+    max_rps = 150
+    mps_infer = 40
+    mps_train = 60
+
 
 # MARK: Workload
 ## =========================================================== ##
 
 def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
-            train_model:str ='resnet152', 
+            train_model:str = UniformConfig.train_model, 
             train_epoch:int = int(UniformConfig.duration / 3 + 5), 
-            train_batch_size:int = 130):
+            train_batch_size:int = UniformConfig.train_batch_size):
     workload = HyperWorkload(concurrency=2048,
                              warmup=5,
                              wait_warmup_done_sec=5,
@@ -116,9 +156,9 @@ def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
     return workload
 
 def skewed(rps, client_model_list, infer_only=True, rps_fn=None,
-           train_model:str ='resnet152', 
+           train_model:str =SkewedConfig.train_model, 
            train_epoch:int = int(SkewedConfig.duration / 3 + 5), 
-           train_batch_size:int = 130):
+           train_batch_size:int = SkewedConfig.train_batch_size):
     workload = HyperWorkload(concurrency=2048,
                              warmup=5,
                              wait_warmup_done_sec=5,
@@ -135,6 +175,29 @@ def skewed(rps, client_model_list, infer_only=True, rps_fn=None,
         duration=SkewedConfig.duration + workload.infer_extra_infer_sec,
     ))
     return workload
+
+def azure(rps, client_model_list, infer_only=True, rps_fn=None,
+          train_model:str = AzureConfig.train_model, 
+          train_epoch:int = int(AzureConfig.duration / 3 + 5), 
+          train_batch_size:int = AzureConfig.train_batch_size):
+    workload = HyperWorkload(concurrency=2048,
+                             warmup=5,
+                             wait_warmup_done_sec=5,
+                             wait_train_setup_sec=40,
+                             wait_stable_before_start_profiling_sec=10)
+    InferModel.reset_model_cnt()
+    if not infer_only:
+        workload.set_train_workload(
+            train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
+    workload.set_infer_workloads(AzureInferWorkload(
+        AzureInferWorkload.TRACE_D01,
+        model_list=client_model_list,
+        max_request_sec=rps, 
+        interval_sec=AzureConfig.interval_sec, 
+        period_num=AzureConfig.period_num, 
+        func_num=AzureConfig.num_model * 3, # 3 is a suitable number
+        sort_trace_by='var_v2'
+    ))
 
 def _run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
     try:
@@ -242,6 +305,17 @@ if run_colsys:
                             **system_config)
             run(system, workload, server_model_config, "overall-skewed", "colsys-low")
 
+    if AzureConfig.enable:
+        with mps_thread_percent(AzureConfig.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                AzureConfig.model_list, AzureConfig.num_model, 1)
+            workload = azure(rps=AzureConfig.max_rps, 
+                             client_model_list=client_model_list, infer_only=False)
+            system = System(train_mps_thread_percent=AzureConfig.mps_train,
+                            port=AzureConfig.port,
+                            **system_config)
+            run(system, workload, server_model_config, "overall-azure", "colsys")
+
 ## MARK: Task Switch
 if run_task_switch:
     system_config = {
@@ -285,6 +359,14 @@ if run_task_switch:
                           client_model_list=client_model_list, infer_only=False)
         system = System(port=SkewedConfig.port, **system_config)
         run(system, workload, server_model_config, "overall-skewed", "task-switch-low")
+
+    if AzureConfig.enable:
+        client_model_list, server_model_config = InferModel.get_multi_model(
+            AzureConfig.model_list, AzureConfig.num_model, 1)
+        workload = azure(rps=AzureConfig.max_rps, 
+                         client_model_list=client_model_list, infer_only=False)
+        system = System(port=AzureConfig.port, **system_config)
+        run(system, workload, server_model_config, "overall-azure", "task-switch")
 
 
 ## MARK: UM+MPS
@@ -332,6 +414,16 @@ if run_um_mps:
             system = System(train_mps_thread_percent=SkewedConfig.low_load.mps_train,
                             port=SkewedConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-skewed", "um-mps-low")
+
+    if AzureConfig.enable:
+        with um_mps(AzureConfig.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                AzureConfig.model_list, AzureConfig.num_model, 1)
+            workload = azure(rps=AzureConfig.max_rps, 
+                             client_model_list=client_model_list, infer_only=False)
+            system = System(train_mps_thread_percent=AzureConfig.mps_train,
+                            port=AzureConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-azure", "um-mps")
 
 
 ## MARK: Static Partition
@@ -392,6 +484,16 @@ if run_static_partition:
             system = System(train_mps_thread_percent=SkewedConfig.low_load.mps_train,
                             port=SkewedConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-skewed", "static-partition-low")
+        
+    if AzureConfig.enable:
+        with mps_thread_percent(AzureConfig.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                AzureConfig.model_list, AzureConfig.num_model, 1)
+            workload = azure(rps=AzureConfig.max_rps, 
+                             client_model_list=client_model_list, infer_only=False)
+            system = System(train_mps_thread_percent=AzureConfig.mps_train,
+                            port=AzureConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-azure", "static-partition")
 
 
 ## MARK: Infer Only
@@ -436,4 +538,13 @@ if run_infer_only:
             workload = skewed(SkewedConfig.low_load.rps, client_model_list, infer_only=True)
             system = System(port=SkewedConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-skewed", "infer-only-low")
+
+    if AzureConfig.enable:
+        with mps_thread_percent(AzureConfig.mps_infer, skip=infer_only_without_mps):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                AzureConfig.model_list, AzureConfig.num_model, 1)
+            workload = azure(rps=AzureConfig.max_rps, 
+                             client_model_list=client_model_list, infer_only=True)
+            system = System(port=AzureConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-azure", "infer-only")
             

@@ -67,7 +67,7 @@ private:
       for (size_t j = 0; j < vir_num_per; ++j) {
         ss << duplicate_shuffle_map_[i][j] << " ";
       }
-      LOG(INFO) << log_prefix_ << ss.str();
+      DLOG(INFO) << log_prefix_ << ss.str();
     }
   }
 
