@@ -163,14 +163,16 @@ MemEntry *FreeList::PopFreeEntry(size_t nbytes, bool do_split, size_t require_al
     }
   }
 
+  entry_by_nbytes_->erase(free_entry->pos_freelist);
+  free_entry->is_free = false;
+
   CHECK_GE(free_entry->nbytes, nbytes);
   if (do_split && free_entry->nbytes > nbytes ) {
     auto split_entry = list_index_.SplitEntry(free_entry, nbytes);
-    split_entry->pos_freelist = entry_by_nbytes_->insert(
-        std::make_pair(split_entry->nbytes, shm_handle<MemEntry>(split_entry)));
+    split_entry->is_free = false;
+    PushFreeEntry(split_entry);
   }
-  entry_by_nbytes_->erase(free_entry->pos_freelist);
-  free_entry->is_free = false;
+
   CHECK_EQ(free_entry->is_small, is_small_);
   CHECK(!alloc_conf::STRICT_CHECK_STATE || CheckState());
   return free_entry;

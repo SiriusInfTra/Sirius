@@ -91,7 +91,7 @@ private:
     }
     entry_list_.IterateRange(0, mempool_.mempool_nbytes, [&](MemEntry *entry){
       bool is_alloc = entry->is_alloc;
-      entry_list_.UpdateAllocFlag(entry);
+      entry_list_.UpdateAllocFlag(entry); /* maybe transform is_alloc: true -> false */
       CHECK((is_alloc == false && entry->is_alloc == false) || is_alloc == true) << entry << " " << is_alloc;
       return entry;
     });
@@ -208,16 +208,19 @@ private:
       entry = MaybeMerge(entry);
     } else {
       entry = free_list_large_.PushFreeEntry(entry);
-      auto *prev_entry = entry_list_.GetPrevEntry(entry);
-      if (prev_entry && prev_entry->is_small && prev_entry->is_free && prev_entry->is_alloc) {
+
+      if (auto *prev_entry = entry_list_.GetPrevEntry(entry); prev_entry 
+        && prev_entry->is_small && prev_entry->is_free && prev_entry->is_alloc
+      ) {
         size_t prev_entry_nbytes = prev_entry->nbytes;
         auto *maybe_merged_entry = MaybeMerge(prev_entry);
         if (maybe_merged_entry->nbytes > prev_entry_nbytes) {
           entry = maybe_merged_entry;
         }
       }
-      auto *next_entry = entry_list_.GetNextEntry(entry);
-      if (next_entry && next_entry->is_small && next_entry->is_free && next_entry->is_alloc) {
+      if (auto *next_entry = entry_list_.GetNextEntry(entry); next_entry 
+        && next_entry->is_small && next_entry->is_free && next_entry->is_alloc
+      ) {
         size_t next_entry_nbytes = next_entry->nbytes;
         auto *maybe_merged_entry = MaybeMerge(next_entry);
         if (maybe_merged_entry->nbytes > next_entry_nbytes) {

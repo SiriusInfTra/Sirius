@@ -435,7 +435,8 @@ public:
 
   MemEntry *MaybeMerge(MemEntry *entry) {
     if (!entry->is_alloc) { return entry; }
-    CHECK(entry->is_small);
+    CHECK(entry->is_free) << entry;
+    CHECK(entry->is_small) << entry;
     bool put_free_list_large = true;
     size_t total_nbytes = entry->nbytes;
     MemEntry *prev_entry, *next_entry;
@@ -449,12 +450,7 @@ public:
     }
     if ((next_entry = entry_list_.GetNextEntry(entry)) != nullptr) {
       if (next_entry->is_small) {
-#if 0
-        // fix me: check failed for task switch
         CHECK(!next_entry->is_free || !next_entry->is_alloc) << next_entry;
-#else
-        LOG_IF(WARNING, !next_entry->is_free || !next_entry->is_alloc) << next_entry;
-#endif
         put_free_list_large = false;
       } else {
         total_nbytes += next_entry->nbytes;
