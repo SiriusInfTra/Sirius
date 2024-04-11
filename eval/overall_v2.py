@@ -77,6 +77,7 @@ class UniformConfig:
     high_load = HighLoad(enable=True)
     hybrid_load = HybridLoad(enable=False)
 
+
 class SkewedConfig:
     model_list = [InferModel.InceptionV3, InferModel.ResNet152,
                   InferModel.DenseNet161, InferModel.DistilBertBase]
@@ -269,6 +270,22 @@ if run_task_switch:
         system = System(port=UniformConfig.port, **system_config)
         run(system, workload, server_model_config, "overall-uniform", "task-switch-low")
 
+    if SkewedConfig.enable and SkewedConfig.high_load.enable:
+        client_model_list, server_model_config = InferModel.get_multi_model(
+            SkewedConfig.model_list, SkewedConfig.num_model, 1)
+        workload = skewed(rps=SkewedConfig.high_load.rps, 
+                          client_model_list=client_model_list, infer_only=False)
+        system = System(port=SkewedConfig.port, **system_config)
+        run(system, workload, server_model_config, "overall-skewed", "task-switch-high")
+
+    if SkewedConfig.enable and SkewedConfig.low_load.enable:
+        client_model_list, server_model_config = InferModel.get_multi_model(
+            SkewedConfig.model_list, SkewedConfig.num_model, 1)
+        workload = skewed(rps=SkewedConfig.low_load.rps, 
+                          client_model_list=client_model_list, infer_only=False)
+        system = System(port=SkewedConfig.port, **system_config)
+        run(system, workload, server_model_config, "overall-skewed", "task-switch-low")
+
 
 ## MARK: UM+MPS
 if run_um_mps:
@@ -297,6 +314,24 @@ if run_um_mps:
             system = System(train_mps_thread_percent=UniformConfig.low_load.mps_train,
                             port=UniformConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-uniform", "um-mps-low")
+
+    if SkewedConfig.enable and SkewedConfig.high_load.enable:
+        with um_mps(SkewedConfig.high_load.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                SkewedConfig.model_list, SkewedConfig.num_model, 1)
+            workload = skewed(SkewedConfig.high_load.rps, client_model_list, infer_only=False)
+            system = System(train_mps_thread_percent=SkewedConfig.high_load.mps_train,
+                            port=SkewedConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-skewed", "um-mps-high")
+
+    if SkewedConfig.enable and SkewedConfig.low_load.enable:
+        with um_mps(SkewedConfig.low_load.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                SkewedConfig.model_list, SkewedConfig.num_model, 1)
+            workload = skewed(SkewedConfig.low_load.rps, client_model_list, infer_only=False)
+            system = System(train_mps_thread_percent=SkewedConfig.low_load.mps_train,
+                            port=SkewedConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-skewed", "um-mps-low")
 
 
 ## MARK: Static Partition
@@ -336,6 +371,28 @@ if run_static_partition:
                             port=UniformConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-uniform", "static-partition-low")
 
+    if SkewedConfig.enable and SkewedConfig.high_load.enable:
+        with mps_thread_percent(SkewedConfig.high_load.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                SkewedConfig.model_list, SkewedConfig.num_model, 1)
+            workload = skewed(rps=SkewedConfig.high_load.rps, 
+                              client_model_list=client_model_list, infer_only=False,
+                              train_batch_size=train_batch_size)
+            system = System(train_mps_thread_percent=SkewedConfig.high_load.mps_train,
+                            port=SkewedConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-skewed", "static-partition-high")
+
+    if SkewedConfig.enable and SkewedConfig.low_load.enable:
+        with mps_thread_percent(SkewedConfig.low_load.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                SkewedConfig.model_list, SkewedConfig.num_model, 1)
+            workload = skewed(rps=SkewedConfig.low_load.rps, 
+                              client_model_list=client_model_list, infer_only=False,
+                              train_batch_size=train_batch_size)
+            system = System(train_mps_thread_percent=SkewedConfig.low_load.mps_train,
+                            port=SkewedConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-skewed", "static-partition-low")
+
 
 ## MARK: Infer Only
 if run_infer_only:
@@ -363,4 +420,20 @@ if run_infer_only:
             workload = uniform(UniformConfig.low_load.rps, client_model_list, infer_only=True)
             system = System(port=UniformConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-uniform", "infer-only-low")
+
+    if SkewedConfig.enable and UniformConfig.high_load.enable:
+        with mps_thread_percent(SkewedConfig.high_load.mps_infer, skip=infer_only_without_mps):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                SkewedConfig.model_list, SkewedConfig.num_model, 1)
+            workload = skewed(SkewedConfig.high_load.rps, client_model_list, infer_only=True)
+            system = System(port=SkewedConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-skewed", "infer-only-high")
+
+    if SkewedConfig.enable and SkewedConfig.low_load.enable:
+        with mps_thread_percent(SkewedConfig.low_load.mps_infer, skip=infer_only_without_mps):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                SkewedConfig.model_list, SkewedConfig.num_model, 1)
+            workload = skewed(SkewedConfig.low_load.rps, client_model_list, infer_only=True)
+            system = System(port=SkewedConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-skewed", "infer-only-low")
             

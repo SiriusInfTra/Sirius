@@ -111,6 +111,8 @@ class Config {
   static size_t max_warm_cache_nbytes;
   static double cold_cache_ratio;
 
+  static bool enable_warm_cache_fallback;
+
   static double task_switch_delay_ms;
 
   // to avoid memory fragment cause OOM

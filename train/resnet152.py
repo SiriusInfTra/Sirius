@@ -34,8 +34,9 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
     hook.register_pytorch_hook([model, criterion])
 
     # dummy data
-    train_dataset = CustomeDynamicBatchDataset(1000, (3, 224, 224), 10, batch_size, hook, 
+    train_dataset = CustomeDynamicBatchDataset('resnet152', 1000, batch_size, hook,
                                                train_valiation.get_trace_input(),
+                                               input_shape=(3, 224, 224), num_class=10, 
                                                max_global_batch_size=global_batch_size,
                                                checkpoint_micro_batch=checkpoint_micro_batch)
     train_loader = DataLoader(train_dataset, batch_size=None, 
@@ -66,8 +67,10 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
         finished_time = 0
         wait_bs_valid_sec = 0 # add infer may cause batch size <= 0
         finished_imgs = 0
-        for i, (images, targets) in enumerate(train_loader):
+        for i, batch in enumerate(train_loader):
             # print(f'[epoch {epoch} batch {i}] batch size {len(images)}', flush=True, file=sys.stderr)
+            images = batch['image']
+            targets = batch['label'] 
             train_dataset.record_batch_event(epoch, i, len(images), train_dataset.global_batch_size)
             images: torch.Tensor = images.to('cuda:0', non_blocking=True)
             targets: torch.Tensor = targets.to('cuda:0', non_blocking=True)

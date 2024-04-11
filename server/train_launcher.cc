@@ -138,6 +138,13 @@ bool TrainLauncher::Train() {
   cur_model_name_ = model;
   auto train_script = train_handles_[model];
 
+  if (Config::IsColocateMode() && 
+      Config::use_shared_tensor &&
+      Config::enable_warm_cache_fallback) {
+    auto [base, slope] = GetModelMemParam();
+    Config::max_warm_cache_nbytes -= static_cast<size_t>(base * 1_MB);
+  }
+
   std::vector<std::string> args_str;
   // args_str.push_back("nsys");
   // args_str.push_back("profile");

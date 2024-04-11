@@ -13,6 +13,7 @@
 #include "common/util.h"
 
 
+
 namespace colserve {
 
 std::array<std::atomic<int>, static_cast<size_t>(Model::Status::kNumStatus)> 

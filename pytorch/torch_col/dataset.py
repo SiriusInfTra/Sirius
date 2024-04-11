@@ -15,15 +15,27 @@ class DatasetState(IntEnum):
     ITER = 1
     NEXT = 2
 
+def _vision_task(model_name):
+    return 'resnet' in model_name or 'vit' in model_name or 'swin' in model_name
+
+def _text_gen(model_name):
+    return 'gpt' in model_name
+
+def _text_cls(model_name):
+    return 'bert' in model_name
+
 class CustomeDynamicBatchDataset(IterableDataset):
-    def __init__(self, size, input_shape, num_class, max_batch_size, 
+    def __init__(self, model_name, size, max_batch_size,
                  hook: HookABC, trace: Optional[list[dict]], 
+                 input_shape = None, num_class = None,
+                 seq_len = None, 
                  max_global_batch_size = None,
                  empty_cache_at_larger_batch_size = False,
                  checkpoint_micro_batch = False,
                  fake_data=False) -> None:
         super().__init__()
         self.size = size
+        self.model_name = model_name
         self.input_shape = input_shape
         self.num_class = num_class
         self.max_batch_size = max_batch_size
@@ -42,14 +54,31 @@ class CustomeDynamicBatchDataset(IterableDataset):
         self.global_batch_event = None
         self.batch_event = None
         if not fake_data:
-            self.all_inputs = torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_inputs.npy')).pin_memory()
-            self.all_targets = torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_targets.npy')).pin_memory()
+            if _vision_task(self.model_name):
+                self.all_inputs = {
+                    'image': torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_inputs.npy')).pin_memory(),
+                    'label': torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_targets.npy')).pin_memory()
+                }
+                assert num_class == torch.max(self.all_inputs['label']).item() + 1, f"expect num of class: {torch.max(self.all_inputs['label']).item() + 1}."
+                assert size == len(self.all_inputs['image']), f"expect size {len(self.all_inputs['image'])}."
+                assert input_shape == self.all_inputs['image'].shape[1:], f"expect input shape: {self.all_inputs['image'].shape[1:]}"
+            else:
+                raise Exception("not support model")
+            # self.all_inputs = torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_inputs.npy')).pin_memory()
+            # self.all_targets = torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_targets.npy')).pin_memory()
         else:
-            self.all_inputs = torch.randn(size, *input_shape).pin_memory()
-            self.all_targets = torch.randint(0, num_class, size=(size,), dtype=torch.long).pin_memory()
-        assert num_class == torch.max(self.all_targets).item() + 1, f"expect num of class: {torch.max(self.all_targets).item() + 1}."
-        assert size == len(self.all_inputs), f"expect size {len(self.all_inputs)}."
-        assert input_shape == self.all_inputs.shape[1:], f"expect input shape: {self.all_inputs.shape[1:]}"
+            if _vision_task(self.model_name):
+                self.all_inputs = {
+                    'image': torch.randn(size, *input_shape).pin_memory(),
+                    'label': torch.randint(0, num_class, size=(size,), dtype=torch.long).pin_memory()
+                }
+                # self.all_inputs = torch.randn(size, *input_shape).pin_memory()
+                # self.all_targets = torch.randint(0, num_class, size=(size,), dtype=torch.long).pin_memory()
+            elif _text_gen(self.model_name):
+                self.all_inputs = {
+                    "input_ids": torch.from_numpy(np.random.randint(100, 30000, (size, seq_len))).pin_memory(),
+                }
+                self.all_inputs['labels'] = self.all_inputs['input_ids']
         self.trace = trace
         self.trace_idx = 0
         if trace is not None:
@@ -226,12 +255,16 @@ class CustomeDynamicBatchDataset(IterableDataset):
         self.last_batch_size = batch_size
         # inputs = torch.randn(batch_size, *self.input_shape)
         # targets = torch.randint(0, self.num_class, size=(batch_size,), dtype=torch.long)
-        inputs = self.all_inputs[self.micro_batch_iter_idx:self.micro_batch_iter_idx+batch_size]
-        targets = self.all_targets[self.micro_batch_iter_idx:self.micro_batch_iter_idx+batch_size]
+        inputs = {}
+        for k in self.all_inputs.keys():
+            inputs[k] = self.all_inputs[k][self.micro_batch_iter_idx:self.micro_batch_iter_idx+batch_size]
+        # inputs = self.all_inputs[self.micro_batch_iter_idx:self.micro_batch_iter_idx+batch_size]
+        # targets = self.all_targets[self.micro_batch_iter_idx:self.micro_batch_iter_idx+batch_size]
         if self.hook is not None:
             self.hook.report_batch_size(batch_size)
         # print(f'micro batch iter {self.micro_batch_iter_idx} acc iter {self.accumulate_iter_idx}', file=sys.stderr, flush=True)
-        return inputs, targets
+        # return inputs, targets
+        return inputs
     
     def __iter__(self) -> Iterator:
         worker_info = get_worker_info()

@@ -150,6 +150,13 @@ void init_config() {
     cfg::group_param_load = false;
   }
 
+  if (cfg::IsColocateMode() && 
+      cfg::use_shared_tensor &&
+      cfg::enable_warm_cache_fallback) {
+    CHECK_EQ(cfg::max_warm_cache_nbytes, 0);
+    cfg::max_warm_cache_nbytes = 
+      static_cast<size_t>((cfg::cuda_memory_pool_gb * 1024 - cfg::train_memory_over_predict_mb) * 1_MB);
+  }
 
   STREAM_OUTPUT(serve_mode);
   STREAM_OUTPUT(use_shared_tensor);
@@ -161,6 +168,7 @@ void init_config() {
   STREAM_OUTPUT(group_param_load);
   STREAM_OUTPUT(pipeline_load);
   STREAM_OUTPUT(has_warmup);
+  STREAM_OUTPUT(enable_warm_cache_fallback);
   STREAM_OUTPUT(max_warm_cache_nbytes);
   STREAM_OUTPUT(cold_cache_max_capability_nbytes);
   STREAM_OUTPUT(cold_cache_min_capability_nbytes);
