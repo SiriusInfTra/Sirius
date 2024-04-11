@@ -78,7 +78,18 @@ class HybridLoad:
     mps_infer: int = HighLoad.rps
     mps_train: int = HighLoad.rps
     enable: bool = True
-    
+
+def get_unique_port():
+    cuda_device = os.environ['CUDA_VISIBLE_DEVICES']
+    assert ',' not in cuda_device
+    try:
+        cuda_device = int(cuda_device)
+    except:
+        cuda_device = GPU_UUIDs.index(cuda_device)
+    port = 18100
+    port += cuda_device
+    return port
+
 # MARK: Trace Config
 class UniformConfig:
     train_model = 'swin_b'
@@ -92,7 +103,7 @@ class UniformConfig:
     num_model = 60
     interval_sec = 20
     duration = 120
-    port = str(18100 + (os.getpid() % 10) * 10)
+    port = str(get_unique_port())
     enable = enable_uniform
 
     low_load = LowLoad(enable=False)
@@ -113,7 +124,7 @@ class SkewedConfig:
     interval_sec = 20
     duration = 120
     zipf_aplha = 1.2 # large alpha -> more skewed
-    port = str(18100 + (os.getpid() % 10) * 10)
+    port = str(get_unique_port())
     enable = enable_skewed
 
     low_load = LowLoad(enable=True)
