@@ -3,9 +3,16 @@ import argparse
 from runner import *
 from dataclasses import dataclass
 
+# !!! do not import * from run_comm
+
 use_time_stamp = True
 retry_if_fail = False
 skip_fail = False
+
+enable_uniform = False
+enable_skewed = False
+
+retry_limit = 1
 
 def get_unique_port():
     cuda_device = os.environ['CUDA_VISIBLE_DEVICES']
@@ -18,11 +25,13 @@ def get_unique_port():
     port += cuda_device
     return port
 
+## MARK: Configurations
+## =========================================================== ##
 
 @dataclass
 class HighLoad:
     rps: int = 50
-    mps_infer: int = 35
+    mps_infer: int = 40
     mps_train: int = 60
     enable: bool = True
 
@@ -41,6 +50,100 @@ class HybridLoad:
     mps_train: int = HighLoad.rps
     enable: bool = True
 
+# MARK: Trace Config
+class UniformConfig:
+    train_model = 'swin_b'
+    train_batch_size = 72
+    train_global_batch_size = 500 # not used, hard code for global batch size and dataset size
+    train_dataset_size = 1000 
+    train_epoch_time = 5 # used for predict number epoch
+
+    model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
+                  InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
+                  InferModel.ResNet152, InferModel.DistilGPT2] 
+    num_model = 64
+    interval_sec = 20
+    duration = 120
+    port = str(get_unique_port())
+    enable = enable_uniform
+
+    low_load = LowLoad(enable=True)
+    high_load = HighLoad(enable=False)
+    hybrid_load = HybridLoad(enable=False)
+
+
+class SkewedConfig:
+    # train_model = 'gpt2'
+    # train_batch_size = 20
+    # train_global_batch_size = 250
+    # train_dataset_size = 500
+    # train_epoch_time = 5
+    train_model = 'swin_b'
+    train_batch_size = 72
+    train_global_batch_size = 500 # not used, hard code for global batch size and dataset size
+    train_dataset_size = 1000 
+    train_epoch_time = 5 # used for predict number epoch
+
+    model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
+                  InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
+                  InferModel.ResNet152, InferModel.DistilGPT2] 
+    num_model = 64
+    interval_sec = 20
+    duration = 120
+    zipf_aplha = 1.2 # large alpha -> more skewed
+    port = str(get_unique_port())
+    enable = enable_skewed
+
+    low_load = LowLoad(enable=True)
+    high_load = HighLoad(enable=True)
+    hybrid_load = HybridLoad(enable=False)
+
+
+# MARK: Workload
+## =========================================================== ##
+
+def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
+            train_model:str = UniformConfig.train_model, 
+            train_epoch:int = int(UniformConfig.duration / UniformConfig.train_epoch_time + 5), 
+            train_batch_size:int = UniformConfig.train_batch_size):
+    workload = HyperWorkload(concurrency=2048,
+                             warmup=5,
+                             wait_warmup_done_sec=5,
+                             wait_train_setup_sec=40 ,
+                             wait_stable_before_start_profiling_sec=10)
+    InferModel.reset_model_cnt()
+    if not infer_only:
+        workload.set_train_workload(
+            train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
+    workload.set_infer_workloads(MicrobenchmarkInferWorkload(
+        model_list=client_model_list,
+        interval_sec=UniformConfig.interval_sec, fix_request_sec=rps, rps_fn=rps_fn,
+        duration=UniformConfig.duration + workload.infer_extra_infer_sec,
+    ))
+    return workload
+
+
+def skewed(rps, client_model_list, infer_only=True, rps_fn=None,
+           train_model:str =SkewedConfig.train_model, 
+           train_epoch:int = int(SkewedConfig.duration / SkewedConfig.train_epoch_time + 5), 
+           train_batch_size:int = SkewedConfig.train_batch_size):
+    workload = HyperWorkload(concurrency=2048,
+                             warmup=5,
+                             wait_warmup_done_sec=5,
+                             wait_train_setup_sec=40,
+                             wait_stable_before_start_profiling_sec=10)
+    InferModel.reset_model_cnt()
+    if not infer_only:
+        workload.set_train_workload(
+            train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
+    workload.set_infer_workloads(MicrobenchmarkInferWorkload(
+        model_list=client_model_list,
+        interval_sec=SkewedConfig.interval_sec, fix_request_sec=rps, rps_fn=rps_fn,
+        zipf_alpha=SkewedConfig.zipf_aplha,
+        duration=SkewedConfig.duration + workload.infer_extra_infer_sec,
+    ))
+    return workload
+
 
 def _run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
     try:
@@ -51,11 +154,19 @@ def _run(system: System, workload: HyperWorkload, server_model_config: str, unit
     except Exception as e:
         print(f"Failed to run {unit} {tag}: {e}")
         if retry_if_fail:
-            print(f"\n\x1b[33;1m### Retry [{unit} {tag}] ###\x1b[0m")
-            system.launch(unit, f'{tag}-retry', time_stamp=use_time_stamp,
-                    infer_model_config=server_model_config)
-            workload.launch_workload(system)
-            system.stop()
+            for retry_cnt in range(retry_limit):
+                print(f"\n\x1b[33;1m### Retry [{unit} {tag}] x {retry_cnt} ###\x1b[0m")
+                try:
+                    system.launch(unit, f'{tag}-retry-{retry_cnt}', time_stamp=use_time_stamp,
+                            infer_model_config=server_model_config)
+                    workload.launch_workload(system)
+                    system.stop()
+                except Exception as e:
+                    print(f"Failed to run {unit} {tag}: {e}")
+                    if retry_cnt == retry_limit - 1:
+                        raise e
+                else:
+                    break
         else:
             raise e
     time.sleep(5)
@@ -70,6 +181,7 @@ def run(system: System, workload: HyperWorkload, server_model_config: str, unit:
             _run(system, workload, server_model_config, unit, tag)
         except Exception as e:
             print(f"\n\x1b[33;1m### Skip {unit} {tag}: {e} ###\x1b[0m")
+            time.sleep(1)
     else:
         _run(system, workload, server_model_config, unit, tag)
 
