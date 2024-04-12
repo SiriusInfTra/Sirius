@@ -87,8 +87,9 @@ class UniformConfig:
     train_dataset_size = 1000 
     train_epoch_time = 5 # used for predict number epoch
 
-    model_list = [InferModel.Swin_t, InferModel.ResNet152, 
-                  InferModel.EfficientNetV2_s, InferModel.DistilBertBase]
+    model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
+                  InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
+                  InferModel.ResNet152, InferModel.DistilGPT2] 
     num_model = 60
     interval_sec = 20
     duration = 120
@@ -112,8 +113,9 @@ class SkewedConfig:
     train_dataset_size = 1000 
     train_epoch_time = 5 # used for predict number epoch
 
-    model_list = [InferModel.Swin_t, InferModel.ResNet152,
-                  InferModel.EfficientNetV2_s, InferModel.DistilBertBase]
+    model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
+                  InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
+                  InferModel.ResNet152, InferModel.DistilGPT2] 
     num_model = 60
     interval_sec = 20
     duration = 120
