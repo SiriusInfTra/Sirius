@@ -57,7 +57,7 @@ std::pair<double, double> TrainLauncher::GetModelMemParam() {
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
-  } else {
+  } else { // * used for strawman, adjust but no shared tensor
     /*
         8     2.64
         32    4.97
@@ -70,7 +70,8 @@ std::pair<double, double> TrainLauncher::GetModelMemParam() {
       return {2396, 85};
     } else if (cur_model_name_ == "swin_b") {
       // NOTE: PLACEHOLDER
-      return {1700, 140};
+      // return {1700, 140};
+      return {3300, 145};
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }

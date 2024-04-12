@@ -14,10 +14,10 @@ use_time_stamp = True
 run_pct_mps = False
 run_colsys = False
 run_um_mps = False
-run_task_switch = False
+run_task_switch = True
 run_infer_only = False
 
-run_strawman = True
+run_strawman = False
 run_dynamic_overhead = False
 
 @dataclass
@@ -103,7 +103,7 @@ def run(system: System, workload: HyperWorkload, server_model_config: str, tag: 
 
 
 if run_colsys:
-    num_worker = 0
+    num_worker = 1
     # colsys heavy
     with mps_thread_percent(eval_config.heavy_mps_infer):
         client_model_list, server_model_config = InferModel.get_multi_model(eval_config.model_list, eval_config.heavy_num_model, num_worker)
@@ -114,16 +114,16 @@ if run_colsys:
                         memory_pool_policy=System.MemoryPoolPolicy.BestFit, has_warmup=True)
         run(system, hyper_workload, server_model_config, "colsys-heavy")
 
-    # colsys light
-    with mps_thread_percent(eval_config.light_mps_infer):
-        client_model_list, server_model_config = InferModel.get_multi_model(eval_config.model_list, eval_config.light_num_model, num_worker)
-        hyper_workload = smooth(rps=eval_config.light_rps, client_model_list=client_model_list, infer_only=False)
+    # # colsys light
+    # with mps_thread_percent(eval_config.light_mps_infer):
+    #     client_model_list, server_model_config = InferModel.get_multi_model(eval_config.model_list, eval_config.light_num_model, num_worker)
+    #     hyper_workload = smooth(rps=eval_config.light_rps, client_model_list=client_model_list, infer_only=False)
 
-        system = System(mode=System.ServerMode.ColocateL1, use_sta=True, mps=True, use_xsched=True, port=eval_config.server_port, 
-                        cuda_memory_pool_gb="13.5", ondemand_adjust=True, train_memory_over_predict_mb=1500,
-                        train_mps_thread_percent=eval_config.light_mps_train, infer_model_max_idle_ms=5000,
-                        memory_pool_policy=System.MemoryPoolPolicy.BestFit, has_warmup=True)
-        run(system, hyper_workload, server_model_config, "colsys-light")
+    #     system = System(mode=System.ServerMode.ColocateL1, use_sta=True, mps=True, use_xsched=True, port=eval_config.server_port, 
+    #                     cuda_memory_pool_gb="13.5", ondemand_adjust=True, train_memory_over_predict_mb=1500,
+    #                     train_mps_thread_percent=eval_config.light_mps_train, infer_model_max_idle_ms=5000,
+    #                     memory_pool_policy=System.MemoryPoolPolicy.BestFit, has_warmup=True)
+    #     run(system, hyper_workload, server_model_config, "colsys-light")
 
 
 if run_strawman:
@@ -158,19 +158,20 @@ if run_um_mps:
 
 
 if run_task_switch:
-    num_worker = 0
+    num_worker = 1
     # task switch heavy
     client_model_list, server_model_config = InferModel.get_multi_model(eval_config.model_list, eval_config.heavy_num_model, num_worker)
     hyper_workload = smooth(rps=eval_config.heavy_rps, client_model_list=client_model_list, infer_only=False)
     system = System(mode=System.ServerMode.TaskSwitchL1, use_sta=True, mps=False, use_xsched=False, port=eval_config.server_port,
                     cuda_memory_pool_gb="13", train_memory_over_predict_mb=1500)
     run(system, hyper_workload, server_model_config, "task-switch-heavy")
-    # task switch light
-    client_model_list, server_model_config = InferModel.get_multi_model(eval_config.model_list, eval_config.light_num_model, num_worker)
-    hyper_workload = smooth(rps=eval_config.light_rps, client_model_list=client_model_list, infer_only=False)
-    system = System(mode=System.ServerMode.TaskSwitchL1, use_sta=True, mps=False, use_xsched=False, port=eval_config.server_port,
-                    cuda_memory_pool_gb="13", train_memory_over_predict_mb=1500)
-    run(system, hyper_workload, server_model_config, "task-switch-light")
+
+    # # task switch light
+    # client_model_list, server_model_config = InferModel.get_multi_model(eval_config.model_list, eval_config.light_num_model, num_worker)
+    # hyper_workload = smooth(rps=eval_config.light_rps, client_model_list=client_model_list, infer_only=False)
+    # system = System(mode=System.ServerMode.TaskSwitchL1, use_sta=True, mps=False, use_xsched=False, port=eval_config.server_port,
+    #                 cuda_memory_pool_gb="13", train_memory_over_predict_mb=1500)
+    # run(system, hyper_workload, server_model_config, "task-switch-light")
 
 
 if run_infer_only:
