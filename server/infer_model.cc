@@ -263,9 +263,9 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank, std::unique_lock<std::mutex> &
             << " model required " << total_storage_MB;
   if (total_storage_MB > free_memory_MB) {
     long capacity = static_cast<long>(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock)) - static_cast<long>((total_storage_MB - free_memory_MB) * 1024 * 1024);
-    auto evict_models = ColdModelCache::Get().GetEvictModels(capacity, name_, cold_cache_lock);
+    auto evict_models = ColdModelCache::Get().GetEvictModels(capacity, {this, nullptr}, cold_cache_lock);
     for (auto &&[name, cached_groups_id] : evict_models) {
-      InferModelStore::Get()->GetModel(name)->ClearColdCache(cached_groups_id, rank, cold_cache_lock, this);
+      InferModelStore::Get()->GetModel(name)->ClearColdCache(cached_groups_id, rank, cold_cache_lock);
     }
     LOG(INFO) << "[Model, Cold Cache Adjust] after adjust, furthur evict model to make room for model "
               << name_ << " rank " << rank
