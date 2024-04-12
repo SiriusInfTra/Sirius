@@ -34,6 +34,7 @@ parser.add_argument('--skewed', action='store_true')
 parser.add_argument('--azure', action='store_true')
 parser.add_argument('--all-sys', action='store_true')
 parser.add_argument('--all-workload', action='store_true')
+parser.add_argument('--infer-only-without-mps', action='store_true')
 args = parser.parse_args()
 
 if args.colsys or args.all_sys:
@@ -53,6 +54,9 @@ if args.skewed or args.all_workload:
     enable_skewed = True
 if args.azure or args.all_workload:
     enable_azure = True
+
+if args.infer_only_without_mps:
+    infer_only_without_mps = True
 
 ## MARK: Configurations
 ## =========================================================== ##
