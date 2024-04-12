@@ -598,7 +598,7 @@ std::function<void(InferRequest&)> Workload::SetBertRequestFn(const std::string 
   return set_bert_request_fn;
 }
 
-std::function<void(InferRequest&)> SetGPTRequestFn(const std::string &model) {
+std::function<void(InferRequest&)> Workload::SetGPTRequestFn(const std::string &model) {
   static std::mutex gpt_input_datas_mutex;
   static std::vector<std::string> gpt_input_datas;
 
