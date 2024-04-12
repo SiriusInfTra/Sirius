@@ -32,17 +32,18 @@ torch.onnx.export(efficientnet_v2_s, torch.rand(batch_size, 3, 224, 224),
 tvmc_model = tvmc.load(f"{tmp_dir}/{model_name}.onnx", 
                        shape_dict={'input':[batch_size, 3, 224, 224]})
 
-tune_records = f'./{model_name}-tune-{platform}.json'
-tvmc.tune(tvmc_model=tvmc_model, target='cuda', 
-          tuning_records=tune_records, 
-          enable_autoscheduler=False,
-          port=9999)
+# tune_records = f'./{model_name}-tune-{platform}.json'
+# tvmc.tune(tvmc_model=tvmc_model, target='cuda', 
+#           tuning_records=tune_records, 
+#           enable_autoscheduler=False,
+#           port=9999)
 
-# tune_records = f"util/prepare_model_store/{model_name}-tune-{platform}.json"
-# tvmc.compile(tvmc_model=tvmc_model, target='cuda', package_path=f"{tmp_dir}/{model_name}-tvm.tar",
-#              tuning_records=None)
+tune_records = f"util/prepare_model_store/{model_name}-tune-{platform}.json"
+
+tvmc.compile(tvmc_model=tvmc_model, target='cuda', package_path=f"{tmp_dir}/{model_name}-tvm.tar",
+             tuning_records=tune_records)
 
 
-# model_store_path = f'{model_store}/{model_name}-b{batch_size}' 
-# pathlib.Path(model_store_path).mkdir(parents=True, exist_ok=True)
-# tarfile.open(f"{tmp_dir}/{model_name}-tvm.tar").extractall(model_store_path)
+model_store_path = f'{model_store}/{model_name}-b{batch_size}' 
+pathlib.Path(model_store_path).mkdir(parents=True, exist_ok=True)
+tarfile.open(f"{tmp_dir}/{model_name}-tvm.tar").extractall(model_store_path)
