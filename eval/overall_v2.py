@@ -132,8 +132,9 @@ class AzureConfig:
     train_model = 'swin_b'
     train_batch_size = 72
 
-    model_list = [InferModel.Swin_t, InferModel.ResNet152,
-                  InferModel.EfficientNetV2_s, InferModel.DistilBertBase]
+    model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
+                  InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
+                  InferModel.ResNet152, InferModel.DistilGPT2] 
     num_model = 60
     interval_sec = 5
     duration = 180 
