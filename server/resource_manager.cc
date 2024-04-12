@@ -20,13 +20,17 @@ double ResourceManager::GetFreeMemoryMB() {
 
   if (Config::use_shared_tensor) {
     free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::PoolNbytes());
+    free_memory_mb -= infer_memory_mb;
+    free_memory_mb -= std::max(train_memory_mb, train_predict_memory_mb);
+    free_memory_mb -= Config::train_memory_over_predict_mb;
   } else {
     auto [free, total] = Profiler::GetGPUMemInfo();
     free_memory_mb = ByteToMB(free);
+    free_memory_mb = std::min(
+        free_memory_mb, 
+        sta::ByteToMB(total) - infer_memory_mb - std::max(train_predict_memory_mb, train_memory_mb) - Config::train_memory_over_predict_mb
+    );
   }
-  free_memory_mb -= infer_memory_mb;
-  free_memory_mb -= std::max(train_memory_mb, train_predict_memory_mb);
-  free_memory_mb -= Config::train_memory_over_predict_mb;
 
   LOG(INFO) << "[ResourceManager] "
             << " infer memory " << infer_memory_mb 
@@ -45,13 +49,16 @@ double ResourceManager::GetTrainAvailMemoryMB() {
   double free_memory_mb;
   if (Config::use_shared_tensor) {
     free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::PoolNbytes());
+    free_memory_mb -= infer_memory_mb;
+    free_memory_mb -= Config::train_memory_over_predict_mb;
   } else {
     auto [free, total] = Profiler::GetGPUMemInfo();
     free_memory_mb = ByteToMB(free);
+    free_memory_mb = std::min(
+        free_memory_mb, 
+        sta::ByteToMB(total) - infer_memory_mb - Config::train_memory_over_predict_mb
+    );
   }
-
-  free_memory_mb -= infer_memory_mb;
-  free_memory_mb -= Config::train_memory_over_predict_mb;
 
   LOG(INFO) << "[ResourceManager]"
             << " free memory " << free_memory_mb
