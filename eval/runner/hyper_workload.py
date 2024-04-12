@@ -438,9 +438,11 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
             self.duration = period_num * interval_sec
         poisson_params = [[] for _ in range(len(model_list))]
         num_model_to_requests = []
+
+        num_model_rs = RandomState(MT19937(SeedSequence(self.rs.randint(1, self.seed+1))))
         for i in range(period_num):
             # first select a few models to send requests
-            num_model = self.rs.randint(1, len(model_list) + 1)
+            num_model = num_model_rs.randint(1, len(model_list) + 1)
             # num_request = self.rs.uniform(0, max_request_sec)
             # if rps_fn is not None:
             #     num_request = rps_fn(i, num_request)
