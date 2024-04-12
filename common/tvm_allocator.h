@@ -62,7 +62,7 @@ std::vector<size_t> Shuffle(const std::vector<size_t> &arr, size_t k, std::mt199
       std::vector<size_t> map_to(phy_num);
       std::iota(map_to.begin(), map_to.end(), k * phy_num);
       if (k != 0) { 
-        map_to = Shuffle(map_to, 2, rng);
+        map_to = Shuffle(map_to, 4, rng);
       }
       for (size_t i = 0; i < phy_num; ++i) { 
         duplicate_shuffle_map_[i][k] = map_to[i]; 
