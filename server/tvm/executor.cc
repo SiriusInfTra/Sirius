@@ -69,12 +69,12 @@ Executor::Executor(TVMGraph &factory, size_t worker_id, const std::vector<DLDevi
   load_param_stream_ = DeviceAPI::Get(devices_[0])
       ->CreateStream(devices_[0]);
 
-  param_ready_.resize(GetNumOfNodes());
+  param_ready_.resize(tvm_graph_.node_row_ptr_.back());
   for (size_t i = 0; i < param_ready_.size(); i++) {
     param_ready_[i] = std::make_unique<std::atomic<bool>>(false);
   }
-  param_ready_events_.resize(GetNumOfNodes());
-  param_ready_event_ids_.resize(GetNumOfNodes(), static_cast<uint32_t>(-1));
+  param_ready_events_.resize(tvm_graph_.node_row_ptr_.back());
+  param_ready_event_ids_.resize(tvm_graph_.node_row_ptr_.back(), static_cast<uint32_t>(-1));
   for (size_t i = 0; i < param_ready_events_.size(); i++) {
     CUDA_CALL(cudaEventCreate(&param_ready_events_[i]));
   }
@@ -90,13 +90,13 @@ Executor::Executor(TVMGraph &factory, size_t worker_id, const std::vector<DLDevi
   if (Config::group_param_load) {
     for (auto sit = tvm_graph_.params_.begin(); sit != tvm_graph_.params_.end(); ) {
       size_t total_nbytes = 0, off = 0;
-      std::vector<uint32_t> param_ids;
+      std::vector<uint32_t> param_eids;
       auto eit = sit;
       for (; eit != tvm_graph_.params_.end() && total_nbytes < Config::group_param_load_threshold; eit++) {
         auto &p = *eit;
         auto aligned_nbytes = sta::detail::GetAlignedNbytes(GetDataSize(*p.second.operator->()));
         total_nbytes += aligned_nbytes;
-        param_ids.push_back(p.first);
+        param_eids.push_back(p.first);
         param_ready_event_ids_[p.first] = host_param_storage_group_.size();
       }
       auto param_group = TVMArray::Empty(ShapeTuple({static_cast<int64_t>(total_nbytes)}),
@@ -108,7 +108,7 @@ Executor::Executor(TVMGraph &factory, size_t worker_id, const std::vector<DLDevi
         auto aligned_nbytes = sta::detail::GetAlignedNbytes(GetDataSize(*p.second.operator->()));
         off += aligned_nbytes;
       }
-      this->host_param_storage_group_.push_back(std::make_pair(param_group, param_ids));
+      this->host_param_storage_group_.push_back(std::make_pair(param_group, param_eids));
     }
   } else {
     for (auto &p : tvm_graph_.params_) {
@@ -217,18 +217,18 @@ void Executor::PipelineRun() {
     if (op_execs_[i]) {
       auto t0 = Profiler::Now();
       // 1. wait load begin
-      for (auto nid : input_param_nid_[i]) {
+      for (auto eid : input_param_eid_[i]) {
         std::unique_lock pipeline_load_param_lock{pipeline_load_params_mut_};
-        pipeline_load_params_cv_.wait(pipeline_load_param_lock, [this, nid] {
-          return param_ready_[nid]->load();
+        pipeline_load_params_cv_.wait(pipeline_load_param_lock, [this, eid] {
+          return param_ready_[eid]->load();
         });
       }
       wait_load_ms += Profiler::MilliFrom(t0);
 
       auto t1 = Profiler::Now();
       // 2. wait load finish
-      for (auto nid : input_param_nid_[i]) {
-        auto event_id = param_ready_event_ids_[nid];
+      for (auto eid : input_param_eid_[i]) {
+        auto event_id = param_ready_event_ids_[eid];
         CHECK(event_id != -1);
         CUDA_CALL(cudaStreamWaitEvent((cudaStream_t)exec_stream_, param_ready_events_[event_id]));
       }
@@ -238,7 +238,7 @@ void Executor::PipelineRun() {
       // auto t0 = std::chrono::steady_clock::now();
       // for (bool param_ready = false; !param_ready; ) {
       //   param_ready = true;
-      //   for (auto nid : input_param_nid_[i]) {
+      //   for (auto nid : input_param_eid_[i]) {
       //     if (!param_ready_[nid]) {
       //       param_ready = false;
       //       break;
@@ -274,7 +274,7 @@ void Executor::PipelineRun() {
 const DLTensor* Executor::GetInput(int index) const {
   CHECK(initialized_);
   CHECK_LT(static_cast<size_t>(index), tvm_graph_.input_nodes_.size());
-  uint32_t eid = entry_id(tvm_graph_.input_nodes_[index], 0);
+  uint32_t eid = tvm_graph_.entry_id(tvm_graph_.input_nodes_[index], 0);
   return data_entry_[eid].operator->();
 }
 
@@ -290,7 +290,7 @@ const DLTensor* Executor::GetInputHostBuf(const std::string &index) const {
 const DLTensor* Executor::GetOutput(int index) const {
   CHECK(initialized_);
   CHECK_LE(static_cast<size_t>(index), tvm_graph_.outputs_.size());
-  uint32_t eid = entry_id(tvm_graph_.outputs_[index]);
+  uint32_t eid = tvm_graph_.entry_id(tvm_graph_.outputs_[index]);
   return data_entry_[eid].operator->();
 }
 
@@ -633,19 +633,21 @@ void Executor::SetupStorage(bool alloc) {
 
   // setup cpu pin memory
   for (auto nid : tvm_graph_.input_nodes_) {
-    if (!tvm_graph_.params_.count(nid)) {
+    auto eid = tvm_graph_.entry_id(nid, 0);
+    if (!tvm_graph_.params_.count(eid)) {
       auto & input_id = tvm_graph_.nodes_[nid].name;
-      auto & shape = tvm_graph_.attrs_.shape[nid];
-      auto & dtype = tvm_graph_.attrs_.dltype[nid];
+      auto & shape = tvm_graph_.attrs_.shape[eid];
+      auto & dtype = tvm_graph_.attrs_.dltype[eid];
       input_cpu_pin_bufs_[input_id] = ::tvm::runtime::NDArray::Empty(
           shape, ::tvm::runtime::String2DLDataType(dtype), {kDLCUDAHost, 0});
     }
   }
   for (auto e : tvm_graph_.outputs_) {
-    auto nid = entry_id(e);
+    auto nid = e.node_id;
+    auto eid = tvm_graph_.entry_id(e);
     auto & output_id = tvm_graph_.nodes_[nid].name;
-    auto & shape = tvm_graph_.attrs_.shape[nid];
-    auto & dtype = tvm_graph_.attrs_.dltype[nid];
+    auto & shape = tvm_graph_.attrs_.shape[eid];
+    auto & dtype = tvm_graph_.attrs_.dltype[eid];
     output_cpu_pin_bufs_[output_id] = ::tvm::runtime::NDArray::Empty(
         shape, ::tvm::runtime::String2DLDataType(dtype), {kDLCUDAHost, 0});
   }
@@ -794,7 +796,7 @@ void Executor::SetupOpExecs() {
   input_dltensors_.resize(tvm_graph_.node_row_ptr_.back());
   output_dltensors_.resize(tvm_graph_.node_row_ptr_.back());
   both_input_output_dltensors_.resize(tvm_graph_.node_row_ptr_.back());
-  input_param_nid_.resize(op_execs_.size());
+  input_param_eid_.resize(op_execs_.size());
   std::unordered_set<uint32_t> input_node_eids;
   for (size_t i = 0; i < tvm_graph_.input_nodes_.size(); i++) {
     uint32_t nid = tvm_graph_.input_nodes_[i];
@@ -811,17 +813,17 @@ void Executor::SetupOpExecs() {
     if (inode.op_type == "null") continue;
     std::vector<DLTensor*> args;
     for (const auto& e : inode.inputs) {
-      uint32_t eid = entry_id(e);
+      uint32_t eid = tvm_graph_.entry_id(e);
       // args.push_back(const_cast<DLTensor*>(data_entry_[eid].operator->()));
       sta::STensor data_entry_view_tensor = data_entry_[eid];
       args.push_back(data_entry_view_tensor.MutableDLTensor());
 
-      if (tvm_graph_.params_.count(e.node_id)) {
-        input_param_nid_[nid].push_back(e.node_id);
+      if (tvm_graph_.params_.count(eid)) {
+        input_param_eid_[nid].push_back(eid);
       }
     }
     for (uint32_t index = 0; index < inode.param.num_outputs; index++) {
-      uint32_t eid = entry_id(nid, index);
+      uint32_t eid = tvm_graph_.entry_id(nid, index);
       // args.push_back(const_cast<DLTensor*>(data_entry_[eid].operator->()));
       sta::STensor data_entry_view_tensor = data_entry_[eid];
       args.push_back(data_entry_view_tensor.MutableDLTensor());
@@ -832,7 +834,7 @@ void Executor::SetupOpExecs() {
     std::tie(op_execs_[nid], op_args) = CreateTVMOp(inode.param, args);
 
     for (size_t i = 0; i < inode.inputs.size(); i++) {
-      uint32_t input_eid = entry_id(inode.inputs[i]);
+      uint32_t input_eid = tvm_graph_.entry_id(inode.inputs[i]);
       if (input_node_eids.count(input_eid)) {
         input_dltensors_[input_eid].push_back(
             static_cast<DLTensor*>(op_args->arg_values[i].v_handle));
@@ -844,7 +846,7 @@ void Executor::SetupOpExecs() {
     }
 
     for (uint32_t i = inode.inputs.size(); i < inode.inputs.size() + inode.param.num_outputs; i++) {
-      uint32_t output_eid = this->entry_id(nid, i - inode.inputs.size());
+      uint32_t output_eid = this->tvm_graph_.entry_id(nid, i - inode.inputs.size());
       if (output_node_eids.count(output_eid)) {
         output_dltensors_[output_eid].push_back(
             static_cast<DLTensor*>(op_args->arg_values[i].v_handle));

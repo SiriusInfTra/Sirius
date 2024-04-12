@@ -255,6 +255,13 @@ class TVMGraph {
 
   inline size_t GetModelRank() const { return model_rank_; }
 
+  uint32_t entry_id(NodeEntry e) const {
+    return node_row_ptr_[e.node_id] + e.index;
+  }
+  uint32_t entry_id(uint32_t nid, uint32_t index) const {
+    return node_row_ptr_[nid] + index;
+  }
+
   static std::map<std::string, TVMArray> LoadParamsAsTVMArray(const std::string &params_file);
 
   // void ResetParamStorage();
@@ -338,7 +345,7 @@ class TVMGraph {
   std::map<std::string, uint32_t> node_map_;
   std::map<std::string, uint32_t> input_map_;
   std::map<std::string, uint32_t> output_map_;
-  std::map<uint32_t, TVMArray> params_;
+  std::map<uint32_t, TVMArray> params_; // data entry id -> TVMArray
   
   // std::vector<size_t> storage_group_parti_;
   

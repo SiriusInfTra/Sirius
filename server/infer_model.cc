@@ -12,7 +12,7 @@
 #include <vector>
 #include "common/util.h"
 
-
+constexpr bool SKIP_MULTI_OUTPUT = false;
 
 namespace colserve {
 
@@ -134,14 +134,22 @@ void Model::InitMetaInfo() {
   for (const auto &kv : shape_info) {
     auto shape = shape_info[kv.first];
     auto dtype = dtype_info[kv.first];
-    output_info_[kv.first] = std::make_pair(shape, dtype);
     std::stringstream ss;
     for (size_t i = 0; i < shape.size(); i++)
       ss << shape[i] << " ";
     LOG_IF(INFO, Config::log_model_init_info) 
         << "[Model Init] Output: " << name_ << " " << kv.first 
         << " shape [ " << ss.str()  << "] dtype " << dtype;
-    CHECK_EQ(shape[0], batch_size_) << "batch size mismatch";
+    
+    CHECK_EQ(shape[0], batch_size_)
+        << "[Model Init] Output: " << name_ << " " << kv.first  
+        << ", batch size mismatch";
+    if (SKIP_MULTI_OUTPUT && !output_info_.empty()) {
+      LOG(INFO) << "[Model Init] Output: " << name_ << " " << kv.first 
+                << ", multi output, skiped in output_info_";
+    } else {
+      output_info_[kv.first] = std::make_pair(shape, dtype);
+    }
   }
 }
 
