@@ -13,8 +13,9 @@ run_colsys  = False
 run_um_mps = False
 run_task_switch = False
 run_static_partition = False
+run_static_partition_I = False
+run_static_partition_F = False
 run_infer_only = False
-
 
 enable_uniform = False
 enable_skewed = False
@@ -29,6 +30,8 @@ parser.add_argument('--colsys', action='store_true')
 parser.add_argument('--um-mps', action='store_true')
 parser.add_argument('--task-switch', action='store_true')
 parser.add_argument('--static-partition', action='store_true')
+parser.add_argument('--static-partition-i', action='store_true')
+parser.add_argument('--static-partition-f', action='store_true')
 parser.add_argument('--infer-only', action='store_true')
 parser.add_argument('--uniform', action='store_true')
 parser.add_argument('--skewed', action='store_true')
@@ -47,6 +50,12 @@ if args.task_switch or args.all_sys:
     run_task_switch = True
 if args.static_partition or args.all_sys:
     run_static_partition = True
+    run_static_partition_I = True
+    run_static_partition_F = True
+if args.static_partition_i or args.all_sys:
+    run_static_partition_I = True
+if args.static_partition_f or args.all_sys:
+    run_static_partition_F = True
 if args.infer_only or args.all_sys:
     run_infer_only = True
 
@@ -260,6 +269,7 @@ def run(system: System, workload: HyperWorkload, server_model_config: str, unit:
             _run(system, workload, server_model_config, unit, tag)
         except Exception as e:
             print(f"\n\x1b[33;1m### Skip {unit} {tag}: {e} ###\x1b[0m")
+            time.sleep(1)
     else:
         _run(system, workload, server_model_config, unit, tag)
 
@@ -484,6 +494,10 @@ for tag, item in {
 }.items():
     if not run_static_partition:
         break
+    if tag == 'F' and not run_static_partition_F:
+        continue
+    if tag == 'I' and not run_static_partition_I:
+        continue
     system_config, workload_config = item
     if UniformConfig.enable and UniformConfig.high_load.enable:
         with mps_thread_percent(UniformConfig.high_load.mps_infer):
