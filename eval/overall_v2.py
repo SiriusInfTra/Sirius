@@ -90,7 +90,7 @@ class UniformConfig:
     model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
                   InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
                   InferModel.ResNet152, InferModel.DistilGPT2] 
-    num_model = 60
+    num_model = 64
     interval_sec = 20
     duration = 120
     port = str(18100 + (os.getpid() % 10) * 10)
@@ -116,7 +116,7 @@ class SkewedConfig:
     model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
                   InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
                   InferModel.ResNet152, InferModel.DistilGPT2] 
-    num_model = 60
+    num_model = 64
     interval_sec = 20
     duration = 120
     zipf_aplha = 1.2 # large alpha -> more skewed
@@ -135,7 +135,7 @@ class AzureConfig:
     model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
                   InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
                   InferModel.ResNet152, InferModel.DistilGPT2] 
-    num_model = 60
+    num_model = 64
     interval_sec = 5
     duration = 180 
     period_num = duration // interval_sec
