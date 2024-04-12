@@ -25,7 +25,7 @@
 #include <utility>
 
 namespace colserve::sta {
-static const constexpr size_t VA_RESERVE_SCALE = 16;
+static const constexpr size_t VA_RESERVE_SCALE = 25;
 
 namespace alloc_conf {
 

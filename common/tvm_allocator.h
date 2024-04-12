@@ -27,7 +27,7 @@ namespace colserve::sta {
 class TVMAllocator : public GenericAllocator {
 public:
   static const constexpr size_t ALIGN_NBYTES = 16_MB;
-  static const constexpr size_t DUPLICATE_SHUFFLE_K = 1;
+  static const constexpr size_t DUPLICATE_SHUFFLE_K = 25;
   static_assert(VA_RESERVE_SCALE >= DUPLICATE_SHUFFLE_K, "Must reserve enough virtual memory for duplicate shuffle.");
 
   static size_t AlignNBytes(size_t nbytes) {
@@ -39,17 +39,30 @@ private:
   std::mutex mutex_;
   std::vector<std::vector<size_t>> duplicate_shuffle_map_;
 
+std::vector<size_t> Shuffle(const std::vector<size_t> &arr, size_t k, std::mt19937 &rng) {
+    CHECK_EQ(arr.size() % k, 0) << arr.size();
+    std::vector<size_t> index(arr.size() / k);
+    std::iota(index.begin(), index.end(), 0);
+    std::shuffle(index.begin(), index.end(), rng);
+    std::vector<size_t> shuffledArr(arr.size());
+    for (size_t i = 0; i < arr.size(); ++i) {
+        shuffledArr[i] = arr[index[i / k] * k  + i % k];
+    }
+    return shuffledArr;
+}
+
   void InitDuplicate() {
     size_t phy_num = mempool_.GetPhyMemList().size(); // number of physical memory pages
     size_t vir_num = phy_num * DUPLICATE_SHUFFLE_K;   // number of virtual memory pages
     size_t vir_num_per = DUPLICATE_SHUFFLE_K;         // number of virtual memory pages per physical memory pages
     duplicate_shuffle_map_ = std::vector<std::vector<size_t>>(vir_num, std::vector<size_t>(vir_num_per));
-    // init
+    // init;
+    std::mt19937 rng{42};
     for (size_t k = 0; k < vir_num_per; ++k) {
       std::vector<size_t> map_to(phy_num);
       std::iota(map_to.begin(), map_to.end(), k * phy_num);
       if (k != 0) { 
-        std::shuffle(map_to.begin(), map_to.end(), std::mt19937{42});
+        map_to = Shuffle(map_to, 2, rng);
       }
       for (size_t i = 0; i < phy_num; ++i) { 
         duplicate_shuffle_map_[i][k] = map_to[i]; 
