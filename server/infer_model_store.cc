@@ -135,7 +135,7 @@ void WarmModelCache::ReserveCacheInternal(
   CHECK(model != nullptr);
 
   std::stringstream ss;
-  ss << "[InferModelCache] " << "reserve " << model_name;
+  ss << "[WarmModelCache] " << "reserve " << model_name;
 
   // 1. already cached
   if (infer_model_cache_->warm_cache_[model_name]->cached) {

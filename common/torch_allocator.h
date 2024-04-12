@@ -6,6 +6,7 @@
 #include <common/util.h>
 
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
+#include <boost/interprocess/sync/lock_options.hpp>
 #include <boost/interprocess/sync/scoped_lock.hpp>
 
 #include <atomic>
@@ -27,7 +28,8 @@ namespace colserve::sta {
 
 class TorchAllocator : public GenericAllocator {
 public:
-  static const constexpr size_t ALIGN_NBYTES = 512_B; 
+  static const constexpr size_t ALIGN_NBYTES = 512_B;
+  static const constexpr size_t FIND_ALLOC_RETRY = 50;
 
 private:
   static std::unique_ptr<TorchAllocator> instance_;
@@ -91,7 +93,7 @@ private:
     }
     entry_list_.IterateRange(0, mempool_.mempool_nbytes, [&](MemEntry *entry){
       bool is_alloc = entry->is_alloc;
-      entry_list_.UpdateAllocFlag(entry);
+      entry_list_.UpdateAllocFlag(entry); /* maybe transform is_alloc: true -> false */
       CHECK((is_alloc == false && entry->is_alloc == false) || is_alloc == true) << entry << " " << is_alloc;
       return entry;
     });
@@ -208,16 +210,19 @@ private:
       entry = MaybeMerge(entry);
     } else {
       entry = free_list_large_.PushFreeEntry(entry);
-      auto *prev_entry = entry_list_.GetPrevEntry(entry);
-      if (prev_entry && prev_entry->is_small && prev_entry->is_free && prev_entry->is_alloc) {
+
+      if (auto *prev_entry = entry_list_.GetPrevEntry(entry); prev_entry 
+        && prev_entry->is_small && prev_entry->is_free && prev_entry->is_alloc
+      ) {
         size_t prev_entry_nbytes = prev_entry->nbytes;
         auto *maybe_merged_entry = MaybeMerge(prev_entry);
         if (maybe_merged_entry->nbytes > prev_entry_nbytes) {
           entry = maybe_merged_entry;
         }
       }
-      auto *next_entry = entry_list_.GetNextEntry(entry);
-      if (next_entry && next_entry->is_small && next_entry->is_free && next_entry->is_alloc) {
+      if (auto *next_entry = entry_list_.GetNextEntry(entry); next_entry 
+        && next_entry->is_small && next_entry->is_free && next_entry->is_alloc
+      ) {
         size_t next_entry_nbytes = next_entry->nbytes;
         auto *maybe_merged_entry = MaybeMerge(next_entry);
         if (maybe_merged_entry->nbytes > next_entry_nbytes) {
@@ -240,12 +245,15 @@ private:
     MemEntry *free_entry = nullptr;
     // 1. normal case, alloc in train small/large mem pool
     if (nbytes < small_block_nbytes_) {
-      free_entry = free_list_small_.PopFreeEntry(nbytes, true, 50);
+      free_entry = free_list_small_.PopFreeEntry(nbytes, true, FIND_ALLOC_RETRY);
       CHECK(!alloc_conf::ALWAYS_CHECK_STATE || free_entry == nullptr || CheckState());
     }
-    if (free_entry == nullptr && (free_entry = free_list_large_.PopFreeEntry(nbytes, false, 50)) != nullptr) {
+    if (free_entry == nullptr && (free_entry = free_list_large_.PopFreeEntry(nbytes, false, FIND_ALLOC_RETRY)) != nullptr) {
       free_entry = Split(free_entry, free_entry->addr_offset, nbytes);
       CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
+    }
+    if (!lock.owns()) {
+      lock.lock();
     }
     // 2. find global free phy page to enlarge train memory pool 
     if (free_entry == nullptr && retry_alloc) {
@@ -321,7 +329,7 @@ public:
   }
 
   std::byte *Alloc(size_t nbytes) {
-    bip::scoped_lock lock{mempool_.GetMutex()};
+    bip::scoped_lock lock{mempool_.GetMutex(), bip::defer_lock};
     return base_ptr_ + Alloc0(nbytes, true, lock)->addr_offset;
   }
   

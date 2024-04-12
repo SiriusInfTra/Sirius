@@ -35,9 +35,10 @@ std::pair<double, double> TrainLauncher::GetModelMemParam() {
       
         AFTER EMPTY CACHE: 0.81 ~ 1.22
       */
+      // NOTE: DID NOT consider grad checkpoint
       return {1150, 85};
     } else if (cur_model_name_ == "swin_b") {
-      return {1350, 135};
+      return {1700, 140};
     } else if (cur_model_name_ == "gpt2") {
       /*
        
