@@ -58,6 +58,7 @@ class Model {
   // }
 
   friend class InferModelStore;
+  friend class WarmModelCache;
   
  private:
   bool AddJob(network::InferHandler::InferData* data);

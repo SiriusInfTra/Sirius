@@ -161,11 +161,12 @@ void WarmModelCache::ReserveCacheInternal(
     size_t reclaim_nbytes = 0;
     ss << " | evict";
     for (auto cm : coldest_model) {
-      if (nbytes > Config::max_warm_cache_nbytes + reclaim_nbytes) {
+      if (nbytes > Config::max_warm_cache_nbytes + reclaim_nbytes && cm != model) {
         auto &cm_name = cm->GetName();
-        // auto cold_cache_lock = ColdModelCache::Get().Lock();
-        std::unique_lock model_lock{infer_model_cache_->warm_cache_[cm_name]->mut};
-        bool res = cm->ReclaimMemory(rank, model_lock, model_lock);
+        auto cold_cache_lock = ColdModelCache::Get().Lock();
+        std::unique_lock warm_lock{infer_model_cache_->warm_cache_[cm_name]->mut};
+        std::unique_lock model_lock{cm->muts_[rank]};
+        bool res = cm->ReclaimMemory(rank, cold_cache_lock, model_lock);
         if (res) {
           ss << " " << cm_name << "(hot=" << cm->GetHotness() << ")";
           infer_model_cache_->warm_cache_[cm_name]->cached = false;
@@ -447,7 +448,7 @@ void InferModelStore::ColocateMonitor() {
         const int rank = 0;
         auto cold_cache_lock = ColdModelCache::Get().Lock();
         std::unique_lock<std::mutex> model_lock{model->muts_[rank]};
-        bool res = model->ReclaimMemory(0, cold_cache_lock, model_lock);
+        bool res = model->ReclaimMemory(rank, cold_cache_lock, model_lock);
         if (res) {
           num_exit++;
           LOG(INFO) << "[InferModelStore] " << model_name << " reclaim memory"
