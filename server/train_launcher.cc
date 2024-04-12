@@ -52,6 +52,8 @@ std::pair<double, double> TrainLauncher::GetModelMemParam() {
         AFTER EMPTY CACHE: 2.4 ~ 2.9 
        */
       return {2700, 490}; 
+    } else if (cur_model_name_ == "bert_large") {
+      LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }

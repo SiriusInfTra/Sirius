@@ -69,7 +69,7 @@ def allocated_memory(device_id):
     return torch.cuda.memory_reserved(device_id) / 1024 / 1024 / 1024
 
 def train():
-    seq_len = 512
+    seq_len = 256
     dataset_size = 128 * 10
     dummy_data = {
         "input_ids": np.random.randint(100, 30000, (dataset_size, seq_len)),
@@ -78,11 +78,12 @@ def train():
     dataset = Dataset.from_dict(dummy_data)
     dataset.set_format("pt")
     
-    batch_size = 4
+    batch_size = 16
     dataloader = DataLoader(dataset, shuffle=False, batch_size=batch_size)
 
     # model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=5)
     model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=5)
+    # model = AutoModelForSequenceClassification.from_pretrained("google-bert/bert-large-uncased", num_labels=5)
     model = model.cuda(0)
     for param in model.parameters():
         IntermMemoryStat.model_param_add(param)
@@ -95,8 +96,8 @@ def train():
     # eval_batch_size = [64, 32, 16, 8, 4]
     # eval_batch_size = [32, 16, 8, 4]
     # eval_batch_size = [28, 16, 8, 4, 1]
-    # eval_batch_size = [16, 8, 4, 1]
-    eval_batch_size = [batch_size, ]
+    eval_batch_size = [16, 8, 4, 1]
+    # eval_batch_size = [batch_size, ]
     epoch_micro_batch_size = [batch_size, ] # warmup
     for bs in eval_batch_size:
         epoch_micro_batch_size.extend([bs] * 3)

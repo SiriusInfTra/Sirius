@@ -114,10 +114,10 @@ def train():
 
             images = images.cuda(non_blocking=True)
             targets = targets.cuda(non_blocking=True)
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=False)
             for mb in range(128 // mbs):
                 IntermMemoryStat.reset()
-                with torch.cuda.amp.autocast():
+                with torch.cuda.amp.autocast(cache_enabled=False):
                     outputs = model(images[mb * mbs: (mb + 1) * mbs])
                     loss = criterion(outputs, targets[mb * mbs: (mb + 1) * mbs])
                 scaler.scale(loss).backward()

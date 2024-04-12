@@ -12,7 +12,9 @@ import timm
 
 import transformers
 from transformers import ViTForImageClassification
+from transformers import AutoImageProcessor, AutoModelForImageClassification
 
+platform = 'v100'
 
 batch_size = 1
 model_store = "server/models"
@@ -25,10 +27,12 @@ tmp_dir = tempfile.gettempdir()
 # vit_s_16 = ViTForImageClassification.from_pretrained('WinKawaks/vit-small-patch16-224')
 
 model_name = 'swin_t'
-swin_t = models.swin_t(weights=models.Swin_T_Weights.DEFAULT).eval()
+# swin_t = models.swin_t(weights=models.Swin_T_Weights.DEFAULT).eval()
+
+model = AutoModelForImageClassification.from_pretrained("microsoft/swin-tiny-patch4-window7-224")
 
 
-torch.onnx.export(swin_t, torch.rand(batch_size, 3, 224, 224), 
+torch.onnx.export(model, torch.rand(batch_size, 3, 224, 224), 
                   f"{tmp_dir}/{model_name}.onnx",verbose=False,
                   input_names=["input"], output_names=["output"], 
                   export_params=True)
@@ -39,12 +43,12 @@ torch.onnx.export(swin_t, torch.rand(batch_size, 3, 224, 224),
 tvmc_model = tvmc.load(f"{tmp_dir}/{model_name}.onnx", 
                        shape_dict={'input':[batch_size, 3, 224, 224]})
 
-# tune_records = f'{tmp_dir}/{model_name}-tune.json'
+# tune_records = f'./{model_name}-tune-{platform}.json'
 # tvmc.tune(tvmc_model=tvmc_model, target='cuda', 
 #           tuning_records=tune_records, 
 #           enable_autoscheduler=False)
 
-tune_records = f"util/prepare_model_store/{model_name}-tune.json"
+tune_records = f"util/prepare_model_store/{model_name}-tune-{platform}.json"
 # tune_records = None
 tvmc.compile(tvmc_model=tvmc_model, target='cuda', package_path=f"{tmp_dir}/{model_name}-tvm.tar",
              tuning_records=tune_records)
