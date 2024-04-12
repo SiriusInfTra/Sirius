@@ -36,9 +36,11 @@ class Model {
 
   size_t NumJobs() { return job_queue_.NumJobs(); }
 
-  bool ReclaimMemory(size_t rank, std::unique_lock<std::mutex> &cold_cache_lock, std::unique_lock<std::mutex> &model_lock);
+  bool ReclaimMemory(size_t rank, std::unique_lock<std::mutex> &cold_cache_lock, 
+                  std::unique_lock<std::mutex> &model_lock, Model *source_model);
 
-  void ClearColdCache(const std::vector<size_t> &cold_cached_group_id, int rank, std::unique_lock<std::mutex> &cold_cache_lock);
+  void ClearColdCache(const std::vector<size_t> &cold_cached_group_id, int rank,
+                                  std::unique_lock<std::mutex> &cold_cache_lock);
 
   const std::string &GetName() { return name_; }
   double GetIdleMill(size_t rank) {
