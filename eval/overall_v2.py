@@ -98,9 +98,10 @@ class UniformConfig:
     train_dataset_size = 1000 
     train_epoch_time = 5 # used for predict number epoch
 
-    model_list = [InferModel.Swin_t, InferModel.ResNet152, 
-                  InferModel.EfficientNetV2_s, InferModel.DistilBertBase]
-    num_model = 60
+    model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
+                  InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
+                  InferModel.ResNet152, InferModel.DistilGPT2] 
+    num_model = 64
     interval_sec = 20
     duration = 120
     port = str(get_unique_port())
@@ -123,9 +124,10 @@ class SkewedConfig:
     train_dataset_size = 1000 
     train_epoch_time = 5 # used for predict number epoch
 
-    model_list = [InferModel.Swin_t, InferModel.ResNet152,
-                  InferModel.EfficientNetV2_s, InferModel.DistilBertBase]
-    num_model = 60
+    model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
+                  InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
+                  InferModel.ResNet152, InferModel.DistilGPT2] 
+    num_model = 64
     interval_sec = 20
     duration = 120
     zipf_aplha = 1.2 # large alpha -> more skewed
@@ -141,9 +143,10 @@ class AzureConfig:
     train_model = 'swin_b'
     train_batch_size = 72
 
-    model_list = [InferModel.Swin_t, InferModel.ResNet152,
-                  InferModel.EfficientNetV2_s, InferModel.DistilBertBase]
-    num_model = 60
+    model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
+                  InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
+                  InferModel.ResNet152, InferModel.DistilGPT2] 
+    num_model = 64
     interval_sec = 5
     duration = 180 
     period_num = duration // interval_sec
