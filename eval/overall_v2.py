@@ -15,6 +15,7 @@ run_task_switch = False
 run_static_partition = False
 run_infer_only = False
 
+
 enable_uniform = False
 enable_skewed = False
 enable_azure = False
@@ -31,6 +32,7 @@ parser.add_argument('--static-partition', action='store_true')
 parser.add_argument('--infer-only', action='store_true')
 parser.add_argument('--uniform', action='store_true')
 parser.add_argument('--skewed', action='store_true')
+parser.add_argument('--strawman', action='store_true')
 parser.add_argument('--azure', action='store_true')
 parser.add_argument('--all-sys', action='store_true')
 parser.add_argument('--all-workload', action='store_true')
@@ -582,4 +584,5 @@ if run_infer_only:
                              client_model_list=client_model_list, infer_only=True)
             system = System(port=AzureConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-azure", f"infer-only{mps_tag}")
-            
+
+
