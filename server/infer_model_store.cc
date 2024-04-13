@@ -342,6 +342,22 @@ void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
   LOG(INFO) << "InferModelStore initialized";
 }
 
+bool InferModelStore::Shutdown() { 
+  std::stringstream ss;
+  ss << "\n[Model Hotness]: \n";
+  int i = 0;
+  for (auto & [model_name, model] : infer_model_store_->models_) {
+    i++;
+    ss << "[" << model_name << " " << model->GetHotness() << "] ";
+    if (i % 5 == 0) {
+      ss << "\n";
+    }
+  }
+  LOG(INFO) << ss.str();
+
+  return true; 
+}
+
 void InferModelStore::WarmupDone() {
   infer_model_store_->warmup_done_ = true;
   LOG(INFO) << "[InferModelStore] warmup done, num ready model "

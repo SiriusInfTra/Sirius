@@ -230,7 +230,7 @@ class InferModelStore {
   static InferModelStore* Get();
   static void Init(const std::filesystem::path &infer_store_path);
   static bool Initialized() { return Get()->initialized_; }
-  static bool Shutdown() { return true; }
+  static bool Shutdown();
 
   static void WarmupDone();
   static bool AddJob(const std::string &model_name, 
