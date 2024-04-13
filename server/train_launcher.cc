@@ -121,8 +121,8 @@ bool TrainLauncher::AddJob(network::TrainHandler::TrainData* data) {
   return true;
 }
 
-double TrainLauncher::PredictMemUsageMB() {
-  LOG(INFO) << "Predict train memory, target batch size " << target_batch_size_;
+double TrainLauncher::PredictMemUsageMB(bool verbose) {
+  LOG_IF(INFO, verbose) << "Predict train memory, target batch size " << target_batch_size_;
   if (target_batch_size_ <= 0) {
     return 0;
   } else {

@@ -205,7 +205,7 @@ Profiler::Profiler(const std::string &profile_log_path)
       //                        << " InferMem " << GetMemString(infer_mem)
       //                        << " TrainMem " << GetMemString(train_mem)
       //                        << std::endl;
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
   }));
 }

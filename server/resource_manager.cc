@@ -10,13 +10,13 @@ namespace colserve {
 
 std::unique_ptr<ResourceManager> ResourceManager::resource_manager_;
 
-double ResourceManager::GetFreeMemoryMB() {
+double ResourceManager::GetFreeMemoryMB(bool verbose) {
   using namespace sta;
 
   double free_memory_mb;
   double infer_memory_mb = GetInferMemoryMB();
   double train_memory_mb = GetTrainMemoryMB();
-  double train_predict_memory_mb = TrainLauncher::Get()->PredictMemUsageMB();
+  double train_predict_memory_mb = TrainLauncher::Get()->PredictMemUsageMB(verbose);
 
   if (Config::use_shared_tensor) {
     free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::PoolNbytes());
@@ -32,16 +32,16 @@ double ResourceManager::GetFreeMemoryMB() {
     );
   }
 
-  LOG(INFO) << "[ResourceManager] "
-            << " infer memory " << infer_memory_mb 
-            << " train memory " << train_memory_mb 
-            << " predict train memory " << train_predict_memory_mb
-            << " free memory " << free_memory_mb;
+  LOG_IF(INFO, verbose) << "[ResourceManager] "
+                        << " infer memory " << infer_memory_mb 
+                        << " train memory " << train_memory_mb 
+                        << " predict train memory " << train_predict_memory_mb
+                        << " free memory " << free_memory_mb;
             
   return free_memory_mb;
 }
 
-double ResourceManager::GetTrainAvailMemoryMB() {
+double ResourceManager::GetTrainAvailMemoryMB(bool verbose) {
   using namespace sta;
 
   double infer_memory_mb = GetInferMemoryMB();
@@ -60,9 +60,9 @@ double ResourceManager::GetTrainAvailMemoryMB() {
     );
   }
 
-  LOG(INFO) << "[ResourceManager]"
-            << " free memory " << free_memory_mb
-            << " infer memory " << infer_memory_mb;
+    LOG_IF(INFO, verbose) << "[ResourceManager]"
+                          << " free memory " << free_memory_mb
+                          << " infer memory " << infer_memory_mb;
 
   return free_memory_mb;  
 }

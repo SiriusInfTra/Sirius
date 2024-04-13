@@ -608,7 +608,7 @@ ColdModelCache::evict_list ColdModelCache::GetEvictModels(long capacity, std::ar
 }
 
 double ColdModelCache::GetBufferMBUnsafe() {
-  auto buffer_mb = ResourceManager::GetFreeMemoryMB();
+  auto buffer_mb = ResourceManager::GetFreeMemoryMB(false);
   auto cold_cache_nbytes = current_cached_nbytes_;
   if (cold_cache_nbytes > Config::cold_cache_min_capability_nbytes) {
     buffer_mb += sta::ByteToMB(cold_cache_nbytes - Config::cold_cache_min_capability_nbytes);
