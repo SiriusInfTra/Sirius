@@ -181,6 +181,8 @@ class CustomeDynamicBatchDataset(IterableDataset):
     
     def cancel_micro_batch(self):
         self.batch_event.tag = 'cancel'
+        EventManager.record_event('', self.batch_event)
+        # self.batch_event = None # to be check 
         if self.enable_accumulation and not self.checkpoint_micro_batch:
             self.rollback_micro_batch()
 
