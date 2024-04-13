@@ -585,7 +585,7 @@ if run_infer_only:
             system = System(port=UniformConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-uniform", f"infer-only-low{mps_tag}")
 
-    if SkewedConfig.enable and UniformConfig.high_load.enable:
+    if SkewedConfig.enable and SkewedConfig.high_load.enable:
         with mps_thread_percent(SkewedConfig.high_load.mps_infer, skip=infer_only_without_mps):
             client_model_list, server_model_config = InferModel.get_multi_model(
                 SkewedConfig.model_list, SkewedConfig.num_model, 1)
