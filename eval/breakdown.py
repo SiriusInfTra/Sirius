@@ -5,8 +5,11 @@ from dataclasses import dataclass
 import run_comm
 
 run_comm.use_time_stamp = True
-run_comm.retry_if_fail = False
-run_comm.skip_fail = False
+run_comm.retry_if_fail = True
+run_comm.skip_fail = True
+
+run_comm.UniformConfig.duration = 300
+run_comm.SkewedConfig.duration = 300
 
 # run_comm.fake_launch = True
 
@@ -51,7 +54,7 @@ class UniformConfig:
 
     model_list = [InferModel.ResNet152]
     num_model = 32
-    interval_sec = run_comm.UniformConfig.duration
+    interval_sec = run_comm.UniformConfig.interval_sec
     duration = run_comm.UniformConfig.duration
     port = str(run_comm.get_unique_port())
     enable = enable_uniform
