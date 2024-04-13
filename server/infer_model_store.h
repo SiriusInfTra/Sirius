@@ -162,6 +162,8 @@ class ColdModelCache {
 
   double GetBufferMBUnsafe();
 
+  double GetCacheSizeMBUnsafe();
+
 
   inline double GetColdCacheFreeMemoryMB(double free_memory_MB, std::unique_lock<std::mutex> &lock) {
     if (current_cached_nbytes_ > Config::cold_cache_min_capability_nbytes){

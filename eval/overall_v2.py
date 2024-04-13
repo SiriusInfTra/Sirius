@@ -20,6 +20,7 @@ run_infer_only = False
 enable_uniform = False
 enable_skewed = False
 enable_azure = False
+enable_hybrid = False
 
 # should be false to eval infer-only
 infer_only_without_mps = False
@@ -35,6 +36,7 @@ parser.add_argument('--static-partition-f', action='store_true')
 parser.add_argument('--infer-only', action='store_true')
 parser.add_argument('--uniform', action='store_true')
 parser.add_argument('--skewed', action='store_true')
+parser.add_argument('--hybrid', action='store_true')
 parser.add_argument('--strawman', action='store_true')
 parser.add_argument('--azure', action='store_true')
 parser.add_argument('--all-sys', action='store_true')
@@ -67,6 +69,8 @@ if args.skewed or args.all_workload:
     enable_skewed = True
 if args.azure or args.all_workload:
     enable_azure = True
+if args.hybrid or args.all_workload:
+    enable_hybrid = True
 
 if args.infer_only_without_mps:
     infer_only_without_mps = True
@@ -92,8 +96,8 @@ class LowLoad:
 class HybridLoad:
     high_rps = HighLoad.rps
     low_rps = LowLoad.rps
-    mps_infer: int = HighLoad.rps
-    mps_train: int = HighLoad.rps
+    mps_infer: int = HighLoad.mps_infer
+    mps_train: int = HighLoad.mps_train
     enable: bool = True
 
 def get_unique_port():
@@ -266,7 +270,7 @@ def _run(system: System, workload: HyperWorkload, server_model_config: str, unit
     
 
 def run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
-    print(f'[{unit} {tag}]')
+    print(f'\x1b[32;1m[{unit} {tag}]\x1b[0m')
     if skip_fail:
         try:
             _run(system, workload, server_model_config, unit, tag)
@@ -361,6 +365,21 @@ if run_colsys:
                             port=AzureConfig.port,
                             **system_config)
             run(system, workload, server_model_config, "overall-azure", "colsys")
+
+    # only used for profiling memory
+    if HybridLoad.enable:
+        def rps_fn(i, rps):
+            return HybridLoad.high_rps if i % 2 == 0 else HybridLoad.low_rps
+        with mps_thread_percent(HybridLoad.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                UniformConfig.model_list, UniformConfig.num_model, 1)
+            workload = uniform(rps=HybridLoad.high_rps, rps_fn=rps_fn,
+                               client_model_list=client_model_list, infer_only=False)
+            system = System(train_mps_thread_percent=HybridLoad.mps_train,
+                            port=UniformConfig.port,
+                            **system_config)
+            run(system, workload, server_model_config, "overall-hybrid", "colsys-hybrid")
+
 
 ## MARK: Task Switch
 if run_task_switch:

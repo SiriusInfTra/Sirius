@@ -620,6 +620,13 @@ double ColdModelCache::GetBufferMBUnsafe() {
   return std::max(0.0, buffer_mb);
 }
 
+double ColdModelCache::GetCacheSizeMBUnsafe() {
+  auto cold_cache_nbytes = current_cached_nbytes_;
+  auto free_memory_mb = ResourceManager::GetFreeMemoryMB(false);
+  return std::min(sta::ByteToMB(Config::cold_cache_max_capability_nbytes),
+                  sta::ByteToMB(cold_cache_nbytes) + free_memory_mb);
+}
+
 double ColdModelCache::GetReleaseReserveMemoryMB(std::unique_lock<std::mutex> &lock) {
   double cached_MB = sta::ByteToMB(current_cached_nbytes_);
   double min_cap_MB = sta::ByteToMB(Config::cold_cache_min_capability_nbytes);

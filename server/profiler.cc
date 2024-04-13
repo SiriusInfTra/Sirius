@@ -172,6 +172,7 @@ Profiler::Profiler(const std::string &profile_log_path)
       size_t cold_cache_nbytes = 0;
       double cold_cache_buffer_mb = 0;
       double infer_mem_in_cold_cache_buffer_mb = 0;
+      double cold_cache_size_mb = 0;
       if (!Config::use_shared_tensor || !Config::use_shared_tensor_train) {
         uint32_t info_cnt = max_info_cnt;
         NVML_CALL(nvmlDeviceGetComputeRunningProcesses_v3(device, &info_cnt, infos));
@@ -198,6 +199,7 @@ Profiler::Profiler(const std::string &profile_log_path)
           cold_cache_nbytes = ColdModelCache::Get().GetCachedNbytesUnsafe();
           cold_cache_buffer_mb = ColdModelCache::Get().GetBufferMBUnsafe();
           infer_mem_in_cold_cache_buffer_mb = ColdModelCache::Get().GetColdCacheReleasableMemoryMBUnsafe();
+          cold_cache_size_mb = ColdModelCache::Get().GetCacheSizeMBUnsafe();
         }
       }
       this->last_infer_mem_ = infer_mem;
@@ -207,7 +209,8 @@ Profiler::Profiler(const std::string &profile_log_path)
                        .train_all_mem = train_all_mem, .gpu_used_mem = total_mem, 
                        .cold_cache_nbytes = cold_cache_nbytes, 
                        .cold_cache_buffer_mb = cold_cache_buffer_mb,
-                       .infer_mem_in_cold_cache_buffer_mb = infer_mem_in_cold_cache_buffer_mb}});
+                       .infer_mem_in_cold_cache_buffer_mb = infer_mem_in_cold_cache_buffer_mb,
+                       .cold_cache_size_mb = cold_cache_size_mb}});
       this->infering_memory_nbytes_.push_back({this->Passed(), Profiler::GetTimeStamp(),
                                               InferModelStore::GetInferingModelNbytes()});
       // this->profile_log_ifs_ << this->Passed()
@@ -326,16 +329,17 @@ void Profiler::WriteLog() {
         << " | ColdCache " << GetMemString(std::get<2>(r).cold_cache_nbytes)
         << " ColdCacheBuffer " << std::get<2>(r).cold_cache_buffer_mb << " Mb"
         << " InferInColdCacheBuffer " << std::get<2>(r).infer_mem_in_cold_cache_buffer_mb << " Mb"
+        << " ColdCacheSize " << std::get<2>(r).cold_cache_size_mb << " Mb"
         << std::endl;
   }
   ofs << std::endl;
 
-  ofs << "[Infering Model Memory Info]" << std::endl;
-  for (auto &x : infering_memory_nbytes_) {
-    ofs << std::get<0>(x) << ": "
-        << std::get<1>(x) << ": "
-        << std::get<2>(x) << std::endl;
-  }
+  // ofs << "[Infering Model Memory Info]" << std::endl;
+  // for (auto &x : infering_memory_nbytes_) {
+  //   ofs << std::get<0>(x) << ": "
+  //       << std::get<1>(x) << ": "
+  //       << std::get<2>(x) << std::endl;
+  // }
 
   ofs << std::endl;
 

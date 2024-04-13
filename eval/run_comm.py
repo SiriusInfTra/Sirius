@@ -180,7 +180,7 @@ def _run(system: System, workload: HyperWorkload, server_model_config: str, unit
     
 
 def run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
-    print(f'[{unit} {tag}]')
+    print(f'\x1b[32;1m[{unit} {tag}]\x1b[0m')
     if skip_fail:
         try:
             _run(system, workload, server_model_config, unit, tag)

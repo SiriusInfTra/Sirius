@@ -8,7 +8,7 @@ run_comm.use_time_stamp = True
 run_comm.retry_if_fail = False
 run_comm.skip_fail = False
 
-run_comm.fake_launch = True
+# run_comm.fake_launch = True
 
 set_global_seed(42)
 
@@ -66,7 +66,7 @@ class SkewedConfig:
     train_batch_size = 72
     train_global_batch_size = 500 # not used, hard code for global batch size and dataset size
     train_dataset_size = 1000 
-    train_epoch_time = 5 # used for predict number epoch
+    train_epoch_time = 5.5 # used for predict number epoch
 
     model_list = [InferModel.ResNet152]
     num_model = 32
@@ -167,6 +167,17 @@ if run_colsys:
                             port=SkewedConfig.port,
                             **system_config)
             run_comm.run(system, workload, server_model_config, "breakdown-skewed", "colsys-high")
+
+    if SkewedConfig.enable and SkewedConfig.low_load.enable:
+        with mps_thread_percent(SkewedConfig.low_load.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                SkewedConfig.model_list, SkewedConfig.num_model, 1)
+            workload = skewed(rps=SkewedConfig.low_load.rps, 
+                              client_model_list=client_model_list, infer_only=False)
+            system = System(train_mps_thread_percent=SkewedConfig.low_load.mps_train,
+                            port=SkewedConfig.port,
+                            **system_config)
+            run_comm.run(system, workload, server_model_config, "breakdown-skewed", "colsys-low")
 
 
 ## MARK: Strawman
