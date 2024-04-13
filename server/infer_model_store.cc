@@ -161,10 +161,11 @@ void WarmModelCache::ReserveCacheInternal(
     size_t reclaim_nbytes = 0;
     ss << " | evict";
     for (auto cm : coldest_model) {
-      if (nbytes > Config::max_warm_cache_nbytes + reclaim_nbytes && cm != model) {
+      if (nbytes > Config::max_warm_cache_nbytes + reclaim_nbytes) { 
+        if (cm == model) { continue; }
         auto &cm_name = cm->GetName();
+        std::unique_lock warm_cache_lock{infer_model_cache_->warm_cache_[cm_name]->mut}; /* slow */
         auto cold_cache_lock = ColdModelCache::Get().Lock();
-        std::unique_lock warm_cache_lock{infer_model_cache_->warm_cache_[cm_name]->mut};
         std::unique_lock model_lock{cm->muts_[rank]};
         bool res = cm->ReclaimMemory(rank, cold_cache_lock, model_lock, model);
         if (res) {
