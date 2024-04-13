@@ -47,12 +47,12 @@ class UniformConfig:
     train_batch_size = 72
     train_global_batch_size = 500 # not used, hard code for global batch size and dataset size
     train_dataset_size = 1000 
-    train_epoch_time = 5 # used for predict number epoch
+    train_epoch_time = 5.5 # used for predict number epoch
 
     model_list = [InferModel.ResNet152]
     num_model = 32
-    interval_sec = 20
-    duration = 300
+    interval_sec = run_comm.UniformConfig.duration
+    duration = run_comm.UniformConfig.duration
     port = str(run_comm.get_unique_port())
     enable = enable_uniform
 
@@ -70,13 +70,13 @@ class SkewedConfig:
 
     model_list = [InferModel.ResNet152]
     num_model = 32
-    interval_sec = 20
-    duration = 300
+    interval_sec = run_comm.SkewedConfig.interval_sec
+    duration = run_comm.SkewedConfig.duration
     zipf_aplha = 1.05 # large alpha -> more skewed
     port = str(run_comm.get_unique_port())
     enable = enable_skewed
 
-    low_load = run_comm.LowLoad(enable=True)
+    low_load = run_comm.LowLoad(enable=False)
     high_load = run_comm.HighLoad(enable=True)
     hybrid_load = run_comm.HybridLoad(enable=False)
 
@@ -154,6 +154,7 @@ if run_colsys:
                                client_model_list=client_model_list, infer_only=False)
             system = System(train_mps_thread_percent=UniformConfig.high_load.mps_train,
                             port=UniformConfig.port,
+                            dump_adjust_info=True,
                             **system_config)
             run_comm.run(system, workload, server_model_config, "breakdown-uniform", "colsys-high")
 
@@ -165,6 +166,7 @@ if run_colsys:
                               client_model_list=client_model_list, infer_only=False)
             system = System(train_mps_thread_percent=SkewedConfig.high_load.mps_train,
                             port=SkewedConfig.port,
+                            dump_adjust_info=True,
                             **system_config)
             run_comm.run(system, workload, server_model_config, "breakdown-skewed", "colsys-high")
 
@@ -176,6 +178,7 @@ if run_colsys:
                               client_model_list=client_model_list, infer_only=False)
             system = System(train_mps_thread_percent=SkewedConfig.low_load.mps_train,
                             port=SkewedConfig.port,
+                            dump_adjust_info=True,
                             **system_config)
             run_comm.run(system, workload, server_model_config, "breakdown-skewed", "colsys-low")
 
@@ -205,6 +208,7 @@ if run_strawman:
                            client_model_list=client_model_list, infer_only=False)
         system = System(train_mps_thread_percent=UniformConfig.high_load.mps_train,
                         port=UniformConfig.port,
+                        dump_adjust_info=True,
                         **system_config)
         run_comm.run(system, workload, server_model_config, "breakdown-uniform", "strawman-high")
 
@@ -215,6 +219,7 @@ if run_strawman:
                           client_model_list=client_model_list, infer_only=False)
         system = System(train_mps_thread_percent=SkewedConfig.high_load.mps_train,
                         port=SkewedConfig.port,
+                        dump_adjust_info=True,
                         **system_config)
         run_comm.run(system, workload, server_model_config, "breakdown-skewed", "strawman-high")
 

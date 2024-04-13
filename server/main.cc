@@ -101,6 +101,10 @@ void init_cli_options() {
       "infer model max idle in ms, default is 3000");
   app.add_option("--has-warmup", colserve::Config::has_warmup,
       "has warmup, default is 0");
+  app.add_flag("--dump-adjust-info", colserve::Config::dump_adjust_info,
+      "dump adjust info, default is 0");
+  app.add_flag("--profiler-acquire-resource-lock", colserve::Config::profiler_acquire_resource_lock,
+      "profiler acquire resource lock during profiling, not use for performance eval");
   app.add_flag("--dummy-adjust", colserve::Config::dummy_adjust,
       "dummy adjust for eval, default is 0");
 
@@ -179,6 +183,7 @@ void init_config() {
   STREAM_OUTPUT(cold_cache_min_capability_nbytes);
   STREAM_OUTPUT(train_over_adjust_nbytes);
   STREAM_OUTPUT(cold_cache_ratio);
+  STREAM_OUTPUT(infer_model_max_idle_ms);
   STREAM_OUTPUT(colocate_config.skip_malloc);
   STREAM_OUTPUT(colocate_config.skip_loading);
 

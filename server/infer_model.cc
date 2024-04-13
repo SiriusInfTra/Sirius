@@ -170,6 +170,9 @@ bool Model::ReclaimMemory(size_t rank,
   if (status_[rank] == Status::kWithoutMemory) {
     return false; 
   }
+  if (Config::profiler_acquire_resource_lock) { // not used in performance test
+    ResourceManager::InferMemoryChangingLock();
+  }
   auto &executor = executors_[rank];
   auto &&[cached_groups_id, evict_group_list, succ] = ColdModelCache::Get()
     .PushCacheItem(name_, rank, executor->GetGroupsNbytes(), 
@@ -181,6 +184,9 @@ bool Model::ReclaimMemory(size_t rank,
   }
   executor->DeInit(cached_groups_id);
   ChangeStatus(rank, Status::kWithoutMemory);
+  if (Config::profiler_acquire_resource_lock) {
+    ResourceManager::InferMemoryChangingUnlock();
+  }
   return true;
 }
 

@@ -20,6 +20,7 @@ run_infer_only = False
 enable_uniform = False
 enable_skewed = False
 enable_azure = False
+enable_azure_profile_memory = False
 enable_hybrid = False
 
 # should be false to eval infer-only
@@ -39,6 +40,7 @@ parser.add_argument('--skewed', action='store_true')
 parser.add_argument('--hybrid', action='store_true')
 parser.add_argument('--strawman', action='store_true')
 parser.add_argument('--azure', action='store_true')
+parser.add_argument('--azure-profile-memory', action='store_true')
 parser.add_argument('--all-sys', action='store_true')
 parser.add_argument('--all-workload', action='store_true')
 parser.add_argument('--infer-only-without-mps', action='store_true')
@@ -69,6 +71,8 @@ if args.skewed or args.all_workload:
     enable_skewed = True
 if args.azure or args.all_workload:
     enable_azure = True
+if args.azure_profile_memory or args.all_workload:
+    enable_azure_profile_memory = True
 if args.hybrid or args.all_workload:
     enable_hybrid = True
 
@@ -98,7 +102,7 @@ class HybridLoad:
     low_rps = LowLoad.rps
     mps_infer: int = HighLoad.mps_infer
     mps_train: int = HighLoad.mps_train
-    enable: bool = True
+    enable: bool = enable_hybrid
 
 def get_unique_port():
     cuda_device = os.environ['CUDA_VISIBLE_DEVICES']
@@ -225,7 +229,7 @@ def skewed(rps, client_model_list, infer_only=True, rps_fn=None,
 
 def azure(rps, client_model_list, infer_only=True, rps_fn=None,
           train_model:str = AzureConfig.train_model, 
-          train_epoch:int = int(AzureConfig.duration / 3 + 5), 
+          train_epoch:int = int(AzureConfig.duration / 5.5 + 5), 
           train_batch_size:int = AzureConfig.train_batch_size):
     workload = HyperWorkload(concurrency=2048,
                              warmup=5,
@@ -366,6 +370,18 @@ if run_colsys:
                             **system_config)
             run(system, workload, server_model_config, "overall-azure", "colsys")
 
+    if enable_azure_profile_memory:
+        with mps_thread_percent(AzureConfig.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                AzureConfig.model_list, AzureConfig.num_model, 1)
+            workload = azure(rps=AzureConfig.max_rps, 
+                             client_model_list=client_model_list, infer_only=False)
+            system = System(train_mps_thread_percent=AzureConfig.mps_train,
+                            port=AzureConfig.port,
+                            profiler_acquire_resource_lock=True,
+                            **system_config)
+            run(system, workload, server_model_config, "overall-azure-memory-profile", "colsys")
+
     # only used for profiling memory
     if HybridLoad.enable:
         def rps_fn(i, rps):
@@ -377,6 +393,7 @@ if run_colsys:
                                client_model_list=client_model_list, infer_only=False)
             system = System(train_mps_thread_percent=HybridLoad.mps_train,
                             port=UniformConfig.port,
+                            profiler_acquire_resource_lock=True,
                             **system_config)
             run(system, workload, server_model_config, "overall-hybrid", "colsys-hybrid")
 

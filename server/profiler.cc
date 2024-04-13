@@ -191,15 +191,25 @@ Profiler::Profiler(const std::string &profile_log_path)
           infer_mem = sta::CUDAMemPool::InferMemUsage();
         }
       } else {
-        infer_mem = sta::CUDAMemPool::InferMemUsage();
-        train_mem = sta::CUDAMemPool::TrainMemUsage();
-        train_all_mem = sta::CUDAMemPool::TrainAllMemUsage();
-        total_mem = static_cast<size_t>(Config::cuda_memory_pool_gb * 1_GB);
-        if (Config::cold_cache_max_capability_nbytes != 0) {
-          cold_cache_nbytes = ColdModelCache::Get().GetCachedNbytesUnsafe();
-          cold_cache_buffer_mb = ColdModelCache::Get().GetBufferMBUnsafe();
-          infer_mem_in_cold_cache_buffer_mb = ColdModelCache::Get().GetColdCacheReleasableMemoryMBUnsafe();
-          cold_cache_size_mb = ColdModelCache::Get().GetCacheSizeMBUnsafe();
+        auto read_resource_info = [&]() {
+          infer_mem = sta::CUDAMemPool::InferMemUsage();
+          train_mem = sta::CUDAMemPool::TrainMemUsage();
+          train_all_mem = sta::CUDAMemPool::TrainAllMemUsage();
+          total_mem = static_cast<size_t>(Config::cuda_memory_pool_gb * 1_GB);
+          if (Config::cold_cache_max_capability_nbytes != 0) {
+            cold_cache_nbytes = ColdModelCache::Get().GetCachedNbytesUnsafe();
+            cold_cache_buffer_mb = ColdModelCache::Get().GetBufferMBUnsafe();
+            infer_mem_in_cold_cache_buffer_mb = ColdModelCache::Get().GetColdCacheReleasableMemoryMBUnsafe();
+            cold_cache_size_mb = ColdModelCache::Get().GetCacheSizeMBUnsafe();
+          }  
+        };
+        if (Config::profiler_acquire_resource_lock) {
+          auto cold_cache_lock = ColdModelCache::Get().Lock();
+          ResourceManager::InferMemoryChangingLock();
+          read_resource_info();
+          ResourceManager::InferMemoryChangingUnlock();
+        } else {
+          read_resource_info();
         }
       }
       this->last_infer_mem_ = infer_mem;
@@ -265,6 +275,8 @@ double Profiler::Passed() {
 
 void Profiler::WriteLog() {
   std::ofstream ofs{profile_log_path_};
+
+  double infer_avg_exec = -1;
   
   ofs << "[Perf Info] workload start time stamp " << workload_start_time_stamp_ 
       << " delay before profile " << delay_before_profile_ << " sec " << std::endl;
@@ -301,6 +313,9 @@ void Profiler::WriteLog() {
         << " p60 " << sorted[int(0.60 * sorted.size())]
         << " p50 " << sorted[int(0.50 * sorted.size())]
         << std::endl;
+    if (item == Profiler::PerfItem::InferExec) {
+      infer_avg_exec = avg;
+    }
   }
   for (int i = 0; i < static_cast<int>(Profiler::PerfItem::NumPerfItem); i++) {
     auto item = static_cast<Profiler::PerfItem>(i);
@@ -340,6 +355,41 @@ void Profiler::WriteLog() {
   //       << std::get<1>(x) << ": "
   //       << std::get<2>(x) << std::endl;
   // }
+
+  if (Config::dump_adjust_info) {
+    std::vector<Profiler::PerfItem> adjust_item = {
+      Profiler::PerfItem::TrainAdjust,
+      Profiler::PerfItem::InferAllocStorage,
+      Profiler::PerfItem::InferLoadParam,
+      Profiler::PerfItem::InferPipelineExec
+    };
+
+    ofs << "[Adjust Info]" << std::endl;
+    for (auto item : adjust_item) {
+      // auto item = static_cast<int>(key);
+      std::vector<double> item_perf_info;
+      for (auto &p : perf_info_[static_cast<int>(item)]) {
+        auto time_stamp = std::get<0>(p);
+        auto value = std::get<1>(p);
+        if (time_stamp > workload_start_time_stamp_ + static_cast<long>(delay_before_profile_ * 1000)) {
+          item_perf_info.push_back(value);
+        }
+      }
+      if (item_perf_info.empty()) {
+        ofs << item << ": no record after workload start profile time stamp" << std::endl;
+        continue;
+      }
+      ofs << item << ":\n";
+      for (size_t i = 0; i < item_perf_info.size(); i++) {
+        ofs << std::setw(5) << std::fixed << std::setprecision(1) 
+            << item_perf_info[i] << " ";
+        if ((i + 1) % 20 == 0) ofs << std::endl;
+      }
+      if (item_perf_info.size() % 20 != 0) ofs << std::endl;
+    }
+    ofs << Profiler::PerfItem::InferExec << " avg:\n";
+    ofs << std::fixed << std::setprecision(1) << infer_avg_exec << std::endl;
+  }
 
   ofs << std::endl;
 

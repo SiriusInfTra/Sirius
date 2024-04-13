@@ -81,6 +81,8 @@ class System:
                  train_memory_over_predict_mb: str | float = None,
                  infer_model_max_idle_ms : Optional[int] = None,
                  has_warmup: bool = False,
+                 dump_adjust_info: bool = False, # used for adjust break down
+                 profiler_acquire_resource_lock: bool = False, # used for better profiling memory
                  enable_warm_cache_fallback: bool = True, # used for switch and colocate mode
                  dummy_adjust: bool = False,
                  keep_last_time_stamp: bool = True,
@@ -120,6 +122,8 @@ class System:
         self.train_memory_over_predict_mb = train_memory_over_predict_mb
         self.infer_model_max_idle_ms = infer_model_max_idle_ms
         self.has_warmup = has_warmup
+        self.dump_adjust_info = dump_adjust_info
+        self.profiler_acquire_resource_lock = profiler_acquire_resource_lock
         self.dummy_adjust = dummy_adjust
         self.max_live_minute = max_live_minute
         self.dcgmi_monitor = None
@@ -233,6 +237,13 @@ class System:
             cmd += ["--has-warmup", "1"]
         else:
             cmd += ["--has-warmup", "0"]
+
+        if self.dump_adjust_info:
+            cmd += ["--dump-adjust-info"]
+
+        if self.profiler_acquire_resource_lock:
+            cmd += ["--profiler-acquire-resource-lock"]
+
 
         if self.dummy_adjust:
             cmd += ["--dummy-adjust"]
