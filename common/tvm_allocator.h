@@ -6,6 +6,9 @@
 
 #include <glog/logging.h>
 #include <algorithm>
+#include <boost/interprocess/sync/interprocess_mutex.hpp>
+#include <boost/interprocess/sync/lock_options.hpp>
+#include <boost/interprocess/sync/scoped_lock.hpp>
 #include <cstddef>
 #include <cstring>
 #include <iterator>
@@ -101,6 +104,7 @@ std::vector<size_t> Shuffle(const std::vector<size_t> &arr, size_t k, std::mt199
         CHECK(!entry1->is_small) << entry1 << entry;
         free_list_large_.PopFreeEntry(entry1);
         entry1 = Split(entry1, i * MEM_BLOCK_NBYTES, MEM_BLOCK_NBYTES);
+        entry1->is_train = entry->is_train;
       }
     }
   }
@@ -120,12 +124,14 @@ std::vector<size_t> Shuffle(const std::vector<size_t> &arr, size_t k, std::mt199
         CHECK_NE(entry1->rank, entry->rank) << entry1 << entry;
         CHECK(!entry1->is_free);
         CHECK(!entry1->is_small);
+        entry1->is_train = false;
         free_list_large_.PushFreeEntry(entry1);
       }
     }
   }
 
-  MemEntry *Alloc0(size_t nbytes) {
+  MemEntry *Alloc(size_t nbytes, bip::scoped_lock<bip::interprocess_mutex> &lock) {
+    CHECK(lock.owns());
     CHECK_GT(nbytes, 0);
     LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Alloc, nbytes = " << ByteDisplay(nbytes) << ".";
     nbytes = AlignNBytes(nbytes);
@@ -173,7 +179,8 @@ std::vector<size_t> Shuffle(const std::vector<size_t> &arr, size_t k, std::mt199
     return free_entry;
   }
 
-  MemEntry *Free0(MemEntry *entry) {
+  MemEntry *Free(MemEntry *entry, bip::scoped_lock<bip::interprocess_mutex> &lock) {
+    CHECK(lock.owns());
     CHECK(entry != nullptr);
     CHECK(!entry->is_free);
     size_t nbytes = entry->nbytes;
@@ -254,7 +261,7 @@ public:
   TVMAllocator(MemPool &mempool, bool for_train, bip::scoped_lock<bip::interprocess_mutex> &lock);
 
   // TO FIX: Sync is not good name
-  void SyncAllocTrain(const std::vector<PhyMem *> &phymem_list, bip::scoped_lock<bip::interprocess_mutex> &lock) {
+  void SyncAllocTrain_NOT_USE(const std::vector<PhyMem *> &phymem_list, bip::scoped_lock<bip::interprocess_mutex> &lock) {
     // TODO: awareness optimal 
     CHECK(lock.owns());
     LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "SyncAllocTrain: " << phymem_list.size();
@@ -269,7 +276,7 @@ public:
 
         if (entry->is_small) {
           DumpState();
-        CHECK(!entry->is_small) << entry;
+          CHECK(!entry->is_small) << entry;
         }
         entry = free_list_large_.PopFreeEntry(entry);
         entry = Split(entry, begin, end - begin);
@@ -280,7 +287,41 @@ public:
     }
   }
 
-  void SyncFreeTrain(const std::vector<PhyMem *> &phymem_list, bip::scoped_lock<bip::interprocess_mutex> &lock) {
+  std::vector<PhyMem *> AllocForTrain(size_t n, bip::scoped_lock<bip::interprocess_mutex> &lock) {
+    CHECK(lock.owns());
+    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Alloc for train "  << n << ".";
+    std::vector<PhyMem *> phy_mem_list;
+    for (size_t k = 0; k < n; ++k) {
+      auto *free_entry = free_list_large_.PopFreeEntry(MEM_BLOCK_NBYTES, true);
+      if (free_entry == nullptr) { break; }
+      free_entry->is_train = true;
+      CHECK_EQ(free_entry->addr_offset % MEM_BLOCK_NBYTES, 0);
+      size_t page_index = duplicate_shuffle_map_[free_entry->addr_offset / MEM_BLOCK_NBYTES][0];
+      phy_mem_list.push_back(&mempool_.GetPhyMemList()[page_index]);
+      AllocDuplicateEntry(free_entry);
+    }
+    mempool_.AllocSpecifiedPhyMem(phy_mem_list, Belong::kTrain);
+    mempool_.AddAllocatedNbytes(n * MEM_BLOCK_NBYTES, Belong::kTrain);
+    CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
+    return phy_mem_list;
+  }
+
+  void FreeForTrain(const std::vector<PhyMem *> &phy_mem_list, bip::scoped_lock<bip::interprocess_mutex> &lock) {
+    CHECK(lock.owns());
+    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Free for train " << phy_mem_list.size() << ".";
+    for (auto phy_mem : phy_mem_list) {
+      CHECK_EQ(*phy_mem->belong, Belong::kTrain);
+      auto *entry = entry_list_.GetEntry(phy_mem->index * MEM_BLOCK_NBYTES);
+      CHECK(entry != nullptr);
+      CHECK(entry->is_train) << entry;
+      CHECK_EQ(entry->nbytes, MEM_BLOCK_NBYTES);
+      Free(entry, lock);
+    }
+    mempool_.SubAllocatedNbytes(phy_mem_list.size() * MEM_BLOCK_NBYTES, Belong::kTrain);
+    mempool_.DeallocPhyMem(phy_mem_list);
+  }
+
+  void SyncFreeTrain_NOT_USE(const std::vector<PhyMem *> &phymem_list, bip::scoped_lock<bip::interprocess_mutex> &lock) {
     CHECK(lock.owns());
     LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "SyncFreeTrain: " << phymem_list.size();
     for (auto *phymem : phymem_list) {
@@ -291,7 +332,7 @@ public:
         CHECK_EQ(entry->nbytes, nbytes) << entry;
         CHECK(entry->is_train) << entry;
         CHECK(!entry->is_free) << entry;
-        entry = Free0(entry);
+        entry = Free(entry, lock);
         return entry;
       });
     }
@@ -303,12 +344,12 @@ public:
     bip::scoped_lock lock{mempool_.GetMutex()};
     auto *entry = entry_list_.GetEntry(addr - base_ptr_);
     CHECK(entry != nullptr);
-    Free0(entry);
+    Free(entry, lock);
   }
 
   std::byte *Alloc(size_t nbytes) {
     bip::scoped_lock lock{mempool_.GetMutex()};
-    return base_ptr_ + Alloc0(nbytes)->addr_offset;
+    return base_ptr_ + Alloc(nbytes, lock)->addr_offset;
   }
 };
 

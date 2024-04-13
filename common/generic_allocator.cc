@@ -212,6 +212,7 @@ MemEntry *FreeList::PopFreeEntryLarge(size_t nbytes) {
 
 MemEntry* FreeList::PushFreeEntry(MemEntry *entry) {
   CHECK_EQ(entry->is_free, false);
+  CHECK(policy_ == Belong::kTrain || !entry->is_train) << entry;
   CHECK_EQ(entry->is_small, is_small_);
   if (policy_ == Belong::kInfer && !is_small_) {
     CHECK_EQ(entry->addr_offset % MEM_BLOCK_NBYTES, 0);
@@ -283,6 +284,9 @@ bool FreeList::CheckState() {
     CHECK_EQ(entry->is_free, true);
     CHECK_EQ(entry->nbytes, nbytes);
     CHECK_EQ(entry->is_small, is_small_);
+    PopFreeEntry(entry);
+    entry = PushFreeEntry(entry);
+    CHECK_EQ(entry->nbytes, nbytes) << entry;
   }
   return true;
 }

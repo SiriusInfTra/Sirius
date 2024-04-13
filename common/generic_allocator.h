@@ -338,6 +338,7 @@ public:
       free_list_large_.DumpFreeList(handle);
       handle.close();
     }
+    CheckState();
   }
 
 

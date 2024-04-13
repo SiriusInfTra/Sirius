@@ -20,6 +20,7 @@
 #include <ostream>
 #include <list>
 #include <set>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -48,7 +49,7 @@ private:
     CHECK(planning_unmap_.empty());
   }
 
-  void ReleaseFreePhyMem(bip::scoped_lock<bip::interprocess_mutex> &lock) {
+  void ReleaseFreePhyMem(bip::scoped_lock<bip::interprocess_mutex> &defer_lock) {
     LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Release free physical memory.";
     size_t allocated_nbytes = 0;
     std::vector<int> ready_to_free_mask(mapped_mem_list_.size(), true);
@@ -98,8 +99,9 @@ private:
       return entry;
     });
     DLOG(INFO) << "ReleaseFreePhyMem 2";
-    mempool_.DeallocPhyMem(ready_to_free_mem);
-    TVMAllocator::Get().SyncFreeTrain(ready_to_free_mem, lock);
+    defer_lock.lock();
+    TVMAllocator::Get().FreeForTrain(ready_to_free_mem, defer_lock);
+    defer_lock.unlock();
     size_t physical_nbytes = std::count_if(
         mapped_mem_list_.cbegin(), 
         mapped_mem_list_.cend(), 
@@ -139,13 +141,13 @@ private:
         << "missing " << missing_phy_mem_index_list.size() 
         << " physical memory page(s), try allocate.";
     EnsureUnmap();
-    std::vector<PhyMem *> request_phy_mem_list = mempool_.AllocNumPhyMem( policy_, missing_phy_mem_index_list.size());
+    std::vector<PhyMem *> request_phy_mem_list = TVMAllocator::Get().AllocForTrain(missing_phy_mem_index_list.size(), lock);
     if (request_phy_mem_list.size() < missing_phy_mem_index_list.size()) {
       DumpState();
       TVMAllocator::Get().DumpState();
       LOG(FATAL) << log_prefix_ << "OOM while alloc phy mem page, entry = " << entry << ".";
     }
-    TVMAllocator::Get().SyncAllocTrain(request_phy_mem_list, lock);
+
     for (size_t k = 0; k < request_phy_mem_list.size(); ++k) {
       size_t phy_mem_index = missing_phy_mem_index_list[k];
       mapped_mem_list_[phy_mem_index] = request_phy_mem_list[k];
@@ -258,7 +260,8 @@ private:
     // 2. find global free phy page to enlarge train memory pool 
     if (free_entry == nullptr && retry_alloc) {
         size_t try_allocate_n = detail::AlignedNBytes<MEM_BLOCK_NBYTES * 8>(nbytes) / MEM_BLOCK_NBYTES;
-        std::vector<PhyMem *> phy_mem_list = mempool_.AllocNumPhyMem(policy_, try_allocate_n);
+        std::vector<PhyMem *> phy_mem_list = TVMAllocator::Get()
+          .AllocForTrain(try_allocate_n, lock);
         size_t allocated = phy_mem_list.size();
         LOG_IF(INFO, allocated < try_allocate_n) << log_prefix_ 
             << "Require " << try_allocate_n 
@@ -268,7 +271,6 @@ private:
           DumpState();
           LOG(FATAL) << log_prefix_  << "OOM while finding physical memory page, nbytes = " << ByteDisplay(nbytes) << ".";
         }
-        TVMAllocator::Get().SyncAllocTrain(phy_mem_list, lock);
         auto *expand_entry = reinterpret_cast<MemEntry *>(
             MemPool::Get().GetSharedMemory().allocate(sizeof(MemEntry)));
         expand_entry->addr_offset = MEM_BLOCK_NBYTES * mapped_mem_list_.size();
@@ -334,8 +336,8 @@ public:
   }
   
   void EmptyCache() {
-    bip::scoped_lock lock{mempool_.GetMutex()};
-    ReleaseFreePhyMem(lock);
+    bip::scoped_lock defer_lock{mempool_.GetMutex(), bip::defer_lock};
+    ReleaseFreePhyMem(defer_lock);
     peek_allocated_nbytes_->store(mempool_.GetAllocatedNbytes(policy_), 
                                   std::memory_order_relaxed);
   }
