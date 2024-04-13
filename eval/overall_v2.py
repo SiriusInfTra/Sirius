@@ -145,7 +145,7 @@ class SkewedConfig:
     num_model = 64
     interval_sec = 20
     duration = 120
-    zipf_aplha = 1.2 # large alpha -> more skewed
+    zipf_aplha = 1.05 # large alpha -> more skewed
     port = str(get_unique_port())
     enable = enable_skewed
 

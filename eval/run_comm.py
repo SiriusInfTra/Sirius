@@ -14,6 +14,9 @@ enable_skewed = False
 
 retry_limit = 1
 
+# for debug
+fake_launch = False
+
 def get_unique_port():
     cuda_device = os.environ['CUDA_VISIBLE_DEVICES']
     assert ',' not in cuda_device
@@ -148,8 +151,8 @@ def skewed(rps, client_model_list, infer_only=True, rps_fn=None,
 def _run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
     try:
         system.launch(unit, tag, time_stamp=use_time_stamp,
-                    infer_model_config=server_model_config, fake_launch=False)
-        workload.launch_workload(system, fake_launch=False)
+                    infer_model_config=server_model_config, fake_launch=fake_launch)
+        workload.launch_workload(system, fake_launch=fake_launch)
         system.stop()
     except Exception as e:
         print(f"Failed to run {unit} {tag}: {e}")

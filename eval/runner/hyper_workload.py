@@ -395,6 +395,7 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
                  period_num: Optional[int] = None,
                  rps_fn = None, # post process rps, Fn(i, rps) -> rps,
                  zipf_alpha: Optional[float] = None,
+                 verbose: bool = False,
                  seed: Optional[int] = None) -> None:
         super().__init__(None, None, seed)
         if duration is None and period_num is None:
@@ -428,7 +429,8 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
             zipf_freq = zipf_freq[1:]
             zipf_freq = zipf_freq / np.sum(zipf_freq)
             zipf_freq = tmp_rs.permutation(zipf_freq)
-            print(f'zipf freq: \n', zipf_freq)
+            with np.printoptions(precision=3, suppress=True):
+                print(f'zipf freq: \n', zipf_freq)
 
         if period_num is None:
             period_num = int(duration / interval_sec + 0.5)
@@ -450,7 +452,9 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
             num_model_to_requests.append(num_model)
             model_req_list = self.rs.choice(np.arange(len(model_list)), num_model, replace=False, 
                                             p = None if zipf_alpha is None else zipf_freq)
-            model_num_req = self._split_request(num_request, num_model)
+            assert len(model_req_list) == num_model
+            model_num_req = self._split_request(num_request, num_model,
+                                                alpha=None if zipf_alpha is None else zipf_freq[model_req_list])
             for model, num_req in zip(model_req_list, model_num_req):
                 poisson_params[model].append(PoissonParam(i * interval_sec, num_req))
             for j in range(len(model_list)):
@@ -462,13 +466,24 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
             self.poisson_params.append((model_list[i], poisson_param))
 
         poisson_params_ndarray = np.array(poisson_params)[:, :, 1]
+        if verbose and zipf_alpha is not None:
+            for i in range(period_num):
+                print_str = f"[period {i}]:\n"
+                for j in range(len(model_list)):
+                    print_str += f'{poisson_params_ndarray[j, i]:>5.2f} '
+                    if (j + 1) % 20 == 0: print_str += '\n'
+                print(print_str, '\n')
         with np.printoptions(precision=1, suppress=True):
             print('microbenmark total #request: \n', np.array(np.sum(poisson_params_ndarray, axis=0)))
             print('microbenmark request #model : \n', np.array(num_model_to_requests))
             # print(poisson_params_ndarray)
 
-    def _split_request(self, num_request, num_model):
-        alpha = np.ones(num_model)
+    def _split_request(self, num_request, num_model, alpha=None):
+        if alpha is None:
+            alpha = np.ones(num_model)
+        else:
+            alpha = alpha / np.sum(alpha) * num_model
+            alpha = 1 + np.round(alpha).astype(int)
         faction = self.rs.dirichlet(alpha)
         return num_request * faction
 

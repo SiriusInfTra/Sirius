@@ -8,6 +8,8 @@ run_comm.use_time_stamp = True
 run_comm.retry_if_fail = False
 run_comm.skip_fail = False
 
+run_comm.fake_launch = True
+
 set_global_seed(42)
 
 
@@ -70,7 +72,7 @@ class SkewedConfig:
     num_model = 32
     interval_sec = 20
     duration = 300
-    zipf_aplha = 1.2 # large alpha -> more skewed
+    zipf_aplha = 1.05 # large alpha -> more skewed
     port = str(run_comm.get_unique_port())
     enable = enable_skewed
 
