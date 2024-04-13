@@ -27,10 +27,11 @@ if args.eval_cold_cache_cap or args.eval_all:
 
 
 max_infer_idle_ms_list = [
-    500, 
-    2500,
+    # 500, 
+    # 2500,
     # 5000, 
-    7500, 10000
+    # 7500, 
+    10000
 ]
 if not enable_eval_max_infer_idle_ms:
     max_infer_idle_ms_list = []
