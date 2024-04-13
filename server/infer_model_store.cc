@@ -607,6 +607,18 @@ ColdModelCache::evict_list ColdModelCache::GetEvictModels(long capacity, std::ar
   return evict_models;
 }
 
+double ColdModelCache::GetBufferMBUnsafe() {
+  auto buffer_mb = ResourceManager::GetFreeMemoryMB();
+  auto cold_cache_nbytes = current_cached_nbytes_;
+  if (cold_cache_nbytes > Config::cold_cache_min_capability_nbytes) {
+    buffer_mb += sta::ByteToMB(cold_cache_nbytes - Config::cold_cache_min_capability_nbytes);
+  }
+  double cur_max_buffer_mb = sta::ByteToMB(Config::cold_cache_max_capability_nbytes
+                                           - std::min(Config::cold_cache_min_capability_nbytes, current_cached_nbytes_));
+  buffer_mb = std::min(buffer_mb, cur_max_buffer_mb);
+  return std::max(0.0, buffer_mb);
+}
+
 double ColdModelCache::GetReleaseReserveMemoryMB(std::unique_lock<std::mutex> &lock) {
   double cached_MB = sta::ByteToMB(current_cached_nbytes_);
   double min_cap_MB = sta::ByteToMB(Config::cold_cache_min_capability_nbytes);

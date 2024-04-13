@@ -168,6 +168,7 @@ Profiler::Profiler(const std::string &profile_log_path)
     nvmlProcessInfo_t infos[32];
     while (Config::running) {
       size_t infer_mem = 0, train_mem = 0, train_all_mem = 0, total_mem = 0;
+      double cold_cache_buffer_mb = 0;
       if (!Config::use_shared_tensor || !Config::use_shared_tensor_train) {
         uint32_t info_cnt = max_info_cnt;
         NVML_CALL(nvmlDeviceGetComputeRunningProcesses_v3(device, &info_cnt, infos));
@@ -190,11 +191,14 @@ Profiler::Profiler(const std::string &profile_log_path)
         train_mem = sta::CUDAMemPool::TrainMemUsage();
         train_all_mem = sta::CUDAMemPool::TrainAllMemUsage();
         total_mem = static_cast<size_t>(Config::cuda_memory_pool_gb * 1_GB);
+        if (Config::cold_cache_max_capability_nbytes != 0) {
+          cold_cache_buffer_mb = ColdModelCache::Get().GetBufferMBUnsafe();
+        }
       }
       this->last_infer_mem_ = infer_mem;
       this->last_train_mem_ = train_mem;
       this->resource_info_.push_back({this->Passed(), Profiler::GetTimeStamp(),
-                                     ResourceInfo{infer_mem, train_mem, train_all_mem, total_mem}});
+                                     ResourceInfo{infer_mem, train_mem, train_all_mem, total_mem, cold_cache_buffer_mb}});
       this->infering_memory_nbytes_.push_back({this->Passed(), Profiler::GetTimeStamp(),
                                               InferModelStore::GetInferingModelNbytes()});
       // this->profile_log_ifs_ << this->Passed()
@@ -310,6 +314,7 @@ void Profiler::WriteLog() {
         << " Train " << GetMemString(std::get<2>(r).train_mem)
         << " TrainAll " << GetMemString(std::get<2>(r).train_all_mem)
         << " Total " << GetMemString(std::get<2>(r).gpu_used_mem)
+        << " | ColdCacheBuffer " << std::get<2>(r).cold_cache_buffer_mb << " Mb"
         << std::endl;
   }
   ofs << std::endl;

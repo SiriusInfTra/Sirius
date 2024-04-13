@@ -44,6 +44,7 @@ class Profiler {
     size_t train_mem;
     size_t train_all_mem;
     size_t gpu_used_mem;
+    double cold_cache_buffer_mb;
   };
   struct InferInfo {
     size_t id;
