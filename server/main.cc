@@ -216,7 +216,7 @@ int main(int argc, char *argv[]) {
       true, false, free_list_policy);
     colserve::sta::CUDAMemPool::Get()->RegisterOOMHandler([]() {
       LOG(INFO) << "train predict memory " 
-                <<  colserve::TrainLauncher::Get()->PredictMemUsageMB() << "."; 
+                <<  colserve::TrainLauncher::Get()->PredictMemUsageMB(true) << "."; 
       }, colserve::sta::MemType::kInfer);
   }
   colserve::ResourceManager::Init();

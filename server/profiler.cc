@@ -161,6 +161,7 @@ Profiler::Profiler(const std::string &profile_log_path)
     while (!this->start_profile_) {
       std::this_thread::sleep_for(std::chrono::microseconds(10));
     }
+    LOG(INFO) << "start profiler thread";
     uint32_t pid = getpid();
     CUDA_CALL(cudaSetDevice(0));
     

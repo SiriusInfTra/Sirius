@@ -361,8 +361,8 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
                  << " target_batch_size " << target_batch_size_ 
                  << " cur_batch_size " << cur_batch_size_ 
                  << " memory " << ResourceManager::GetTrainMemoryMB() << "MB"
-                 << " predict memory " << PredictMemUsageMB() << "MB"
-                 << " calculated free memory " << ResourceManager::GetFreeMemoryMB() << "MB";
+                 << " predict memory " << PredictMemUsageMB(false) << "MB"
+                 << " calculated free memory " << ResourceManager::GetFreeMemoryMB(true) << "MB";
       return false;
     }
   } else {

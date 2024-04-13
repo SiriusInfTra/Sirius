@@ -913,7 +913,7 @@ void Executor::AllocStorageMaybeAdjust() {
       //           << " begin wait train pid " << wait_train_pid;
       // this->tvm_graph_.infer_model_->SetWaitTrainPid(this->infer_model_worker_id_, wait_train_pid);
 
-      auto adjust_memory_mb = sta::ByteToMB(GetMissingStorageSizeAlign()) - ResourceManager::GetFreeMemoryMB();
+      auto adjust_memory_mb = sta::ByteToMB(GetMissingStorageSizeAlign()) - ResourceManager::GetFreeMemoryMB(true);
       adjust_memory_mb = std::max(0.0, adjust_memory_mb);
       if (adjust_memory_mb == 0) return;
 
@@ -950,7 +950,7 @@ void Executor::AllocStorageMaybeAdjust() {
     PROFILE_END(InferWaitBeforeEnterAlloc);
   }
 
-  double free_memory_mb = ResourceManager::GetFreeMemoryMB();
+  double free_memory_mb = ResourceManager::GetFreeMemoryMB(true);
 
   size_t total_storage_nbytes = GetMissingStorageSizeAlign();
   // std::vector<size_t> storage_nbytes(storage_pool_.size());

@@ -204,8 +204,8 @@ uint64_t Controller::InferExit() {
         // train_target_bs = TrainLauncher::Get()->PredictTargetBatchSize(train_avail_memory_MB);
 
         // min of bs predicted based on the actual and the predict
-        train_avail_memory_MB = std::max(ResourceManager::GetTrainAvailMemoryMB(), 0.0);
-        free_memory_MB = std::max(ResourceManager::GetFreeMemoryMB(), 0.0);
+        train_avail_memory_MB = std::max(ResourceManager::GetTrainAvailMemoryMB(false), 0.0);
+        free_memory_MB = std::max(ResourceManager::GetFreeMemoryMB(true), 0.0);
         reserve_memory_MB = ColdModelCache::Get().GetReleaseReserveMemoryMB(cold_cache_lock);
         if (Config::use_shared_tensor) {
           auto adjust_bs = TrainLauncher::Get()->GetAdjustBatchSize(std::max(free_memory_MB - reserve_memory_MB, 0.0));
