@@ -53,8 +53,10 @@ if args.static_partition or args.all_sys:
     run_static_partition_I = True
     run_static_partition_F = True
 if args.static_partition_i or args.all_sys:
+    run_static_partition = True
     run_static_partition_I = True
 if args.static_partition_f or args.all_sys:
+    run_static_partition = True
     run_static_partition_F = True
 if args.infer_only or args.all_sys:
     run_infer_only = True
@@ -75,8 +77,8 @@ if args.infer_only_without_mps:
 @dataclass
 class HighLoad:
     rps: int = 50
-    mps_infer: int = 40
-    mps_train: int = 60
+    mps_infer: int = 30
+    mps_train: int = 70
     enable: bool = True
 
 @dataclass
@@ -111,7 +113,7 @@ class UniformConfig:
     train_batch_size = 72
     train_global_batch_size = 500 # not used, hard code for global batch size and dataset size
     train_dataset_size = 1000 
-    train_epoch_time = 5 # used for predict number epoch
+    train_epoch_time = 5.5 # used for predict number epoch
 
     model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
                   InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
@@ -132,7 +134,7 @@ class SkewedConfig:
     # train_batch_size = 20
     # train_global_batch_size = 250
     # train_dataset_size = 500
-    # train_epoch_time = 5
+    # train_epoch_time = 5.5
     train_model = 'swin_b'
     train_batch_size = 72
     train_global_batch_size = 500 # not used, hard code for global batch size and dataset size
@@ -264,6 +266,7 @@ def _run(system: System, workload: HyperWorkload, server_model_config: str, unit
     
 
 def run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
+    print(f'[{unit} {tag}]')
     if skip_fail:
         try:
             _run(system, workload, server_model_config, unit, tag)

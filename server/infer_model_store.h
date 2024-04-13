@@ -152,6 +152,14 @@ class ColdModelCache {
     return current_cached_nbytes_;
   }
 
+  inline size_t GetColdCacheReleasableMemoryMBUnsafe() {
+    if (current_cached_nbytes_ > Config::cold_cache_min_capability_nbytes) {
+      return sta::ByteToMB(current_cached_nbytes_ - Config::cold_cache_min_capability_nbytes);
+    } else {
+      return 0;
+    }
+  }
+
   double GetBufferMBUnsafe();
 
 

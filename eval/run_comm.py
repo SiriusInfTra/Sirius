@@ -34,8 +34,8 @@ def get_unique_port():
 @dataclass
 class HighLoad:
     rps: int = 50
-    mps_infer: int = 40
-    mps_train: int = 60
+    mps_infer: int = 30
+    mps_train: int = 70
     enable: bool = True
 
 @dataclass
@@ -59,7 +59,7 @@ class UniformConfig:
     train_batch_size = 72
     train_global_batch_size = 500 # not used, hard code for global batch size and dataset size
     train_dataset_size = 1000 
-    train_epoch_time = 5 # used for predict number epoch
+    train_epoch_time = 5.5 # used for predict number epoch
 
     model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
                   InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
@@ -85,7 +85,7 @@ class SkewedConfig:
     train_batch_size = 72
     train_global_batch_size = 500 # not used, hard code for global batch size and dataset size
     train_dataset_size = 1000 
-    train_epoch_time = 5 # used for predict number epoch
+    train_epoch_time = 5.5 # used for predict number epoch
 
     model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
                   InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
@@ -160,6 +160,7 @@ def _run(system: System, workload: HyperWorkload, server_model_config: str, unit
             for retry_cnt in range(retry_limit):
                 print(f"\n\x1b[33;1m### Retry [{unit} {tag}] x {retry_cnt} ###\x1b[0m")
                 try:
+                    time.sleep(3)
                     system.launch(unit, f'{tag}-retry-{retry_cnt}', time_stamp=use_time_stamp,
                             infer_model_config=server_model_config)
                     workload.launch_workload(system)
@@ -179,6 +180,7 @@ def _run(system: System, workload: HyperWorkload, server_model_config: str, unit
     
 
 def run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
+    print(f'[{unit} {tag}]')
     if skip_fail:
         try:
             _run(system, workload, server_model_config, unit, tag)
