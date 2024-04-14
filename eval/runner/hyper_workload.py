@@ -394,6 +394,7 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
                  duration: Optional[float | int] = None,
                  period_num: Optional[int] = None,
                  rps_fn = None, # post process rps, Fn(i, rps) -> rps,
+                 num_request_model_fn = None, # Fn(i, num_model) -> num_model 
                  zipf_alpha: Optional[float] = None,
                  verbose: bool = False,
                  seed: Optional[int] = None) -> None:
@@ -445,6 +446,8 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
         for i in range(period_num):
             # first select a few models to send requests
             num_model = num_model_rs.randint(1, len(model_list) + 1)
+            if num_request_model_fn is not None:
+                num_model = num_request_model_fn(i, num_model)
             # num_request = self.rs.uniform(0, max_request_sec)
             # if rps_fn is not None:
             #     num_request = rps_fn(i, num_request)
