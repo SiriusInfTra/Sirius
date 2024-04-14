@@ -286,6 +286,92 @@ def run(system: System, workload: HyperWorkload, server_model_config: str, unit:
 
 ## =========================================================== ##
 
+## MARK: Static Partition
+for tag, item in {
+    'F': ({
+        'mode' : System.ServerMode.Normal,
+        'use_sta': True,
+        'mps': True,
+        'use_xsched': False,
+        'has_warmup': True,
+        'max_warm_cache_nbytes': int(5.5 * 1024 ** 3),
+        'cuda_memory_pool_gb': '7.5',
+        'use_sta_train': False
+    }, {'train_batch_size': 32}),
+    'I': ({
+        'mode' : System.ServerMode.Normal,
+        'use_sta': True,
+        'mps': True,
+        'use_xsched': False,
+        'has_warmup': True,
+        'max_warm_cache_nbytes': int(9 * 1024 ** 3),
+        'cuda_memory_pool_gb': '10.5',
+        'use_sta_train': False
+    }, {'train_batch_size': 8}), 
+}.items():
+    if not run_static_partition:
+        break
+    if tag == 'F' and not run_static_partition_F:
+        continue
+    if tag == 'I' and not run_static_partition_I:
+        continue
+    system_config, workload_config = item
+    if UniformConfig.enable and UniformConfig.high_load.enable:
+        with mps_thread_percent(UniformConfig.high_load.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                UniformConfig.model_list, UniformConfig.num_model, 1)
+            workload = uniform(rps=UniformConfig.high_load.rps, 
+                               client_model_list=client_model_list, infer_only=False,
+                               train_batch_size=workload_config['train_batch_size'])
+            system = System(train_mps_thread_percent=UniformConfig.high_load.mps_train,
+                            port=UniformConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-uniform", f"static-partition-high-{tag}")
+
+
+    if UniformConfig.enable and UniformConfig.low_load.enable:
+        with mps_thread_percent(UniformConfig.low_load.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                UniformConfig.model_list, UniformConfig.num_model, 1)
+            workload = uniform(rps=UniformConfig.low_load.rps, 
+                               client_model_list=client_model_list, infer_only=False,
+                               train_batch_size=workload_config['train_batch_size'])
+            system = System(train_mps_thread_percent=UniformConfig.low_load.mps_train,
+                            port=UniformConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-uniform", f"static-partition-low-{tag}")
+
+    if SkewedConfig.enable and SkewedConfig.high_load.enable:
+        with mps_thread_percent(SkewedConfig.high_load.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                SkewedConfig.model_list, SkewedConfig.num_model, 1)
+            workload = skewed(rps=SkewedConfig.high_load.rps, 
+                              client_model_list=client_model_list, infer_only=False,
+                              train_batch_size=workload_config['train_batch_size'])
+            system = System(train_mps_thread_percent=SkewedConfig.high_load.mps_train,
+                            port=SkewedConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-skewed", f"static-partition-high-{tag}")
+
+    if SkewedConfig.enable and SkewedConfig.low_load.enable:
+        with mps_thread_percent(SkewedConfig.low_load.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                SkewedConfig.model_list, SkewedConfig.num_model, 1)
+            workload = skewed(rps=SkewedConfig.low_load.rps, 
+                              client_model_list=client_model_list, infer_only=False,
+                              train_batch_size=workload_config['train_batch_size'])
+            system = System(train_mps_thread_percent=SkewedConfig.low_load.mps_train,
+                            port=SkewedConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-skewed", f"static-partition-low-{tag}")
+
+    if AzureConfig.enable:
+        with mps_thread_percent(AzureConfig.mps_infer):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                AzureConfig.model_list, AzureConfig.num_model, 1)
+            workload = azure(rps=AzureConfig.max_rps, 
+                             client_model_list=client_model_list, infer_only=False,
+                             train_batch_size=workload_config['train_batch_size'])
+            system = System(train_mps_thread_percent=AzureConfig.mps_train,
+                            port=AzureConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-azure", f"static-partition-{tag}")
+
 ## MARK: COLSYS
 if run_colsys:
     system_config = {
@@ -450,6 +536,60 @@ if run_task_switch:
         system = System(port=AzureConfig.port, **system_config)
         run(system, workload, server_model_config, "overall-azure", "task-switch")
 
+## MARK: Infer Only
+if run_infer_only:
+    system_config = {
+        'mode' : System.ServerMode.Normal,
+        'use_sta' : False,
+        'mps': True,
+        'use_xsched': False,
+        'has_warmup': True,
+    }
+
+    mps_tag = "" if not infer_only_without_mps else "-no-mps"
+
+    if UniformConfig.enable and UniformConfig.high_load.enable:
+        with mps_thread_percent(UniformConfig.high_load.mps_infer, skip=infer_only_without_mps):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                UniformConfig.model_list, UniformConfig.num_model, 1)
+            workload = uniform(UniformConfig.high_load.rps, client_model_list, infer_only=True)
+            system = System(port=UniformConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-uniform", f"infer-only-high{mps_tag}")
+
+    if UniformConfig.enable and UniformConfig.low_load.enable:
+        # with mps_thread_percent(UniformConfig.)
+        with mps_thread_percent(UniformConfig.low_load.mps_infer, skip=infer_only_without_mps):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                UniformConfig.model_list, UniformConfig.num_model, 1)
+            workload = uniform(UniformConfig.low_load.rps, client_model_list, infer_only=True)
+            system = System(port=UniformConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-uniform", f"infer-only-low{mps_tag}")
+
+    if SkewedConfig.enable and SkewedConfig.high_load.enable:
+        with mps_thread_percent(SkewedConfig.high_load.mps_infer, skip=infer_only_without_mps):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                SkewedConfig.model_list, SkewedConfig.num_model, 1)
+            workload = skewed(SkewedConfig.high_load.rps, client_model_list, infer_only=True)
+            system = System(port=SkewedConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-skewed", f"infer-only-high{mps_tag}")
+
+    if SkewedConfig.enable and SkewedConfig.low_load.enable:
+        with mps_thread_percent(SkewedConfig.low_load.mps_infer, skip=infer_only_without_mps):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                SkewedConfig.model_list, SkewedConfig.num_model, 1)
+            workload = skewed(SkewedConfig.low_load.rps, client_model_list, infer_only=True)
+            system = System(port=SkewedConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-skewed", f"infer-only-low{mps_tag}")
+
+    if AzureConfig.enable:
+        with mps_thread_percent(AzureConfig.mps_infer, skip=infer_only_without_mps):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                AzureConfig.model_list, AzureConfig.num_model, 1)
+            workload = azure(rps=AzureConfig.max_rps, 
+                             client_model_list=client_model_list, infer_only=True)
+            system = System(port=AzureConfig.port, **system_config)
+            run(system, workload, server_model_config, "overall-azure", f"infer-only{mps_tag}")
+
 
 ## MARK: UM+MPS
 if run_um_mps:
@@ -506,147 +646,4 @@ if run_um_mps:
             system = System(train_mps_thread_percent=AzureConfig.mps_train,
                             port=AzureConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-azure", "um-mps")
-
-
-## MARK: Static Partition
-for tag, item in {
-    'F': ({
-        'mode' : System.ServerMode.Normal,
-        'use_sta': True,
-        'mps': True,
-        'use_xsched': False,
-        'has_warmup': True,
-        'max_warm_cache_nbytes': int(5.5 * 1024 ** 3),
-        'cuda_memory_pool_gb': '7.5',
-        'use_sta_train': False
-    }, {'train_batch_size': 32}),
-    'I': ({
-        'mode' : System.ServerMode.Normal,
-        'use_sta': True,
-        'mps': True,
-        'use_xsched': False,
-        'has_warmup': True,
-        'max_warm_cache_nbytes': int(9 * 1024 ** 3),
-        'cuda_memory_pool_gb': '10.5',
-        'use_sta_train': False
-    }, {'train_batch_size': 8}), 
-}.items():
-    if not run_static_partition:
-        break
-    if tag == 'F' and not run_static_partition_F:
-        continue
-    if tag == 'I' and not run_static_partition_I:
-        continue
-    system_config, workload_config = item
-    if UniformConfig.enable and UniformConfig.high_load.enable:
-        with mps_thread_percent(UniformConfig.high_load.mps_infer):
-            client_model_list, server_model_config = InferModel.get_multi_model(
-                UniformConfig.model_list, UniformConfig.num_model, 1)
-            workload = uniform(rps=UniformConfig.high_load.rps, 
-                               client_model_list=client_model_list, infer_only=False,
-                               train_batch_size=workload_config['train_batch_size'])
-            system = System(train_mps_thread_percent=UniformConfig.high_load.mps_train,
-                            port=UniformConfig.port, **system_config)
-            run(system, workload, server_model_config, "overall-uniform", f"static-partition-high-{tag}")
-
-
-    if UniformConfig.enable and UniformConfig.low_load.enable:
-        with mps_thread_percent(UniformConfig.low_load.mps_infer):
-            client_model_list, server_model_config = InferModel.get_multi_model(
-                UniformConfig.model_list, UniformConfig.num_model, 1)
-            workload = uniform(rps=UniformConfig.low_load.rps, 
-                               client_model_list=client_model_list, infer_only=False,
-                               train_batch_size=workload_config['train_batch_size'])
-            system = System(train_mps_thread_percent=UniformConfig.low_load.mps_train,
-                            port=UniformConfig.port, **system_config)
-            run(system, workload, server_model_config, "overall-uniform", f"static-partition-low-{tag}")
-
-    if SkewedConfig.enable and SkewedConfig.high_load.enable:
-        with mps_thread_percent(SkewedConfig.high_load.mps_infer):
-            client_model_list, server_model_config = InferModel.get_multi_model(
-                SkewedConfig.model_list, SkewedConfig.num_model, 1)
-            workload = skewed(rps=SkewedConfig.high_load.rps, 
-                              client_model_list=client_model_list, infer_only=False,
-                              train_batch_size=workload_config['train_batch_size'])
-            system = System(train_mps_thread_percent=SkewedConfig.high_load.mps_train,
-                            port=SkewedConfig.port, **system_config)
-            run(system, workload, server_model_config, "overall-skewed", f"static-partition-high-{tag}")
-
-    if SkewedConfig.enable and SkewedConfig.low_load.enable:
-        with mps_thread_percent(SkewedConfig.low_load.mps_infer):
-            client_model_list, server_model_config = InferModel.get_multi_model(
-                SkewedConfig.model_list, SkewedConfig.num_model, 1)
-            workload = skewed(rps=SkewedConfig.low_load.rps, 
-                              client_model_list=client_model_list, infer_only=False,
-                              train_batch_size=workload_config['train_batch_size'])
-            system = System(train_mps_thread_percent=SkewedConfig.low_load.mps_train,
-                            port=SkewedConfig.port, **system_config)
-            run(system, workload, server_model_config, "overall-skewed", f"static-partition-low-{tag}")
-
-    if AzureConfig.enable:
-        with mps_thread_percent(AzureConfig.mps_infer):
-            client_model_list, server_model_config = InferModel.get_multi_model(
-                AzureConfig.model_list, AzureConfig.num_model, 1)
-            workload = azure(rps=AzureConfig.max_rps, 
-                             client_model_list=client_model_list, infer_only=False,
-                             train_batch_size=workload_config['train_batch_size'])
-            system = System(train_mps_thread_percent=AzureConfig.mps_train,
-                            port=AzureConfig.port, **system_config)
-            run(system, workload, server_model_config, "overall-azure", f"static-partition-{tag}")
-
-
-## MARK: Infer Only
-if run_infer_only:
-    system_config = {
-        'mode' : System.ServerMode.Normal,
-        'use_sta' : False,
-        'mps': True,
-        'use_xsched': False,
-        'has_warmup': True,
-    }
-
-    mps_tag = "" if not infer_only_without_mps else "-no-mps"
-
-    if UniformConfig.enable and UniformConfig.high_load.enable:
-        with mps_thread_percent(UniformConfig.high_load.mps_infer, skip=infer_only_without_mps):
-            client_model_list, server_model_config = InferModel.get_multi_model(
-                UniformConfig.model_list, UniformConfig.num_model, 1)
-            workload = uniform(UniformConfig.high_load.rps, client_model_list, infer_only=True)
-            system = System(port=UniformConfig.port, **system_config)
-            run(system, workload, server_model_config, "overall-uniform", f"infer-only-high{mps_tag}")
-
-    if UniformConfig.enable and UniformConfig.low_load.enable:
-        # with mps_thread_percent(UniformConfig.)
-        with mps_thread_percent(UniformConfig.low_load.mps_infer, skip=infer_only_without_mps):
-            client_model_list, server_model_config = InferModel.get_multi_model(
-                UniformConfig.model_list, UniformConfig.num_model, 1)
-            workload = uniform(UniformConfig.low_load.rps, client_model_list, infer_only=True)
-            system = System(port=UniformConfig.port, **system_config)
-            run(system, workload, server_model_config, "overall-uniform", f"infer-only-low{mps_tag}")
-
-    if SkewedConfig.enable and SkewedConfig.high_load.enable:
-        with mps_thread_percent(SkewedConfig.high_load.mps_infer, skip=infer_only_without_mps):
-            client_model_list, server_model_config = InferModel.get_multi_model(
-                SkewedConfig.model_list, SkewedConfig.num_model, 1)
-            workload = skewed(SkewedConfig.high_load.rps, client_model_list, infer_only=True)
-            system = System(port=SkewedConfig.port, **system_config)
-            run(system, workload, server_model_config, "overall-skewed", f"infer-only-high{mps_tag}")
-
-    if SkewedConfig.enable and SkewedConfig.low_load.enable:
-        with mps_thread_percent(SkewedConfig.low_load.mps_infer, skip=infer_only_without_mps):
-            client_model_list, server_model_config = InferModel.get_multi_model(
-                SkewedConfig.model_list, SkewedConfig.num_model, 1)
-            workload = skewed(SkewedConfig.low_load.rps, client_model_list, infer_only=True)
-            system = System(port=SkewedConfig.port, **system_config)
-            run(system, workload, server_model_config, "overall-skewed", f"infer-only-low{mps_tag}")
-
-    if AzureConfig.enable:
-        with mps_thread_percent(AzureConfig.mps_infer, skip=infer_only_without_mps):
-            client_model_list, server_model_config = InferModel.get_multi_model(
-                AzureConfig.model_list, AzureConfig.num_model, 1)
-            workload = azure(rps=AzureConfig.max_rps, 
-                             client_model_list=client_model_list, infer_only=True)
-            system = System(port=AzureConfig.port, **system_config)
-            run(system, workload, server_model_config, "overall-azure", f"infer-only{mps_tag}")
-
 
