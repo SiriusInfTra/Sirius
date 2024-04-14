@@ -105,10 +105,17 @@ class SkewedConfig:
 # MARK: Workload
 ## =========================================================== ##
 
+def get_train_epoch(train_epoch_time, duration):
+    return int(duration / train_epoch_time + 5)
+
 def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
             train_model:str = UniformConfig.train_model, 
-            train_epoch:int = int(UniformConfig.duration / UniformConfig.train_epoch_time + 5), 
+            train_epoch:int = None, 
             train_batch_size:int = UniformConfig.train_batch_size):
+    # assert train_epoch is not None, "train_epoch is None"
+    if train_epoch is None:
+        train_epoch = get_train_epoch(UniformConfig.train_epoch_time, UniformConfig.duration)
+    print(f'Train {train_model} Epoch {train_epoch} Batc {train_batch_size}')
     workload = HyperWorkload(concurrency=2048,
                              warmup=5,
                              wait_warmup_done_sec=5,
@@ -128,8 +135,11 @@ def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
 
 def skewed(rps, client_model_list, infer_only=True, rps_fn=None,
            train_model:str =SkewedConfig.train_model, 
-           train_epoch:int = int(SkewedConfig.duration / SkewedConfig.train_epoch_time + 5), 
+           train_epoch:int = None, 
            train_batch_size:int = SkewedConfig.train_batch_size):
+    # assert train_epoch is not None, "train_epoch is None"
+    if train_epoch is None:
+        train_epoch = get_train_epoch(SkewedConfig.train_epoch_time, SkewedConfig.duration)
     workload = HyperWorkload(concurrency=2048,
                              warmup=5,
                              wait_warmup_done_sec=5,

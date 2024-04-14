@@ -12,6 +12,7 @@ run_comm.retry_limit = 3
 run_comm.UniformConfig.duration = 300
 run_comm.SkewedConfig.duration = 300
 
+
 set_global_seed(42)
 
 enable_eval_max_infer_idle_ms = False
@@ -31,11 +32,11 @@ if args.eval_cold_cache_cap or args.eval_all:
 
 
 max_infer_idle_ms_list = [
-    500, 
+    # 500, 
     2500,
-    5000, 
+    # 5000, 
+    10000,
     7500, 
-    10000
 ]
 if not enable_eval_max_infer_idle_ms:
     max_infer_idle_ms_list = []
@@ -73,7 +74,8 @@ for max_infer_idle_ms in max_infer_idle_ms_list:
         client_model_list, server_model_config = InferModel.get_multi_model(
                 run_comm.UniformConfig.model_list, run_comm.UniformConfig.num_model, 1)
         workload = run_comm.uniform(rps=run_comm.UniformConfig.high_load.rps, 
-                                    client_model_list=client_model_list, infer_only=False)
+                                    client_model_list=client_model_list, infer_only=False,
+                                    train_epoch=run_comm.get_train_epoch(run_comm.UniformConfig.train_epoch_time, run_comm.UniformConfig.duration))
         system = System(train_mps_thread_percent=run_comm.UniformConfig.high_load.mps_train,
                         port=run_comm.UniformConfig.port,
                         **system_config)
@@ -92,8 +94,8 @@ for cold_cache_min_cap, cold_cache_max_cap in cold_cache_cap_list:
         'ondemand_adjust' : True,
         'cuda_memory_pool_gb' : "13.5",
         'train_memory_over_predict_mb' : 1500,
-        'train_memory_over_predict_mb' : 0,
-        'infer_model_max_idle_ms' : 5000,
+        # 'infer_model_max_idle_ms' : 5000,
+        'infer_model_max_idle_ms' : 500,
         'cold_cache_ratio': 0.5, 
         'cold_cache_min_capability_nbytes': int(cold_cache_min_cap * 1024 * 1024 * 1024),
         'cold_cache_max_capability_nbytes': int(cold_cache_max_cap * 1024 * 1024 * 1024),
@@ -103,7 +105,8 @@ for cold_cache_min_cap, cold_cache_max_cap in cold_cache_cap_list:
         client_model_list, server_model_config = InferModel.get_multi_model(
                 run_comm.UniformConfig.model_list, run_comm.UniformConfig.num_model, 1)
         workload = run_comm.uniform(rps=run_comm.UniformConfig.high_load.rps, 
-                                    client_model_list=client_model_list, infer_only=False)
+                                    client_model_list=client_model_list, infer_only=False,
+                                    train_epoch=run_comm.get_train_epoch(run_comm.UniformConfig.train_epoch_time, run_comm.UniformConfig.duration))
         system = System(train_mps_thread_percent=run_comm.UniformConfig.high_load.mps_train,
                         port=run_comm.UniformConfig.port,
                         **system_config)
