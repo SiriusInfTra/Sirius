@@ -31,6 +31,7 @@ parser.add_argument('--skewed', action='store_true')
 # parser.add_argument('--azure', action='store_true')
 parser.add_argument('--all-sys', action='store_true')
 parser.add_argument('--all-workload', action='store_true')
+parser.add_argument('--retry-limit', type=int, default=0)
 args = parser.parse_args()
 
 if args.colsys or args.all_sys:
@@ -42,6 +43,11 @@ if args.uniform or args.all_workload:
     enable_uniform = True
 if args.skewed or args.all_workload:
     enable_skewed = True
+
+if args.retry_limit > 0:
+    run_comm.retry_if_fail = True
+    run_comm.retry_limit = args.retry_limit
+    run_comm.skip_fail = True
 
 
 # MARK: Trace Config
