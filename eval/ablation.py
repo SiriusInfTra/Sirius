@@ -7,6 +7,10 @@ import run_comm
 run_comm.use_time_stamp = True
 run_comm.retry_if_fail = True
 run_comm.skip_fail = True
+run_comm.retry_limit = 3
+
+run_comm.UniformConfig.duration = 300
+run_comm.SkewedConfig.duration = 300
 
 set_global_seed(42)
 
@@ -27,10 +31,10 @@ if args.eval_cold_cache_cap or args.eval_all:
 
 
 max_infer_idle_ms_list = [
-    # 500, 
-    # 2500,
-    # 5000, 
-    # 7500, 
+    500, 
+    2500,
+    5000, 
+    7500, 
     10000
 ]
 if not enable_eval_max_infer_idle_ms:
@@ -59,8 +63,10 @@ for max_infer_idle_ms in max_infer_idle_ms_list:
         'train_memory_over_predict_mb' : 1500,
         'infer_model_max_idle_ms' : max_infer_idle_ms,
         'cold_cache_ratio': 0.5, 
-        'cold_cache_min_capability_nbytes': 1 * 1024 * 1024 * 1024,
-        'cold_cache_max_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),
+        # 'cold_cache_min_capability_nbytes': 1 * 1024 * 1024 * 1024,
+        # 'cold_cache_max_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),
+        'cold_cache_min_capability_nbytes': 0,
+        'cold_cache_max_capability_nbytes': 0,
     }
 
     with mps_thread_percent(run_comm.UniformConfig.high_load.mps_infer):
@@ -86,6 +92,7 @@ for cold_cache_min_cap, cold_cache_max_cap in cold_cache_cap_list:
         'ondemand_adjust' : True,
         'cuda_memory_pool_gb' : "13.5",
         'train_memory_over_predict_mb' : 1500,
+        'train_memory_over_predict_mb' : 0,
         'infer_model_max_idle_ms' : 5000,
         'cold_cache_ratio': 0.5, 
         'cold_cache_min_capability_nbytes': int(cold_cache_min_cap * 1024 * 1024 * 1024),
