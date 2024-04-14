@@ -48,6 +48,8 @@ ColdModelCache::ReservePolicy ColdModelCache::reserve_policy_on_release = \
 
 ColdModelCache::ReservePolicy ColdModelCache::reserve_policy_on_adjust = \
     ColdModelCache::ReservePolicy::kMaxCap;
+  
+constexpr bool warm_cache_try_evict = true;
 
 
 std::unique_lock<std::mutex> WarmModelCache::ReserveCache(
@@ -160,21 +162,32 @@ void WarmModelCache::ReserveCacheInternal(
 
     size_t reclaim_nbytes = 0;
     ss << " | evict";
-    for (auto cm : coldest_model) {
-      if (nbytes > Config::max_warm_cache_nbytes + reclaim_nbytes) { 
-        if (cm == model) { continue; }
-        auto &cm_name = cm->GetName();
-        std::unique_lock warm_cache_lock{infer_model_cache_->warm_cache_[cm_name]->mut}; /* slow */
-        auto cold_cache_lock = ColdModelCache::Get().Lock();
-        std::unique_lock model_lock{cm->muts_[rank]};
-        bool res = cm->ReclaimMemory(rank, cold_cache_lock, model_lock, model);
-        if (res) {
-          ss << " " << cm_name << "(hot=" << cm->GetHotness() << ")";
-          infer_model_cache_->warm_cache_[cm_name]->cached = false;
-          reclaim_nbytes += cm->GetMemoryNbytes(rank);
+    for (int try_cnt = 0; try_cnt < 2; try_cnt++) {
+      if (!warm_cache_try_evict && try_cnt == 0) {
+        continue;
+      }
+      for (auto cm : coldest_model) {
+        if (nbytes > Config::max_warm_cache_nbytes + reclaim_nbytes) {
+          if (cm == model) { continue; }
+          auto &cm_name = cm->GetName();
+          std::unique_lock warm_cache_lock{infer_model_cache_->warm_cache_[cm_name]->mut, std::defer_lock}; /* slow */
+          if (try_cnt == 0) {
+            warm_cache_lock.try_lock();
+            if (!warm_cache_lock.owns_lock()) { continue; }
+          } else {
+            warm_cache_lock.lock();
+          }
+          auto cold_cache_lock = ColdModelCache::Get().Lock();
+          std::unique_lock model_lock{cm->muts_[rank]};
+          bool res = cm->ReclaimMemory(rank, cold_cache_lock, model_lock, model);
+          if (res) {
+            ss << " " << cm_name << "(hot=" << cm->GetHotness() << ")";
+            infer_model_cache_->warm_cache_[cm_name]->cached = false;
+            reclaim_nbytes += cm->GetMemoryNbytes(rank);
+          }
+        } else {
+          break;
         }
-      } else {
-        break;
       }
     }
     nbytes -= reclaim_nbytes;
