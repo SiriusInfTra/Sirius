@@ -79,7 +79,7 @@ class SkewedConfig:
     port = str(run_comm.get_unique_port())
     enable = enable_skewed
 
-    low_load = run_comm.LowLoad(enable=False)
+    low_load = run_comm.LowLoad(enable=False) # will not used
     high_load = run_comm.HighLoad(enable=True)
     hybrid_load = run_comm.HybridLoad(enable=False)
 
