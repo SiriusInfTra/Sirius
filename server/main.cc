@@ -33,7 +33,7 @@
 CLI::App app{"ColServe"};
 std::string mode = "normal";
 std::string port = "8080";
-int max_live_minute = 15;
+int max_live_minute = 20;
 
 void* memory_pressure_ptr = nullptr;
 
