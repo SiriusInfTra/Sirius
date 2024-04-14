@@ -158,7 +158,7 @@ bool TrainLauncher::Train() {
   cur_model_name_ = model;
   auto train_script = train_handles_[model];
 
-  if (Config::IsColocateMode() && 
+  if ((Config::IsColocateMode() || Config::IsSwitchMode()) && 
       Config::use_shared_tensor &&
       Config::enable_warm_cache_fallback) {
     auto [base, slope] = GetModelMemParam();
