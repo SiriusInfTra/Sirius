@@ -23,6 +23,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--eval-max-infer-idle-ms', action='store_true')
 parser.add_argument('--eval-cold-cache-cap', action='store_true')
 parser.add_argument('--eval-all', action='store_true')
+parser.add_argument('--retry-limit', type=int, default=0)
 args = parser.parse_args()
 
 if args.eval_max_infer_idle_ms or args.eval_all:
@@ -30,13 +31,18 @@ if args.eval_max_infer_idle_ms or args.eval_all:
 if args.eval_cold_cache_cap or args.eval_all:
     enable_eval_cold_cache_cap = True
 
+if args.retry_limit > 0:
+    run_comm.retry_if_fail = True
+    run_comm.retry_limit = args.retry_limit
+    run_comm.skip_fail = True
+
 
 max_infer_idle_ms_list = [
-    # 500, 
     2500,
-    # 5000, 
-    10000,
+    5000, 
     7500, 
+    500, 
+    10000,
 ]
 if not enable_eval_max_infer_idle_ms:
     max_infer_idle_ms_list = []
