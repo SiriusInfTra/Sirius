@@ -128,7 +128,7 @@ class UniformConfig:
                   InferModel.ResNet152, InferModel.DistilGPT2] 
     num_model = 64
     interval_sec = 20
-    duration = 120
+    duration = 300
     port = str(get_unique_port())
     enable = enable_uniform
 
@@ -154,7 +154,7 @@ class SkewedConfig:
                   InferModel.ResNet152, InferModel.DistilGPT2] 
     num_model = 64
     interval_sec = 20
-    duration = 120
+    duration = 300
     zipf_aplha = 1.05 # large alpha -> more skewed
     port = str(get_unique_port())
     enable = enable_skewed
@@ -173,7 +173,7 @@ class AzureConfig:
                   InferModel.ResNet152, InferModel.DistilGPT2] 
     num_model = 64
     interval_sec = 5
-    duration = 180 
+    duration = 300 
     period_num = duration // interval_sec
     port = str(get_unique_port())
     enable = enable_azure
