@@ -161,6 +161,7 @@ void WarmModelCache::ReserveCacheInternal(
         [](Model *a, Model *b) { return a->GetHotness() < b->GetHotness(); });
 
     size_t reclaim_nbytes = 0;
+    std::set<std::string> reclaimed_model;
     ss << " | evict";
     for (int try_cnt = 0; try_cnt < 2; try_cnt++) {
       if (!warm_cache_try_evict && try_cnt == 0) {
@@ -170,6 +171,7 @@ void WarmModelCache::ReserveCacheInternal(
         if (nbytes > Config::max_warm_cache_nbytes + reclaim_nbytes) {
           if (cm == model) { continue; }
           auto &cm_name = cm->GetName();
+          if (reclaimed_model.count(cm_name) > 0) { continue; }
           std::unique_lock warm_cache_lock{infer_model_cache_->warm_cache_[cm_name]->mut, std::defer_lock}; /* slow */
           if (try_cnt == 0) {
             warm_cache_lock.try_lock();
@@ -184,6 +186,7 @@ void WarmModelCache::ReserveCacheInternal(
             ss << " " << cm_name << "(hot=" << cm->GetHotness() << ")";
             infer_model_cache_->warm_cache_[cm_name]->cached = false;
             reclaim_nbytes += cm->GetMemoryNbytes(rank);
+            reclaimed_model.insert(cm_name);
           }
         } else {
           break;

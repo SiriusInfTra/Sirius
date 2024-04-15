@@ -173,6 +173,7 @@ bool Model::ReclaimMemory(size_t rank,
   if (Config::profiler_acquire_resource_lock) { // not used in performance test
     ResourceManager::InferMemoryChangingLock();
   }
+
   auto &executor = executors_[rank];
   auto &&[cached_groups_id, evict_group_list, succ] = ColdModelCache::Get()
     .PushCacheItem(name_, rank, executor->GetGroupsNbytes(), 
@@ -184,6 +185,7 @@ bool Model::ReclaimMemory(size_t rank,
   }
   executor->DeInit(cached_groups_id);
   ChangeStatus(rank, Status::kWithoutMemory);
+
   if (Config::profiler_acquire_resource_lock) {
     ResourceManager::InferMemoryChangingUnlock();
   }
@@ -243,26 +245,33 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
     double adjust_reserve_mb = ColdModelCache::Get().GetAdjustReserveMemoryMB(cold_cache_lock);
     double adjust_batch_buffer_mb = total_storage_MB - std::max(0.0, cold_cache_free_memory_MB)
                                     + adjust_reserve_mb;
+
     if (adjust_batch_buffer_mb > 0) {
-      PROFILE_START(TrainAdjust);
-      bool is_first_adjust = !Controller::Get()->HasFlyingColocateAdjust();
-      auto adjust_batch_size = TrainLauncher::Get()->GetAdjustBatchSize(adjust_batch_buffer_mb);
-      CHECK_GE(adjust_batch_size, 0);
-      int cmd_id = Controller::Get()->ColocateAdjust(0, adjust_batch_size);
-      // LOG(INFO) << "adjust model " << name_ << " cmd " << cmd_id;
-      Controller::Get()->WaitColocateAdjustDone(cmd_id);
-      PROFILE_END(TrainAdjust);
-      if (is_first_adjust) {
-        Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, PROFILE_DURATRION(TrainAdjust));
+      int cur_target_bs = TrainLauncher::Get()->GetTargetBatchSize();
+      if (cur_target_bs >= 0) {
+        PROFILE_START(TrainAdjust);
+        bool is_first_adjust = !Controller::Get()->HasFlyingColocateAdjust();
+        auto adjust_batch_size = TrainLauncher::Get()->GetAdjustBatchSize(adjust_batch_buffer_mb);
+        CHECK_GE(adjust_batch_size, 0);
+        int cmd_id = Controller::Get()->ColocateAdjust(0, adjust_batch_size);
+        // LOG(INFO) << "adjust model " << name_ << " cmd " << cmd_id;
+        Controller::Get()->WaitColocateAdjustDone(cmd_id);
+        PROFILE_END(TrainAdjust);
+        if (is_first_adjust) {
+          Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, PROFILE_DURATRION(TrainAdjust));
+        }
+        LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
+                  << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
+                  << " wait train pid " << wait_train_pid
+                  << " | before adjust: free memory " << free_memory_MB
+                  << " cold cache free memory " << cold_cache_free_memory_MB
+                  << " reserve memory " << adjust_reserve_mb
+                  << " adjust_batch_buffer_mb " << adjust_batch_buffer_mb
+                  << " delta batch size " << adjust_batch_size << ".";
+      } else {
+        LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
+                  << ", skip adjust due to negative target batch size (" << cur_target_bs << ")" ; 
       }
-      LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
-                << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
-                << " wait train pid " << wait_train_pid
-                << " | before adjust: free memory " << free_memory_MB
-                << " cold cache free memory " << cold_cache_free_memory_MB
-                << " reserve memory " << adjust_reserve_mb
-                << " adjust_batch_buffer_mb " << adjust_batch_buffer_mb
-                << " delta batch size " << adjust_batch_size << ".";
     } else {
       LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank << " , skip adjust";
     }
