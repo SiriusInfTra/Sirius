@@ -142,12 +142,15 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
                 batch_info, batch_size, train_dataset.batch_size,
                 mem_info, finished_imgs / (epoch_event.duration / 1e3), wait_bs_valid_sec, loss.item()), flush=True)
     
+        if hook.can_exit_after_infer_worklaod_done():
+            print('[hook] inference workload done, will exit training', flush=True)
+            break
 
     if train_mode.is_kill_batch():
         print("[{}] Epoch x Batch {} | Batch Total Tried {} Killed {} Finished {}".format(
             model.__class__.__name__,
             num_epoch * batch_size, total_tried_batch, total_killed_batch, total_finished_batch))
-    
+
     hook.train_end()
     hook.stop()
 

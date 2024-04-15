@@ -38,6 +38,8 @@ class Controller {
 
   bool HasFlyingColocateAdjust();
 
+  void InferenceWorkloadDone();
+
   // bool TryEnterInferChangeMemory(size_t model_rank);
   // void EnterInferChangeMemory(size_t model_rank);
   // void ExitInferChangeMemory(size_t model_rank);

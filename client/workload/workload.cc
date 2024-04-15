@@ -54,6 +54,14 @@ void Workload::WarmupDone() {
   CHECK(status.ok());
 }
 
+void Workload::InferenceWorkloadDone() {
+  grpc::ClientContext context;
+  EmptyRequest request;
+  EmptyResult result;
+  grpc::Status status = stub_->InferenceWorkloadDone(&context, request, &result);
+  CHECK(status.ok());
+}
+
 void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_infer) {
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << this << ") " << model_ << " BUSY LOOP] ";
@@ -631,9 +639,9 @@ void Workload::InferBusyLoop(const std::string &model, size_t concurrency,
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);
-  threads_.push_back(std::make_unique<std::thread>(
+  infer_threads_.push_back(std::make_unique<std::thread>(
       &InferWorker::RequestInferBusyLoop, worker.get(), std::ref(*this), delay_before_infer));
-  threads_.push_back(std::make_unique<std::thread>(
+  infer_threads_.push_back(std::make_unique<std::thread>(
       &InferWorker::FetchInferResult, worker.get(), std::ref(*this),
       interval_fn, show_result));
   infer_workers_.push_back(std::move(worker));
@@ -646,9 +654,9 @@ void Workload::InferTrace(const std::string &model, size_t concurrency,
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);
-  threads_.push_back(std::make_unique<std::thread>(
+  infer_threads_.push_back(std::make_unique<std::thread>(
       &InferWorker::RequestInferTrace, worker.get(), std::ref(*this), start_points, delay_before_infer));
-  threads_.push_back(std::make_unique<std::thread>(
+  infer_threads_.push_back(std::make_unique<std::thread>(
       &InferWorker::FetchInferResult, worker.get(), std::ref(*this),
       nullptr, show_result));
   infer_workers_.push_back(std::move(worker));
@@ -663,7 +671,7 @@ void Workload::Train(const std::string &model, size_t num_epoch, size_t batch_si
   };
   
   auto worker = std::make_unique<TrainWorker>(model, set_resnet_request_fn);
-  threads_.push_back(std::make_unique<std::thread>(
+  train_threads_.push_back(std::make_unique<std::thread>(
       &TrainWorker::RequestTrain, worker.get(), std::ref(*this)));
   train_workers_.push_back(std::move(worker));
 }
@@ -678,7 +686,7 @@ void Workload::TrainResnet(size_t num_epoch, size_t batch_size) {
   };
   
   auto worker = std::make_unique<TrainWorker>("resnet152", set_resnet_request_fn);
-  threads_.push_back(std::make_unique<std::thread>(
+  train_threads_.push_back(std::make_unique<std::thread>(
       &TrainWorker::RequestTrain, worker.get(), std::ref(*this)));
   train_workers_.push_back(std::move(worker));
 }

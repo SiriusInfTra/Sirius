@@ -337,6 +337,13 @@ bool Controller::HasFlyingColocateAdjust() {
   return adjust_done_id_ + 1 < Controller::adjust_cmd_id;
 }
 
+void Controller::InferenceWorkloadDone() {
+  static std::atomic<uint64_t> infer_workload_done_id = 1;
 
+  auto cmd_id = infer_workload_done_id.fetch_add(1, std::memory_order_relaxed);
+  train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kInferenceWorkloadDone)});
+
+  LOG(INFO) << "[Controller] Inference workload done";
+}
 
 } // namespace colserve
