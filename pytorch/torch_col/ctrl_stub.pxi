@@ -31,7 +31,7 @@ cdef class PyMemoryQueue:
 
 cdef extern from "<common/controlling.h>" namespace "colserve::ctrl":
     cpdef enum class CtrlEvent(int):
-        # status 
+        # status event
         kTrainStart,
         kTrainEnd,
         kInterruptTrainDone,
@@ -48,6 +48,8 @@ cdef extern from "<common/controlling.h>" namespace "colserve::ctrl":
         kColocateAdjustL1,
         kColocateAdjustL2,
         kInferExit, # train adjust back
+
+        kInferenceWorkloadDone,
 
         kNumEvent,
 
@@ -72,6 +74,28 @@ cdef class PyCtrlMsgEntry:
 
     def __repr__(self):
         return "PyCtrlMsgEntry(id={}, event={}, value={})".format(self.id, str(self.event), self.value)
+
+
+cdef class PyDummyStub:
+    cdef DummyStub* _stub
+
+    def __cinit__(self):
+        self._stub = new DummyStub()
+
+    def train_start(self):
+        self._stub.TrainStart()
+
+    def train_end(self):
+        self._stub.TrainEnd()
+
+    def stop(self):
+        self._stub.Stop()
+
+    def can_exit_after_infer_worklaod_done(self):
+        return self._stub.CanExitAfterInferWorkloadDone()
+    
+    def __dealloc__(self):
+        del self._stub
 
 
 cdef class PySwitchStub:
@@ -113,6 +137,9 @@ cdef class PySwitchStub:
     
     def EnableTorchColEngine(self):
         self._stub.EnableTorchColEngine()
+
+    def can_exit_after_infer_worklaod_done(self):
+        return self._stub.CanExitAfterInferWorkloadDone()
 
     def __dealloc__(self):
         del self._stub
@@ -156,6 +183,9 @@ cdef class PyColocateStub:
     def StepsNoInteruptEnd(self):
         self._stub.StepsNoInteruptEnd()
     
+    def can_exit_after_infer_worklaod_done(self):
+        return self._stub.CanExitAfterInferWorkloadDone()
+
     def EnableTorchColEngine(self):
         self._stub.EnableTorchColEngine()
 

@@ -77,6 +77,10 @@ class HookABC(abc.ABC):
     def stop(self):
         pass
     
+    @abc.abstractmethod
+    def can_exit_after_infer_worklaod_done(self):
+        pass
+
     @classmethod
     def register_fbward_hook(cls, module: torch.nn.Module, fwd_hood, bwd_hook):
         if not torch_col.use_fbward_hook():
@@ -253,6 +257,9 @@ class SwitchHook(HookABC):
     def stop(self):
         self._stub.stop()
 
+    def can_exit_after_infer_worklaod_done(self):
+        return self._stub.can_exit_after_infer_worklaod_done()
+
 
 
 class ColocateAdjustL1Exception(Exception):
@@ -423,10 +430,14 @@ class ColocateHook(HookABC):
     def stop(self):
         self._stub.stop()
 
+    def can_exit_after_infer_worklaod_done(self):
+        return self._stub.can_exit_after_infer_worklaod_done()
+
 
 class DummyHook(HookABC):
     def __init__(self, train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size: int):
         super().__init__(train_mode, hook_mode, batch_size, num_epoch)
+        self._stub = torch_col.PyDummyStub()
         assert hook_mode == HookMode.NONE
     
     @contextlib.contextmanager
@@ -447,14 +458,16 @@ class DummyHook(HookABC):
         return self.batch_size
     
     def train_start(self):
-        pass
+        self._stub.train_start()
 
     def train_end(self):
-        pass
+        self._stub.train_end()
     
     def stop(self):
-        pass
+        self._stub.stop()
 
+    def can_exit_after_infer_worklaod_done(self):
+        return self._stub.can_exit_after_infer_worklaod_done()
 
 def get_hook(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size: int):
     if train_mode == TrainMode.NORMAL:

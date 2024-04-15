@@ -127,6 +127,22 @@ void CommonHandler::SetupCallData() {
   new CommonData<TimeStampRequest, EmptyResult>{0, "ReportTimeStampDone", service_, cq_,
                                             register_report_time_stamp_done,
                                             exec_report_time_stamp_done};
+
+  auto register_inference_workload_done = [this](
+      CommonData<EmptyRequest, EmptyResult>* data) {
+    this->service_->RequestInferenceWorkloadDone(
+        &data->ctx_, &data->request_, &data->responder_, 
+        data->cq_, data->cq_, (void*)data);
+  };
+  auto exec_inference_workload_done = [this](
+      CommonData<EmptyRequest, EmptyResult>* data) {
+    LOG(INFO) << "[Common Data]: InferenceWorkloadDone";
+    Controller::Get()->InferenceWorkloadDone();
+    data->responder_.Finish(data->response_, grpc::Status::OK, (void*)data);
+  };
+  new CommonData<EmptyRequest, EmptyResult>{0, "InferenceWorkloadDone", service_, cq_,
+                                            register_inference_workload_done,
+                                            exec_inference_workload_done};
 }
 
 void InferHandler::Start() {

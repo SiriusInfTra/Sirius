@@ -19,6 +19,55 @@ std::vector<long> StubProfiler::adjust_request_time_stamp_;
 std::vector<long> StubProfiler::adjsut_done_time_stamp_;
 std::mutex StubProfiler::mutex_;
 
+bool __CanExitAfterInferWorkloadDone(long infer_workload_done_timestamp) {
+  constexpr long wait_mill = 30 * 1000; // 30s
+  DLOG(INFO) << "[Check InferWorkload Done]: "
+            << " infer_workload_done_timestamp: " << infer_workload_done_timestamp
+            << " current: " << torch_col::get_unix_timestamp()
+            << " diff: " << torch_col::get_unix_timestamp() - infer_workload_done_timestamp
+            << " exit: " << (torch_col::get_unix_timestamp() - infer_workload_done_timestamp > wait_mill);
+  if (infer_workload_done_timestamp == 0) {
+    return false;
+  } else {
+    return (torch_col::get_unix_timestamp() - infer_workload_done_timestamp > wait_mill); // 30s
+  }
+}
+
+DummyStub::DummyStub() {
+  cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("cmd-ctrl", false);
+  status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("status-ctrl", false);
+
+  thread_.reset(new std::thread([&]() {
+    while (running_) {
+      ctrl::CtrlMsgEntry data;
+      bool succ = cmd_event_mq_->TimedGet(data, 1000);
+      if (succ) {
+        std::unique_lock locker{mutex_};
+        if (data.event == static_cast<int>(ctrl::CtrlEvent::kInferenceWorkloadDone)) {
+          infer_workload_done_timestamp_ = torch_col::get_unix_timestamp();
+          LOG(INFO) << "[DummyStub] inference workload done";
+        } else {
+          LOG(FATAL) << "[DummyStub] Unknown command: " << data.event;
+        }
+      }
+    }
+    LOG(INFO) << "[DummyStub] control thread exit";
+  }));
+}
+
+void DummyStub::Stop() {
+  running_ = false;
+  thread_->join();
+}
+
+void DummyStub::TrainStart() {
+  status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainStart)});
+}
+
+void DummyStub::TrainEnd() {
+  status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainEnd)});
+}
+
 SwitchStub::SwitchStub() {
   cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("cmd-ctrl", false);
   status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("status-ctrl", false);
@@ -46,6 +95,9 @@ SwitchStub::SwitchStub() {
           cmd_ = static_cast<int>(ctrl::CtrlEvent::kResumeTrain);
           LOG(INFO) << "[SwitchStub] Resume train";
           status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kResumeTrainDone)});
+        } else if (data.event == static_cast<int>(ctrl::CtrlEvent::kInferenceWorkloadDone)) {
+          this->infer_workload_done_timestamp_ = torch_col::get_unix_timestamp();
+          LOG(INFO) << "[SwitchStub] Inference workload done";
         } else {
           LOG(FATAL) << "[SwitchStub] Unknown command: " << data.event;
         }
@@ -53,6 +105,7 @@ SwitchStub::SwitchStub() {
         // LOG(INFO) << "[SwitchStub] No command";
       }
     }
+    LOG(INFO) << "[SwitchStub] control thread exit";
   }));
 }
 
@@ -160,8 +213,8 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
         } else if (data.event == static_cast<int>(ctrl::CtrlEvent::kInferExit)) {
           auto old_target_bs = this->target_bs_;
           this->target_bs_ = data.value;
-          LOG(INFO) << "[ColocateStub] Infer Exit adjust " 
-                    << old_target_bs << " -> " << this->target_bs_
+          LOG(INFO) << "[ColocateStub] Infer Exit adjust, cmd_id " << data.id
+                    << " target bs " << old_target_bs << " -> " << this->target_bs_
                     << " current " << this->current_bs_
                     << " timestamp: " << torch_col::get_unix_timestamp();
           // CHECK_LE(this->target_bs_, this->current_bs_);
@@ -172,6 +225,9 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
           //     this->ColocateAdjustL2Done();
           //   }
           // }
+        } else if (data.event == static_cast<int>(ctrl::CtrlEvent::kInferenceWorkloadDone)) {
+          this->infer_workload_done_timestamp_ = torch_col::get_unix_timestamp();
+          LOG(INFO) << "[ColocateStub] Inference workload done, cmd_id " << data.id;
         } else {
           LOG(FATAL) << "[ColocateStub] Unknown command: " << data.event;
         }
@@ -179,6 +235,7 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
         // LOG(INFO) << "[ColocateStub] No command";
       }
     }
+    LOG(INFO) << "[ColocateStub] control thread exit";
   }));
 }
 

@@ -32,6 +32,8 @@ enum class CtrlEvent {
     kColocateAdjustL2,
     kInferExit, // train adjust back
 
+    kInferenceWorkloadDone,
+
     kNumEvent,
   };
 

@@ -12,11 +12,32 @@
 namespace torch_col {
 using namespace colserve;
 
+bool __CanExitAfterInferWorkloadDone(long infer_workload_done_timestamp);
+
 class StubBase {
 public:
   virtual int Cmd() = 0;
   virtual ~StubBase() = default;
   void EnableTorchColEngine();
+};
+
+
+class DummyStub {
+ public:
+  DummyStub();
+  void Stop();
+  void TrainStart();
+  void TrainEnd();
+
+  bool CanExitAfterInferWorkloadDone() {
+    return __CanExitAfterInferWorkloadDone(infer_workload_done_timestamp_);
+  }
+ private:
+  long infer_workload_done_timestamp_{0};
+  std::unique_ptr<MemoryQueue<ctrl::CtrlMsgEntry>> cmd_event_mq_, status_event_mq_;
+  bool running_{true};
+  std::mutex mutex_;
+  std::unique_ptr<std::thread> thread_;
 };
 
 class SwitchStub: public StubBase {
@@ -32,7 +53,12 @@ class SwitchStub: public StubBase {
   void StepsNoInteruptBegin();
   void StepsNoInteruptEnd();
 
+
+  bool CanExitAfterInferWorkloadDone() {
+    return __CanExitAfterInferWorkloadDone(infer_workload_done_timestamp_);
+  }
  private:
+  long infer_workload_done_timestamp_{0};
   bool running_{true};
   int cmd_{-1};
   uint64_t cmd_id_{0};
@@ -59,7 +85,11 @@ class ColocateStub: public StubBase {
   void StepsNoInteruptBegin();
   void StepsNoInteruptEnd();
 
+  bool CanExitAfterInferWorkloadDone() {
+    return __CanExitAfterInferWorkloadDone(infer_workload_done_timestamp_);
+  }
  private:
+  long infer_workload_done_timestamp_{0};
   bool running_{true};
   int cmd_{-1};
   uint64_t cmd_id_{0};
