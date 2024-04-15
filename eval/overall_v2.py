@@ -6,8 +6,7 @@ from dataclasses import dataclass
 set_global_seed(42)
 
 use_time_stamp = True
-retry_if_fail = False
-skip_fail = False
+skip_fail = True
 
 run_colsys  = False
 run_um_mps = False
@@ -44,6 +43,7 @@ parser.add_argument('--azure-profile-memory', action='store_true')
 parser.add_argument('--all-sys', action='store_true')
 parser.add_argument('--all-workload', action='store_true')
 parser.add_argument('--infer-only-without-mps', action='store_true')
+parser.add_argument('--retry-limit', type=int, default=0)
 args = parser.parse_args()
 
 if args.colsys or args.all_sys:
@@ -78,6 +78,9 @@ if args.hybrid or args.all_workload:
 
 if args.infer_only_without_mps:
     infer_only_without_mps = True
+
+retry_limit = args.retry_limit
+retry_if_fail = retry_limit >= 1
 
 ## MARK: Configurations
 ## =========================================================== ##
@@ -132,9 +135,9 @@ class UniformConfig:
     port = str(get_unique_port())
     enable = enable_uniform
 
-    low_load = LowLoad(enable=False)
+    low_load = LowLoad(enable=True)
     high_load = HighLoad(enable=True)
-    hybrid_load = HybridLoad(enable=False)
+    hybrid_load = HybridLoad(enable=True)
 
 
 class SkewedConfig:
@@ -161,7 +164,7 @@ class SkewedConfig:
 
     low_load = LowLoad(enable=True)
     high_load = HighLoad(enable=True)
-    hybrid_load = HybridLoad(enable=False)
+    hybrid_load = HybridLoad(enable=True)
 
 
 class AzureConfig:
@@ -260,11 +263,20 @@ def _run(system: System, workload: HyperWorkload, server_model_config: str, unit
     except Exception as e:
         print(f"Failed to run {unit} {tag}: {e}")
         if retry_if_fail:
-            print(f"\n\x1b[33;1m### Retry [{unit} {tag}] ###\x1b[0m")
-            system.launch(unit, f'{tag}-retry', time_stamp=use_time_stamp,
-                    infer_model_config=server_model_config)
-            workload.launch_workload(system)
-            system.stop()
+            for retry_cnt in range(retry_limit):
+                print(f"\n\x1b[33;1m### Retry [{unit} {tag}] x {retry_cnt} ###\x1b[0m")
+                time.sleep(5)
+                try:
+                    system.launch(unit, f'{tag}-retry-{retry_cnt}', time_stamp=use_time_stamp,
+                            infer_model_config=server_model_config)
+                    workload.launch_workload(system)
+                    system.stop()
+                except Exception as e:
+                    print(f"Failed to run {unit} {tag}: {e}")
+                    if retry_cnt == retry_limit - 1:
+                        raise e
+                else:
+                    break
         else:
             raise e
     time.sleep(5)
@@ -297,7 +309,7 @@ for tag, item in {
         'max_warm_cache_nbytes': int(5.5 * 1024 ** 3),
         'cuda_memory_pool_gb': '7.5',
         'use_sta_train': False
-    }, {'train_batch_size': 32}),
+    }, {'train_batch_size': 32, 'epoch_time': 5.5}),
     'I': ({
         'mode' : System.ServerMode.Normal,
         'use_sta': True,
@@ -307,7 +319,7 @@ for tag, item in {
         'max_warm_cache_nbytes': int(9 * 1024 ** 3),
         'cuda_memory_pool_gb': '10.5',
         'use_sta_train': False
-    }, {'train_batch_size': 8}), 
+    }, {'train_batch_size': 8, 'epoch_time': 14.5}), 
 }.items():
     if not run_static_partition:
         break
@@ -322,7 +334,8 @@ for tag, item in {
                 UniformConfig.model_list, UniformConfig.num_model, 1)
             workload = uniform(rps=UniformConfig.high_load.rps, 
                                client_model_list=client_model_list, infer_only=False,
-                               train_batch_size=workload_config['train_batch_size'])
+                               train_batch_size=workload_config['train_batch_size'],
+                               train_epoch=int(UniformConfig.duration / workload_config['epoch_time'] + 5))
             system = System(train_mps_thread_percent=UniformConfig.high_load.mps_train,
                             port=UniformConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-uniform", f"static-partition-high-{tag}")
@@ -334,7 +347,8 @@ for tag, item in {
                 UniformConfig.model_list, UniformConfig.num_model, 1)
             workload = uniform(rps=UniformConfig.low_load.rps, 
                                client_model_list=client_model_list, infer_only=False,
-                               train_batch_size=workload_config['train_batch_size'])
+                               train_batch_size=workload_config['train_batch_size'],
+                               train_epoch=int(UniformConfig.duration / workload_config['epoch_time'] + 5))
             system = System(train_mps_thread_percent=UniformConfig.low_load.mps_train,
                             port=UniformConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-uniform", f"static-partition-low-{tag}")
@@ -345,7 +359,8 @@ for tag, item in {
                 SkewedConfig.model_list, SkewedConfig.num_model, 1)
             workload = skewed(rps=SkewedConfig.high_load.rps, 
                               client_model_list=client_model_list, infer_only=False,
-                              train_batch_size=workload_config['train_batch_size'])
+                              train_batch_size=workload_config['train_batch_size'],
+                              train_epoch=int(SkewedConfig.duration / workload_config['epoch_time'] + 5))
             system = System(train_mps_thread_percent=SkewedConfig.high_load.mps_train,
                             port=SkewedConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-skewed", f"static-partition-high-{tag}")
@@ -356,7 +371,8 @@ for tag, item in {
                 SkewedConfig.model_list, SkewedConfig.num_model, 1)
             workload = skewed(rps=SkewedConfig.low_load.rps, 
                               client_model_list=client_model_list, infer_only=False,
-                              train_batch_size=workload_config['train_batch_size'])
+                              train_batch_size=workload_config['train_batch_size'],
+                              train_epoch=int(SkewedConfig.duration / workload_config['epoch_time'] + 5))
             system = System(train_mps_thread_percent=SkewedConfig.low_load.mps_train,
                             port=SkewedConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-skewed", f"static-partition-low-{tag}")
@@ -367,7 +383,8 @@ for tag, item in {
                 AzureConfig.model_list, AzureConfig.num_model, 1)
             workload = azure(rps=AzureConfig.max_rps, 
                              client_model_list=client_model_list, infer_only=False,
-                             train_batch_size=workload_config['train_batch_size'])
+                             train_batch_size=workload_config['train_batch_size'],
+                             train_epoch=int(AzureConfig.duration / workload_config['epoch_time'] + 5))
             system = System(train_mps_thread_percent=AzureConfig.mps_train,
                             port=AzureConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-azure", f"static-partition-{tag}")
@@ -493,14 +510,15 @@ if run_task_switch:
         'use_xsched': False,
         'has_warmup' : True,
         'cuda_memory_pool_gb': '13',
-        'train_memory_over_predict_mb': 1500,
+        'train_memory_over_predict_mb': 1000,
     }
 
     if UniformConfig.enable and UniformConfig.high_load.enable:
         client_model_list, server_model_config = InferModel.get_multi_model(
             UniformConfig.model_list, UniformConfig.num_model, 1)
         workload = uniform(rps=UniformConfig.high_load.rps, 
-                           client_model_list=client_model_list, infer_only=False)
+                           client_model_list=client_model_list, infer_only=False,
+                           train_epoch=int(UniformConfig.duration / 5 + 5))
         system = System(port=UniformConfig.port, **system_config)
         run(system, workload, server_model_config, "overall-uniform", "task-switch-high")
 
@@ -516,7 +534,8 @@ if run_task_switch:
         client_model_list, server_model_config = InferModel.get_multi_model(
             SkewedConfig.model_list, SkewedConfig.num_model, 1)
         workload = skewed(rps=SkewedConfig.high_load.rps, 
-                          client_model_list=client_model_list, infer_only=False)
+                          client_model_list=client_model_list, infer_only=False,
+                          train_epoch=int(SkewedConfig.duration / 5 + 5))
         system = System(port=SkewedConfig.port, **system_config)
         run(system, workload, server_model_config, "overall-skewed", "task-switch-high")
 
@@ -607,7 +626,8 @@ if run_um_mps:
                 UniformConfig.model_list, UniformConfig.num_model, 1)
             workload = uniform(UniformConfig.high_load.rps, client_model_list, infer_only=False)
             system = System(train_mps_thread_percent=UniformConfig.high_load.mps_train,
-                            port=UniformConfig.port, **system_config)
+                            port=UniformConfig.port, max_live_minute=int(SkewedConfig.duration * 0.1),
+                            **system_config)
             run(system, workload, server_model_config, "overall-uniform", "um-mps-high")
 
     if UniformConfig.enable and UniformConfig.low_load.enable:
@@ -616,7 +636,8 @@ if run_um_mps:
                 UniformConfig.model_list, UniformConfig.num_model, 1)
             workload = uniform(UniformConfig.low_load.rps, client_model_list, infer_only=False)
             system = System(train_mps_thread_percent=UniformConfig.low_load.mps_train,
-                            port=UniformConfig.port, **system_config)
+                            port=UniformConfig.port, max_live_minute=int(SkewedConfig.duration * 0.1),
+                            **system_config)
             run(system, workload, server_model_config, "overall-uniform", "um-mps-low")
 
     if SkewedConfig.enable and SkewedConfig.high_load.enable:
@@ -625,7 +646,8 @@ if run_um_mps:
                 SkewedConfig.model_list, SkewedConfig.num_model, 1)
             workload = skewed(SkewedConfig.high_load.rps, client_model_list, infer_only=False)
             system = System(train_mps_thread_percent=SkewedConfig.high_load.mps_train,
-                            port=SkewedConfig.port, **system_config)
+                            port=SkewedConfig.port, max_live_minute=int(SkewedConfig.duration * 0.1),
+                            **system_config)
             run(system, workload, server_model_config, "overall-skewed", "um-mps-high")
 
     if SkewedConfig.enable and SkewedConfig.low_load.enable:
@@ -634,7 +656,8 @@ if run_um_mps:
                 SkewedConfig.model_list, SkewedConfig.num_model, 1)
             workload = skewed(SkewedConfig.low_load.rps, client_model_list, infer_only=False)
             system = System(train_mps_thread_percent=SkewedConfig.low_load.mps_train,
-                            port=SkewedConfig.port, **system_config)
+                            port=SkewedConfig.port, max_live_minute=int(SkewedConfig.duration * 0.1),
+                            **system_config)
             run(system, workload, server_model_config, "overall-skewed", "um-mps-low")
 
     if AzureConfig.enable:
@@ -644,6 +667,7 @@ if run_um_mps:
             workload = azure(rps=AzureConfig.max_rps, 
                              client_model_list=client_model_list, infer_only=False)
             system = System(train_mps_thread_percent=AzureConfig.mps_train,
-                            port=AzureConfig.port, **system_config)
+                            port=AzureConfig.port, max_live_minute=int(AzureConfig.duration * 0.15),
+                            **system_config)
             run(system, workload, server_model_config, "overall-azure", "um-mps")
 

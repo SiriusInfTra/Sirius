@@ -160,7 +160,8 @@ class SwitchHook(HookABC):
                     if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
                         raise SwitchL1Exception("[Task Switch SYNC FWD]")
                     elif self._stub.cmd == torch_col.CtrlEvent.kResumeTrain:
-                        self._stub.cmd = None
+                        # self._stub.cmd = None
+                        pass
             elif self.train_mode == TrainMode.TASKSWITCH_L0:
                 raise Exception('task switch l0 in cpp workld')
         elif self.hook_mode == HookMode.XSCHED_SYNC:
@@ -172,7 +173,8 @@ class SwitchHook(HookABC):
                         xsched.kill_batch()
                         raise ColocateAdjustL1Exception("[Task Switch XSCHED_SYNC FWD]")
                     elif self._stub.cmd == torch_col.CtrlEvent.kResumeTrain:
-                        self._stub.cmd = None
+                        # self._stub.cmd = None
+                        pass
             elif self.train_mode == TrainMode.TASKSWITCH_L0:
                 raise Exception('task switch l0 in cpp workld')
         else:
@@ -195,7 +197,8 @@ class SwitchHook(HookABC):
                     if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
                         raise SwitchL1Exception("[Task Switch BWD]")
                     elif self._stub.cmd == torch_col.CtrlEvent.kResumeTrain:
-                        self._stub.cmd = None
+                        # self._stub.cmd = None
+                        pass
             elif self.train_mode == TrainMode.TASKSWITCH_L0:
                 raise Exception('task switch l0 in cpp workld')
         elif self.hook_mode == HookMode.XSCHED_SYNC:
@@ -206,7 +209,8 @@ class SwitchHook(HookABC):
                         xsched.kill_batch()
                         raise SwitchL1Exception("[Task Switch BWD]")
                     elif self._stub.cmd == torch_col.CtrlEvent.kResumeTrain:
-                        self._stub.cmd = None
+                        # self._stub.cmd = None
+                        pass
             elif self.train_mode == TrainMode.TASKSWITCH_L0:
                 raise Exception('task switch l0 in cpp workld')
         else:
