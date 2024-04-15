@@ -385,12 +385,14 @@ class ColocateHook(HookABC):
                 self._grad_fn = []
             else:
                 torch_col.release_interm_memory()
-            
+            t1 = time.time()
             MemoryPool.empty_cache()
+            t2 = time.time()
             self._stub.adjust_l1_done()
+            t3 = time.time()
             cur_cached_gpu_mem, cur_allocate_gpu_mem = MemoryPool.get_memory_usage(), MemoryPool.get_allocated_memory()
-        t1 = time.time()
-        print(f'[{torch_col.get_unix_timestamp_us()/1000}] [Adjust L1 {(t1-t0)*1e3:.1f} ms] target batch_size: {self.target_batch_size},'
+        t4 = time.time()
+        print(f'[{torch_col.get_unix_timestamp_us()/1000}] [Adjust L1 {(t1-t0)*1e3:.1f} | {(t2-t1)*1e3:.1f} | {(t3-t2)*1e3:.1f} | {(t4-t3)*1e3:.1f} ms] target batch_size: {self.target_batch_size},'
                 + f' memory cached: {old_cached_gpu_mem:.2f}GB -> {cur_cached_gpu_mem:.2f}GB,'
                 + f' memory allocated: {old_allocate_gpu_mem:.2f}GB -> {cur_allocate_gpu_mem:.2f}GB.', flush=True)
 
