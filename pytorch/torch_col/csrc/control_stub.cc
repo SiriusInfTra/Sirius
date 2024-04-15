@@ -43,9 +43,13 @@ SwitchStub::SwitchStub() {
           }
           // status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kInterruptTrainDone)});
         } else if (data.event == static_cast<int>(ctrl::CtrlEvent::kResumeTrain)) {
-          cmd_ = static_cast<int>(ctrl::CtrlEvent::kResumeTrain);
-          LOG(INFO) << "[SwitchStub] Resume train";
-          status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kResumeTrainDone)});
+          if (cmd_ == static_cast<int>(ctrl::CtrlEvent::kInterruptTrain) && cmd_id_ == 0) { // already interrupting train
+            cmd_ = static_cast<int>(ctrl::CtrlEvent::kResumeTrain);
+            LOG(INFO) << "[SwitchStub] Resume train";
+            status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kResumeTrainDone)});
+          } else {
+            LOG(INFO) << "[SwitchStub] Ignore resume train";
+          }
         } else {
           LOG(FATAL) << "[SwitchStub] Unknown command: " << data.event;
         }
