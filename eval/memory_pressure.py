@@ -20,10 +20,8 @@ class UniformConfig:
     train_dataset_size = 1000 
     train_epoch_time = 5.5 # used for predict number epoch
 
-    model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
-                  InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
-                  InferModel.ResNet152, InferModel.DistilGPT2] 
-    num_model = 100
+    model_list = [InferModel.ResNet152] 
+    num_model = 64
     interval_sec = 20
     duration = None
     port = str(run_comm.get_unique_port())
@@ -34,14 +32,14 @@ class UniformConfig:
     hybrid_load = run_comm.HybridLoad(enable=False)
 
 
-num_model_to_request = [10]
-for i in range(9):
-    num_model_to_request.append(num_model_to_request[-1] + 10)
-for i in range(9):
-    num_model_to_request.append(num_model_to_request[-1] - 10)
+num_model_to_request = [8]
+for i in range(7):
+    num_model_to_request.append(num_model_to_request[-1] + 8)
+for i in range(7):
+    num_model_to_request.append(num_model_to_request[-1] - 8)
 
 print(num_model_to_request, len(num_model_to_request))
-UniformConfig.duration = len(num_model_to_request) * 20
+UniformConfig.duration = (len(num_model_to_request) - 1) * 20
 
 assert UniformConfig.num_model == max(num_model_to_request), \
     f"num_model {UniformConfig.num_model} != max(num_model_to_request) {max(num_model_to_request)}"
@@ -66,7 +64,7 @@ def uniform(rps, client_model_list, infer_only=True, rps_fn=None, num_model_requ
     workload.set_infer_workloads(MicrobenchmarkInferWorkload(
         model_list=client_model_list,
         interval_sec=UniformConfig.interval_sec, fix_request_sec=rps,
-        rps_fn=rps_fn, num_model_request_fn=num_model_request_fn,
+        rps_fn=rps_fn, num_request_model_fn=num_model_request_fn,
         duration=UniformConfig.duration + workload.infer_extra_infer_sec,
     ))
     return workload
@@ -95,11 +93,11 @@ with mps_thread_percent(UniformConfig.high_load.mps_infer):
 
     client_model_list, server_model_config = InferModel.get_multi_model(
         UniformConfig.model_list, UniformConfig.num_model, 1)
-    # workload = uniform(rps=UniformConfig.high_load.rps, 
-    #                    client_model_list=client_model_list, infer_only=False,
-    #                    num_model_request_fn=num_model_request_fn)
-    workload = run_comm.uniform(rps=UniformConfig.high_load.rps, 
-                       client_model_list=client_model_list, infer_only=False)
+    workload = uniform(rps=UniformConfig.high_load.rps, 
+                       client_model_list=client_model_list, infer_only=False,
+                       num_model_request_fn=num_model_request_fn)
+    # workload = run_comm.uniform(rps=UniformConfig.high_load.rps, 
+    #                    client_model_list=client_model_list, infer_only=False)
     system = System(train_mps_thread_percent=UniformConfig.high_load.mps_train,
                     port=UniformConfig.port,
                     **system_config)
