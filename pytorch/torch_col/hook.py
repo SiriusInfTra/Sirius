@@ -288,7 +288,8 @@ class ColocateHook(HookABC):
             # during critical section executing, kill batch request may be sent
             if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
                 # since we sync, no kernel is executing
-                self.adjust()
+                with EventManager.record_duration_event('adjust_after_step'):
+                    self.adjust()
         else:
             self._stub.StepsNoInteruptBegin()
             yield
@@ -394,13 +395,16 @@ class ColocateHook(HookABC):
         t0 = time.time()
         with EventManager.record_duration_event('adjust_l2'):
             old_cached_gpu_mem, old_allocate_gpu_mem = MemoryPool.get_memory_usage(), MemoryPool.get_allocated_memory()
+            old_pytorch_cached = torch.cuda.memory_reserved() / 1024 / 1024 / 1024
             MemoryPool.empty_cache()
             self._stub.adjust_l2_done()
             cur_cached_gpu_mem, cur_allocate_gpu_mem = MemoryPool.get_memory_usage(), MemoryPool.get_allocated_memory()
+            cur_pytorch_cached = torch.cuda.memory_reserved() / 1024 / 1024 / 1024
         t1 = time.time()
         print(f'[{torch_col.get_unix_timestamp_us()/1000}] [Adjust L2 {(t1-t0)*1e3:.1f} ms] target batch_size: {self.target_batch_size},'
                 + f' memory cached: {old_cached_gpu_mem:.2f}GB -> {cur_cached_gpu_mem:.2f}GB,'
-                + f' memory allocated: {old_allocate_gpu_mem:.2f}GB -> {cur_allocate_gpu_mem:.2f}GB.', flush=True)
+                + f' memory allocated: {old_allocate_gpu_mem:.2f}GB -> {cur_allocate_gpu_mem:.2f}GB.'
+                + f' pytorch allocated: {old_pytorch_cached:.2f}GB -> {cur_pytorch_cached:.2f}GB', flush=True)
 
     def report_batch_size(self, batch_size):
         self._stub.report_batch_size(batch_size)

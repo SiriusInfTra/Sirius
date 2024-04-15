@@ -125,6 +125,10 @@ class Config {
   static bool has_warmup;
   static double infer_model_max_idle_ms;
 
+  static bool dump_adjust_info;
+
+  static bool profiler_acquire_resource_lock ;
+
   static bool dummy_adjust;
 
   static bool system_initialized;

@@ -107,12 +107,14 @@ class ColdModelCache {
    * @param rank The rank of the cache item.
    * @param groups_nbytes The vector of group sizes in bytes.
    * @param total_nbytes The total size of the cache item in bytes.
+   * @param source_model The loading model that causes pushing cache item.
    * @param lock The unique lock used to synchronize access to the infer model store.
    * @return A tuple containing the vector of group sizes, a vector of pairs representing the names and group sizes,
    *         and a boolean indicating the success of the operation.
    */
   std::tuple<std::vector<size_t>, std::vector<std::pair<std::string, std::vector<size_t>>>, bool>
-  PushCacheItem(const std::string& name, size_t rank, std::vector<size_t> groups_nbytes, size_t total_nbytes, std::unique_lock<std::mutex> &lock);
+  PushCacheItem(const std::string& name, size_t rank, std::vector<size_t> groups_nbytes, size_t total_nbytes, 
+                                                        std::unique_lock<std::mutex> &lock, Model *source_model);
 
 
   /**
@@ -131,11 +133,11 @@ class ColdModelCache {
    * Retrieves the list of models that are eligible for eviction from the infer model store.
    * 
    * @param capacity The desired capacity after eviction.
-   * @param ignore_model 
+   * @param ignore_models 
    * @param lock A unique lock on the mutex.
    * @return The list of models that should be evicted.
    */
-  evict_list GetEvictModels(long capacity, const std::string &ignore_model_name, std::unique_lock<std::mutex>& lock);
+  evict_list GetEvictModels(long capacity, std::array<Model*, 2> ignore_models, std::unique_lock<std::mutex>& lock);
 
 
   std::unique_lock<std::mutex> Lock() {
@@ -145,6 +147,22 @@ class ColdModelCache {
   inline size_t GetCachedNbytes(std::unique_lock<std::mutex> &lock) {
     return current_cached_nbytes_;
   }
+
+  inline size_t GetCachedNbytesUnsafe() {
+    return current_cached_nbytes_;
+  }
+
+  inline size_t GetColdCacheReleasableMemoryMBUnsafe() {
+    if (current_cached_nbytes_ > Config::cold_cache_min_capability_nbytes) {
+      return sta::ByteToMB(current_cached_nbytes_ - Config::cold_cache_min_capability_nbytes);
+    } else {
+      return 0;
+    }
+  }
+
+  double GetBufferMBUnsafe();
+
+  double GetCacheSizeMBUnsafe();
 
 
   inline double GetColdCacheFreeMemoryMB(double free_memory_MB, std::unique_lock<std::mutex> &lock) {
@@ -228,7 +246,7 @@ class InferModelStore {
   static InferModelStore* Get();
   static void Init(const std::filesystem::path &infer_store_path);
   static bool Initialized() { return Get()->initialized_; }
-  static bool Shutdown() { return true; }
+  static bool Shutdown();
 
   static void WarmupDone();
   static bool AddJob(const std::string &model_name, 

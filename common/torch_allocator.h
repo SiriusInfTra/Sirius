@@ -6,6 +6,7 @@
 #include <common/util.h>
 
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
+#include <boost/interprocess/sync/lock_options.hpp>
 #include <boost/interprocess/sync/scoped_lock.hpp>
 
 #include <atomic>
@@ -19,6 +20,7 @@
 #include <ostream>
 #include <list>
 #include <set>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -27,7 +29,8 @@ namespace colserve::sta {
 
 class TorchAllocator : public GenericAllocator {
 public:
-  static const constexpr size_t ALIGN_NBYTES = 512_B; 
+  static const constexpr size_t ALIGN_NBYTES = 512_B;
+  static const constexpr size_t FIND_ALLOC_RETRY = 50;
 
 private:
   static std::unique_ptr<TorchAllocator> instance_;
@@ -46,7 +49,7 @@ private:
     CHECK(planning_unmap_.empty());
   }
 
-  void ReleaseFreePhyMem(bip::scoped_lock<bip::interprocess_mutex> &lock) {
+  void ReleaseFreePhyMem(bip::scoped_lock<bip::interprocess_mutex> &defer_lock) {
     LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Release free physical memory.";
     size_t allocated_nbytes = 0;
     std::vector<int> ready_to_free_mask(mapped_mem_list_.size(), true);
@@ -91,13 +94,14 @@ private:
     }
     entry_list_.IterateRange(0, mempool_.mempool_nbytes, [&](MemEntry *entry){
       bool is_alloc = entry->is_alloc;
-      entry_list_.UpdateAllocFlag(entry);
+      entry_list_.UpdateAllocFlag(entry); /* maybe transform is_alloc: true -> false */
       CHECK((is_alloc == false && entry->is_alloc == false) || is_alloc == true) << entry << " " << is_alloc;
       return entry;
     });
     DLOG(INFO) << "ReleaseFreePhyMem 2";
-    mempool_.DeallocPhyMem(ready_to_free_mem);
-    TVMAllocator::Get().SyncFreeTrain(ready_to_free_mem, lock);
+    defer_lock.lock();
+    TVMAllocator::Get().FreeForTrain(ready_to_free_mem, defer_lock);
+    defer_lock.unlock();
     size_t physical_nbytes = std::count_if(
         mapped_mem_list_.cbegin(), 
         mapped_mem_list_.cend(), 
@@ -137,13 +141,13 @@ private:
         << "missing " << missing_phy_mem_index_list.size() 
         << " physical memory page(s), try allocate.";
     EnsureUnmap();
-    std::vector<PhyMem *> request_phy_mem_list = mempool_.AllocNumPhyMem( policy_, missing_phy_mem_index_list.size());
+    std::vector<PhyMem *> request_phy_mem_list = TVMAllocator::Get().AllocForTrain(missing_phy_mem_index_list.size(), lock);
     if (request_phy_mem_list.size() < missing_phy_mem_index_list.size()) {
       DumpState();
       TVMAllocator::Get().DumpState();
       LOG(FATAL) << log_prefix_ << "OOM while alloc phy mem page, entry = " << entry << ".";
     }
-    TVMAllocator::Get().SyncAllocTrain(request_phy_mem_list, lock);
+
     for (size_t k = 0; k < request_phy_mem_list.size(); ++k) {
       size_t phy_mem_index = missing_phy_mem_index_list[k];
       mapped_mem_list_[phy_mem_index] = request_phy_mem_list[k];
@@ -208,16 +212,19 @@ private:
       entry = MaybeMerge(entry);
     } else {
       entry = free_list_large_.PushFreeEntry(entry);
-      auto *prev_entry = entry_list_.GetPrevEntry(entry);
-      if (prev_entry && prev_entry->is_small && prev_entry->is_free && prev_entry->is_alloc) {
+
+      if (auto *prev_entry = entry_list_.GetPrevEntry(entry); prev_entry 
+        && prev_entry->is_small && prev_entry->is_free && prev_entry->is_alloc
+      ) {
         size_t prev_entry_nbytes = prev_entry->nbytes;
         auto *maybe_merged_entry = MaybeMerge(prev_entry);
         if (maybe_merged_entry->nbytes > prev_entry_nbytes) {
           entry = maybe_merged_entry;
         }
       }
-      auto *next_entry = entry_list_.GetNextEntry(entry);
-      if (next_entry && next_entry->is_small && next_entry->is_free && next_entry->is_alloc) {
+      if (auto *next_entry = entry_list_.GetNextEntry(entry); next_entry 
+        && next_entry->is_small && next_entry->is_free && next_entry->is_alloc
+      ) {
         size_t next_entry_nbytes = next_entry->nbytes;
         auto *maybe_merged_entry = MaybeMerge(next_entry);
         if (maybe_merged_entry->nbytes > next_entry_nbytes) {
@@ -240,17 +247,21 @@ private:
     MemEntry *free_entry = nullptr;
     // 1. normal case, alloc in train small/large mem pool
     if (nbytes < small_block_nbytes_) {
-      free_entry = free_list_small_.PopFreeEntry(nbytes, true, 50);
+      free_entry = free_list_small_.PopFreeEntry(nbytes, true, FIND_ALLOC_RETRY);
       CHECK(!alloc_conf::ALWAYS_CHECK_STATE || free_entry == nullptr || CheckState());
     }
-    if (free_entry == nullptr && (free_entry = free_list_large_.PopFreeEntry(nbytes, false, 50)) != nullptr) {
+    if (free_entry == nullptr && (free_entry = free_list_large_.PopFreeEntry(nbytes, false, FIND_ALLOC_RETRY)) != nullptr) {
       free_entry = Split(free_entry, free_entry->addr_offset, nbytes);
       CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
+    }
+    if (!lock.owns()) {
+      lock.lock();
     }
     // 2. find global free phy page to enlarge train memory pool 
     if (free_entry == nullptr && retry_alloc) {
         size_t try_allocate_n = detail::AlignedNBytes<MEM_BLOCK_NBYTES * 8>(nbytes) / MEM_BLOCK_NBYTES;
-        std::vector<PhyMem *> phy_mem_list = mempool_.AllocNumPhyMem(policy_, try_allocate_n);
+        std::vector<PhyMem *> phy_mem_list = TVMAllocator::Get()
+          .AllocForTrain(try_allocate_n, lock);
         size_t allocated = phy_mem_list.size();
         LOG_IF(INFO, allocated < try_allocate_n) << log_prefix_ 
             << "Require " << try_allocate_n 
@@ -260,7 +271,6 @@ private:
           DumpState();
           LOG(FATAL) << log_prefix_  << "OOM while finding physical memory page, nbytes = " << ByteDisplay(nbytes) << ".";
         }
-        TVMAllocator::Get().SyncAllocTrain(phy_mem_list, lock);
         auto *expand_entry = reinterpret_cast<MemEntry *>(
             MemPool::Get().GetSharedMemory().allocate(sizeof(MemEntry)));
         expand_entry->addr_offset = MEM_BLOCK_NBYTES * mapped_mem_list_.size();
@@ -321,13 +331,13 @@ public:
   }
 
   std::byte *Alloc(size_t nbytes) {
-    bip::scoped_lock lock{mempool_.GetMutex()};
+    bip::scoped_lock lock{mempool_.GetMutex(), bip::defer_lock};
     return base_ptr_ + Alloc0(nbytes, true, lock)->addr_offset;
   }
   
   void EmptyCache() {
-    bip::scoped_lock lock{mempool_.GetMutex()};
-    ReleaseFreePhyMem(lock);
+    bip::scoped_lock defer_lock{mempool_.GetMutex(), bip::defer_lock};
+    ReleaseFreePhyMem(defer_lock);
     peek_allocated_nbytes_->store(mempool_.GetAllocatedNbytes(policy_), 
                                   std::memory_order_relaxed);
   }

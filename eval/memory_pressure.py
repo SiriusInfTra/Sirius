@@ -1,92 +1,106 @@
+import os
+import argparse
 from runner import *
 from dataclasses import dataclass
+import run_comm
+
+run_comm.use_time_stamp = True
+run_comm.retry_if_fail = False
+run_comm.skip_fail = False
+
+# run_comm.fake_launch = True
 
 set_global_seed(42)
 
-use_time_stamp = True
+# MARK: Config
+class UniformConfig:
+    train_model = 'swin_b'
+    train_batch_size = 72
+    train_global_batch_size = 500 # not used, hard code for global batch size and dataset size
+    train_dataset_size = 1000 
+    train_epoch_time = 5.5 # used for predict number epoch
 
-run_colsys = False
-run_um_mps = True
-run_task_switch = True
+    model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
+                  InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
+                  InferModel.ResNet152, InferModel.DistilGPT2] 
+    num_model = 100
+    interval_sec = 20
+    duration = None
+    port = str(run_comm.get_unique_port())
+    enable = True
 
-# run_colsys = False
-# run_um_mps = False
-# run_task_switch = False
+    low_load = run_comm.LowLoad(enable=False)
+    high_load = run_comm.HighLoad(enable=True)
+    hybrid_load = run_comm.HybridLoad(enable=False)
 
-@dataclass
-class SmoothConfig:
-    model_list = [InferModel.ResNet152]
-    heavy_rps = 100
-    heavy_num_model = 60
-    heavy_mps_infer = 60
-    heavy_mps_train = 40
-    heavy_try_mps_pct_list = [0]
-    # heavy_try_mps_pct_list = [50, 60, 70, 80]
 
-    light_rps = 10
-    light_num_model = 32
-    light_mps_infer = 30
-    light_mps_train = 70
-    light_try_mps_pct_list = [0]
-    # light_try_mps_pct_list = [0, 20, 30, 40]
+num_model_to_request = [10]
+for i in range(9):
+    num_model_to_request.append(num_model_to_request[-1] + 10)
+for i in range(9):
+    num_model_to_request.append(num_model_to_request[-1] - 10)
 
-    num_model_list = [8, 16, 24, 32, 36]
-    server_port = "18580"
-    increase_time = 120
-    
-eval_config = SmoothConfig()
+print(num_model_to_request, len(num_model_to_request))
+UniformConfig.duration = len(num_model_to_request) * 20
 
-def smooth(rps, client_model_list, infer_only=True):
-    workload = HyperWorkload(concurrency=2048, duration=eval_config.increase_time + 140, warmup=5,
-                             wait_warmup_done_sec=5, wait_train_setup_sec=30,
+assert UniformConfig.num_model == max(num_model_to_request), \
+    f"num_model {UniformConfig.num_model} != max(num_model_to_request) {max(num_model_to_request)}"
+
+
+# MARK: Workload
+## =========================================================== ##
+
+def uniform(rps, client_model_list, infer_only=True, rps_fn=None, num_model_request_fn=None,
+            train_model:str = UniformConfig.train_model, 
+            train_epoch:int = int(UniformConfig.duration / UniformConfig.train_epoch_time + 5), 
+            train_batch_size:int = UniformConfig.train_batch_size):
+    workload = HyperWorkload(concurrency=2048,
+                             warmup=5,
+                             wait_warmup_done_sec=5,
+                             wait_train_setup_sec=40 ,
                              wait_stable_before_start_profiling_sec=10)
     InferModel.reset_model_cnt()
     if not infer_only:
-        workload.set_train_workload(train_workload=TrainWorkload('resnet', 15 + (eval_config.increase_time // 7), 96))
+        workload.set_train_workload(
+            train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
     workload.set_infer_workloads(MicrobenchmarkInferWorkload(
         model_list=client_model_list,
-        max_request_sec=rps, interval_sec=1, duration=eval_config.increase_time + 65,
+        interval_sec=UniformConfig.interval_sec, fix_request_sec=rps,
+        rps_fn=rps_fn, num_model_request_fn=num_model_request_fn,
+        duration=UniformConfig.duration + workload.infer_extra_infer_sec,
     ))
     return workload
 
 
-def run(system: System, workload: HyperWorkload, server_model_config: list[System.InferModelConfig], tag: str):
-    system.launch("memory_perssure", tag, time_stamp=use_time_stamp,
-                  infer_model_config=server_model_config)
-    workload.launch_workload(system)
-    system.stop()
-    time.sleep(3)
-    system.draw_memory_usage()
-    system.draw_trace_cfg()
+# MARK: COLSYS
+system_config = {
+    'mode' : System.ServerMode.ColocateL1,
+    'use_sta' : True, 
+    'mps' : True, 
+    'use_xsched' : True, 
+    'has_warmup' : True,
+    'ondemand_adjust' : True,
+    'cuda_memory_pool_gb' : "13.5",
+    'train_memory_over_predict_mb' : 1500,
+    'infer_model_max_idle_ms' : 5000,
+    'cold_cache_ratio': 0.5, 
+    'cold_cache_min_capability_nbytes': 1 * 1024 * 1024 * 1024,
+    'cold_cache_max_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),
+}
 
-if run_colsys:
-    for num_model in eval_config.num_model_list:
-        with mps_thread_percent(eval_config.heavy_mps_infer):
-            num_worker = 0
-            client_model_list, server_model_config = InferModel.get_multi_model(eval_config.model_list, num_model, num_worker)
-            hyper_workload = smooth(rps=eval_config.heavy_rps, client_model_list=client_model_list, infer_only=False)
-            system = System(mode=System.ServerMode.ColocateL1, use_sta=True, mps=True, use_xsched=True, has_warmup=True,
-                    cuda_memory_pool_gb="13.5", ondemand_adjust=True, train_memory_over_predict_mb=1500,
-                    train_mps_thread_percent=eval_config.heavy_mps_train, infer_model_max_idle_ms=5000, port=eval_config.server_port,)
-            run(system, hyper_workload, server_model_config, f"colsys-{num_model}")
+with mps_thread_percent(UniformConfig.high_load.mps_infer):
+    def num_model_request_fn(i, m):
+        global num_model_to_request
+        return num_model_to_request[i]
 
-if run_task_switch:
-    for num_model in eval_config.num_model_list:
-        num_worker = 0
-        client_model_list, server_model_config = InferModel.get_multi_model(eval_config.model_list, num_model, num_worker)
-        hyper_workload = smooth(rps=eval_config.heavy_rps, client_model_list=client_model_list, infer_only=False)
-        system = System(mode=System.ServerMode.TaskSwitchL1, use_sta=True, mps=False, use_xsched=False, has_warmup=True,
-                        cuda_memory_pool_gb="13", train_memory_over_predict_mb=1500, port=eval_config.server_port)
-        run(system, hyper_workload, server_model_config, f"task-switch-{num_model}")
-
-
-if run_um_mps:
-    for num_model in eval_config.num_model_list:
-        with um_mps(eval_config.heavy_mps_infer):
-            num_worker = 1
-            client_model_list, server_model_config = InferModel.get_multi_model(eval_config.model_list, num_model, num_worker)
-            hyper_workload = smooth(rps=eval_config.heavy_rps, client_model_list=client_model_list, infer_only=False)
-            system = System(mode=System.ServerMode.Normal, use_sta=False, mps=True, use_xsched=False, has_warmup=True,
-                            train_mps_thread_percent=eval_config.heavy_mps_train, port=eval_config.server_port,
-                        max_live_minute=15 + int(eval_config.increase_time / 60 * 15))
-            run(system, hyper_workload, server_model_config, f"um-mps-{num_model}")
+    client_model_list, server_model_config = InferModel.get_multi_model(
+        UniformConfig.model_list, UniformConfig.num_model, 1)
+    # workload = uniform(rps=UniformConfig.high_load.rps, 
+    #                    client_model_list=client_model_list, infer_only=False,
+    #                    num_model_request_fn=num_model_request_fn)
+    workload = run_comm.uniform(rps=UniformConfig.high_load.rps, 
+                       client_model_list=client_model_list, infer_only=False)
+    system = System(train_mps_thread_percent=UniformConfig.high_load.mps_train,
+                    port=UniformConfig.port,
+                    **system_config)
+    run_comm.run(system, workload, server_model_config, "memory-pressure", f"{UniformConfig.num_model}")

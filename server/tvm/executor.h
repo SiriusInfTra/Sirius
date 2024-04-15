@@ -67,12 +67,12 @@ class Executor {
 
   
   uint32_t GetNumOfNodes() const { return tvm_graph_.nodes_.size(); }
-  uint32_t entry_id(NodeEntry e) const {
-    return tvm_graph_.node_row_ptr_[e.node_id] + e.index;
-  }
-  uint32_t entry_id(uint32_t nid, uint32_t index) const {
-    return tvm_graph_.node_row_ptr_[nid] + index;
-  }
+  // uint32_t entry_id(NodeEntry e) const {
+  //   return tvm_graph_.node_row_ptr_[e.node_id] + e.index;
+  // }
+  // uint32_t entry_id(uint32_t nid, uint32_t index) const {
+  //   return tvm_graph_.node_row_ptr_[nid] + index;
+  // }
 
   size_t GetParamStorageSize() const {
     return param_storage_size_;
@@ -149,7 +149,7 @@ class Executor {
   std::vector<std::vector<DLTensor*>> input_dltensors_;
   std::vector<std::vector<DLTensor*>> output_dltensors_;
   std::vector<std::vector<DLTensor*>> both_input_output_dltensors_;
-  std::vector<std::vector<size_t>> input_param_nid_;
+  std::vector<std::vector<size_t>> input_param_eid_; // node id -> [param data entry ids]
 
   // to avoid alloc pin memory during set input/get output
   std::unordered_map<std::string, TVMArray> input_cpu_pin_bufs_,

@@ -48,6 +48,8 @@ ColdModelCache::ReservePolicy ColdModelCache::reserve_policy_on_release = \
 
 ColdModelCache::ReservePolicy ColdModelCache::reserve_policy_on_adjust = \
     ColdModelCache::ReservePolicy::kMaxCap;
+  
+constexpr bool warm_cache_try_evict = true;
 
 
 std::unique_lock<std::mutex> WarmModelCache::ReserveCache(
@@ -135,7 +137,7 @@ void WarmModelCache::ReserveCacheInternal(
   CHECK(model != nullptr);
 
   std::stringstream ss;
-  ss << "[InferModelCache] " << "reserve " << model_name;
+  ss << "[WarmModelCache] " << "reserve " << model_name;
 
   // 1. already cached
   if (infer_model_cache_->warm_cache_[model_name]->cached) {
@@ -160,19 +162,32 @@ void WarmModelCache::ReserveCacheInternal(
 
     size_t reclaim_nbytes = 0;
     ss << " | evict";
-    for (auto cm : coldest_model) {
-      if (nbytes > Config::max_warm_cache_nbytes + reclaim_nbytes) {
-        auto &cm_name = cm->GetName();
-        // auto cold_cache_lock = ColdModelCache::Get().Lock();
-        std::unique_lock model_lock{infer_model_cache_->warm_cache_[cm_name]->mut};
-        bool res = cm->ReclaimMemory(rank, model_lock, model_lock);
-        if (res) {
-          ss << " " << cm_name << "(hot=" << cm->GetHotness() << ")";
-          infer_model_cache_->warm_cache_[cm_name]->cached = false;
-          reclaim_nbytes += cm->GetMemoryNbytes(rank);
+    for (int try_cnt = 0; try_cnt < 2; try_cnt++) {
+      if (!warm_cache_try_evict && try_cnt == 0) {
+        continue;
+      }
+      for (auto cm : coldest_model) {
+        if (nbytes > Config::max_warm_cache_nbytes + reclaim_nbytes) {
+          if (cm == model) { continue; }
+          auto &cm_name = cm->GetName();
+          std::unique_lock warm_cache_lock{infer_model_cache_->warm_cache_[cm_name]->mut, std::defer_lock}; /* slow */
+          if (try_cnt == 0) {
+            warm_cache_lock.try_lock();
+            if (!warm_cache_lock.owns_lock()) { continue; }
+          } else {
+            warm_cache_lock.lock();
+          }
+          auto cold_cache_lock = ColdModelCache::Get().Lock();
+          std::unique_lock model_lock{cm->muts_[rank]};
+          bool res = cm->ReclaimMemory(rank, cold_cache_lock, model_lock, model);
+          if (res) {
+            ss << " " << cm_name << "(hot=" << cm->GetHotness() << ")";
+            infer_model_cache_->warm_cache_[cm_name]->cached = false;
+            reclaim_nbytes += cm->GetMemoryNbytes(rank);
+          }
+        } else {
+          break;
         }
-      } else {
-        break;
       }
     }
     nbytes -= reclaim_nbytes;
@@ -341,6 +356,22 @@ void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
   LOG(INFO) << "InferModelStore initialized";
 }
 
+bool InferModelStore::Shutdown() { 
+  std::stringstream ss;
+  ss << "\n[Model Hotness]: \n";
+  int i = 0;
+  for (auto & [model_name, model] : infer_model_store_->models_) {
+    i++;
+    ss << "[" << model_name << " " << model->GetHotness() << "] ";
+    if (i % 5 == 0) {
+      ss << "\n";
+    }
+  }
+  LOG(INFO) << ss.str();
+
+  return true; 
+}
+
 void InferModelStore::WarmupDone() {
   infer_model_store_->warmup_done_ = true;
   LOG(INFO) << "[InferModelStore] warmup done, num ready model "
@@ -447,7 +478,7 @@ void InferModelStore::ColocateMonitor() {
         const int rank = 0;
         auto cold_cache_lock = ColdModelCache::Get().Lock();
         std::unique_lock<std::mutex> model_lock{model->muts_[rank]};
-        bool res = model->ReclaimMemory(0, cold_cache_lock, model_lock);
+        bool res = model->ReclaimMemory(rank, cold_cache_lock, model_lock, nullptr);
         if (res) {
           num_exit++;
           LOG(INFO) << "[InferModelStore] " << model_name << " reclaim memory"
@@ -490,7 +521,7 @@ void InferModelStore::TaskSwitchMonitor() {
     for (auto &&[name, model] : this->models_) {
       if (name == "dummy") continue;
       std::unique_lock<std::mutex> model_lock{model->muts_[rank]};
-      reclaim_cnt += model->ReclaimMemory(rank, cold_cache_lock, model_lock);
+      reclaim_cnt += model->ReclaimMemory(rank, cold_cache_lock, model_lock, nullptr);
     }
     return reclaim_cnt;
   };
@@ -515,8 +546,10 @@ void InferModelStore::TaskSwitchMonitor() {
 }
 
 std::tuple<ColdModelCache::group_id_list, ColdModelCache::evict_list, bool>
-ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<size_t> groups_nbytes, size_t total_nbytes, std::unique_lock<std::mutex> &lock) {
-  DLOG(INFO) << "PushCacheItem, name = " << name << ", rank = " << rank << ", groups_nbytes = " << groups_nbytes << ", total_nbytes = " << total_nbytes;
+ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<size_t> groups_nbytes, 
+                                size_t total_nbytes, std::unique_lock<std::mutex> &lock, Model *source_model) {
+  DLOG(INFO) << "PushCacheItem, name = " << name << ", rank = " << rank << ", groups_nbytes = " << groups_nbytes 
+             << ", total_nbytes = " << total_nbytes;
   if (cold_cache_.count(name) != 0) { return {{}, {}, false}; }
 
   auto* cache_item = new CacheItem();
@@ -533,8 +566,8 @@ ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<
       break;
     }
   }
-  LOG(INFO) << "decide to cache group = [ " << cache_item->cached_groups_id << " ],"
-            << " total " << groups_nbytes.size() << ".";
+  LOG(INFO) <<"[ColdModelCache] decide to cache " << name << " decide to cache group = [ "
+            << cache_item->cached_groups_id << " ]," << " total " << groups_nbytes.size() << ".";
 
   std::vector<Model*> coldest_model;
   for (auto &&[name, cache_item] : cold_cache_) {
@@ -542,11 +575,11 @@ ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<
   }
 
   DLOG(INFO) << "check whether should evict models.";
-  auto evict_models = GetEvictModels(Config::cold_cache_max_capability_nbytes, name, lock);
+  auto evict_models = GetEvictModels(Config::cold_cache_max_capability_nbytes, {cache_item->model, source_model}, lock);
   current_cached_nbytes_ += cache_item->cached_group_nbytes;
   DLOG(INFO) << "put to cold_cache_.";
-  CHECK(cold_cache_.emplace(std::make_pair(name, cache_item)).second == true);
-  DLOG(INFO) << "cached_groups_id = " << cache_item->cached_groups_id;
+  CHECK(cold_cache_.emplace(std::make_pair(name, cache_item)).second == true) << name;
+  DLOG(INFO) << "cached_groups_id = " << cache_item->cached_groups_id; 
   return {cache_item->cached_groups_id, evict_models, true};
 }
 
@@ -561,7 +594,7 @@ std::pair<std::vector<size_t>, bool> ColdModelCache::PopCacheItem(const std::str
   return {cached_groups_id, true};
 }
 
-ColdModelCache::evict_list ColdModelCache::GetEvictModels(long capacity, const std::string &ignore_model_name, std::unique_lock<std::mutex>& lock) {
+ColdModelCache::evict_list ColdModelCache::GetEvictModels(long capacity, std::array<Model*, 2> ignore_models, std::unique_lock<std::mutex>& lock) {
   const size_t default_rank = 0;
   std::vector<Model*> coldest_model;
   for (auto&& [name, cache_item] : cold_cache_) {
@@ -573,15 +606,38 @@ ColdModelCache::evict_list ColdModelCache::GetEvictModels(long capacity, const s
   evict_list evict_models;
   while (current_cached_nbytes_ > capacity && !coldest_model.empty()) {
     DLOG(INFO) << "should evict models.";
-    auto& model_id = coldest_model.back()->GetName();
-    auto&& [cached_groups_id, succ] =
-        PopCacheItem(model_id, default_rank, lock);
-    CHECK(succ);
-    evict_models.emplace_back(model_id, std::move(cached_groups_id));
+    auto *model = coldest_model.back();
+    if (model != ignore_models[0] || model != ignore_models[1]) { 
+      auto& model_id = model->GetName();
+      auto&& [cached_groups_id, succ] =
+          PopCacheItem(model_id, default_rank, lock);
+      CHECK(succ);
+      evict_models.emplace_back(model_id, std::move(cached_groups_id));
+    }
+
     coldest_model.pop_back();
   }
   CHECK_LE(current_cached_nbytes_, capacity) << "Unable to evict models to make sure current_cached_nbytes_ > capacity";
   return evict_models;
+}
+
+double ColdModelCache::GetBufferMBUnsafe() {
+  auto buffer_mb = ResourceManager::GetFreeMemoryMB(false);
+  auto cold_cache_nbytes = current_cached_nbytes_;
+  if (cold_cache_nbytes > Config::cold_cache_min_capability_nbytes) {
+    buffer_mb += sta::ByteToMB(cold_cache_nbytes - Config::cold_cache_min_capability_nbytes);
+  }
+  double cur_max_buffer_mb = sta::ByteToMB(Config::cold_cache_max_capability_nbytes
+                                           - std::min(Config::cold_cache_min_capability_nbytes, current_cached_nbytes_));
+  buffer_mb = std::min(buffer_mb, cur_max_buffer_mb);
+  return std::max(0.0, buffer_mb);
+}
+
+double ColdModelCache::GetCacheSizeMBUnsafe() {
+  auto cold_cache_nbytes = current_cached_nbytes_;
+  auto free_memory_mb = ResourceManager::GetFreeMemoryMB(false);
+  return std::min(sta::ByteToMB(Config::cold_cache_max_capability_nbytes),
+                  sta::ByteToMB(cold_cache_nbytes) + std::max(0.0, free_memory_mb));
 }
 
 double ColdModelCache::GetReleaseReserveMemoryMB(std::unique_lock<std::mutex> &lock) {

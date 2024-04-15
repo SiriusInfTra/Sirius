@@ -35,9 +35,10 @@ std::pair<double, double> TrainLauncher::GetModelMemParam() {
       
         AFTER EMPTY CACHE: 0.81 ~ 1.22
       */
+      // NOTE: DID NOT consider grad checkpoint
       return {1150, 85};
     } else if (cur_model_name_ == "swin_b") {
-      return {1350, 135};
+      return {1700, 140};
     } else if (cur_model_name_ == "gpt2") {
       /*
        
@@ -56,7 +57,7 @@ std::pair<double, double> TrainLauncher::GetModelMemParam() {
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
-  } else {
+  } else { // * used for strawman, adjust but no shared tensor
     /*
         8     2.64
         32    4.97
@@ -67,6 +68,10 @@ std::pair<double, double> TrainLauncher::GetModelMemParam() {
     */
     if (cur_model_name_ == "resnet152") {
       return {2396, 85};
+    } else if (cur_model_name_ == "swin_b") {
+      // NOTE: PLACEHOLDER
+      // return {1700, 140};
+      return {3300, 145};
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
@@ -116,8 +121,8 @@ bool TrainLauncher::AddJob(network::TrainHandler::TrainData* data) {
   return true;
 }
 
-double TrainLauncher::PredictMemUsageMB() {
-  LOG(INFO) << "Predict train memory, target batch size " << target_batch_size_;
+double TrainLauncher::PredictMemUsageMB(bool verbose) {
+  LOG_IF(INFO, verbose) << "Predict train memory, target batch size " << target_batch_size_;
   if (target_batch_size_ <= 0) {
     return 0;
   } else {
@@ -153,7 +158,7 @@ bool TrainLauncher::Train() {
   cur_model_name_ = model;
   auto train_script = train_handles_[model];
 
-  if (Config::IsColocateMode() && 
+  if ((Config::IsColocateMode() || Config::IsSwitchMode()) && 
       Config::use_shared_tensor &&
       Config::enable_warm_cache_fallback) {
     auto [base, slope] = GetModelMemParam();
@@ -356,8 +361,8 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
                  << " target_batch_size " << target_batch_size_ 
                  << " cur_batch_size " << cur_batch_size_ 
                  << " memory " << ResourceManager::GetTrainMemoryMB() << "MB"
-                 << " predict memory " << PredictMemUsageMB() << "MB"
-                 << " calculated free memory " << ResourceManager::GetFreeMemoryMB() << "MB";
+                 << " predict memory " << PredictMemUsageMB(false) << "MB"
+                 << " calculated free memory " << ResourceManager::GetFreeMemoryMB(true) << "MB";
       return false;
     }
   } else {

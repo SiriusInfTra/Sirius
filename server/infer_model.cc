@@ -12,7 +12,7 @@
 #include <vector>
 #include "common/util.h"
 
-
+constexpr bool SKIP_MULTI_OUTPUT = false;
 
 namespace colserve {
 
@@ -134,14 +134,22 @@ void Model::InitMetaInfo() {
   for (const auto &kv : shape_info) {
     auto shape = shape_info[kv.first];
     auto dtype = dtype_info[kv.first];
-    output_info_[kv.first] = std::make_pair(shape, dtype);
     std::stringstream ss;
     for (size_t i = 0; i < shape.size(); i++)
       ss << shape[i] << " ";
     LOG_IF(INFO, Config::log_model_init_info) 
         << "[Model Init] Output: " << name_ << " " << kv.first 
         << " shape [ " << ss.str()  << "] dtype " << dtype;
-    CHECK_EQ(shape[0], batch_size_) << "batch size mismatch";
+    
+    CHECK_EQ(shape[0], batch_size_)
+        << "[Model Init] Output: " << name_ << " " << kv.first  
+        << ", batch size mismatch";
+    if (SKIP_MULTI_OUTPUT && !output_info_.empty()) {
+      LOG(INFO) << "[Model Init] Output: " << name_ << " " << kv.first 
+                << ", multi output, skiped in output_info_";
+    } else {
+      output_info_[kv.first] = std::make_pair(shape, dtype);
+    }
   }
 }
 
@@ -151,7 +159,10 @@ bool Model::AddJob(network::InferHandler::InferData* data) {
   return job_queue_.Put(std::make_shared<InferJob>(data));
 }
 
-bool Model::ReclaimMemory(size_t rank, std::unique_lock<std::mutex> &cold_cache_lock, std::unique_lock<std::mutex> &model_lock) {
+bool Model::ReclaimMemory(size_t rank, 
+                          std::unique_lock<std::mutex> &cold_cache_lock, 
+                          std::unique_lock<std::mutex> &model_lock, 
+                          Model *source_model) {
   if (name_ == "dummy") return false;
   CHECK_LT(rank, muts_.size());
   CHECK_LT(rank, executors_.size()) << name_;
@@ -159,24 +170,35 @@ bool Model::ReclaimMemory(size_t rank, std::unique_lock<std::mutex> &cold_cache_
   if (status_[rank] == Status::kWithoutMemory) {
     return false; 
   }
+  if (Config::profiler_acquire_resource_lock) { // not used in performance test
+    ResourceManager::InferMemoryChangingLock();
+  }
   auto &executor = executors_[rank];
   auto &&[cached_groups_id, evict_group_list, succ] = ColdModelCache::Get()
-    .PushCacheItem(name_, rank, executor->GetGroupsNbytes(), executor->GetStorageSizeAlign(), cold_cache_lock);
+    .PushCacheItem(name_, rank, executor->GetGroupsNbytes(), 
+    executor->GetStorageSizeAlign(), cold_cache_lock, source_model);
   CHECK(succ);
   for (auto &&[name, evict_groups_id] : evict_group_list) {
-    InferModelStore::Get()->GetModel(name)->ClearColdCache(evict_groups_id, rank, cold_cache_lock);
+    InferModelStore::Get()->GetModel(name)->
+      ClearColdCache(evict_groups_id, rank, cold_cache_lock);
   }
   executor->DeInit(cached_groups_id);
   ChangeStatus(rank, Status::kWithoutMemory);
+  if (Config::profiler_acquire_resource_lock) {
+    ResourceManager::InferMemoryChangingUnlock();
+  }
   return true;
 }
 
-void Model::ClearColdCache(const std::vector<size_t> &cold_cached_group_id, int rank, std::unique_lock<std::mutex> &cold_cache_lock) {
+void Model::ClearColdCache(const std::vector<size_t> &cold_cached_group_id, int rank, 
+                                      std::unique_lock<std::mutex> &cold_cache_lock) {
   std::unique_lock other_model_lock{muts_[rank]};
   executors_[rank]->ClearColdCached(cold_cached_group_id);
 }
 
-bool Model::MaybeAdjustTrainAndCache(size_t rank, std::unique_lock<std::mutex> &cold_cache_lock, std::unique_lock<std::mutex> &model_lock) {
+bool Model::MaybeAdjustTrainAndCache(size_t rank, 
+                                     std::unique_lock<std::mutex> &cold_cache_lock, 
+                                     std::unique_lock<std::mutex> &model_lock) {
   CHECK(status_[rank] == Status::kWithoutMemory);
 
   bool try_lock_memory_changing_succ = false;
@@ -186,7 +208,7 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank, std::unique_lock<std::mutex> &
   if (try_lock_memory_changing_succ = ResourceManager::InferChangeMemoryTryLock()) {
     if (Controller::Get()->HasFlyingColocateAdjust()) {
       double total_storage_MB = sta::ByteToMB(executors_[rank]->GetMissingStorageSizeAlign());
-      double free_memory_MB = ResourceManager::GetFreeMemoryMB();
+      double free_memory_MB = ResourceManager::GetFreeMemoryMB(true);
       double cold_cache_free_memory_MB = ColdModelCache::Get().GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock);
       if (total_storage_MB > cold_cache_free_memory_MB && !Controller::Get()->IsTrainIdle()) {
         PROFILE_START(TrainAdjust);
@@ -209,7 +231,7 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank, std::unique_lock<std::mutex> &
     ResourceManager::InferMemoryChangingLock();
     PROFILE_END(InferWaitBeforeEnterAlloc);
   }
-  double free_memory_MB = ResourceManager::GetFreeMemoryMB();
+  double free_memory_MB = ResourceManager::GetFreeMemoryMB(true);
   double cold_cache_free_memory_MB = ColdModelCache::Get().GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock);
   double total_storage_MB = sta::ByteToMB(executors_[rank]->GetMissingStorageSizeAlign());
   if (total_storage_MB > cold_cache_free_memory_MB && !Controller::Get()->IsTrainIdle()) {
@@ -244,15 +266,17 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank, std::unique_lock<std::mutex> &
     } else {
       LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank << " , skip adjust";
     }
-    free_memory_MB = ResourceManager::GetFreeMemoryMB();
+    free_memory_MB = ResourceManager::GetFreeMemoryMB(true);
   }
   LOG(INFO) << "[Model, Cold Cache Adjust] after adjust, "
             << "free memory " << free_memory_MB
-            << " cold cache free memory " << ColdModelCache::Get().GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock)
+            << " cold cache free memory " 
+            << ColdModelCache::Get().GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock)
             << " model required " << total_storage_MB;
   if (total_storage_MB > free_memory_MB) {
-    long capacity = static_cast<long>(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock)) - static_cast<long>((total_storage_MB - free_memory_MB) * 1024 * 1024);
-    auto evict_models = ColdModelCache::Get().GetEvictModels(capacity, name_, cold_cache_lock);
+    long capacity = static_cast<long>(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock)) 
+                    - static_cast<long>((total_storage_MB - free_memory_MB) * 1024 * 1024);
+    auto evict_models = ColdModelCache::Get().GetEvictModels(capacity, {this, nullptr}, cold_cache_lock);
     for (auto &&[name, cached_groups_id] : evict_models) {
       InferModelStore::Get()->GetModel(name)->ClearColdCache(cached_groups_id, rank, cold_cache_lock);
     }

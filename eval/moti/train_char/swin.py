@@ -14,6 +14,8 @@ import argparse
 
 g_enable_cuda_sync = True
 
+profile_memory_after_empty_cache = False
+
 def cuda_sync():
     global g_enable_cuda_sync
     if not g_enable_cuda_sync:
@@ -59,7 +61,7 @@ def register_saved_tensor_hook():
     torch._C._autograd._push_saved_tensors_default_hooks(pack_hook, unpack_hook)
 
 
-def gpu_memory_usage(device_id):
+def gpu_memory_usage(device_id=0):
     free, total = torch.cuda.mem_get_info(device_id)
     return (total - free) / 1024 / 1024 / 1024
 
@@ -80,12 +82,12 @@ def train():
     optimizer = torch.optim.SGD(model.parameters(), 0.1, 
                                 momentum=0.9, weight_decay=1e-4)
 
-    batch_size = 64
-
+    batch_size = 1
 
     # eval_batch_size = [128, 64, 32, 16, 8, 4]
-    eval_batch_size = [64, 32, 16, 8, 4]
+    # eval_batch_size = [64, 32, 16, 8, 4, 1]
     # eval_batch_size = [128, ]
+    eval_batch_size = [batch_size, ]
     epoch_micro_batch_size = [batch_size, ] # warmup
     for bs in eval_batch_size:
         epoch_micro_batch_size.extend([bs] * 3)
@@ -135,6 +137,11 @@ def train():
             batch_times.append(batch_end - batch_begin)
             compute_grad_times.append(compute_grad_end - batch_begin)
             update_param_times.append(update_param_end - compute_grad_end)
+
+            if epoch > 0 and profile_memory_after_empty_cache:
+                torch.cuda.empty_cache()
+                print(f'current gpu allocated {gpu_memory_usage(0)} GB')
+
         epoch_end_time = time.time()
 
         epoch_time = epoch_end_time - epoch_begin_time
@@ -173,6 +180,7 @@ def train():
 ''')
         else:
             print(f'warmup epoch {epoch} time: {epoch_time:.2f} thpt {thpt:.2f}')
+
 
 
 

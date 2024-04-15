@@ -472,6 +472,8 @@ std::function<void(InferRequest&)> Workload::GetSetRequestFn(const std::string &
     return SetInceptionRequestFn(model);
   } else if (model.find("bert") != std::string::npos) {
     return SetBertRequestFn(model);
+  } else if (model.find("gpt") != std::string::npos) {
+    return SetGPTRequestFn(model);
   } else {
     LOG(FATAL) << "unable to find SetRequestFn for " << model;
   }
@@ -594,6 +596,32 @@ std::function<void(InferRequest&)> Workload::SetBertRequestFn(const std::string 
     i++;
   };
   return set_bert_request_fn;
+}
+
+std::function<void(InferRequest&)> Workload::SetGPTRequestFn(const std::string &model) {
+  static std::mutex gpt_input_datas_mutex;
+  static std::vector<std::string> gpt_input_datas;
+
+  {
+    std::unique_lock lock(gpt_input_datas_mutex);
+    if (gpt_input_datas.empty()) {
+      for (size_t i = 0; i < 1; i++) {
+        gpt_input_datas.push_back(ReadInput("bert/input-" + std::to_string(i) + ".bin"));
+      }
+    }
+  }
+  
+  auto set_gpt_request_fn = [&](InferRequest &request) {
+    static uint32_t i = 0;
+    request.set_model(model);
+    request.add_inputs();
+    request.mutable_inputs(0)->set_dtype("int64");
+    request.mutable_inputs(0)->add_shape(1);
+    request.mutable_inputs(0)->add_shape(64);
+    request.mutable_inputs(0)->set_data(gpt_input_datas[0]);
+    i++;
+  };
+  return set_gpt_request_fn;
 }
 
 void Workload::InferBusyLoop(const std::string &model, size_t concurrency, 

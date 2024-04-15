@@ -25,7 +25,7 @@
 #include <utility>
 
 namespace colserve::sta {
-static const constexpr size_t VA_RESERVE_SCALE = 16;
+static const constexpr size_t VA_RESERVE_SCALE = 25;
 
 namespace alloc_conf {
 
@@ -117,12 +117,13 @@ inline std::ostream & operator<<(std::ostream &os, const MemEntry *entry)  {
 
 class EntryList {
 private:
+  const Belong policy_;
   const std::string &log_prefix_;
   const std::vector<PhyMem *> &mapped_mem_list_;
   entry_linklist *entry_list_;
   entry_addr_map *entry_by_addr;
 public:
-  EntryList(const std::string &log_prefix, const std::vector<PhyMem *> &mapped_mem_list, Belong policy): log_prefix_(log_prefix), mapped_mem_list_(mapped_mem_list) {
+  EntryList(const std::string &log_prefix, const std::vector<PhyMem *> &mapped_mem_list, Belong policy): policy_(policy), log_prefix_(log_prefix), mapped_mem_list_(mapped_mem_list) {
     auto &shared_memory = MemPool::Get().GetSharedMemory();
     auto atomic_init = [&] {
       {
@@ -141,15 +142,18 @@ public:
   void LinkNewEntry(MemEntry *entry);
 
   void UpdateAllocFlag(MemEntry *entry) {
-    bool real_allocated = true;
-    auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(entry);
-    for (size_t k = index_begin; k < index_end; ++k) {
-      if (mapped_mem_list_[k] == nullptr) {
-        real_allocated = false;
-        break;
+      bool real_allocated = true;
+      auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(entry);
+      if (policy_ == Belong::kTrain) {
+        for (size_t k = index_begin; k < index_end; ++k) {
+          if (mapped_mem_list_[k] == nullptr) {
+            real_allocated = false;
+            break;
+          }
+        }
       }
-    }
-    entry->is_alloc = real_allocated;
+
+      entry->is_alloc = real_allocated;
   }
 
   MemEntry *GetEntry(std::ptrdiff_t addr_offset);
@@ -334,6 +338,7 @@ public:
       free_list_large_.DumpFreeList(handle);
       handle.close();
     }
+    CheckState();
   }
 
 
@@ -435,7 +440,8 @@ public:
 
   MemEntry *MaybeMerge(MemEntry *entry) {
     if (!entry->is_alloc) { return entry; }
-    CHECK(entry->is_small);
+    CHECK(entry->is_free) << entry;
+    CHECK(entry->is_small) << entry;
     bool put_free_list_large = true;
     size_t total_nbytes = entry->nbytes;
     MemEntry *prev_entry, *next_entry;
@@ -449,13 +455,7 @@ public:
     }
     if ((next_entry = entry_list_.GetNextEntry(entry)) != nullptr) {
       if (next_entry->is_small) {
-#if 0
-        // fix me: check failed for task switch
         CHECK(!next_entry->is_free || !next_entry->is_alloc) << next_entry;
-#else
-        LOG_IF(WARNING, !(!next_entry->is_free || !next_entry->is_alloc))
-          << "CHECK(!next_entry->is_free || !next_entry->is_alloc) failed, " << next_entry;
-#endif
         put_free_list_large = false;
       } else {
         total_nbytes += next_entry->nbytes;
