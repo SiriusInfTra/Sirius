@@ -37,6 +37,8 @@ dummy_input = tuple([tokens_tensor, segments_tensors])
 
 print(f"### {enc.vocab_size}")
 
+platform = 'a100'
+
 def get_onnx():
     #NOTE Generate new trace
     model = DistilBertModel.from_pretrained("distilbert-base-uncased")
@@ -49,12 +51,17 @@ def tvm_compile():
     tvmc_model = tvmc.load(f"{tmp_dir}/distilbert_base.onnx", 
                             shape_dict=shape_dict)
 
-    tune_records = "util/prepare_model_store/distilbert-tune.json"
-    tvmc.compile(tvmc_model=tvmc_model, target='cuda', package_path=f"{tmp_dir}/distilbert_base-tvm.tar", tuning_records=tune_records)
+    tune_records = f'./distilbert-tune-{platform}.json'
+    tvmc.tune(tvmc_model=tvmc_model, target='cuda', 
+              tuning_records=tune_records, 
+              enable_autoscheduler=False)
 
-    model_store_path = f'{model_store}/distilbert_base-b{batch_size}' 
-    pathlib.Path(model_store_path).mkdir(parents=True, exist_ok=True)
-    tarfile.open(f"{tmp_dir}/distilbert_base-tvm.tar").extractall(model_store_path)
+    # tune_records = f"util/prepare_model_store/distilbert-tune-{platform}.json"
+    # tvmc.compile(tvmc_model=tvmc_model, target='cuda', package_path=f"{tmp_dir}/distilbert_base-tvm.tar", tuning_records=tune_records)
+
+    # model_store_path = f'{model_store}/distilbert_base-b{batch_size}' 
+    # pathlib.Path(model_store_path).mkdir(parents=True, exist_ok=True)
+    # tarfile.open(f"{tmp_dir}/distilbert_base-tvm.tar").extractall(model_store_path)
 
 
     # onnx_model = onnx.load('{}/distilbert_base.onnx'.format(tmp_dir))
