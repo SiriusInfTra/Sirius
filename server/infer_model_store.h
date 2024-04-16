@@ -44,6 +44,13 @@ class WarmModelCache {
   static std::unique_lock<std::mutex> OrderedReserveCache(
       const std::string &name, size_t rank,
       const std::vector<std::shared_ptr<Job>> &jobs);
+  static std::unique_lock<std::mutex> Lock() {
+    if (Enable()) {
+      return std::unique_lock{infer_model_cache_->mut_};
+    } else {
+      return std::unique_lock<std::mutex>{};
+    }
+  }
   
   static bool Enable() { return Config::max_warm_cache_nbytes != 0; }
 
@@ -273,6 +280,7 @@ class InferModelStore {
   size_t NumJobs();
 
   void ClearColdCache();
+  void ClearWarmCache();
 
   // void TaskSwitchEnter() { task_switch_enter_cnt_++; }
   // void TaskSwitchExit() { task_switch_enter_cnt_--; }

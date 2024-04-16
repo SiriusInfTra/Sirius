@@ -99,7 +99,7 @@ class Model {
 
   // bool warmup_;
   uint32_t max_num_worker_;
-  std::atomic<uint32_t> num_worker_;
+  std::atomic<uint32_t> num_worker_{0};
 
   std::unique_ptr<tvm::TVMGraph> tvm_graph_ = nullptr;
   // param_name -> [[shape], dtype]

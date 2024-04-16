@@ -376,6 +376,8 @@ bool InferModelStore::Shutdown() {
 }
 
 void InferModelStore::WarmupDone() {
+  infer_model_store_->ClearWarmCache();
+  infer_model_store_->ClearColdCache();
   infer_model_store_->warmup_done_ = true;
   LOG(INFO) << "[InferModelStore] warmup done, num ready model "
             << Model::GetNumModel(Model::Status::kReady);
@@ -460,6 +462,7 @@ size_t InferModelStore::NumJobs() {
 }
 
 void InferModelStore::ClearColdCache() {
+  LOG(INFO) << "ClearColdCache";
   auto &cold_cache = ColdModelCache::Get();
   auto cold_cache_lock = cold_cache.Lock();
   int rank = 0;
@@ -468,6 +471,26 @@ void InferModelStore::ClearColdCache() {
     if (succ) { model->ClearColdCache(evict_groups_id, rank, cold_cache_lock); }
   }
   CHECK_EQ(cold_cache.GetCachedNbytes(cold_cache_lock), 0);
+}
+
+void InferModelStore::ClearWarmCache() {
+  LOG(INFO) << "ClearWarmCache";
+  if (!WarmModelCache::Enable()) {
+    return ;
+  }
+  auto warm_cache_lock = WarmModelCache::Lock();
+  for (auto &&[name, cache_item]: WarmModelCache::infer_model_cache_->warm_cache_) {
+    auto model = cache_item->model;
+    CHECK(model != nullptr);
+    CHECK_EQ(model->num_worker_, 1);
+    std::unique_lock warm_cache_model_lock{cache_item->mut};
+    auto cold_cache_lock = ColdModelCache::Get().Lock();
+    std::unique_lock model_lock{model->muts_[0]};
+    bool res = model->ReclaimMemory(0, cold_cache_lock, model_lock, model);
+    // force let cache = false
+    cache_item->cached = false;
+  }
+  WarmModelCache::infer_model_cache_->cached_nbytes_ = 0;
 }
 
 void InferModelStore::ColocateMonitor() {
