@@ -34,8 +34,8 @@ bool __CanExitAfterInferWorkloadDone(long infer_workload_done_timestamp) {
 }
 
 DummyStub::DummyStub() {
-  cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("cmd-ctrl", false);
-  status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("status-ctrl", false);
+  cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("cmd-ctrl", !has_colocated_infer_server);
+  status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("status-ctrl", !has_colocated_infer_server);
 
   thread_.reset(new std::thread([&]() {
     while (running_) {
@@ -69,8 +69,8 @@ void DummyStub::TrainEnd() {
 }
 
 SwitchStub::SwitchStub() {
-  cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("cmd-ctrl", false);
-  status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("status-ctrl", false);
+  cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("cmd-ctrl", !has_colocated_infer_server);
+  status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("status-ctrl", !has_colocated_infer_server);
 
   thread_.reset(new std::thread([&](){
     while (running_) {
@@ -149,7 +149,9 @@ void SwitchStub::Cmd(int cmd) {
 }
 
 void SwitchStub::ReportBatchSize(int batch_size) {
-  status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kReportBatchSize), batch_size});
+  if (has_colocated_infer_server) { 
+    status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kReportBatchSize), batch_size});
+  }
 }
 
 void SwitchStub::StepsNoInteruptBegin() {
