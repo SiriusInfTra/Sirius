@@ -127,6 +127,7 @@ class System:
         self.dummy_adjust = dummy_adjust
         self.max_live_minute = max_live_minute
         self.dcgmi_monitor = None
+        self.smi_monitor = None
         if System._last_time_stamp is None or not keep_last_time_stamp:
             self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
             System._last_time_stamp = self.time_stamp
@@ -273,6 +274,12 @@ class System:
                     "-i", os.environ['CUDA_VISIBLE_DEVICES']], 
                     stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
 
+            with open(f'{self.log_dir}/gpu-util.log', 'w') as log_file:
+                self.smi_monitor = subprocess.Popen(
+                    ["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv", 
+                     "-l", "1", "-i", os.environ['CUDA_VISIBLE_DEVICES']],
+                     stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
+
         with open(server_log, "w") as log_file:
             self.server = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
 
@@ -314,6 +321,9 @@ class System:
         if self.dcgmi_monitor is not None:
             self.dcgmi_monitor.send_signal(subprocess.signal.SIGINT)
             self.dcgmi_monitor = None
+        if self.smi_monitor is not None:
+            self.smi_monitor.send_signal(subprocess.signal.SIGINT)
+            self.smi_monitor = None
         if self.log_dir is not None:
             self.cmd_trace.append(" ".join([
                 'sudo', '/opt/mps-control/quit-mps-daemon-private.sh',

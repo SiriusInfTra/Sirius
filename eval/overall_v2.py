@@ -44,6 +44,7 @@ parser.add_argument('--all-sys', action='store_true')
 parser.add_argument('--all-workload', action='store_true')
 parser.add_argument('--infer-only-without-mps', action='store_true')
 parser.add_argument('--retry-limit', type=int, default=0)
+parser.add_argument('--azure-rps', type=int, default=150)
 args = parser.parse_args()
 
 if args.colsys or args.all_sys:
@@ -181,7 +182,7 @@ class AzureConfig:
     port = str(get_unique_port())
     enable = enable_azure
 
-    max_rps = 100
+    max_rps = 150
     mps_infer = 30
     mps_train = 70
 
@@ -234,6 +235,7 @@ def azure(rps, client_model_list, infer_only=True, rps_fn=None,
           train_model:str = AzureConfig.train_model, 
           train_epoch:int = int(AzureConfig.duration / 5.5 + 5), 
           train_batch_size:int = AzureConfig.train_batch_size):
+    print(f'azure rps {rps}')
     workload = HyperWorkload(concurrency=2048,
                              warmup=5,
                              wait_warmup_done_sec=5,
@@ -402,8 +404,8 @@ if run_colsys:
         'train_memory_over_predict_mb' : 1500,
         'infer_model_max_idle_ms' : 5000,
         'cold_cache_ratio': 0.5, 
-        'cold_cache_min_capability_nbytes': 1 * 1024 * 1024 * 1024,
-        'cold_cache_max_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),
+        'cold_cache_min_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),
+        'cold_cache_max_capability_nbytes': int(2 * 1024 * 1024 * 1024),
     }
 
     if UniformConfig.enable and UniformConfig.high_load.enable:

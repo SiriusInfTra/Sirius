@@ -394,7 +394,9 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
                  duration: Optional[float | int] = None,
                  period_num: Optional[int] = None,
                  rps_fn = None, # post process rps, Fn(i, rps) -> rps,
-                 num_request_model_fn = None, # Fn(i, num_model) -> num_model 
+                 num_request_model_fn = None, # Fn(i, num_model) -> num_model
+                 equal_partition_rps: bool = False,
+                 sequential_choose_model: bool = False,
                  zipf_alpha: Optional[float] = None,
                  verbose: bool = False,
                  seed: Optional[int] = None) -> None:
@@ -453,11 +455,20 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
             #     num_request = rps_fn(i, num_request)
             num_request = get_num_request(i)
             num_model_to_requests.append(num_model)
-            model_req_list = self.rs.choice(np.arange(len(model_list)), num_model, replace=False, 
-                                            p = None if zipf_alpha is None else zipf_freq)
+            if not sequential_choose_model:
+                model_req_list = self.rs.choice(np.arange(len(model_list)), num_model, replace=False, 
+                                                p = None if zipf_alpha is None else zipf_freq)
+            else:
+                model_req_list = np.arange(num_model)
             assert len(model_req_list) == num_model
-            model_num_req = self._split_request(num_request, num_model,
-                                                alpha=None if zipf_alpha is None else zipf_freq[model_req_list])
+            if verbose:
+                print(f'[period {i}]: {num_model} request models: {model_req_list}')
+
+            if not equal_partition_rps:
+                model_num_req = self._split_request(num_request, num_model,
+                                                    alpha=None if zipf_alpha is None else zipf_freq[model_req_list])
+            else:
+                model_num_req = np.ones(num_model) * num_request / num_model
             for model, num_req in zip(model_req_list, model_num_req):
                 poisson_params[model].append(PoissonParam(i * interval_sec, num_req))
             for j in range(len(model_list)):

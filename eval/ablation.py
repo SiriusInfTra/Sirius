@@ -38,10 +38,10 @@ if args.retry_limit > 0:
 
 
 max_infer_idle_ms_list = [
+    500, 
     2500,
     5000, 
     7500, 
-    500, 
     10000,
 ]
 if not enable_eval_max_infer_idle_ms:

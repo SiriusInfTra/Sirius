@@ -4,9 +4,21 @@ from runner import *
 from dataclasses import dataclass
 import run_comm
 
+import argparse
+
 run_comm.use_time_stamp = True
 run_comm.retry_if_fail = False
 run_comm.skip_fail = False
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--retry-limit', type=int, default=0)
+args = parser.parse_args()
+
+if args.retry_limit > 0:
+    run_comm.retry_if_fail = True
+    run_comm.retry_limit = args.retry_limit
+    run_comm.skip_fail = True
+
 
 # run_comm.fake_launch = True
 
@@ -21,8 +33,8 @@ class UniformConfig:
     train_epoch_time = 5.5 # used for predict number epoch
 
     model_list = [InferModel.ResNet152] 
-    num_model = 64
-    interval_sec = 20
+    num_model = 96
+    interval_sec = 60
     duration = None
     port = str(run_comm.get_unique_port())
     enable = True
@@ -31,15 +43,17 @@ class UniformConfig:
     high_load = run_comm.HighLoad(enable=True)
     hybrid_load = run_comm.HybridLoad(enable=False)
 
+delta = 4
 
-num_model_to_request = [8]
-for i in range(7):
-    num_model_to_request.append(num_model_to_request[-1] + 8)
-for i in range(7):
-    num_model_to_request.append(num_model_to_request[-1] - 8)
+num_model_to_request = [4, 4]
+for i in range(23):
+    num_model_to_request.append(num_model_to_request[-1] + delta)
+# for i in range(23):
+#     num_model_to_request.append(num_model_to_request[-1] - delta)
+# num_model_to_request.append(delta)
 
 print(num_model_to_request, len(num_model_to_request))
-UniformConfig.duration = (len(num_model_to_request) - 1) * 20
+UniformConfig.duration = (len(num_model_to_request)-1) * UniformConfig.interval_sec
 
 assert UniformConfig.num_model == max(num_model_to_request), \
     f"num_model {UniformConfig.num_model} != max(num_model_to_request) {max(num_model_to_request)}"
@@ -56,7 +70,7 @@ def uniform(rps, client_model_list, infer_only=True, rps_fn=None, num_model_requ
                              warmup=5,
                              wait_warmup_done_sec=5,
                              wait_train_setup_sec=40 ,
-                             wait_stable_before_start_profiling_sec=10)
+                             wait_stable_before_start_profiling_sec=UniformConfig.interval_sec)
     InferModel.reset_model_cnt()
     if not infer_only:
         workload.set_train_workload(
@@ -65,7 +79,10 @@ def uniform(rps, client_model_list, infer_only=True, rps_fn=None, num_model_requ
         model_list=client_model_list,
         interval_sec=UniformConfig.interval_sec, fix_request_sec=rps,
         rps_fn=rps_fn, num_request_model_fn=num_model_request_fn,
+        equal_partition_rps=True,
+        sequential_choose_model=True,
         duration=UniformConfig.duration + workload.infer_extra_infer_sec,
+        verbose=True
     ))
     return workload
 
@@ -90,6 +107,7 @@ with mps_thread_percent(UniformConfig.high_load.mps_infer):
     def num_model_request_fn(i, m):
         global num_model_to_request
         return num_model_to_request[i]
+    
 
     client_model_list, server_model_config = InferModel.get_multi_model(
         UniformConfig.model_list, UniformConfig.num_model, 1)
@@ -100,5 +118,6 @@ with mps_thread_percent(UniformConfig.high_load.mps_infer):
     #                    client_model_list=client_model_list, infer_only=False)
     system = System(train_mps_thread_percent=UniformConfig.high_load.mps_train,
                     port=UniformConfig.port,
+                    max_live_minute=int(UniformConfig.duration/60 + 10),
                     **system_config)
     run_comm.run(system, workload, server_model_config, "memory-pressure", f"{UniformConfig.num_model}")
