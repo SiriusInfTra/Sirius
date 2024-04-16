@@ -96,12 +96,12 @@ SwitchStub::SwitchStub() {
             cmd_ = static_cast<int>(ctrl::CtrlEvent::kResumeTrain);
             LOG(INFO) << "[SwitchStub] Resume train";
             status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kResumeTrainDone)});
+          } else {
+              LOG(INFO) << "[SwitchStub] Ignore resume train";
+            }
         } else if (data.event == static_cast<int>(ctrl::CtrlEvent::kInferenceWorkloadDone)) {
           this->infer_workload_done_timestamp_ = torch_col::get_unix_timestamp();
           LOG(INFO) << "[SwitchStub] Inference workload done";
-          } else {
-            LOG(INFO) << "[SwitchStub] Ignore resume train";
-          }
         } else {
           LOG(FATAL) << "[SwitchStub] Unknown command: " << data.event;
         }
