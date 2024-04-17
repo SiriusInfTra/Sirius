@@ -162,8 +162,10 @@ void init_config() {
       cfg::enable_warm_cache_fallback) {
     CHECK_EQ(cfg::max_warm_cache_nbytes, 0);
     cfg::max_warm_cache_nbytes = 
-      static_cast<size_t>((cfg::cuda_memory_pool_gb * 1024 - cfg::train_memory_over_predict_mb) * 1_MB);
-    LOG(INFO) << "enable enable_warm_cache_fallback, cache nbytes " 
+      static_cast<size_t>((cfg::cuda_memory_pool_gb * 1024 
+                           - cfg::train_memory_over_predict_mb) * 1_MB
+                           - cfg::cold_cache_max_capability_nbytes); // for warmup
+    LOG(INFO) << "enable enable_warm_cache_fallback, cache nbytes (used in warmup, conservative estimated) " 
               << colserve::sta::ByteDisplay(cfg::max_warm_cache_nbytes);
   }
 

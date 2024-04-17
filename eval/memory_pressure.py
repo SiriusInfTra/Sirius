@@ -99,8 +99,8 @@ system_config = {
     'train_memory_over_predict_mb' : 1500,
     'infer_model_max_idle_ms' : 5000,
     'cold_cache_ratio': 0.5, 
-    'cold_cache_min_capability_nbytes': 1 * 1024 * 1024 * 1024,
-    'cold_cache_max_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),
+    'cold_cache_min_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),
+    'cold_cache_max_capability_nbytes': int(2 * 1024 * 1024 * 1024),
 }
 
 with mps_thread_percent(UniformConfig.high_load.mps_infer):
