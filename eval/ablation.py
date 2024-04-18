@@ -51,7 +51,8 @@ cold_cache_cap_list = [
     (0, 0), 
     (0.5, 1), 
     (1, 2), 
-    (1.5, 3)
+    (1.5, 3),
+    (2, 4)
 ]
 if not enable_eval_cold_cache_cap:
     cold_cache_cap_list = []
