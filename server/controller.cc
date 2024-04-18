@@ -256,6 +256,19 @@ uint64_t Controller::InferExit() {
   return cmd_id;
 }
 
+uint64_t Controller::DummyInferExit(int target_batch_size) {
+  CHECK(Config::dummy_adjust) << "only used for dummy adjust";
+
+  static std::atomic<uint64_t> dummy_infer_exit_id = 1;
+  auto cmd_id = dummy_infer_exit_id.fetch_add(1, std::memory_order_relaxed);
+  if (!IsTrainIdle()) {
+    train_cmd_event_mq_->Put({cmd_id, 
+                              static_cast<int>(ctrl::CtrlEvent::kInferExit), 
+                              target_batch_size});
+  }
+  return cmd_id;
+}
+
 bool Controller::WaitTrainNotRunning() {
   std::unique_lock lock{wait_train_mutex_};
   wait_train_cv_.wait(lock, [&]() { return train_status_.status != TrainStatus::kRunning; });

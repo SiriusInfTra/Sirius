@@ -9,13 +9,18 @@ from .util import TrainMode, EventManager, MemoryPool
 from . import xsched
 from typing import List
 
+__dummy_adjust = False
+
 def register_saved_tensor_hook():
     def pack_hook(x):
         torch_col.tag_interm_memory(x)
         return x
     def unpack_hook(x):
         return x
-    torch._C._autograd._push_saved_tensors_default_hooks(pack_hook, unpack_hook)
+    
+    global __dummy_adjust
+    if not __dummy_adjust:
+        torch._C._autograd._push_saved_tensors_default_hooks(pack_hook, unpack_hook)
 
 
 class HookMode(Enum):
@@ -201,7 +206,7 @@ class SwitchHook(HookABC):
                         pass
             elif self.train_mode == TrainMode.TASKSWITCH_L0:
                 raise Exception('task switch l0 in cpp workld')
-        elif self.hook_mode == HookMode.XSCHED_SYNC:
+        elif self.hook_mode == HookMode.XSCHED_SYNC: # use this for dummy adjust test
             if self.train_mode == TrainMode.TASKSWITCH_L1:
                 def hook(module, grad_input, grad_output):
                     # print(f'{event_name}: {self._stub.cmd}')

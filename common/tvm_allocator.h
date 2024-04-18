@@ -301,7 +301,7 @@ public:
       AllocDuplicateEntry(free_entry);
     }
     mempool_.AllocSpecifiedPhyMem(phy_mem_list, Belong::kTrain);
-    mempool_.AddAllocatedNbytes(n * MEM_BLOCK_NBYTES, Belong::kTrain);
+    // mempool_.AddAllocatedNbytes(n * MEM_BLOCK_NBYTES, Belong::kTrain);
     CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
     return phy_mem_list;
   }
@@ -317,7 +317,7 @@ public:
       CHECK_EQ(entry->nbytes, MEM_BLOCK_NBYTES);
       Free(entry, lock);
     }
-    mempool_.SubAllocatedNbytes(phy_mem_list.size() * MEM_BLOCK_NBYTES, Belong::kTrain);
+    // mempool_.SubAllocatedNbytes(phy_mem_list.size() * MEM_BLOCK_NBYTES, Belong::kTrain);
     mempool_.DeallocPhyMem(phy_mem_list);
   }
 

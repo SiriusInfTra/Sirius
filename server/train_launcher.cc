@@ -213,6 +213,7 @@ bool TrainLauncher::Train() {
     if (Config::use_xsched) {
       args_str.push_back("--hook-mode");
       args_str.push_back("xsched-sync2");
+      // args_str.push_back("xsched-sync"); # used for dummy adjust
     } else {
       args_str.push_back("--hook-mode");
       args_str.push_back("sync");
@@ -370,14 +371,18 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
   }
 }
 
+// used for eval issue of un-released tensor
 void TrainLauncher::DummyAdjust() {
   while (this->train_pid_ == -1) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
-  std::this_thread::sleep_for(std::chrono::seconds(15));
-  LOG(INFO) << "DummyAdjust: train pid " << this->train_pid_;
+  size_t delay_before_dummy_adjust = 30;
+  LOG(INFO) << "DummyAdjust: train pid " << this->train_pid_ << " start after " << delay_before_dummy_adjust << "s";
+  std::this_thread::sleep_for(std::chrono::seconds(delay_before_dummy_adjust));
   
   std::mt19937 gen(42); // fix seed
+
+  int ori_target_bs = this->target_batch_size_;
 
   auto start = Profiler::Now();
   while (Profiler::MilliFrom(start) < 30*1000 && this->train_pid_ != -1) {
@@ -385,7 +390,7 @@ void TrainLauncher::DummyAdjust() {
     auto batch_size = 1;
     auto cmd_id = Controller::Get()->ColocateAdjust(-1, batch_size);
     Controller::Get()->WaitColocateAdjustDone(cmd_id);
-    Controller::Get()->InferExit();
+    Controller::Get()->DummyInferExit(ori_target_bs);
     std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<>(200, 1000)(gen)));
   }
 }
