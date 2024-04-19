@@ -381,7 +381,7 @@ void Profiler::WriteLog() {
       }
       ofs << item << ":\n";
       for (size_t i = 0; i < item_perf_info.size(); i++) {
-        ofs << std::setw(5) << std::fixed << std::setprecision(1) 
+        ofs << std::setw(5) << std::fixed << std::setprecision(2) 
             << item_perf_info[i] << " ";
         if ((i + 1) % 20 == 0) ofs << std::endl;
       }

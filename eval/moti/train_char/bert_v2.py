@@ -124,9 +124,9 @@ def train():
 
             inputs = {k: v.cuda(non_blocking=True) for k, v in batch.items()}
 
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=False)
             IntermMemoryStat.reset()
-            with torch.cuda.amp.autocast():
+            with torch.cuda.amp.autocast(cache_enabled=False):
                 outputs = model(**inputs)
                 loss = outputs.loss
             scaler.scale(loss).backward()
@@ -154,6 +154,8 @@ def train():
         # calculate model_memory and optimizer_memory here
         for param in model.parameters():
             model_memory += param.storage().nbytes()
+            if param.grad is not None:
+                model_memory += param.grad.numel() * param.grad.element_size()
         for buffer in model.buffers():
             buffer: torch.Tensor
             model_memory += buffer.storage().nbytes()

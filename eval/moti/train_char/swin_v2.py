@@ -156,6 +156,8 @@ def train():
         # calculate model_memory and optimizer_memory here
         for param in model.parameters():
             model_memory += param.numel() * param.element_size()
+            if param.grad is not None:
+                model_memory += param.grad.numel() * param.grad.element_size()
         for buffer in model.buffers():
             model_memory += buffer.numel() * buffer.element_size()
         
