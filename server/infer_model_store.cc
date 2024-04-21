@@ -91,14 +91,18 @@ std::unique_lock<std::mutex> WarmModelCache::OrderedReserveCache(
 
   auto t0 = Profiler::Now();
   // LOG(INFO) << "try ordered reserve " << model_name << " req_id " << infer_req_id;
-  infer_model_cache_->fifo_cv_.wait(lock, [&lock, infer_req_id]() {
-    std::unique_lock ims_lock{InferModelStore::Get()->mutex_};
-    if (InferModelStore::Get()->queing_infer_reqs_.empty()) {
-      return true;
-    } else {
-      return *InferModelStore::Get()->queing_infer_reqs_.begin() == infer_req_id;
-    }
-  });
+
+// #if 0
+//   // buggy
+//   infer_model_cache_->fifo_cv_.wait(lock, [&lock, infer_req_id]() {
+//     std::unique_lock ims_lock{InferModelStore::Get()->mutex_};
+//     if (InferModelStore::Get()->queing_infer_reqs_.empty()) {
+//       return true;
+//     } else {
+//       return *InferModelStore::Get()->queing_infer_reqs_.begin() == infer_req_id;
+//     }
+//   });
+// #endif
 
   DLOG(INFO) << "[InferModelCache] " << "ordered reserve " 
              << model_name << " req_id " << infer_req_id 
