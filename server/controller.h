@@ -25,6 +25,7 @@ class Controller {
   bool WaitInferIdle();
   bool WaitColocateAdjustDone(uint64_t cmd_id);
   uint64_t InferExit();
+  uint64_t DummyInferExit(int target_batch_size);
 
   void InferRequestInc(size_t inc=1);
   void InferResponseInc(size_t inc=1);
@@ -37,6 +38,8 @@ class Controller {
   bool IsTrainIdle();
 
   bool HasFlyingColocateAdjust();
+
+  void InferenceWorkloadDone();
 
   // bool TryEnterInferChangeMemory(size_t model_rank);
   // void EnterInferChangeMemory(size_t model_rank);

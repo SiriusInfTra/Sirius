@@ -24,6 +24,13 @@ cdef extern from "<csrc/config.h>" namespace "torch_col":
 
 
 cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
+    cdef cppclass DummyStub:
+        DummyStub() except +
+        void Stop()
+        void TrainStart()
+        void TrainEnd()
+        bint CanExitAfterInferWorkloadDone()
+
     cdef cppclass SwitchStub:
         SwitchStub() except +
         int Cmd()
@@ -35,6 +42,8 @@ cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
         void ReportBatchSize(int)
         void StepsNoInteruptBegin()
         void StepsNoInteruptEnd()
+        void EnableTorchColEngine()
+        bint CanExitAfterInferWorkloadDone()
 
     cdef cppclass ColocateStub:
         ColocateStub(int) except +
@@ -48,6 +57,8 @@ cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
         void ReportBatchSize(int)
         void StepsNoInteruptBegin()
         void StepsNoInteruptEnd()
+        void EnableTorchColEngine()
+        bint CanExitAfterInferWorkloadDone()
 
     cdef cppclass StubProfiler:
         @staticmethod

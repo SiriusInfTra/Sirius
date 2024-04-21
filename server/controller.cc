@@ -1,10 +1,13 @@
+#include "logging_as_glog.h"
+#include <common/util.h>
 #include <server/train_launcher.h>
 #include <server/resource_manager.h>
-#include "logging_as_glog.h"
-#include "controller.h"
-#include "config.h"
+#include <server/infer_model_store.h>
+#include <server/controller.h>
+#include <server/config.h>
 
 #include <signal.h>
+#include <algorithm>
 
 
 namespace colserve
@@ -156,19 +159,24 @@ uint64_t Controller::ResumeTrain() {
 }
 
 uint64_t Controller::ColocateAdjust(size_t model_rank, size_t batch_size) {
+  static std::mutex adjust_batch_mutex; // for quick fix concurrency
+
   auto cmd_id = Controller::adjust_cmd_id.fetch_add(1, std::memory_order_relaxed);
   if (!IsTrainIdle()) {
+#if ADJUST_WITH_FLYING
+    std::lock_guard lock{adjust_batch_mutex};
+#endif
+    TrainLauncher::Get()->AddTargetBatchSize(-batch_size);
     if (Config::serve_mode == ServeMode::kColocateL1) {
       train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1), 
-                                static_cast<int>(batch_size)});
+                                static_cast<int>(TrainLauncher::Get()->GetTargetBatchSize())});
     } else if (Config::serve_mode == ServeMode::kColocateL2) {
       train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL2), 
-                                static_cast<int>(batch_size)});
+                                static_cast<int>(TrainLauncher::Get()->GetTargetBatchSize())});
     }
-    TrainLauncher::Get()->AddTargetBatchSize(-batch_size);
   }
   LOG(INFO) << "[Controller] model " << model_rank 
-            << "send ColocateAdjust cmd_id: " << cmd_id 
+            << " send ColocateAdjust cmd_id: " << cmd_id 
             << " batch_size: " << batch_size
             << " train idle " << IsTrainIdle();
   return cmd_id;
@@ -182,23 +190,81 @@ uint64_t Controller::InferExit() {
     if (Config::IsColocateMode()) {
       // Controller::Get()->EnterInferChangeMemory();
       int train_target_bs;
-      double train_avail_memory_mb;
+      int cur_train_target_bs;
+      int train_bs_predict_by_avail_memory;
+      double free_memory_MB;
+      double reserve_memory_MB;
+      double train_avail_memory_MB;
       {
+        auto cold_cache_lock = ColdModelCache::Get().Lock();
         ResourceManager::InferMemoryChangingLock();
-        train_avail_memory_mb = ResourceManager::GetTrainAvailMemoryMB();
-        train_target_bs = TrainLauncher::Get()->PredictTargetBatchSize(train_avail_memory_mb);
+        // size_t reserve_memory_MB = sta::ByteToMB(Config::cold_cache_max_capability_nbytes - ColdModelCache::Get().GetCachedNbytes(cold_cache_lock));
+        // train_avail_memory_MB = ResourceManager::GetTrainAvailMemoryMB() - reserve_memory_MB;
+        // train_avail_memory_MB = std::max(train_avail_memory_MB, 0.0);
+        // train_target_bs = TrainLauncher::Get()->PredictTargetBatchSize(train_avail_memory_MB);
+
+        // min of bs predicted based on the actual and the predict
+        train_avail_memory_MB = std::max(ResourceManager::GetTrainAvailMemoryMB(false), 0.0);
+        free_memory_MB = std::max(ResourceManager::GetFreeMemoryMB(true), 0.0);
+        reserve_memory_MB = ColdModelCache::Get().GetReleaseReserveMemoryMB(cold_cache_lock);
+        if (Config::use_shared_tensor) {
+          auto adjust_bs = TrainLauncher::Get()->GetAdjustBatchSize(std::max(free_memory_MB - reserve_memory_MB, 0.0));
+          train_bs_predict_by_avail_memory = TrainLauncher::Get()->PredictTargetBatchSize(
+              std::max(train_avail_memory_MB - reserve_memory_MB, 0.0));
+          cur_train_target_bs = TrainLauncher::Get()->GetTargetBatchSize();
+          train_target_bs = std::max(cur_train_target_bs, std::min(cur_train_target_bs + adjust_bs, train_bs_predict_by_avail_memory));
+        } else {
+          // not use availd memory, resulting in wrong prediction
+          train_bs_predict_by_avail_memory = -1;
+          auto adjust_bs = TrainLauncher::Get()->GetAdjustBatchSize(std::max(free_memory_MB, 0.0));
+          cur_train_target_bs = TrainLauncher::Get()->GetTargetBatchSize();
+          train_target_bs = std::max(cur_train_target_bs, cur_train_target_bs + adjust_bs);
+        }
+
         TrainLauncher::Get()->SetTargetBatchSize(train_target_bs);
         ResourceManager::InferMemoryChangingUnlock();
         // TrainLauncher::Get()->AddTargetBatchSize(batch_size);
       }
 
-      LOG(INFO) << "[Controller] Infer Exit"
-                << " train avail memory " << train_avail_memory_mb
-                << " target batch size " << train_target_bs;
+      // LOG(INFO) << "[Controller] Infer Exit"
+      //           << " train avail memory " << train_avail_memory_MB
+      //           << " target batch size " << train_target_bs;
+      std::stringstream ss;
+      ss << "[Controller] Infer Exit"
+         << " cold cache reserve memory " << reserve_memory_MB
+         << " train avail memory " << train_avail_memory_MB;
+      if (Config::use_shared_tensor) {
+        ss << " (predict bs " << train_bs_predict_by_avail_memory << ")";
+      } else {
+        ss << " (not use avail memory to predict bs)";
+      }
+      ss << " free memory " << free_memory_MB
+         << " target batch size " << cur_train_target_bs << " -> " << train_target_bs;
+      LOG(INFO) << ss.str();
+
+      // LOG(INFO) << "[Controller] Infer Exit"
+      //           << " cold cache reserve memory " << reserve_memory_MB
+      //           << " train avail memory " << train_avail_memory_MB
+      //           << " (predict bs " << train_bs_predict_by_avail_memory << ")"
+      //           << " free memory " << free_memory_MB
+      //           << " target batch size " << cur_train_target_bs << " -> " << train_target_bs;
       train_cmd_event_mq_->Put({cmd_id, 
                                 static_cast<int>(ctrl::CtrlEvent::kInferExit), 
                                 train_target_bs});
     }
+  }
+  return cmd_id;
+}
+
+uint64_t Controller::DummyInferExit(int target_batch_size) {
+  CHECK(Config::dummy_adjust) << "only used for dummy adjust";
+
+  static std::atomic<uint64_t> dummy_infer_exit_id = 1;
+  auto cmd_id = dummy_infer_exit_id.fetch_add(1, std::memory_order_relaxed);
+  if (!IsTrainIdle()) {
+    train_cmd_event_mq_->Put({cmd_id, 
+                              static_cast<int>(ctrl::CtrlEvent::kInferExit), 
+                              target_batch_size});
   }
   return cmd_id;
 }
@@ -284,6 +350,13 @@ bool Controller::HasFlyingColocateAdjust() {
   return adjust_done_id_ + 1 < Controller::adjust_cmd_id;
 }
 
+void Controller::InferenceWorkloadDone() {
+  static std::atomic<uint64_t> infer_workload_done_id = 1;
 
+  auto cmd_id = infer_workload_done_id.fetch_add(1, std::memory_order_relaxed);
+  train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kInferenceWorkloadDone)});
+
+  LOG(INFO) << "[Controller] Inference workload done";
+}
 
 } // namespace colserve

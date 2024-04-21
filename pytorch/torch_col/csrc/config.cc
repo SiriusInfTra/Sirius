@@ -17,7 +17,7 @@ int has_shared_tensor_server = 0;
 
 double shared_tensor_pool_gb = 12;
 
-void ConfigTorchCol() {
+void ConfigTorchCol(int use_shared_tensor) {
   static bool configured = false;
   if (configured) {
     return;
@@ -37,6 +37,7 @@ void ConfigTorchCol() {
     shared_tensor_pool_gb = std::stod(pool_size_env);
   }
 
+  LOG(INFO) << "use_shared_tensor: " << use_shared_tensor;
   LOG(INFO) << "colocate_use_xsched: " << colocate_use_xsched;
   LOG(INFO) << "has_colocated_infer_server:" << has_colocated_infer_server;
   LOG(INFO) << "has_shared_tensor_server:" << has_shared_tensor_server;

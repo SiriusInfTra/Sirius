@@ -30,23 +30,29 @@ def use_fbward_hook():
     global __use_fbward_hook
     return __use_fbward_hook
 
-
 from ._C import *
 
 from .util import MemoryPool, TrainMode, EventManager
+from .accumulate import GradAccumulator
+
 from .dataset import CustomeDynamicBatchDataset
 from .hook import register_saved_tensor_hook, get_hook, HookMode, DummyHook,\
       SwitchHook, SwitchL1Exception, ColocateHook, ColocateAdjustL1Exception
 from .debug_server import DebugServer
 
 
+class EngineColocateAdjustL1Exception(Exception):
+    pass
+
 def __setup_torch_col():
     import os, sys
     if os.environ.get('USE_SHARED_TENSOR', '0') == '1':
         global __use_shared_tensor
         __use_shared_tensor = 1
-    ConfigTorchCol()
+    ConfigTorchCol(use_shared_tensor())
     init_col_allocator(use_shared_tensor())
 
 
 __setup_torch_col()
+
+print('torch_col init') 

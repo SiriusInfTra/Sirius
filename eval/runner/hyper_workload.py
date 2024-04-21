@@ -16,6 +16,12 @@ class InferModel:
     DenseNet161 = "densenet161"
     InceptionV3 = "inception_v3"
     DistilBertBase = "distilbert_base"
+    DistilGPT2 = "distilgpt2"
+    ViT_b_16 = "vit_b_16"
+    ViT_s_16 = "vit_s_16"
+    Swin_t = "swin_t"
+    EfficientNetV2_s = "efficientnet_v2_s"
+    EfficientViT_b2 = "efficientvit_b2"
 
     model_cnt = 0
 
@@ -382,17 +388,53 @@ class DynamicPoissonInferWorkload(RandomInferWorkload):
 class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
     def __init__(self, 
                  model_list: List[InferModel],
-                 max_request_sec: float | int,
                  interval_sec: float | int,
+                 max_request_sec: Optional[float | int] = None,
+                 fix_request_sec: Optional[float | int] = None,
                  duration: Optional[float | int] = None,
                  period_num: Optional[int] = None,
-                 rps_fn = None, # post process rps, Fn(i, rps) -> rps
+                 rps_fn = None, # post process rps, Fn(i, rps) -> rps,
+                 num_request_model_fn = None, # Fn(i, num_model) -> num_model
+                 equal_partition_rps: bool = False,
+                 sequential_choose_model: bool = False,
+                 zipf_alpha: Optional[float] = None,
+                 verbose: bool = False,
                  seed: Optional[int] = None) -> None:
         super().__init__(None, None, seed)
         if duration is None and period_num is None:
             raise Exception("duration, period_num and interval_sec cannot be all None")
         if duration is not None and period_num is not None:
             raise Exception("duration and period_num cannot be both specified")
+        if max_request_sec is None and fix_request_sec is None:
+            raise Exception("max_request_sec and fix_request_sec cannot be both None")
+        if max_request_sec is not None and fix_request_sec is not None:
+            raise Exception("max_request_sec and fix_request_sec cannot be both specified")
+        
+        def get_num_request(i):
+            if max_request_sec is not None:
+                num_request = self.rs.uniform(0, max_request_sec)
+            elif fix_request_sec is not None:
+                num_request = fix_request_sec
+            else:
+                raise Exception("max_request_sec and fix_request_sec are None")
+            if rps_fn is not None:
+                num_request = rps_fn(i, num_request)
+            return num_request
+        
+        if zipf_alpha is not None:
+            # do not change self.rs
+            tmp_rs = RandomState(MT19937(SeedSequence(self.seed)))
+            zipf_seq = tmp_rs.zipf(zipf_alpha, 10000)
+            zipf_freq = np.zeros(1 + len(model_list))
+            for i in zipf_seq:
+                if i <= len(model_list):
+                    zipf_freq[i] += 1
+            zipf_freq = zipf_freq[1:]
+            zipf_freq = zipf_freq / np.sum(zipf_freq)
+            zipf_freq = tmp_rs.permutation(zipf_freq)
+            with np.printoptions(precision=3, suppress=True):
+                print(f'zipf freq: \n', zipf_freq)
+
         if period_num is None:
             period_num = int(duration / interval_sec + 0.5)
             self.duration = duration
@@ -401,15 +443,32 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
             self.duration = period_num * interval_sec
         poisson_params = [[] for _ in range(len(model_list))]
         num_model_to_requests = []
+
+        num_model_rs = RandomState(MT19937(SeedSequence(self.rs.randint(1, self.seed+1))))
         for i in range(period_num):
             # first select a few models to send requests
-            num_model = self.rs.randint(1, len(model_list) + 1)
-            num_request = self.rs.uniform(0, max_request_sec)
-            if rps_fn is not None:
-                num_request = rps_fn(i, num_request)
+            num_model = num_model_rs.randint(1, len(model_list) + 1)
+            if num_request_model_fn is not None:
+                num_model = num_request_model_fn(i, num_model)
+            # num_request = self.rs.uniform(0, max_request_sec)
+            # if rps_fn is not None:
+            #     num_request = rps_fn(i, num_request)
+            num_request = get_num_request(i)
             num_model_to_requests.append(num_model)
-            model_req_list = self.rs.choice(np.arange(len(model_list)), num_model, replace=False)
-            model_num_req = self._split_request(num_request, num_model)
+            if not sequential_choose_model:
+                model_req_list = self.rs.choice(np.arange(len(model_list)), num_model, replace=False, 
+                                                p = None if zipf_alpha is None else zipf_freq)
+            else:
+                model_req_list = np.arange(num_model)
+            assert len(model_req_list) == num_model
+            if verbose:
+                print(f'[period {i}]: {num_model} request models: {model_req_list}')
+
+            if not equal_partition_rps:
+                model_num_req = self._split_request(num_request, num_model,
+                                                    alpha=None if zipf_alpha is None else zipf_freq[model_req_list])
+            else:
+                model_num_req = np.ones(num_model) * num_request / num_model
             for model, num_req in zip(model_req_list, model_num_req):
                 poisson_params[model].append(PoissonParam(i * interval_sec, num_req))
             for j in range(len(model_list)):
@@ -421,13 +480,24 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
             self.poisson_params.append((model_list[i], poisson_param))
 
         poisson_params_ndarray = np.array(poisson_params)[:, :, 1]
+        if verbose and zipf_alpha is not None:
+            for i in range(period_num):
+                print_str = f"[period {i}]:\n"
+                for j in range(len(model_list)):
+                    print_str += f'{poisson_params_ndarray[j, i]:>5.2f} '
+                    if (j + 1) % 20 == 0: print_str += '\n'
+                print(print_str, '\n')
         with np.printoptions(precision=1, suppress=True):
             print('microbenmark total #request: \n', np.array(np.sum(poisson_params_ndarray, axis=0)))
             print('microbenmark request #model : \n', np.array(num_model_to_requests))
             # print(poisson_params_ndarray)
 
-    def _split_request(self, num_request, num_model):
-        alpha = np.ones(num_model)
+    def _split_request(self, num_request, num_model, alpha=None):
+        if alpha is None:
+            alpha = np.ones(num_model)
+        else:
+            alpha = alpha / np.sum(alpha) * num_model
+            alpha = 1 + np.round(alpha).astype(int)
         faction = self.rs.dirichlet(alpha)
         return num_request * faction
 

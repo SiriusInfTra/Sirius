@@ -20,19 +20,6 @@
   } \
   } while (0)
 
-// #define CU_CALL(func) do { \
-//   auto t0 = std::chrono::steady_clock::now(); \
-//   auto error = func; \
-//   auto t1 = std::chrono::steady_clock::now(); \
-//   if (error != CUDA_SUCCESS) { \
-//     const char *errMsg; cuGetErrorString(error, &errMsg); \
-//     LOG(FATAL) << #func << " " << errMsg; \
-//     exit(EXIT_FAILURE); \≈
-//   } else { \
-//     LOG_IF(INFO, false) << #func << " cost " << std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() << " us"; \
-//   } \
-//   } while (0)
-
 #define CU_CALL(func) \
   do { \
     auto err = func; \
@@ -60,7 +47,7 @@ constexpr size_t operator ""_KB(unsigned long long n) {
 }
 
 constexpr size_t operator ""_KB(long double n) {
-  return static_cast<size_t>(n) * 1024;
+  return static_cast<size_t>(n * 1024);
 }
 
 constexpr size_t operator ""_MB(unsigned long long n) {
@@ -68,7 +55,7 @@ constexpr size_t operator ""_MB(unsigned long long n) {
 }
 
 constexpr size_t operator ""_MB(long double n) {
-  return static_cast<size_t>(n) * 1024 * 1024;
+  return static_cast<size_t>(n * 1024 * 1024);
 }
 
 constexpr size_t operator ""_GB(unsigned long long n) {
@@ -76,7 +63,7 @@ constexpr size_t operator ""_GB(unsigned long long n) {
 }
 
 constexpr size_t operator ""_GB(long double n) {
-  return static_cast<size_t>(n) * 1024 * 1024 * 1024;
+  return static_cast<size_t>(n * 1024 * 1024 * 1024);
 }
 }
 

@@ -27,13 +27,51 @@ std::unique_ptr<TrainLauncher> TrainLauncher::train_launcher_;
 std::pair<double, double> TrainLauncher::GetModelMemParam() {
   if (Config::use_shared_tensor_train) {
     if (cur_model_name_ == "resnet152") {
-      return {560, 125};
+      /*
+          8   1.50
+         32   3.75
+        128  11.75
+        150  13.50
+      
+        AFTER EMPTY CACHE: 0.81 ~ 1.22
+      */
+      // NOTE: DID NOT consider grad checkpoint
+      return {1150, 85};
+    } else if (cur_model_name_ == "swin_b") {
+      return {1700, 140};
+    } else if (cur_model_name_ == "gpt2") {
+      /*
+       
+        1   3.00Gb
+        4   4.25Gb
+        8   6.50Gb
+        12  8.75Gb
+        16  11.00Gb
+        20  12.25Gb
+
+        AFTER EMPTY CACHE: 2.4 ~ 2.9 
+       */
+      return {2700, 490}; 
+    } else if (cur_model_name_ == "bert_large") {
+      LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
-  } else {
+  } else { // * used for strawman, adjust but no shared tensor
+    /*
+        8     2.64
+        32    4.97
+        128  13.75
+        150  15.68
+
+        AFTER EMPTY CACHE: 2.28 ~ 2.37
+    */
     if (cur_model_name_ == "resnet152") {
-      return {3512, 145};
+      return {2396, 85};
+    } else if (cur_model_name_ == "swin_b") {
+      // NOTE: PLACEHOLDER
+      // return {1700, 140};
+      return {3300, 145};
     } else {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
@@ -71,6 +109,7 @@ void TrainLauncher::Init(const std::filesystem::path &train_store_path) {
 
 bool TrainLauncher::Shutdown() {
   if (train_launcher_->train_pid_ != -1) {
+    LOG(INFO) << "[TrainLauncher]: Shutdown, train_pid(" << train_launcher_->train_pid_ << ") = -1.";
     CHECK_EQ(kill(train_launcher_->train_pid_, SIGKILL), 0);
     waitpid(train_launcher_->train_pid_, NULL, 0);
   }
@@ -82,8 +121,8 @@ bool TrainLauncher::AddJob(network::TrainHandler::TrainData* data) {
   return true;
 }
 
-double TrainLauncher::PredictMemUsageMB() {
-  // LOG(INFO) << "Predict train memory, target batch size " << target_batch_size_;
+double TrainLauncher::PredictMemUsageMB(bool verbose) {
+  LOG_IF(INFO, verbose) << "Predict train memory, target batch size " << target_batch_size_;
   if (target_batch_size_ <= 0) {
     return 0;
   } else {
@@ -104,7 +143,7 @@ int TrainLauncher::PredictTargetBatchSize(double memory_mb) {
 
 int TrainLauncher::GetAdjustBatchSize(double memory_mb) {
   auto [base, slope] = GetModelMemParam();
-  return static_cast<int>((memory_mb + slope) / slope);
+  return static_cast<int>(std::ceil(memory_mb / slope));
 }
 
 bool TrainLauncher::Train() {
@@ -118,6 +157,15 @@ bool TrainLauncher::Train() {
   auto model = data->GetModelName();
   cur_model_name_ = model;
   auto train_script = train_handles_[model];
+
+  if ((Config::IsColocateMode() || Config::IsSwitchMode()) && 
+      Config::use_shared_tensor &&
+      Config::enable_warm_cache_fallback) {
+    auto [base, slope] = GetModelMemParam();
+    Config::max_warm_cache_nbytes = static_cast<size_t>((
+      Config::cuda_memory_pool_gb * 1024 - Config::train_memory_over_predict_mb - base) * 1_MB);
+    LOG(INFO) << "[Warm Cache Fallback for Colocation] set max warm cache nbytes to " << sta::ByteDisplay(Config::max_warm_cache_nbytes);
+  }
 
   std::vector<std::string> args_str;
   // args_str.push_back("nsys");
@@ -164,7 +212,8 @@ bool TrainLauncher::Train() {
   if (Config::serve_mode == ServeMode::kColocateL1 || Config::serve_mode == ServeMode::kTaskSwitchL1) {
     if (Config::use_xsched) {
       args_str.push_back("--hook-mode");
-      args_str.push_back("xsched-sync");
+      args_str.push_back("xsched-sync2");
+      // args_str.push_back("xsched-sync"); # used for dummy adjust
     } else {
       args_str.push_back("--hook-mode");
       args_str.push_back("sync");
@@ -277,6 +326,7 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
       close(from_child_pipe[1]);
     }
     // train_running_ = true;
+    // 
     LOG(INFO) << "[TrainLauncher]: " << "Train " << job << " pid " << pid;
   }
 
@@ -292,7 +342,8 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
   close(to_child_pipe[1]);
 
   int status;
-  waitpid(pid, &status, 0);
+  int ret = waitpid(pid, &status, 0);
+  LOG(INFO) << "[TrainLauncher]: wait pid return, ret = " << ret << ", status = " << status << "."; 
   train_pid_ = -1;
   batch_start_ = false;
   // target_batch_size_ = -1;
@@ -311,8 +362,8 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
                  << " target_batch_size " << target_batch_size_ 
                  << " cur_batch_size " << cur_batch_size_ 
                  << " memory " << ResourceManager::GetTrainMemoryMB() << "MB"
-                 << " predict memory " << PredictMemUsageMB() << "MB"
-                 << " calculated free memory " << ResourceManager::GetFreeMemoryMB() << "MB";
+                 << " predict memory " << PredictMemUsageMB(false) << "MB"
+                 << " calculated free memory " << ResourceManager::GetFreeMemoryMB(true) << "MB";
       return false;
     }
   } else {
@@ -320,14 +371,18 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
   }
 }
 
+// used for eval issue of un-released tensor
 void TrainLauncher::DummyAdjust() {
   while (this->train_pid_ == -1) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
-  std::this_thread::sleep_for(std::chrono::seconds(15));
-  LOG(INFO) << "DummyAdjust: train pid " << this->train_pid_;
+  size_t delay_before_dummy_adjust = 30;
+  LOG(INFO) << "DummyAdjust: train pid " << this->train_pid_ << " start after " << delay_before_dummy_adjust << "s";
+  std::this_thread::sleep_for(std::chrono::seconds(delay_before_dummy_adjust));
   
   std::mt19937 gen(42); // fix seed
+
+  int ori_target_bs = this->target_batch_size_;
 
   auto start = Profiler::Now();
   while (Profiler::MilliFrom(start) < 30*1000 && this->train_pid_ != -1) {
@@ -335,7 +390,7 @@ void TrainLauncher::DummyAdjust() {
     auto batch_size = 1;
     auto cmd_id = Controller::Get()->ColocateAdjust(-1, batch_size);
     Controller::Get()->WaitColocateAdjustDone(cmd_id);
-    Controller::Get()->InferExit();
+    Controller::Get()->DummyInferExit(ori_target_bs);
     std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<>(200, 1000)(gen)));
   }
 }

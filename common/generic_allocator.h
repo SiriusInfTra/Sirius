@@ -25,16 +25,15 @@
 #include <utility>
 
 namespace colserve::sta {
-static const constexpr size_t SMALL_BLOCK_NBYTES = 2_MB;
-static const constexpr size_t VA_RESERVE_SCALE = 16;
+static const constexpr size_t VA_RESERVE_SCALE = 25;
 
 namespace alloc_conf {
 
 static const constexpr bool ALWAYS_CHECK_STATE = false;
 static const constexpr bool STRICT_CHECK_STATE = false;
 static const constexpr bool DUMP_BEFORE_CHECK = false;
-// static const constexpr bool VERBOSE = false;
-static const constexpr bool VERBOSE = true;
+static const constexpr bool VERBOSE = false;
+// static const constexpr bool VERBOSE = true;
 static const constexpr bool DELAY_UNMAP = true;
 
 }
@@ -80,6 +79,8 @@ struct MemEntry {
     bool            is_free:  1;
     bool            is_train: 1;
     bool            is_small: 1;
+    bool            is_alloc: 1;
+    size_t          rank: 8;
   };
 
   entry_linklist::iterator    pos_entrylist;
@@ -100,17 +101,12 @@ inline std::string ToString(const MemEntry *entry) {
     << ", nbytes=" << entry->nbytes
     << ", is_free=" << entry->is_free
     << ", is_train=" << entry->is_train
-    << ", is_small=" << entry->is_small << "}";
+    << ", is_small=" << entry->is_small 
+    << ", is_alloc=" << entry->is_alloc
+    << ", rank=" << entry->rank << "}";
   return ss.str();
 }
 
-inline void CheckNBytes(const MemEntry *entry) {
-  if (entry->is_small) {
-    CHECK_LT(entry->nbytes, SMALL_BLOCK_NBYTES) << entry;
-  } else {
-    CHECK_GE(entry->nbytes, SMALL_BLOCK_NBYTES) << entry;
-  }
-}
 
 inline std::ostream & operator<<(std::ostream &os, const MemEntry *entry)  {
   os << ToString(entry);
@@ -121,11 +117,13 @@ inline std::ostream & operator<<(std::ostream &os, const MemEntry *entry)  {
 
 class EntryList {
 private:
+  const Belong policy_;
   const std::string &log_prefix_;
+  const std::vector<PhyMem *> &mapped_mem_list_;
   entry_linklist *entry_list_;
   entry_addr_map *entry_by_addr;
 public:
-  EntryList(const std::string &log_prefix, Belong policy): log_prefix_(log_prefix) {
+  EntryList(const std::string &log_prefix, const std::vector<PhyMem *> &mapped_mem_list, Belong policy): policy_(policy), log_prefix_(log_prefix), mapped_mem_list_(mapped_mem_list) {
     auto &shared_memory = MemPool::Get().GetSharedMemory();
     auto atomic_init = [&] {
       {
@@ -142,6 +140,21 @@ public:
   }
   
   void LinkNewEntry(MemEntry *entry);
+
+  void UpdateAllocFlag(MemEntry *entry) {
+      bool real_allocated = true;
+      auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(entry);
+      if (policy_ == Belong::kTrain) {
+        for (size_t k = index_begin; k < index_end; ++k) {
+          if (mapped_mem_list_[k] == nullptr) {
+            real_allocated = false;
+            break;
+          }
+        }
+      }
+
+      entry->is_alloc = real_allocated;
+  }
 
   MemEntry *GetEntry(std::ptrdiff_t addr_offset);
 
@@ -165,13 +178,18 @@ public:
     return entry;
   }
 
-  MemEntry* IterateRange(ptrdiff_t addr_offset, size_t nbytes, std::function<MemEntry*(MemEntry *)> func, bool do_check = true) {
-        auto *entry = GetEntryLower(addr_offset);
+  MemEntry *GetEntryWithAddr(ptrdiff_t addr_offset) {
+    auto *entry = GetEntryLower(addr_offset);
     if (entry == nullptr) {
       entry = std::prev(entry_list_->cend())->ptr();
     } else if (entry->addr_offset > addr_offset) {
       entry = GetPrevEntry(entry);
     }
+    return entry;
+  }
+
+  MemEntry* IterateRange(ptrdiff_t addr_offset, size_t nbytes, std::function<MemEntry*(MemEntry *)> func, bool do_check = true) {
+    auto *entry = GetEntryWithAddr(addr_offset);
     CHECK(entry != nullptr);
     CHECK_LE(entry->addr_offset, addr_offset);
     while (true) {
@@ -179,6 +197,8 @@ public:
       if (!entry) { break; }
       if (entry->addr_offset + entry->nbytes >= addr_offset + nbytes) { break; }
       entry = GetNextEntry(entry);
+      if (!entry) { break; }
+      if (!entry) { break; }
     }
     return entry;
   }
@@ -204,13 +224,14 @@ private:
   EntryList& list_index_;
   const bool is_small_;
   const Belong policy_;
+  const size_t small_block_nbytes_;
   entry_nbytes_map *entry_by_nbytes_;
 public:
 
 
-  FreeList(EntryList &list_index, bool is_small, const std::string &log_prefix, Belong policy);
+  FreeList(EntryList &list_index, bool is_small, const std::string &log_prefix, Belong policy, size_t small_block_nbytes);
 
-  MemEntry *PopFreeEntry(size_t nbytes, bool do_split = true);
+  MemEntry *PopFreeEntry(size_t nbytes, bool do_split = true, size_t require_allocated = 0);
 
   MemEntry *PopFreeEntry(MemEntry *free_entry);
 
@@ -228,6 +249,8 @@ public:
 class GenericAllocator {
 public:
   const Belong policy_;
+  const size_t small_block_nbytes_;
+  const std::string log_prefix_;
 protected:
   MemPool &mempool_;
   std::vector<PhyMem *> mapped_mem_list_;
@@ -237,10 +260,6 @@ protected:
   FreeList  free_list_small_;
   FreeList  free_list_large_;
   std::function<void()>       oom_handler_;
-
-
-
-  const std::string log_prefix_;
 
 
   void ExpandMemorySpace(const std::vector<PhyMem *> &phy_mem_list, size_t len) {
@@ -263,7 +282,12 @@ protected:
     };
     CU_CALL(cuMemSetAccess(reinterpret_cast<CUdeviceptr>(mapping_begin),
                            len * MEM_BLOCK_NBYTES, &acc_desc, 1));
-    // cached_nbytes_ += len * MEM_BLOCK_NBYTES;
+
+  }
+
+  void ExpandMemorySpace(size_t new_len) {
+    CHECK_GE(new_len, mapped_mem_list_.size());
+    CHECK_LE(new_len, mempool_.mempool_nbytes / MEM_BLOCK_NBYTES * VA_RESERVE_SCALE);
   }
   
 
@@ -277,10 +301,14 @@ public:
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
     auto in_time_t = std::chrono::system_clock::to_time_t(now);
     std::stringstream ss;
-    ss << "./" << "mempool_dump_" << policy_ << "_" << std::put_time(std::localtime(&in_time_t), "%Y-%m-%d_%H-%M-%S") << "_" << ms.count();
+    ss << "./" << "mempool_dump_log" << "/"
+        << "mempool_dump_" << policy_ << "_" 
+        << std::put_time(std::localtime(&in_time_t), "%Y-%m-%d_%H-%M-%S") << "_" << ms.count();
     std::filesystem::path output_dir{ss.str()};
-    CHECK(std::filesystem::create_directory(output_dir));
-    LOG(INFO) << log_prefix_ << "Dump has been written to: " << ss.str() << ".";
+    CHECK(std::filesystem::create_directories(output_dir));
+    LOG(INFO) << "\n\n";
+    LOG(INFO) << log_prefix_ << "Dump has been written to: " << ss.str() << ".\n";
+    LOG(INFO) << log_prefix_ << policy_ << " memory pool status:";
     PrintStatus();
     if (MemPool::IsInit()) {
       mempool_.PrintStatus();
@@ -310,10 +338,11 @@ public:
       free_list_large_.DumpFreeList(handle);
       handle.close();
     }
+    CheckState();
   }
 
 
-  GenericAllocator(MemPool &mempool, Belong policy, bip::scoped_lock<bip::interprocess_mutex> &lock);
+  GenericAllocator(MemPool &mempool, Belong policy, size_t small_block_nbytes, bip::scoped_lock<bip::interprocess_mutex> &lock);
 
   virtual ~GenericAllocator();
 
@@ -324,14 +353,21 @@ public:
   }
 
   void PrintStatus() {
+    bool is_training = policy_ == Belong::kTrain;
     enum class MemEntryType { kFreeLarge, kFreeSmall,  kTrainLarge, kTrainSmall, kNotAllocatedLarge, kNotAllocatedSmall, kUsed };
     std::unordered_map<MemEntryType, std::pair<std::vector<size_t>, std::string>> groupby = {
-      {MemEntryType::kFreeLarge, std::make_pair(std::vector<size_t>{}, "FreeListLarge")},
-      {MemEntryType::kFreeSmall, std::make_pair(std::vector<size_t>{}, "FreeListSmall")},
-      {MemEntryType::kTrainLarge, std::make_pair(std::vector<size_t>{}, "TrainLarge")},
-      {MemEntryType::kTrainSmall, std::make_pair(std::vector<size_t>{}, "TrainSmall")},
-      {MemEntryType::kNotAllocatedLarge, std::make_pair(std::vector<size_t>{}, "NotAllocatedLarge")},
-      {MemEntryType::kNotAllocatedSmall, std::make_pair(std::vector<size_t>{}, "NotAllocatedSmall")},
+      {MemEntryType::kFreeLarge, std::make_pair(std::vector<size_t>{}, 
+          std::string("FreeListLarge") + (is_training ? ", free entry w/ phy page" : ""))},
+      {MemEntryType::kFreeSmall, std::make_pair(std::vector<size_t>{}, 
+          std::string("FreeListSmall") + (is_training ? ", free entry w/ phy page" : ""))},
+      {MemEntryType::kTrainLarge, std::make_pair(std::vector<size_t>{}, 
+          std::string("TrainLarge") + (is_training ? " (training allocated)" : (" (phy page allocated to train)")))},
+      {MemEntryType::kTrainSmall, std::make_pair(std::vector<size_t>{}, 
+          std::string("TrainSmall") + (is_training ? " (training allocated)" : (" (phy page allocated to train)")))},
+      {MemEntryType::kNotAllocatedLarge, std::make_pair(std::vector<size_t>{}, 
+          std::string("NotAllocatedLarge (free entry w/o phy page)") + (is_training ? "" : ", should be empty for Infer"))},
+      {MemEntryType::kNotAllocatedSmall, std::make_pair(std::vector<size_t>{}, 
+          std::string("NotAllocatedSmall (free entry w/o phy page)") + (is_training ? "" : ", should be empty for Infer"))},
       {MemEntryType::kUsed, std::make_pair(std::vector<size_t>{}, "Used")},
     };
     for(auto *entry= entry_list_.GetEntry(0); entry !=nullptr; entry = entry_list_.GetNextEntry(entry)) {
@@ -388,27 +424,30 @@ public:
     if (entry->addr_offset < addr_offset) {
       auto *prev_entry = entry;
       entry = entry_list_.SplitEntry(prev_entry, addr_offset - entry->addr_offset);
-      prev_entry->is_small = prev_entry->nbytes < SMALL_BLOCK_NBYTES;
-      (prev_entry->is_small ? free_list_small_ : free_list_large_).PushFreeEntry(prev_entry);
+      prev_entry->is_small = prev_entry->nbytes < small_block_nbytes_;
+      prev_entry = (prev_entry->is_small ? free_list_small_ : free_list_large_).PushFreeEntry(prev_entry);
+
     }
     if (entry->addr_offset + entry->nbytes > addr_offset + nbytes) {
       auto *next_entry = entry_list_.SplitEntry(entry, addr_offset + nbytes - entry->addr_offset);
-      next_entry->is_small = next_entry->nbytes < SMALL_BLOCK_NBYTES;
+      next_entry->is_small = next_entry->nbytes < small_block_nbytes_;
       (next_entry->is_small ? free_list_small_ : free_list_large_).PushFreeEntry(next_entry);
     }
-    entry->is_small = entry->nbytes < SMALL_BLOCK_NBYTES;
+    entry->is_small = entry->nbytes < small_block_nbytes_;
     CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
     return entry;
   }
 
   MemEntry *MaybeMerge(MemEntry *entry) {
-    CHECK(entry->is_small);
+    if (!entry->is_alloc) { return entry; }
+    CHECK(entry->is_free) << entry;
+    CHECK(entry->is_small) << entry;
     bool put_free_list_large = true;
     size_t total_nbytes = entry->nbytes;
     MemEntry *prev_entry, *next_entry;
     if ((prev_entry = entry_list_.GetPrevEntry(entry)) != nullptr) {
       if (prev_entry->is_small) {
-        CHECK(!prev_entry->is_free);
+        CHECK(!prev_entry->is_free || !prev_entry->is_alloc) << prev_entry;
         put_free_list_large = false;
       } else {
         total_nbytes += prev_entry->nbytes;
@@ -416,13 +455,13 @@ public:
     }
     if ((next_entry = entry_list_.GetNextEntry(entry)) != nullptr) {
       if (next_entry->is_small) {
-        CHECK(!next_entry->is_free);
+        CHECK(!next_entry->is_free || !next_entry->is_alloc) << next_entry;
         put_free_list_large = false;
       } else {
         total_nbytes += next_entry->nbytes;
       }
     }
-    if (put_free_list_large && total_nbytes < SMALL_BLOCK_NBYTES) {
+    if (put_free_list_large && total_nbytes < small_block_nbytes_) {
       put_free_list_large = false;
     }
     if (put_free_list_large) {
@@ -432,7 +471,6 @@ public:
     }
     return entry;
   }
-
 
   // size_t GetCachedNBytes() {
   //   return cached_nbytes_;

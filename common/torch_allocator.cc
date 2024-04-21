@@ -12,8 +12,6 @@
 
 namespace colserve::sta {
 
-
-
 std::unique_ptr<TorchAllocator> TorchAllocator::instance_ = nullptr;
 
 TorchAllocator &TorchAllocator::Get() {
@@ -26,9 +24,10 @@ TorchAllocator &TorchAllocator::Get() {
 }
 
 TorchAllocator::TorchAllocator(MemPool &mempool, bip::scoped_lock<bip::interprocess_mutex> &lock)
-    : GenericAllocator(mempool, Belong::kTrain, lock) {
+    : GenericAllocator(mempool, Belong::kTrain, 2_MB, lock) {
   LOG(INFO) << log_prefix_ << "Init TorchAllocator.";
   TVMAllocator::Init(true, lock);
+  peek_allocated_nbytes_ = mempool.GetSharedMemory().find_or_construct<std::atomic<size_t>>("TA_peek_allocated_nbytes")();
 }
 
 

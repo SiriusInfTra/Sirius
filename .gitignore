@@ -1,13 +1,16 @@
 .vscode
+build
 build/
 build_*/
 /cmake-*
 /.cache
 /log
+/log-*
 /.idea
 
 *.gz
 *.tar
+*.xz
 *.onnx
 
 server/models/*/
@@ -28,9 +31,12 @@ dist/
 *.pyc
 
 log/*
+log_*/*
 /dcgmi_output/*.txt
 
 .env
 .gdb_history
 
 mempool_dump*/*
+
+cifar-10-batches-py/*

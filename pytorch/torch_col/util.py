@@ -2,6 +2,7 @@ from enum import Enum, IntEnum
 import contextlib
 from inspect import currentframe, getframeinfo
 from dataclasses import dataclass
+import time
 from typing import Optional
 import pandas as pd
 
@@ -41,6 +42,14 @@ class MemoryPool:
             return (total - free) / 1024 / 1024 / 1024
     
     @classmethod
+    def get_allocated_memory(cls):
+        if torch_col.use_shared_tensor():
+            return torch_col.cuda_memory_pool_train_usage() / 1024 / 1024 / 1024
+        else:
+            free, total = torch.cuda.mem_get_info(0)
+            return (total - free) / 1024 / 1024 / 1024
+    
+    @classmethod
     def empty_cache(cls):
         if torch_col.use_shared_tensor():
             torch_col.cuda_memory_pool_free_train_local()
@@ -69,7 +78,7 @@ class EventManager:
     @classmethod
     def set_log_path(cls, path: str):
         cls.event_log_path = path
-    
+
     @classmethod
     def record_event(cls, name: str, prev_event: Optional[Event]=None) -> Event:
         timestamp = torch_col.get_unix_timestamp_us()
@@ -110,3 +119,37 @@ class EventManager:
 
     
 # event_manager = EventManager()
+
+def initialize_sgd_optimizer(model, optimizer):
+    # prepare grad, and optimizer state
+    for p in model.parameters():
+        if p.requires_grad:
+            p.grad = torch.zeros_like(p)
+    for groups in optimizer.param_groups:
+        for p in groups['params']:
+            state = optimizer.state[p]
+            state['momentum_buffer'] = torch.zeros_like(p)
+
+# def print_sgd_optimizer(optimizer):
+#     nbytes = 0
+#     ptrs = ""
+#     for group in optimizer.param_groups:
+#         for p in group['params']:
+#             assert p.is_cuda
+#             ptrs += f"p::{p.data_ptr():x},"
+#             nbytes += p.numel() * p.element_size()
+#             if p.grad is not None:
+#                 assert p.grad.is_cuda
+#                 ptrs += f"g::{p.grad.data_ptr():x},"
+#                 nbytes += p.grad.numel() * p.grad.element_size()
+#             state = optimizer.state[p]
+#             if 'momentum_buffer' in state:
+#                 momentum_buffer = state['momentum_buffer']
+#                 assert momentum_buffer.is_cuda
+#                 ptrs += f"m::{momentum_buffer.data_ptr():x},"
+#                 nbytes += momentum_buffer.numel() * momentum_buffer.element_size()
+#     ptrs += f", total_bytes::{nbytes/1024/1024:.2f}mb"
+#     print(ptrs, flush=True, file=sys.stderr)
+#     print(f'memory usage {torch_col.MemoryPool.get_allocated_memory():.2f}mb, {torch_col.MemoryPool.get_memory_usage():.2f}mb', flush=True, file=sys.stderr)
+#     # torch_col.MemoryPool.empty_cache()
+#     # print(f'memory usage after empty cache {torch_col.MemoryPool.get_allocated_memory():.2f}mb, {torch_col.MemoryPool.get_memory_usage():.2f}mb', flush=True, file=sys.stderr)

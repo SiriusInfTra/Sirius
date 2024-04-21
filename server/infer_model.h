@@ -34,10 +34,13 @@ class Model {
         std::optional<const std::map<std::string, tvm::TVMArray>> params,
         DLDevice device, size_t batch_size, size_t num_worker, size_t max_num_worker);
 
-  bool AddJob(network::InferHandler::InferData* data);
   size_t NumJobs() { return job_queue_.NumJobs(); }
 
-  bool ReclaimMemory(size_t rank);
+  bool ReclaimMemory(size_t rank, std::unique_lock<std::mutex> &cold_cache_lock, 
+                  std::unique_lock<std::mutex> &model_lock, Model *source_model);
+
+  void ClearColdCache(const std::vector<size_t> &cold_cached_group_id, int rank,
+                                  std::unique_lock<std::mutex> &cold_cache_lock);
 
   const std::string &GetName() { return name_; }
   double GetIdleMill(size_t rank) {
@@ -48,7 +51,7 @@ class Model {
   }
 
   size_t GetMemoryNbytes(size_t rank) {
-    return executors_[rank]->GetStorageSize();
+    return executors_[rank]->GetStorageSizeAlign();
   }
 
   // void SetWaitTrainPid(size_t worker_id, pid_t train_pid) {
@@ -56,9 +59,15 @@ class Model {
   //   waited_trains_[worker_id] = train_pid;
   // }
 
+  friend class InferModelStore;
+  friend class WarmModelCache;
+  
  private:
+  bool AddJob(network::InferHandler::InferData* data);
+
   void InitMetaInfo();
-  bool SetupMemory(size_t rank, std::unique_lock<std::mutex> &lock);
+  bool MaybeAdjustTrainAndCache(size_t rank, std::unique_lock<std::mutex> &cold_cache_lock, std::unique_lock<std::mutex> &model_lock);
+  bool SetupMemory(size_t rank, std::unique_lock<std::mutex> &cold_cache_lock, std::unique_lock<std::mutex> &model_lock);
   bool Inference(uint32_t rank, pthread_barrier_t* barrier);
   bool SetInput(tvm::Executor &graph_executor, size_t idx, const std::string &input_id, 
                 const std::vector<std::shared_ptr<Job>> &jobs);
@@ -90,7 +99,7 @@ class Model {
 
   // bool warmup_;
   uint32_t max_num_worker_;
-  std::atomic<uint32_t> num_worker_;
+  std::atomic<uint32_t> num_worker_{0};
 
   std::unique_ptr<tvm::TVMGraph> tvm_graph_ = nullptr;
   // param_name -> [[shape], dtype]

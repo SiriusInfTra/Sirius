@@ -9,9 +9,13 @@
 #include <tvm/runtime/packed_func.h>
 #include <tvm/runtime/module.h>
 
+#include <server/config.h>
+
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <future>
+#include <string>
 
 // #include "tvm.h"
 
@@ -221,15 +225,24 @@ struct GraphAttr {
 class Executor;
 class TVMGraph {
  public:
+  static std::string mod_json;
+  static std::string mod_so;
+  static std::string mod_params;
+  static std::string mod_group;
+
   TVMGraph(size_t rank, ::colserve::Model* infer_model,
                        const std::string &model_name,
+                       const std::filesystem::path &model_path,
                        const std::string &graph_json,
+                       const std::string &group_txt,
                        const ::tvm::runtime::Module mod,
                        const std::string &params_file,
                        const std::vector<DLDevice> &devs);
   TVMGraph(size_t rank, ::colserve::Model* infer_model,
                        const std::string &model_name,
+                       const std::filesystem::path &model_path,
                        const std::string &graph_json,
+                       const std::string &group_txt,
                        const ::tvm::runtime::Module mod,
                        const std::map<std::string, TVMArray> &params,
                        const std::vector<DLDevice> &devs);
@@ -241,6 +254,13 @@ class TVMGraph {
   std::tuple<ShapeInfo, DtypeInfo> GetOutputInfo() const;
 
   inline size_t GetModelRank() const { return model_rank_; }
+
+  uint32_t entry_id(NodeEntry e) const {
+    return node_row_ptr_[e.node_id] + e.index;
+  }
+  uint32_t entry_id(uint32_t nid, uint32_t index) const {
+    return node_row_ptr_[nid] + index;
+  }
 
   static std::map<std::string, TVMArray> LoadParamsAsTVMArray(const std::string &params_file);
 
@@ -294,9 +314,24 @@ class TVMGraph {
     return false;
   }
 
+  // void LoadParamGroupParti(const std::string &path) {
+  //   if (Config::group_param_dump) {
+  //     LOG(INFO) << "skip load storage group: " << path
+  //               << " because group_param_dump is enabled";
+  //     return;
+  //   }
+  //   std::ifstream handle(path);
+  //   CHECK(handle.is_open()) << "Cannot open file " << path;
+  //   std::string buf;
+  //   while (handle >> buf) {
+  //     storage_group_parti_.push_back(std::stoul(buf));
+  //   }
+  // }
+
   size_t model_rank_;
-  ::colserve::Model *infer_model_;
+  std::filesystem::path model_path_;
   std::string model_name_;
+  ::colserve::Model *infer_model_;
   ::tvm::runtime::Module module_;
   // std::vector<DLDevice> devices_;
 
@@ -310,7 +345,10 @@ class TVMGraph {
   std::map<std::string, uint32_t> node_map_;
   std::map<std::string, uint32_t> input_map_;
   std::map<std::string, uint32_t> output_map_;
-  std::map<uint32_t, TVMArray> params_;
+  std::map<uint32_t, TVMArray> params_; // data entry id -> TVMArray
+  
+  // std::vector<size_t> storage_group_parti_;
+  
   // std::map<uint32_t, uint32_t> param_node_storage_id_map_;
 
   // std::vector<PoolEntry> pool_entry_;

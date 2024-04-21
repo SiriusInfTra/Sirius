@@ -112,9 +112,10 @@ int main(int argc, char** argv) {
     auto groups = GroupByModel(trace_cfg);
     if (app.warmup > 0) {
       std::vector<std::future<void>> warm_up_futures;
+      warm_up_futures.reserve(groups.size());
       for (auto &[model_id, _] : groups) {
         auto &model = trace_cfg.models[model_id];
-        warm_up_futures.push_back(std::async(std::launch::async, 
+        warm_up_futures.emplace_back(std::async(std::launch::async, 
             [&workload, &model, &app](){
               workload.WarmupModel(model.model_name, app.warmup);
             }
@@ -138,8 +139,13 @@ int main(int argc, char** argv) {
   }
   
   if (app.enable_train) {
-    if (app.train_models.count("resnet"))
-      workload.TrainResnet(app.num_epoch, app.batch_size);
+    // if (app.train_models.count("resnet152"))
+    //   workload.TrainResnet(app.num_epoch, app.batch_size);
+    CHECK(app.train_models.size() <= 1);
+    if (!app.train_models.empty()) {
+      auto model_name = *app.train_models.begin();
+      workload.Train(model_name, app.num_epoch, app.batch_size);
+    }
   }
 
   workload.Run();

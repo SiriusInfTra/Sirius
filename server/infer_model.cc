@@ -1,8 +1,18 @@
+#include <pthread.h>
 #include <server/infer_model_store.h>
 #include <server/infer_model.h>
 #include <server/controller.h>
 #include <server/config.h>
+#include <server/resource_manager.h>
+#include <server/train_launcher.h>
+#include <algorithm>
+#include <chrono>
+#include <limits>
+#include <mutex>
+#include <vector>
+#include "common/util.h"
 
+constexpr bool SKIP_MULTI_OUTPUT = false;
 
 namespace colserve {
 
@@ -18,7 +28,6 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
   CHECK(std::filesystem::exists(model_path / "mod.json"));
   CHECK(std::filesystem::exists(model_path / "mod.params"));
 
-  // rmod_ = tvm::runtime::Module::LoadFromFile((model_path / "mod.so").c_str(), "so");
   auto rmod = 
       ::tvm::runtime::Module::LoadFromFile((model_path / "mod.so").c_str(), "so");
 
@@ -27,7 +36,9 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
       InferModelStore::GetModelRank(),
       this,
       name,
+      model_path,
       (model_path / "mod.json").c_str(),
+      (model_path / "mod.group").c_str(),
       rmod,
       (model_path / "mod.params").c_str(),
       std::vector{device}
@@ -37,7 +48,9 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
       InferModelStore::GetModelRank(),
       this,
       name,
+      model_path,
       (model_path / "mod.json").c_str(),
+      (model_path / "mod.group").c_str(),
       rmod,
       params.value(),
       std::vector{device}
@@ -68,8 +81,8 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
     // InferModelCache::ReserveCache(name);
     // executor->Init(true);
     executors_.push_back(std::move(executor));
-    status_.push_back(Status::kReady);
-    model_stat_[static_cast<size_t>(Status::kReady)].fetch_add(1, std::memory_order_relaxed);
+    status_.push_back(Status::kWithoutMemory);
+    model_stat_[static_cast<size_t>(Status::kWithoutMemory)].fetch_add(1, std::memory_order_relaxed);
   }
   infer_workers_.resize(max_num_worker_);
 
@@ -92,7 +105,9 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
     infer_workers_[i].reset(new std::thread{&Model::Inference, this, i, &barrier});
     // if (Config::IsSwitchMode()) pthread_barrier_wait(&barrier);
     pthread_barrier_wait(&barrier);
+    pthread_barrier_destroy(&barrier);
   }
+
 
   // if (Config::IsColocateMode() || Config::IsSwitchMode()) {
   //   job_monitor_.reset(new std::thread{&Model::MonitorJob, this});
@@ -119,44 +134,190 @@ void Model::InitMetaInfo() {
   for (const auto &kv : shape_info) {
     auto shape = shape_info[kv.first];
     auto dtype = dtype_info[kv.first];
-    output_info_[kv.first] = std::make_pair(shape, dtype);
     std::stringstream ss;
     for (size_t i = 0; i < shape.size(); i++)
       ss << shape[i] << " ";
     LOG_IF(INFO, Config::log_model_init_info) 
         << "[Model Init] Output: " << name_ << " " << kv.first 
         << " shape [ " << ss.str()  << "] dtype " << dtype;
-    CHECK_EQ(shape[0], batch_size_) << "batch size mismatch";
+    
+    CHECK_EQ(shape[0], batch_size_)
+        << "[Model Init] Output: " << name_ << " " << kv.first  
+        << ", batch size mismatch";
+    if (SKIP_MULTI_OUTPUT && !output_info_.empty()) {
+      LOG(INFO) << "[Model Init] Output: " << name_ << " " << kv.first 
+                << ", multi output, skiped in output_info_";
+    } else {
+      output_info_[kv.first] = std::make_pair(shape, dtype);
+    }
   }
 }
 
 bool Model::AddJob(network::InferHandler::InferData* data) {
   // LOG(INFO) << "model " << name_ << " add job";
-  if (name_ == "dummy") {
-    data->GetResponse().set_result("dummy result");
-    data->GetResponder().Finish(data->GetResponse(), grpc::Status::OK, data);
-    return true;
-  }
-  Controller::Get()->InferRequestInc();
-  // InterruptTrain check whether to interrupt train
-  Controller::Get()->InterruptTrain(); 
   infer_count_.fetch_add(1, std::memory_order_relaxed);
   return job_queue_.Put(std::make_shared<InferJob>(data));
 }
 
-bool Model::ReclaimMemory(size_t rank) {
-  std::unique_lock lock{muts_[rank]};
+bool Model::ReclaimMemory(size_t rank, 
+                          std::unique_lock<std::mutex> &cold_cache_lock, 
+                          std::unique_lock<std::mutex> &model_lock, 
+                          Model *source_model) {
+  if (name_ == "dummy") return false;
+  CHECK_LT(rank, muts_.size());
+  CHECK_LT(rank, executors_.size()) << name_;
+  CHECK_LT(rank, status_.size());
   if (status_[rank] == Status::kWithoutMemory) {
     return false; 
   }
-  executors_[rank]->DeInit();
+  if (Config::profiler_acquire_resource_lock) { // not used in performance test
+    ResourceManager::InferMemoryChangingLock();
+  }
+
+  auto &executor = executors_[rank];
+  auto &&[cached_groups_id, evict_group_list, succ] = ColdModelCache::Get()
+    .PushCacheItem(name_, rank, executor->GetGroupsNbytes(), 
+    executor->GetStorageSizeAlign(), cold_cache_lock, source_model);
+  CHECK(succ);
+  for (auto &&[name, evict_groups_id] : evict_group_list) {
+    InferModelStore::Get()->GetModel(name)->
+      ClearColdCache(evict_groups_id, rank, cold_cache_lock);
+  }
+  executor->DeInit(cached_groups_id);
   ChangeStatus(rank, Status::kWithoutMemory);
+
+  if (Config::profiler_acquire_resource_lock) {
+    ResourceManager::InferMemoryChangingUnlock();
+  }
   return true;
 }
 
-bool Model::SetupMemory(size_t rank, std::unique_lock<std::mutex> &lock) {
+void Model::ClearColdCache(const std::vector<size_t> &cold_cached_group_id, int rank, 
+                                      std::unique_lock<std::mutex> &cold_cache_lock) {
+  std::unique_lock other_model_lock{muts_[rank]};
+  executors_[rank]->ClearColdCached(cold_cached_group_id);
+}
+
+bool Model::MaybeAdjustTrainAndCache(size_t rank, 
+                                     std::unique_lock<std::mutex> &cold_cache_lock, 
+                                     std::unique_lock<std::mutex> &model_lock) {
   CHECK(status_[rank] == Status::kWithoutMemory);
+
+  bool try_lock_memory_changing_succ = false;
+
+#if ADJUST_WITH_FLYING
+  // batching adjust with flying adjusts
+  if (try_lock_memory_changing_succ = ResourceManager::InferChangeMemoryTryLock()) {
+    if (Controller::Get()->HasFlyingColocateAdjust()) {
+      double total_storage_MB = sta::ByteToMB(executors_[rank]->GetMissingStorageSizeAlign());
+      double free_memory_MB = ResourceManager::GetFreeMemoryMB(true);
+      double cold_cache_free_memory_MB = ColdModelCache::Get().GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock);
+      if (total_storage_MB > cold_cache_free_memory_MB && !Controller::Get()->IsTrainIdle()) {
+        PROFILE_START(TrainAdjust);
+        auto adjust_batch_size = TrainLauncher::Get()->
+          GetAdjustBatchSize(total_storage_MB);
+        auto cmd_id = Controller::Get()->ColocateAdjust(rank, adjust_batch_size);
+        // LOG(INFO) << "try adjust, rank " << name_ << " cmd_id " << cmd_id;
+        Controller::Get()->WaitColocateAdjustDone(cmd_id);
+        PROFILE_END(TrainAdjust);
+        LOG(INFO) << "[Model, Cold Cache Adjust] adjust with flyings,"
+                  << " adjust memory mb " << total_storage_MB
+                  << " wait adjust " << PROFILE_DURATRION(TrainAdjust);
+      }
+    }
+  }
+#endif
+
+  if (!try_lock_memory_changing_succ) {
+    PROFILE_START(InferWaitBeforeEnterAlloc);
+    ResourceManager::InferMemoryChangingLock();
+    PROFILE_END(InferWaitBeforeEnterAlloc);
+  }
+  double free_memory_MB = ResourceManager::GetFreeMemoryMB(true);
+  double cold_cache_free_memory_MB = ColdModelCache::Get().GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock);
+  double total_storage_MB = sta::ByteToMB(executors_[rank]->GetMissingStorageSizeAlign());
+  if (total_storage_MB > cold_cache_free_memory_MB && !Controller::Get()->IsTrainIdle()) {
+    auto wait_train_pid = TrainLauncher::Get()->GetTrainPid();
+    // size_t adjust_batch_buffer_nbytes = std::min(
+    //   Config::cold_cache_max_capability_nbytes - Config::cold_cache_min_capability_nbytes,
+    //   Config::cold_cache_max_capability_nbytes - ColdModelCache::Get().GetCachedNbytes(cold_cache_lock) 
+    // );
+    double adjust_reserve_mb = ColdModelCache::Get().GetAdjustReserveMemoryMB(cold_cache_lock);
+    double adjust_batch_buffer_mb = total_storage_MB - std::max(0.0, cold_cache_free_memory_MB)
+                                    + adjust_reserve_mb;
+
+    if (adjust_batch_buffer_mb > 0) {
+      int cur_target_bs = TrainLauncher::Get()->GetTargetBatchSize();
+      if (cur_target_bs >= 0) {
+        PROFILE_START(TrainAdjust);
+        bool is_first_adjust = !Controller::Get()->HasFlyingColocateAdjust();
+        auto adjust_batch_size = TrainLauncher::Get()->GetAdjustBatchSize(adjust_batch_buffer_mb);
+        CHECK_GE(adjust_batch_size, 0);
+        int cmd_id = Controller::Get()->ColocateAdjust(0, adjust_batch_size);
+        // LOG(INFO) << "adjust model " << name_ << " cmd " << cmd_id;
+        Controller::Get()->WaitColocateAdjustDone(cmd_id);
+        PROFILE_END(TrainAdjust);
+        if (is_first_adjust) {
+          Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, PROFILE_DURATRION(TrainAdjust));
+        }
+        LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
+                  << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
+                  << " wait train pid " << wait_train_pid
+                  << " | before adjust: free memory " << free_memory_MB
+                  << " cold cache free memory " << cold_cache_free_memory_MB
+                  << " reserve memory " << adjust_reserve_mb
+                  << " adjust_batch_buffer_mb " << adjust_batch_buffer_mb
+                  << " delta batch size " << adjust_batch_size << ".";
+      } else {
+        LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
+                  << ", skip adjust due to negative target batch size (" << cur_target_bs << ")" ; 
+      }
+    } else {
+      LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank << " , skip adjust";
+    }
+    free_memory_MB = ResourceManager::GetFreeMemoryMB(true);
+  }
+  LOG(INFO) << "[Model, Cold Cache Adjust] after adjust, "
+            << "free memory " << free_memory_MB
+            << " cold cache free memory " 
+            << ColdModelCache::Get().GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock)
+            << " model required " << total_storage_MB;
+  if (total_storage_MB > free_memory_MB) {
+    long capacity = static_cast<long>(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock)) 
+                    - static_cast<long>((total_storage_MB - free_memory_MB) * 1024 * 1024);
+    auto evict_models = ColdModelCache::Get().GetEvictModels(capacity, {this, nullptr}, cold_cache_lock);
+    for (auto &&[name, cached_groups_id] : evict_models) {
+      InferModelStore::Get()->GetModel(name)->ClearColdCache(cached_groups_id, rank, cold_cache_lock);
+    }
+    LOG(INFO) << "[Model, Cold Cache Adjust] after adjust, furthur evict model to make room for model "
+              << name_ << " rank " << rank
+              << " current cache nbytes " 
+              << sta::ByteDisplay(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock));
+  }
+
+#if 1
+  // directly release memory changing lock, 
+  // infer may alloc memory but without this lock
+  ResourceManager::InferMemoryChangingUnlock();
+  return false;
+#else
+  // delay release the lock, will be released after infer finish alloc
+  return true;
+#endif
+}
+
+bool Model::SetupMemory(size_t rank, std::unique_lock<std::mutex> &cold_cache_lock, std::unique_lock<std::mutex> &model_lock) {
+  CHECK(status_[rank] == Status::kWithoutMemory);
+  ColdModelCache::Get().PopCacheItem(name_, rank, cold_cache_lock);
+  bool will_unlock_memory_changing = false;
+  if (Config::IsColocateMode() && Config::ondemand_adjust) {
+    PROFILE_START(InferAdjustAlloc);
+    if (!Config::colocate_config.skip_malloc) 
+      will_unlock_memory_changing = MaybeAdjustTrainAndCache(rank, cold_cache_lock, model_lock);
+    PROFILE_END(InferAdjustAlloc);
+  }
   executors_[rank]->Init(false);
+  if (will_unlock_memory_changing) ResourceManager::InferMemoryChangingUnlock();
   ChangeStatus(rank, Status::kWithoutParam);
   return true;
 }
@@ -170,47 +331,29 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
   // auto graph_executor = tvm_graph_->CreateGraphExecutor();
   auto graph_executor = executors_[rank].get();
   num_worker_.fetch_add(1, std::memory_order_relaxed);
-  if (barrier != nullptr) pthread_barrier_wait(barrier);
+
+  if (barrier != nullptr) {
+    int err = pthread_barrier_wait(barrier);
+    CHECK(err == 0 || err == PTHREAD_BARRIER_SERIAL_THREAD) << "err: " << err << ".";
+  } 
 
   while (!InferModelStore::Initialized()) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
   LOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") start inference";
-
   {
-    auto reserved_lock = InferModelCache::ReserveCache(name_, rank);
+    auto reserved_lock = WarmModelCache::ReserveCache(name_, rank);
+    CHECK(status_[rank] == Status::kWithoutMemory);
     executors_[rank]->Init(true);
+    ChangeStatus(rank, Status::kReady);
   }
+  LOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") Init Success";
 
   // bool first_exec = true;
   
   // auto last_get_batch_time = std::chrono::steady_clock::now();
   auto last_infer_time = Profiler::Now();
-  while (true) {{                  
-    // if (Config::IsColocateMode() && Profiler::MilliFrom(last_get_batch_time) >= GetMaxIdleMill()) {
-    //   uint32_t num_worker = num_worker_;
-    //   if (num_worker - 0 > 0) { /* check if num_worker reduce */
-    //     // LOG(INFO) << "num_worker " << num_worker;
-    //     auto ok = num_worker_.compare_exchange_strong(num_worker, num_worker - 1,
-    //         std::memory_order_relaxed);
-    //     if (ok) break;
-    //   }
-    // } else if (Config::IsSwitchMode() && InferModelStore::Get()->TaskSwitchControlCnter() == 
-    //     static_cast<int>(InferModelStore::TaskSwitchStatus::kPrepareExit)) {
-    //   // wait all infer enter task switch prepare exit stage
-    //   pthread_barrier_wait(&InferModelStore::Get()->task_switch_barrier);
-    //   // wait task switch result
-    //   pthread_barrier_wait(&InferModelStore::Get()->task_switch_barrier);
-    //   if (InferModelStore::Get()->TaskSwitchControlCnter() == 
-    //       static_cast<int>(InferModelStore::TaskSwitchStatus::kCancelExit)) { // not exit
-    //     // do cancel exit        
-    //     pthread_barrier_wait(&InferModelStore::Get()->task_switch_barrier);
-    //   } else { // exit
-    //     num_worker_.fetch_sub(1, std::memory_order_relaxed);
-    //     break;
-    //   }
-    // }
-
+  while (true) {             
     auto jobs = job_queue_.GetBatch(batch_size_, 10, 10);
     if (jobs.empty()) {
       auto idle_mill = Profiler::MilliFrom(last_infer_time);
@@ -221,13 +364,15 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
 
     // let cache serve models in a fifo manner
     auto reserve_cache_begin = Profiler::Now();
-    auto reserved_lock = InferModelCache::OrderedReserveCache(name_, rank, jobs);
+    auto reserved_lock = WarmModelCache::OrderedReserveCache(name_, rank, jobs);
     auto reserve_cache_ms = Profiler::MilliFrom(reserve_cache_begin);
 
     // [switch mode] before infering, first claim infering execution
     InferModelStore::InferingInc(executors_[rank].get());
 
     // lock to avoid be interrupted by memory reclaim
+    auto cold_cache_lock = ColdModelCache::Get().Lock();
+    DLOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") Acquire cold cache lock success.";
     std::unique_lock lock{muts_[rank]};
     last_infer_time = Profiler::Now();
     infer_idle_mills_[rank].store(0, std::memory_order_relaxed);
@@ -237,12 +382,14 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     bool setup_memory = false;
     {
       if (status_[rank] == Status::kWithoutMemory) {
+
         auto begin = Profiler::Now();
-        SetupMemory(rank, lock);
+        SetupMemory(rank, cold_cache_lock, lock);
         setup_mem_ms = Profiler::MilliFrom(begin);
         setup_memory = true;
       }
     }
+    cold_cache_lock.unlock();
 
     // last_infer_times_[rank] = Profiler::Now();
     DLOG(INFO) << "[Model Inference] GetBatch " << jobs.size() << "/" << batch_size_;
@@ -323,7 +470,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     if (load_param) { ss << " loading_ms=" << loading_ms; }
 
     ss << " total_infer_ms=" << std::chrono::duration<double, std::milli>(infer_end - infer_begin).count();
-    if (InferModelCache::Enable()) { ss << " | reserve_cache_ms=" << reserve_cache_ms; }
+    if (WarmModelCache::Enable()) { ss << " | reserve_cache_ms=" << reserve_cache_ms; }
     LOG(INFO) << ss.str();
 
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferRealBatchSize, jobs.size());
@@ -335,7 +482,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     }
     InferModelStore::InferingDec(executors_[rank].get());
     Controller::Get()->InferResponseInc(jobs.size());
-  }}
+  }
 
   std::stringstream exit_log_ss;
   exit_log_ss << "[Model Inference] model " << tvm_graph_->GetModelRank() << " worker " << rank << " exit";

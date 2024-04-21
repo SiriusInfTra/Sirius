@@ -12,13 +12,22 @@
 namespace colserve {
 namespace tvm {
 
+std::string TVMGraph::mod_json = "mod.json";
+std::string TVMGraph::mod_so = "mod.so";
+std::string TVMGraph::mod_params = "mod.params";
+std::string TVMGraph::mod_group = "mod.group";
+
 TVMGraph::TVMGraph(
     size_t rank, ::colserve::Model *model,
     const std::string &model_name,
+    const std::filesystem::path &model_path,
     const std::string &graph_json,
+    const std::string &group_txt,
     const ::tvm::runtime::Module mod,
     const std::string &params_file,
-    const std::vector<DLDevice> &devs) : model_rank_(rank), infer_model_(model), model_name_(model_name) {
+    const std::vector<DLDevice> &devs) 
+  : model_rank_(rank), infer_model_(model), model_name_(model_name), model_path_(model_path) {
+
   std::ifstream graph_json_ifs{graph_json};
   std::string graph_json_str{(std::istreambuf_iterator<char>(graph_json_ifs)),
                              std::istreambuf_iterator<char>()};
@@ -46,16 +55,22 @@ TVMGraph::TVMGraph(
   // load_param_stream_ = ::tvm::runtime::DeviceAPI::Get(devices_[0])
   //     ->CreateStream(devices_[0]);
   LoadParams(params_file);
+  // if (Config::group_param_load) {
+  //   LoadParamGroupParti(group_txt);
+  // }
   // SetupStorage();
 }
 
 TVMGraph::TVMGraph(
     size_t rank, ::colserve::Model *model,
     const std::string &model_name,
+    const std::filesystem::path &model_path,
     const std::string &graph_json,
+    const std::string &group_txt,
     const ::tvm::runtime::Module mod,
     const std::map<std::string, TVMArray> &params,
-    const std::vector<DLDevice> &devs) : model_rank_(rank), infer_model_(model), model_name_(model_name) {
+    const std::vector<DLDevice> &devs) 
+    : model_rank_(rank), infer_model_(model), model_name_(model_name), model_path_(model_path) {
   std::ifstream graph_json_ifs{graph_json};
   std::string graph_json_str{(std::istreambuf_iterator<char>(graph_json_ifs)),
                              std::istreambuf_iterator<char>()};
@@ -83,6 +98,9 @@ TVMGraph::TVMGraph(
   // load_param_stream_ = ::tvm::runtime::DeviceAPI::Get(devices_[0])
   //     ->CreateStream(devices_[0]);
   LoadParams(params);
+  // if (Config::group_param_load) {
+  //   LoadParamGroupParti(group_txt);
+  // }
   // SetupStorage();
 }
 
@@ -216,9 +234,10 @@ void TVMGraph::LoadParams(const std::string &params_file) {
     CHECK(input_map_.count(names[i])) << "cannot find " << names[i] <<  " in model parameter"; 
     auto it = node_map_.find(names[i]);
     // LOG(INFO) << "find param in input_map " << it->first << " " << it->second;
+    auto node_eid = entry_id(it->second, 0);
 
-    params_[it->second] = temp.CopyTo(::tvm::Device{kDLCUDAHost, 0});
-    params_size += ::tvm::runtime::GetDataSize(*params_[it->second].operator->());
+    params_[node_eid] = temp.CopyTo(::tvm::Device{kDLCUDAHost, 0});
+    params_size += ::tvm::runtime::GetDataSize(*params_[node_eid].operator->());
   }
   VLOG(1) << params_file << " " << 1.0 * params_size / 1024 / 1024 << " Mb";
 }
@@ -227,7 +246,8 @@ void TVMGraph::LoadParams(const std::map<std::string, TVMArray> &params) {
   for (const auto &p : params) {
     CHECK(input_map_.count(p.first)) << "cannot find " << p.first <<  " in model parameter";
     auto it = node_map_.find(p.first);
-    params_[it->second] = p.second.CopyTo(::tvm::Device{kDLCUDAHost, 0});
+    auto node_eid = entry_id(it->second, 0);
+    params_[node_eid] = p.second.CopyTo(::tvm::Device{kDLCUDAHost, 0});
   }
 }
 
@@ -288,9 +308,10 @@ std::tuple<TVMGraph::ShapeInfo, TVMGraph::DtypeInfo>
   ShapeInfo shape_info;
   DtypeInfo dtype_info;
   for (auto nid : input_nodes_) {
-    if (!params_.count(nid)) {
-      shape_info[nodes_[nid].name] = attrs_.shape[nid];
-      dtype_info[nodes_[nid].name] = attrs_.dltype[nid];
+    auto eid = entry_id(nid, 0);
+    if (!params_.count(eid)) {
+      shape_info[nodes_[nid].name] = attrs_.shape[eid];
+      dtype_info[nodes_[nid].name] = attrs_.dltype[eid];
     }
   }
   return {shape_info, dtype_info};
@@ -302,8 +323,11 @@ std::tuple<TVMGraph::ShapeInfo, TVMGraph::DtypeInfo>
   DtypeInfo dtype_info;
   for (auto e : outputs_) {
     auto nid = e.node_id;
-    shape_info[nodes_[nid].name] = attrs_.shape[nid];
-    dtype_info[nodes_[nid].name] = attrs_.dltype[nid];
+    auto eid = entry_id(e);
+    LOG(INFO) << nodes_[nid].name << " " << nid << " " << eid << ", " 
+              << attrs_.shape[eid] << " " << attrs_.dltype[eid];
+    shape_info[nodes_[nid].name] = attrs_.shape[eid];
+    dtype_info[nodes_[nid].name] = attrs_.dltype[eid];
   }
   return {shape_info, dtype_info};
 }

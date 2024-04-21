@@ -12,6 +12,7 @@ add_library(new_torch_col SHARED
   torch_col/csrc/mem_tagging.cc
   torch_col/csrc/util.cc
   torch_col/csrc/config.cc
+  torch_col/csrc/fake_engine.cc
 )
 
 add_dependencies(new_torch_col xsched_lib)
@@ -22,9 +23,23 @@ target_include_directories(new_torch_col PRIVATE ${CMAKE_SOURCE_DIR}/pytorch)
 target_include_directories(new_torch_col PRIVATE ${CMAKE_BINARY_DIR}/xsched/include)
 target_link_directories(new_torch_col PRIVATE ${CMAKE_BINARY_DIR}/xsched/lib)
 
+set(torch_python_lib)
+foreach(torch_lib IN ITEMS ${TORCH_LIBRARIES})
+  if(torch_lib MATCHES ".*torch/lib/libc10.so")
+    string(REPLACE "torch/lib/libc10.so" "torch/lib/libtorch_python.so" torch_python_lib ${torch_lib})
+  endif()
+endforeach()
+
+if (NOT torch_python_lib)
+  message(FATAL_ERROR "torch_python_lib not found")
+endif()
+
+message("torch lib: ${TORCH_LIBRARIES}, torch_python_lib: ${torch_python_lib}")
+
 target_link_libraries(new_torch_col PRIVATE 
   sta
   ${TORCH_LIBRARIES}
+  ${torch_python_lib}
   Python::Python
   PySched
 )

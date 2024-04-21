@@ -6,7 +6,11 @@
 
 #include <glog/logging.h>
 #include <algorithm>
+#include <boost/interprocess/sync/interprocess_mutex.hpp>
+#include <boost/interprocess/sync/lock_options.hpp>
+#include <boost/interprocess/sync/scoped_lock.hpp>
 #include <cstddef>
+#include <cstring>
 #include <iterator>
 #include <memory>
 #include <mutex>
@@ -15,6 +19,8 @@
 #include <map>
 #include <ostream>
 #include <list>
+#include <random>
+#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -23,30 +29,132 @@ namespace colserve::sta {
 
 class TVMAllocator : public GenericAllocator {
 public:
-  static const constexpr size_t ALIGN_NBYTES = 16_MB; 
+  static const constexpr size_t ALIGN_NBYTES = 16_MB;
+  static const constexpr size_t DUPLICATE_SHUFFLE_K = 1;
+  static_assert(VA_RESERVE_SCALE >= DUPLICATE_SHUFFLE_K, "Must reserve enough virtual memory for duplicate shuffle.");
+
+  static size_t AlignNBytes(size_t nbytes) {
+    return nbytes >= MEM_BLOCK_NBYTES ? detail::AlignedNBytes<MEM_BLOCK_NBYTES>(nbytes) : detail::AlignedNBytes<ALIGN_NBYTES>(nbytes);
+  }
 
 private:
   static std::unique_ptr<TVMAllocator> instance_;
   std::mutex mutex_;
+  std::vector<std::vector<size_t>> duplicate_shuffle_map_;
 
-  MemEntry *Alloc0(size_t nbytes) {
+std::vector<size_t> Shuffle(const std::vector<size_t> &arr, size_t k, std::mt19937 &rng) {
+    CHECK_EQ(arr.size() % k, 0) << arr.size();
+    std::vector<size_t> index(arr.size() / k);
+    std::iota(index.begin(), index.end(), 0);
+    std::shuffle(index.begin(), index.end(), rng);
+    std::vector<size_t> shuffledArr(arr.size());
+    for (size_t i = 0; i < arr.size(); ++i) {
+        shuffledArr[i] = arr[index[i / k] * k  + i % k];
+    }
+    return shuffledArr;
+}
+
+  void InitDuplicate() {
+    size_t phy_num = mempool_.GetPhyMemList().size(); // number of physical memory pages
+    size_t vir_num = phy_num * DUPLICATE_SHUFFLE_K;   // number of virtual memory pages
+    size_t vir_num_per = DUPLICATE_SHUFFLE_K;         // number of virtual memory pages per physical memory pages
+    duplicate_shuffle_map_ = std::vector<std::vector<size_t>>(vir_num, std::vector<size_t>(vir_num_per));
+    // init;
+    std::mt19937 rng{42};
+    for (size_t k = 0; k < vir_num_per; ++k) {
+      std::vector<size_t> map_to(phy_num);
+      std::iota(map_to.begin(), map_to.end(), k * phy_num);
+      if (k != 0) { 
+        map_to = Shuffle(map_to, 4, rng);
+      }
+      for (size_t i = 0; i < phy_num; ++i) { 
+        duplicate_shuffle_map_[i][k] = map_to[i]; 
+      }
+    }
+    for (size_t k = 1; k < vir_num_per; ++k) {
+      for (size_t i = 0; i < phy_num; ++i) {
+        size_t j = duplicate_shuffle_map_[i][k];
+        duplicate_shuffle_map_[j] = duplicate_shuffle_map_[i];
+      }
+    }
+    LOG(INFO) << log_prefix_ << "Duplicate entry map inited.";
+    for (size_t i = 0; i < vir_num; ++i) {
+      std::stringstream ss;
+      for (size_t j = 0; j < vir_num_per; ++j) {
+        ss << duplicate_shuffle_map_[i][j] << " ";
+      }
+      DLOG(INFO) << log_prefix_ << ss.str();
+    }
+  }
+
+  void AllocDuplicateEntry(MemEntry *entry) {
+    CHECK_EQ(entry->addr_offset % MEM_BLOCK_NBYTES, 0) << entry;
+    CHECK_EQ(entry->nbytes % MEM_BLOCK_NBYTES, 0) << entry;
+    auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(entry);
+    for (size_t k = index_begin; k < index_end; ++k) {
+      for (size_t i : duplicate_shuffle_map_[k]) {
+        if (k == i) { continue; }
+        auto *entry1 = entry_list_.GetEntryWithAddr(i * MEM_BLOCK_NBYTES);
+        CHECK(entry1 != nullptr) << "Unable to find entry1 with addr_offset = " << i * MEM_BLOCK_NBYTES << ".";
+        CHECK_LE(entry1->addr_offset, i * MEM_BLOCK_NBYTES) << entry1 << entry;
+        CHECK_GT(entry1->addr_offset + entry1->nbytes, i * MEM_BLOCK_NBYTES) << entry1 << entry;
+        CHECK_EQ(entry1->nbytes % MEM_BLOCK_NBYTES, 0) << entry1 << entry;
+        CHECK_NE(entry1->rank, entry->rank) << entry1 << entry;
+        CHECK(entry1->is_free) << entry1 << entry;
+        CHECK(!entry1->is_small) << entry1 << entry;
+        free_list_large_.PopFreeEntry(entry1);
+        entry1 = Split(entry1, i * MEM_BLOCK_NBYTES, MEM_BLOCK_NBYTES);
+        entry1->is_train = entry->is_train;
+      }
+    }
+  }
+
+  void ReleaseDuplicateEntry(MemEntry *entry) {
+    CHECK_EQ(entry->addr_offset % MEM_BLOCK_NBYTES, 0);
+    CHECK_EQ(entry->nbytes % MEM_BLOCK_NBYTES, 0);
+    auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(entry);
+    
+    for (size_t k = index_begin; k < index_end; ++k) {
+      for (size_t i : duplicate_shuffle_map_[k]) {
+        if (k == i) { continue; }
+        auto *entry1 = entry_list_.GetEntry(i * MEM_BLOCK_NBYTES);
+        CHECK(entry1 != nullptr);
+        CHECK_EQ(entry1->addr_offset, i * MEM_BLOCK_NBYTES);
+        CHECK_EQ(entry1->nbytes, MEM_BLOCK_NBYTES);
+        CHECK_NE(entry1->rank, entry->rank) << entry1 << entry;
+        CHECK(!entry1->is_free);
+        CHECK(!entry1->is_small);
+        entry1->is_train = false;
+        free_list_large_.PushFreeEntry(entry1);
+      }
+    }
+  }
+
+  MemEntry *Alloc(size_t nbytes, bip::scoped_lock<bip::interprocess_mutex> &lock) {
+    CHECK(lock.owns());
     CHECK_GT(nbytes, 0);
     LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Alloc, nbytes = " << ByteDisplay(nbytes) << ".";
-  
-    nbytes = detail::AlignedNBytes<ALIGN_NBYTES>(nbytes);
+    nbytes = AlignNBytes(nbytes);
     MemEntry *free_entry = nullptr;
-    if (nbytes < SMALL_BLOCK_NBYTES) {
+    if (nbytes < small_block_nbytes_) {
       free_entry = free_list_small_.PopFreeEntry(nbytes, true);
+      if (free_entry == nullptr && (free_entry = free_list_large_.PopFreeEntry(MEM_BLOCK_NBYTES, true)) != nullptr) {
+        AllocDuplicateEntry(free_entry);
+        free_entry->is_small = true;
+        CHECK_EQ(free_entry->nbytes % MEM_BLOCK_NBYTES, 0);
+        free_entry = Split(free_entry, free_entry->addr_offset, nbytes);
+      }
       CHECK(!alloc_conf::ALWAYS_CHECK_STATE || free_entry == nullptr || CheckState());
-    }
-    if (free_entry == nullptr && (free_entry = free_list_large_.PopFreeEntry(nbytes, false)) != nullptr) {
-      free_entry = Split(free_entry, free_entry->addr_offset + free_entry->nbytes - nbytes, nbytes);
-      CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
+    } else {
+      free_entry = free_list_large_.PopFreeEntry(nbytes, true);
+      if (free_entry != nullptr) {
+        AllocDuplicateEntry(free_entry);
+      }
     }
 
     if (free_entry == nullptr) {
       DumpState();
-      LOG(FATAL) << log_prefix_ << "OOM";
+      LOG(FATAL) << log_prefix_  << "OOM while finding virtual memory, nbytes = " << ByteDisplay(nbytes) << ".";
     }
     auto &&[index_begin, index_end] = GetAssociatedPhyMemIndex(free_entry);
     std::vector<PhyMem *> phy_mem_list;
@@ -55,13 +163,24 @@ private:
         phy_mem_list.push_back(mapped_mem_list_[k]);
       }
     }
-    mempool_.ClaimPhyMem(phy_mem_list, policy_);
+
+    // if (free_entry->is_small) {
+    //   CHECK_EQ(free_entry->addr_offset / MEM_BLOCK_NBYTES, (free_entry->addr_offset + free_entry->nbytes - 1) / MEM_BLOCK_NBYTES);
+    //   free_entry = free_list_small_.PopFreeEntry(free_entry);
+    // } else {
+    //   for (size_t k = index_begin; k < index_end; ++k) {
+
+    //   }
+    // }
+
+    mempool_.AllocSpecifiedPhyMem(phy_mem_list, policy_);
     mempool_.AddAllocatedNbytes(nbytes, policy_);
     CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
     return free_entry;
   }
 
-  MemEntry *Free0(MemEntry *entry) {
+  MemEntry *Free(MemEntry *entry, bip::scoped_lock<bip::interprocess_mutex> &lock) {
+    CHECK(lock.owns());
     CHECK(entry != nullptr);
     CHECK(!entry->is_free);
     size_t nbytes = entry->nbytes;
@@ -115,37 +234,25 @@ private:
       mempool_.DeallocPhyMem(phy_mem_list);
     }
 
+
     // 2. free list
     if (entry->is_small) {
       entry = free_list_small_.PushFreeEntry(entry);
-      entry = MaybeMerge(entry);
+      if (entry->nbytes == MEM_BLOCK_NBYTES) {
+        entry = free_list_small_.PopFreeEntry(entry);
+        ReleaseDuplicateEntry(entry);
+        entry->is_small = false;
+        free_list_large_.PushFreeEntry(entry);
+      }
     } else { // large
       // 2.0. merge with large
+      ReleaseDuplicateEntry(entry);
       entry = free_list_large_.PushFreeEntry(entry);
-
-      // 2.1. try merge with prev small entry
-      auto *prev_entry_nbytes = entry_list_.GetPrevEntry(entry);
-      if (prev_entry_nbytes && prev_entry_nbytes->is_small && prev_entry_nbytes->is_free) {
-        size_t prev_nbytes = prev_entry_nbytes->nbytes;
-        auto *maybe_merged_entry = MaybeMerge(prev_entry_nbytes);
-        if (maybe_merged_entry->nbytes > prev_nbytes) {
-          entry = maybe_merged_entry;
-        }
-      }
-
-      // 2.2. try merge with next small entry
-      auto *next_entry = entry_list_.GetNextEntry(entry);
-      if (next_entry && next_entry->is_small && next_entry->is_free) {
-        size_t next_entry_nbytes = next_entry->nbytes;
-        auto *maybe_merged_entry = MaybeMerge(next_entry);
-        if (maybe_merged_entry->nbytes > next_entry_nbytes) {
-          entry = maybe_merged_entry;
-        }
-      }
     }
     CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
     return entry;
   }
+
 public:
   static TVMAllocator &Get();
 
@@ -154,7 +261,7 @@ public:
   TVMAllocator(MemPool &mempool, bool for_train, bip::scoped_lock<bip::interprocess_mutex> &lock);
 
   // TO FIX: Sync is not good name
-  void SyncAllocTrain(const std::vector<PhyMem *> &phymem_list, bip::scoped_lock<bip::interprocess_mutex> &lock) {
+  void SyncAllocTrain_NOT_USE(const std::vector<PhyMem *> &phymem_list, bip::scoped_lock<bip::interprocess_mutex> &lock) {
     // TODO: awareness optimal 
     CHECK(lock.owns());
     LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "SyncAllocTrain: " << phymem_list.size();
@@ -165,27 +272,67 @@ public:
         ptrdiff_t begin = std::max(entry->addr_offset, addr_offset);
         size_t end = std::min(entry->addr_offset + entry->nbytes, addr_offset + nbytes);
         CHECK_GT(end, begin);
-        CHECK(entry->is_free);
-        entry = (entry->is_small ? free_list_small_ : free_list_large_).PopFreeEntry(entry);
+        CHECK(entry->is_free) << entry;
+
+        if (entry->is_small) {
+          DumpState();
+          CHECK(!entry->is_small) << entry;
+        }
+        entry = free_list_large_.PopFreeEntry(entry);
         entry = Split(entry, begin, end - begin);
         entry->is_train = true;
+        AllocDuplicateEntry(entry);
         return entry;
       });
     }
   }
 
-  void SyncFreeTrain(const std::vector<PhyMem *> &phymem_list, bip::scoped_lock<bip::interprocess_mutex> &lock) {
+  std::vector<PhyMem *> AllocForTrain(size_t n, bip::scoped_lock<bip::interprocess_mutex> &lock) {
+    CHECK(lock.owns());
+    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Alloc for train "  << n << ".";
+    std::vector<PhyMem *> phy_mem_list;
+    for (size_t k = 0; k < n; ++k) {
+      auto *free_entry = free_list_large_.PopFreeEntry(MEM_BLOCK_NBYTES, true);
+      if (free_entry == nullptr) { break; }
+      free_entry->is_train = true;
+      CHECK_EQ(free_entry->addr_offset % MEM_BLOCK_NBYTES, 0);
+      size_t page_index = duplicate_shuffle_map_[free_entry->addr_offset / MEM_BLOCK_NBYTES][0];
+      phy_mem_list.push_back(&mempool_.GetPhyMemList()[page_index]);
+      AllocDuplicateEntry(free_entry);
+    }
+    mempool_.AllocSpecifiedPhyMem(phy_mem_list, Belong::kTrain);
+    // mempool_.AddAllocatedNbytes(n * MEM_BLOCK_NBYTES, Belong::kTrain);
+    CHECK(!alloc_conf::ALWAYS_CHECK_STATE || CheckState());
+    return phy_mem_list;
+  }
+
+  void FreeForTrain(const std::vector<PhyMem *> &phy_mem_list, bip::scoped_lock<bip::interprocess_mutex> &lock) {
+    CHECK(lock.owns());
+    LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "Free for train " << phy_mem_list.size() << ".";
+    for (auto phy_mem : phy_mem_list) {
+      CHECK_EQ(*phy_mem->belong, Belong::kTrain);
+      auto *entry = entry_list_.GetEntry(phy_mem->index * MEM_BLOCK_NBYTES);
+      CHECK(entry != nullptr);
+      CHECK(entry->is_train) << entry;
+      CHECK_EQ(entry->nbytes, MEM_BLOCK_NBYTES);
+      Free(entry, lock);
+    }
+    // mempool_.SubAllocatedNbytes(phy_mem_list.size() * MEM_BLOCK_NBYTES, Belong::kTrain);
+    mempool_.DeallocPhyMem(phy_mem_list);
+  }
+
+  void SyncFreeTrain_NOT_USE(const std::vector<PhyMem *> &phymem_list, bip::scoped_lock<bip::interprocess_mutex> &lock) {
     CHECK(lock.owns());
     LOG_IF(INFO, alloc_conf::VERBOSE) << log_prefix_ << "SyncFreeTrain: " << phymem_list.size();
     for (auto *phymem : phymem_list) {
       ptrdiff_t addr_offset = phymem->index * MEM_BLOCK_NBYTES;
       size_t nbytes = MEM_BLOCK_NBYTES;
       entry_list_.IterateRange(addr_offset, nbytes, [&](MemEntry *entry) {
-        CHECK_GE(entry->addr_offset, addr_offset);
-        CHECK_LE(entry->addr_offset + entry->nbytes, addr_offset + nbytes);
+        CHECK_EQ(entry->addr_offset, addr_offset) << entry;
+        CHECK_EQ(entry->nbytes, nbytes) << entry;
         CHECK(entry->is_train) << entry;
         CHECK(!entry->is_free) << entry;
-        entry = Free0(entry);
+        entry = Free(entry, lock);
         return entry;
       });
     }
@@ -197,15 +344,13 @@ public:
     bip::scoped_lock lock{mempool_.GetMutex()};
     auto *entry = entry_list_.GetEntry(addr - base_ptr_);
     CHECK(entry != nullptr);
-    Free0(entry);
+    Free(entry, lock);
   }
 
   std::byte *Alloc(size_t nbytes) {
     bip::scoped_lock lock{mempool_.GetMutex()};
-    return base_ptr_ + Alloc0(nbytes)->addr_offset;
+    return base_ptr_ + Alloc(nbytes, lock)->addr_offset;
   }
-
-  void EmptyCache() {}
 };
 
   
