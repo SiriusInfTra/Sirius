@@ -66,13 +66,19 @@ class Model {
   bool AddJob(network::InferHandler::InferData* data);
 
   void InitMetaInfo();
-  bool MaybeAdjustTrainAndCache(size_t rank, std::unique_lock<std::mutex> &cold_cache_lock, std::unique_lock<std::mutex> &model_lock);
-  bool SetupMemory(size_t rank, std::unique_lock<std::mutex> &cold_cache_lock, std::unique_lock<std::mutex> &model_lock);
+  bool MaybeAdjustTrainAndCache(size_t rank, 
+                                std::unique_lock<std::mutex> 
+                                &cold_cache_lock, 
+                                std::unique_lock<std::mutex> &model_lock);
+  bool SetupMemory(size_t rank, 
+                   std::unique_lock<std::mutex> &cold_cache_lock, 
+                   std::unique_lock<std::mutex> &model_lock);
   bool Inference(uint32_t rank, pthread_barrier_t* barrier);
   bool SetInput(tvm::Executor &graph_executor, size_t idx, const std::string &input_id, 
                 const std::vector<std::shared_ptr<Job>> &jobs);
   bool GetOutput(tvm::Executor &graph_executor, 
-                 size_t idx, const std::string &output_id, const std::vector<std::shared_ptr<Job>> &jobs);
+                 size_t idx, const std::string &output_id, 
+                 const std::vector<std::shared_ptr<Job>> &jobs);
 
   void ChangeStatus(uint32_t rank, Status to) {
     auto from = status_[rank];
@@ -114,26 +120,8 @@ class Model {
   std::array<std::atomic<double>, MAX_NUM_WORKER> infer_idle_mills_;
 
   std::atomic<size_t> infer_count_{0};
-
-
-  // std::vector<std::unique_ptr<tvm::Executor>> graph_executor_pool_;
-  // std::unique_ptr<tvm::TVMGraph> graph_executor_factory_;
-
-
-
-
-  // infer scaling
-  // double scale_up_queue_time_;  // ms
-  // double scale_down_idle_time_; // ms
-
-  // std::vector<std::unique_ptr<std::atomic<bool>>> worker_running_;
-
-  // std::vector<pid_t> waited_trains_;
-
-
-  // std::unique_ptr<std::thread> thread_;
-  // std::unique_ptr<std::thread> job_monitor_;
   
+  int required_num_sm_{-1};
 };
 
 }

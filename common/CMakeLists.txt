@@ -12,6 +12,7 @@ add_library(sta SHARED
   tensor_methods.cc
   tensor.cc
   init.cc
+  sm_partition.cu
 )
 
 target_include_directories(sta PUBLIC "../")

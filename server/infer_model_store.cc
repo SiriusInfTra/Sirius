@@ -93,7 +93,7 @@ std::unique_lock<std::mutex> WarmModelCache::OrderedReserveCache(
   // LOG(INFO) << "try ordered reserve " << model_name << " req_id " << infer_req_id;
 
 // #if 0
-//   // buggy
+//   // fifo may cause increasing latency
 //   infer_model_cache_->fifo_cv_.wait(lock, [&lock, infer_req_id]() {
 //     std::unique_lock ims_lock{InferModelStore::Get()->mutex_};
 //     if (InferModelStore::Get()->queing_infer_reqs_.empty()) {

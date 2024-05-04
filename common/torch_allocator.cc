@@ -30,10 +30,4 @@ TorchAllocator::TorchAllocator(MemPool &mempool, bip::scoped_lock<bip::interproc
   peek_allocated_nbytes_ = mempool.GetSharedMemory().find_or_construct<std::atomic<size_t>>("TA_peek_allocated_nbytes")();
 }
 
-
-
-
-
-
-
 } // namespace colserve::sta
