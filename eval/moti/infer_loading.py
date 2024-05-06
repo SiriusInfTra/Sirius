@@ -26,6 +26,8 @@ elif 'distilgpt2' in args.model:
     infer_model = InferModel.DistilGPT2
 elif 'densenet161' in args.model:
     infer_model = InferModel.DenseNet161
+else:
+    raise ValueError(f"Invalid model: {args.model}")
 
 
 system = System(mode=System.ServerMode.ColocateL1, 
