@@ -27,13 +27,17 @@ from torchvision.transforms import ToTensor
 #         return self.data[index], self.label[index]
 
 class MyIterDataset(IterableDataset):
-    def __init__(self, batch_size):
+    def __init__(self, rank, batch_size):
         super().__init__()
+        assert batch_size % 2 == 0
+        self.rank = rank
         self.size = 1000
         self.data = torch.randn(1000, 3, 224, 224).pin_memory()
         self.label = torch.randint(0, 10, (1000,)).pin_memory()
         self.index = 0
         self.b_sz = batch_size
+        if rank == 0:
+            self.b_sz //= 2
 
     def __iter__(self):
         while True:
@@ -57,8 +61,8 @@ def ddp_setup(rank, world_size):
     torch.cuda.set_device(rank)
 
 
-def prepare_dataloader(batch_size: int):
-    dataset = MyIterDataset(batch_size)
+def prepare_dataloader(rank:int, batch_size: int):
+    dataset = MyIterDataset(rank, batch_size)
     dataloader = DataLoader(
         dataset, 
         batch_size=None,
@@ -83,12 +87,14 @@ def main(rank:int, world_size:int,
     model = model.cuda(rank)
     model = DDP(model, device_ids=[rank], output_device=rank)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.001)
-    dataset, dataloader = prepare_dataloader(batch_size)
+    dataset, dataloader = prepare_dataloader(rank, batch_size)
 
     criterion = torch.nn.CrossEntropyLoss()
     criterion = criterion.cuda(rank)
 
     model.train()
+
+    accumulate_step = 2
 
     # training
     print(f'rank {rank}')
@@ -99,11 +105,19 @@ def main(rank:int, world_size:int,
             x = x.cuda(rank, non_blocking=True)
             y = y.cuda(rank, non_blocking=True)
             
-            optimizer.zero_grad()
-            pred = model(x)
-            loss = criterion(pred, y)
-            loss.backward()
-            optimizer.step()
+            if rank == 0 and (b + 1) % accumulate_step != 0:
+                # local accumulate
+                with model.no_sync():
+                    pred = model(x)
+                    loss = criterion(pred, y)
+                    loss.backward()
+            else:
+                # sync
+                pred = model(x)
+                loss = criterion(pred, y)
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad()
             # print(f'rank {rank} epoch {e} batch {b} loss {loss.item()}')
         epoch_end = time.time()
         epoch_time = epoch_end - epoch_begin
