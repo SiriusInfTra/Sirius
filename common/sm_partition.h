@@ -8,7 +8,8 @@ namespace colserve {
 
 int GetGPUNumSM(int device);
 
-void SetStreamSMMask(CUstream s, uint64_t mask_64);
+void SetGlobalTPCMask(uint64_t mask_64);
+void SetStreamTPCMask(CUstream s, uint64_t mask_64);
 
 std::string CheckStreamSM(CUstream s);
 

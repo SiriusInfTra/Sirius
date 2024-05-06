@@ -294,62 +294,6 @@ void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
         << ", batch-size=" << model.second["batch-size"];
   }
 
-  // if (Config::IsSwitchMode()) {
-  //   infer_model_store_->task_switch_control_.reset(new std::thread([&]() {
-  //     while (true) {
-  //       if (Controller::Get()->IsInferIdle()) {
-  //         // first ensure all not more infer workers
-  //         std::unique_lock lock{infer_model_store_->task_switch_mutex_};
-  //         InferModelStore::Get()->task_switch_cv.wait(lock, [&]() {
-  //           return infer_model_store_->task_switch_enter_cnt_ > 0 
-  //               && (infer_model_store_->task_switch_control_cnter_ == 
-  //                   static_cast<int>(InferModelStore::TaskSwitchStatus::kNotAddWorker));
-  //         });
-
-  //         pthread_barrier_init(&infer_model_store_->task_switch_barrier, nullptr, 
-  //             infer_model_store_->task_switch_enter_cnt_ + 1);
-  //         // enter task switch prepare exit stage
-  //         infer_model_store_->task_switch_control_cnter_ = static_cast<int>(InferModelStore::TaskSwitchStatus::kPrepareExit);
-  //         // LOG(INFO) << "[InferModelStore]: try task switch " << infer_model_store_->task_switch_enter_cnt_;
-  //         auto t0 = Profiler::Get()->Now();
-
-  //         // let all infer enter task switch prepare exit stage
-  //         pthread_barrier_wait(&infer_model_store_->task_switch_barrier);
-  //         auto wait_task_exit_ms = Profiler::Get()->MilliFrom(t0);
-  //         LOG(INFO) << "[InferModelStore] [Task Switch]: wait for inference threads " << wait_task_exit_ms << " ms "
-  //                   << " wait up to " << Config::task_switch_delay_ms << " ms";
-  //         if (wait_task_exit_ms < Config::task_switch_delay_ms) {
-  //           auto delay_us = static_cast<int>((Config::task_switch_delay_ms - wait_task_exit_ms) * 1000);
-  //           std::this_thread::sleep_for(std::chrono::microseconds(delay_us));
-  //         }
-  //         if (Controller::Get()->IsInferIdle()) {
-  //           infer_model_store_->task_switch_control_cnter_ = static_cast<int>(InferModelStore::TaskSwitchStatus::kExit);
-  //           Profiler::Get()->RecordPerf(Profiler::PerfItem::InferNumModelOnSwitch, infer_model_store_->task_switch_enter_cnt_);
-  //           // all infer know result
-  //           pthread_barrier_wait(&infer_model_store_->task_switch_barrier);
-  //           LOG(INFO) << "[InferModelStore] [Task Switch]: task switch to train | " << Controller::Get()->GetInferStatusStr();
-  //           // all infer do task switch
-  //           pthread_barrier_wait(&infer_model_store_->task_switch_barrier);
-  //           Controller::Get()->ResumeTrain();
-  //         } else {
-  //           infer_model_store_->task_switch_control_cnter_ = static_cast<int>(InferModelStore::TaskSwitchStatus::kCancelExit);
-  //           // all infer know result
-  //           pthread_barrier_wait(&infer_model_store_->task_switch_barrier);
-  //           // all infer cancel task switch
-  //           pthread_barrier_wait(&infer_model_store_->task_switch_barrier); 
-  //           LOG(INFO) << "[InferModelStore] [Task Switch]: task switch cancel exit | " << Controller::Get()->GetInferStatusStr();
-  //         }
-  //         infer_model_store_->task_switch_control_cnter_ = static_cast<int>(InferModelStore::TaskSwitchStatus::kNotAddWorker);
-  //         infer_model_store_->task_switch_cv.notify_all();
-  //         pthread_barrier_destroy(&infer_model_store_->task_switch_barrier);
-  //       } else {
-  //         // Controller::Get()->LogInferStatus();
-  //       }
-  //       std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  //     }
-  //   }));
-  // }
-
   if (Config::IsColocateMode()) {
     infer_model_store_->monitor_thread_.reset(
         new std::thread{&InferModelStore::ColocateMonitor, infer_model_store_.get()});

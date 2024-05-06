@@ -164,7 +164,8 @@ bool TrainLauncher::Train() {
     auto [base, slope] = GetModelMemParam();
     Config::max_warm_cache_nbytes = static_cast<size_t>((
       Config::cuda_memory_pool_gb * 1024 - Config::train_memory_over_predict_mb - base) * 1_MB);
-    LOG(INFO) << "[Warm Cache Fallback for Colocation] set max warm cache nbytes to " << sta::ByteDisplay(Config::max_warm_cache_nbytes);
+    LOG(INFO) << "[Warm Cache Fallback for Colocation] set max warm cache nbytes to "
+              << sta::ByteDisplay(Config::max_warm_cache_nbytes);
   }
 
   std::vector<std::string> args_str;
@@ -377,7 +378,8 @@ void TrainLauncher::DummyAdjust() {
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
   size_t delay_before_dummy_adjust = 30;
-  LOG(INFO) << "DummyAdjust: train pid " << this->train_pid_ << " start after " << delay_before_dummy_adjust << "s";
+  LOG(INFO) << "DummyAdjust: train pid " << this->train_pid_ 
+            << " start after " << delay_before_dummy_adjust << "s";
   std::this_thread::sleep_for(std::chrono::seconds(delay_before_dummy_adjust));
   
   std::mt19937 gen(42); // fix seed

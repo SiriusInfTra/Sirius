@@ -136,6 +136,9 @@ class Config {
   static constexpr bool log_model_init_info = true;
   static constexpr bool log_grpc = false;
 
+  static bool estimate_infer_model_tpc;
+  static double infer_exec_time_estimate_scale;
+
   inline static bool IsSwitchMode() {
     return Config::serve_mode == ServeMode::kTaskSwitchL1
         || Config::serve_mode == ServeMode::kTaskSwitchL2

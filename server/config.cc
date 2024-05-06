@@ -77,5 +77,7 @@ bool Config::dummy_adjust = false;
 
 bool Config::system_initialized = false;
 
+bool Config::estimate_infer_model_tpc = true;
+double Config::infer_exec_time_estimate_scale = 1.1;
 
 }

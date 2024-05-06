@@ -59,7 +59,8 @@ std::string GetModelNameWithoutDuplicatedId(const std::string &model_name) {
 }
 
 Executor::Executor(TVMGraph &factory, size_t worker_id, const std::vector<DLDevice> &devs)
-    : tvm_graph_(factory), infer_model_worker_id_(worker_id), devices_(devs), initialized_(false), cold_cached_nbytes_(0) {
+    : tvm_graph_(factory), infer_model_worker_id_(worker_id), devices_(devs), 
+      initialized_(false), cold_cached_nbytes_(0) {
   using namespace ::tvm::runtime;
   auto t0 = std::chrono::steady_clock::now();
   SetupStorage(false);

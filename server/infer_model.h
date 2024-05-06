@@ -14,6 +14,8 @@
 
 namespace colserve {
 
+std::string GetModelNameWithoutDuplicatedId(const std::string &model_name);
+
 class Model {
  public:
   enum class Status {
@@ -26,6 +28,7 @@ class Model {
   static int GetNumModel(Status status) {
     return model_stat_[static_cast<size_t>(status)].load(std::memory_order_relaxed);
   }
+  static int GetPreEstimatedTPC(const std::string &model_name);
 
   Model() : name_("dummy") {};
   // Model(const std::string &name, const std::filesystem::path &model_path, DLDevice device, 
@@ -54,15 +57,11 @@ class Model {
     return executors_[rank]->GetStorageSizeAlign();
   }
 
-  // void SetWaitTrainPid(size_t worker_id, pid_t train_pid) {
-  //   CHECK_LT(worker_id, waited_trains_.size());
-  //   waited_trains_[worker_id] = train_pid;
-  // }
-
   friend class InferModelStore;
   friend class WarmModelCache;
   
  private:
+
   bool AddJob(network::InferHandler::InferData* data);
 
   void InitMetaInfo();
@@ -86,13 +85,14 @@ class Model {
     model_stat_[static_cast<size_t>(from)].fetch_sub(1, std::memory_order_relaxed);
     model_stat_[static_cast<size_t>(to)].fetch_add(1, std::memory_order_relaxed);
   }
-  // inline double GetMaxIdleMill() { 
-  //   if (warmup_) {
-  //     return 3000; // a default dummy value
-  //   }
-  //   return scale_down_idle_time_; 
-  // }
-  // void MonitorJob();
+
+  void EstimateTPC(uint32_t rank, tvm::Executor &graph_executor);
+  void WaitEstimateTPC();  
+
+  // guarentee only estimate one model at a time
+  static std::mutex estimate_tpc_mut_;
+  static std::condition_variable estimate_tpc_cv_;
+  static bool estimating_tpc_;
   
   constexpr static int MAX_NUM_WORKER = 8;
   static std::array<std::atomic<int>, 
@@ -121,7 +121,7 @@ class Model {
 
   std::atomic<size_t> infer_count_{0};
   
-  int required_num_sm_{-1};
+  int required_num_tpc_{-1};
 };
 
 }

@@ -49,7 +49,7 @@ static void launchCallback(void *ukwn, int domain, int cbid, const void *in_para
 	uint32_t *upper_ptr = (uint32_t*)(tmd + 88);
 
 	if (g_next_sm_mask) {
-		*lower_ptr = (uint32_t)g_next_s	
+		*lower_ptr = (uint32_t)g_next_sm_mask;	
 		*upper_ptr = (uint32_t)(g_next_sm_mask >> 32);
 		g_next_sm_mask = 0;
 	} else if (!*lower_ptr && !*upper_ptr){
@@ -310,7 +310,12 @@ int GetGPUNumSM(int device) {
   return deviceProp.multiProcessorCount;
 }
 
-void SetStreamSMMask(CUstream s, uint64_t mask_64) {
+// currently, one TPC have two SMs
+void SetGlobalTPCMask(uint64_t mask_64) {
+	libsmctrl_set_global_mask(mask_64);
+}
+
+void SetStreamTPCMask(CUstream s, uint64_t mask_64) {
 	uint128_t mask_128 = -1;
 	mask_128 <<= 64;
 	mask_128 |= mask_64;
