@@ -6,11 +6,12 @@
 
 namespace colserve {
 
-void SetStreamSM(CUstream s, unsigned int maskUpper, unsigned int maskLower);
+int GetGPUNumSM(int device);
+
+void SetStreamSMMask(CUstream s, uint64_t mask_64);
 
 std::string CheckStreamSM(CUstream s);
 
-int GetGPUNumSM(int device);
 
 }
 
