@@ -41,10 +41,6 @@ class Controller {
 
   void InferenceWorkloadDone();
 
-  // bool TryEnterInferChangeMemory(size_t model_rank);
-  // void EnterInferChangeMemory(size_t model_rank);
-  // void ExitInferChangeMemory(size_t model_rank);
-
  private:
   static std::unique_ptr<Controller> controller_;
   struct InferStatus {

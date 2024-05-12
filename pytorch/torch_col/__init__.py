@@ -51,6 +51,7 @@ def __setup_torch_col():
         __use_shared_tensor = 1
     ConfigTorchCol(use_shared_tensor())
     init_col_allocator(use_shared_tensor())
+    InitSMPartition()
 
 
 __setup_torch_col()

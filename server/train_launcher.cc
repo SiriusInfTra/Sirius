@@ -309,10 +309,12 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
       CHECK_NE(setenv("USE_SHARED_TENSOR", "0", 1), -1);
       extra_env_ss << "USE_SHARED_TENSOR=0 ";
     }
-    if (Config::train_mps_thread_percent >= 0 && Config::train_mps_thread_percent <= 100) {
-      CHECK_NE(setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", std::to_string(Config::train_mps_thread_percent).c_str(), 1), -1);
-      extra_env_ss << "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE=" << Config::train_mps_thread_percent << " ";
-      LOG(INFO) << "[TrainLauncher]: set CUDA_MPS_ACTIVE_THREAD_PERCENTAGE to " << Config::train_mps_thread_percent;
+    if (Config::skip_set_mps_thread_percent) {
+      LOG(INFO) << "[TrainLauncher]: skip set CUDA_MPS_ACTIVE_THREAD_PERCENTAGE";
+    } else if (Config::train_mps_thread_percent >= 0 && Config::train_mps_thread_percent <= 100) {
+      // CHECK_NE(setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", std::to_string(Config::train_mps_thread_percent).c_str(), 1), -1);
+      // extra_env_ss << "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE=" << Config::train_mps_thread_percent << " ";
+      // LOG(INFO) << "[TrainLauncher]: set CUDA_MPS_ACTIVE_THREAD_PERCENTAGE to " << Config::train_mps_thread_percent;
     }
 
     LOG(INFO) << "[TrainLauncher]: " << "Train " << job << " ( "

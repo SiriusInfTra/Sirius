@@ -304,18 +304,12 @@ void libsmctrl_set_stream_mask_ext(void* stream, uint128_t mask) {
 }
 }
 
-int GetGPUNumSM(int device) {
-  cudaDeviceProp deviceProp;
-  CUDA_CALL(cudaGetDeviceProperties(&deviceProp, device));
-  return deviceProp.multiProcessorCount;
-}
-
 // currently, one TPC have two SMs
-void SetGlobalTPCMask(uint64_t mask_64) {
+void SMPartitioner::SetGlobalTpcMask(uint64_t mask_64) {
 	libsmctrl_set_global_mask(mask_64);
 }
 
-void SetStreamTPCMask(CUstream s, uint64_t mask_64) {
+void SMPartitioner::SetStreamTpcMask(CUstream s, uint64_t mask_64) {
 	uint128_t mask_128 = -1;
 	mask_128 <<= 64;
 	mask_128 |= mask_64;
@@ -337,7 +331,7 @@ __global__ void get_sm_mask(int* buffer) {
 }
 }
 
-std::string CheckStreamSM(CUstream s) {
+std::string SMPartitioner::CheckStreamSM(CUstream s) {
   int* mask = nullptr;
   CUDA_CALL(cudaMallocHost(&mask, 1024 * sizeof(int)));
 

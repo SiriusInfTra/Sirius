@@ -15,10 +15,13 @@ using namespace colserve;
 bool __CanExitAfterInferWorkloadDone(long infer_workload_done_timestamp);
 
 class StubBase {
-public:
+ public:
   virtual int Cmd() = 0;
   virtual ~StubBase() = default;
   void EnableTorchColEngine();
+  uint64_t GetTargetTpcMask();
+
+ private:
 };
 
 

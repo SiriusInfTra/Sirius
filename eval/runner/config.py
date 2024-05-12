@@ -16,11 +16,11 @@ def set_global_seed(seed):
 
 
 def set_mps_thread_percent(percent):
-    os.environ['CUDA_MPS_ACTIVE_THREAD_PERCENTAGE'] = str(percent)
+    os.environ['_CUDA_MPS_ACTIVE_THREAD_PERCENTAGE'] = str(percent)
 
 
 def unset_mps_thread_percent():
-    os.environ.pop('CUDA_MPS_ACTIVE_THREAD_PERCENTAGE', None)
+    os.environ.pop('_CUDA_MPS_ACTIVE_THREAD_PERCENTAGE', None)
 
 
 @contextlib.contextmanager
@@ -30,7 +30,6 @@ def mps_thread_percent(percent, skip=False):
         return
     else:
         set_mps_thread_percent(percent)
-        print('MPS: ', percent)
         yield
         unset_mps_thread_percent()
 
@@ -40,7 +39,6 @@ def um_mps(percent):
     set_mps_thread_percent(percent)
     os.environ['TORCH_UNIFIED_MEMORY'] = "1"
     os.environ['STA_RAW_ALLOC_UNIFIED_MEMORY'] = "1"
-    print('MPS: ', percent)
     yield
     unset_mps_thread_percent()
     os.environ.pop('TORCH_UNIFIED_MEMORY', None)

@@ -21,7 +21,6 @@ def init_col_allocator(use_shared_tensor: bool):
         CUDAColAllocator.SetCurrentAllocator()
         print("CUDAColAllocator initialized")
 
-
 cdef extern from "<common/cuda_allocator.h>" namespace "colserve::sta":
     cdef cppclass CUDAMemPool:
         @staticmethod

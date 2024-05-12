@@ -13,6 +13,7 @@ add_library(new_torch_col SHARED
   torch_col/csrc/util.cc
   torch_col/csrc/config.cc
   torch_col/csrc/fake_engine.cc
+  torch_col/csrc/xsched.cc
 )
 
 add_dependencies(new_torch_col xsched_lib)
@@ -63,7 +64,7 @@ file(GLOB TORCH_COL_PYTHON_FILES "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/*.py")
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/torch_col.egg-info
   COMMAND BUILD_DIR=${CMAKE_BINARY_DIR} ${PYTHON_EXECUTABLE}
-  ARGS setup.py install
+  ARGS setup.py develop
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS 
     new_torch_col sta

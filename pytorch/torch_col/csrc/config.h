@@ -13,6 +13,8 @@ extern int has_shared_tensor_server;
 
 extern double shared_tensor_pool_gb;
 
+extern bool dynamic_sm_partition;
+
 void ConfigTorchCol(int use_shared_tensor);
 
 }

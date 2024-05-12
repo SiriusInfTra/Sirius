@@ -66,6 +66,7 @@ class System:
                  port: str = "18080",
                  infer_model_config: List[InferModelConfig] | InferModelConfig = None,
                  mps: bool = True,
+                 skip_set_mps_thread_percent: bool = False,
                  use_xsched: bool = False,
                  infer_blob_alloc: bool = False,
                  train_mps_thread_percent: Optional[int] = None,
@@ -107,6 +108,7 @@ class System:
             self.infer_model_config = None
         self.infer_model_config_path = None
         self.mps = mps
+        self.skip_set_mps_thread_percent = skip_set_mps_thread_percent
         self.mps_server = None
         self.infer_blob_alloc = infer_blob_alloc
         self.train_mps_thread_percent = train_mps_thread_percent
@@ -198,6 +200,9 @@ class System:
             cmd += ["--mps", "0"]
             self.mps_server = None
 
+        if self.skip_set_mps_thread_percent:
+            cmd += ["--skip-set-mps-thread-percent"]
+
         if self.infer_blob_alloc:
             cmd += ["--infer-blob-alloc"]
 
@@ -265,7 +270,7 @@ class System:
             print(f"  --> fake launch")
             return
 
-        print(f"  --> [server-log] {server_log}  |  [server-profile] {profile_log}\n")
+        print(f"  --> [server-log] {server_log}  |  [server-profile] {profile_log}")
 
         if dcgmi:
             with open(f"{self.log_dir}/dcgmi-monitor.log", "w") as log_file:
@@ -281,7 +286,16 @@ class System:
                      stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
 
         with open(server_log, "w") as log_file:
-            self.server = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
+            env_copy = os.environ.copy()
+            if self.mps and self.skip_set_mps_thread_percent:
+                print(f'  --> Skip set MPS pct')
+            if not self.skip_set_mps_thread_percent and '_CUDA_MPS_ACTIVE_THREAD_PERCENTAGE' in env_copy:
+                # env_copy['CUDA_MPS_ACTIVE_THREAD_PERCENTAGE'] = env_copy['_CUDA_MPS_ACTIVE_THREAD_PERCENTAGE']
+                # print(f"  --> MPS: {env_copy['CUDA_MPS_ACTIVE_THREAD_PERCENTAGE']}")
+                pass
+            self.server = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=env_copy)
+
+        print('\n')
 
         while True:
             with open(server_log, "r") as log_file:

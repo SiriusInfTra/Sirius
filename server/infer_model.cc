@@ -394,6 +394,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
       continue;
     }
 
+    // avoid interference
     WaitEstimateTPC();
 
     // let cache serve models in a fifo manner
@@ -458,6 +459,12 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
       }
     }
 
+    // claim gpu sm
+    int recorded_required_tpc_num = required_num_tpc_;
+    if (recorded_required_tpc_num > 0) {
+      SMPartitioner::AddInferRequiredTpcNum(recorded_required_tpc_num);
+    }
+
     double infer_ms;
     bool pipeline_exec = false;
     {
@@ -477,6 +484,10 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
         PROFILE_END(InferExec);
         infer_ms = PROFILE_DURATRION(InferExec);
       }
+    }
+
+    if (recorded_required_tpc_num > 0) {
+      SMPartitioner::DecInferRequiredTpcNum(recorded_required_tpc_num);
     }
 
     double get_output_ms;
@@ -518,6 +529,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     Controller::Get()->InferResponseInc(jobs.size());
 
     // estimate tpc after first infer
+    // to avoid interference w/ training, do this during infer warmup
     if (Config::estimate_infer_model_tpc && required_num_tpc_ == -1) {
       EstimateTPC(rank, *graph_executor);
     }
@@ -643,15 +655,16 @@ void Model::EstimateTPC(uint32_t rank, tvm::Executor &graph_executor) {
   double std_exec_ms = get_exec_ms();
   double target_exec_ms = std_exec_ms * Config::infer_exec_time_estimate_scale;
 
-  auto num_tot_sm = GetGPUNumSM(0);
-  auto num_tot_tpc = num_tot_sm >> 1;
+  // auto num_tot_sm = GetGPUNumSM(0);
+  // auto num_tot_tpc = num_tot_sm >> 1;
+  auto num_tot_tpc = SMPartitioner::GetGPUNumTpc();
   int left = 0, right = num_tot_tpc + 1;
   while (left + 1 < right) {
     int mid = left + (right - left) / 2;
     uint64_t mask_64 = -1;
     mask_64 = mask_64 << mid;
-    SetStreamTPCMask(static_cast<cudaStream_t>(graph_executor.GetExecStream()), mask_64);
-    LOG(INFO) << CheckStreamSM(static_cast<cudaStream_t>(graph_executor.GetExecStream()));
+    SMPartitioner::SetStreamTpcMask(static_cast<cudaStream_t>(graph_executor.GetExecStream()), mask_64);
+    LOG(INFO) << SMPartitioner::CheckStreamSM(static_cast<cudaStream_t>(graph_executor.GetExecStream()));
     double exec_ms = get_exec_ms();
     if (exec_ms >= target_exec_ms) {
       left = mid;

@@ -5,3 +5,7 @@ include "./ctrl_stub.pxi"
 
 cdef extern from "<csrc/config.h>" namespace "torch_col":
     cpdef void ConfigTorchCol(bint)
+
+
+cdef extern from "<csrc/xsched.h>" namespace "torch_col":
+    cpdef void InitSMPartition()

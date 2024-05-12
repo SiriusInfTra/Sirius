@@ -129,15 +129,17 @@ class Config {
 
   static bool profiler_acquire_resource_lock ;
 
+  static bool skip_set_mps_thread_percent;
+  static bool dynamic_sm_partition;
+  static bool estimate_infer_model_tpc;
+  static double infer_exec_time_estimate_scale;
+
   static bool dummy_adjust;
 
   static bool system_initialized;
 
   static constexpr bool log_model_init_info = true;
   static constexpr bool log_grpc = false;
-
-  static bool estimate_infer_model_tpc;
-  static double infer_exec_time_estimate_scale;
 
   inline static bool IsSwitchMode() {
     return Config::serve_mode == ServeMode::kTaskSwitchL1

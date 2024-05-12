@@ -63,5 +63,3 @@ def critical_section(stream: Optional[Stream] = None):
     __pysched_dll.CritialSectionBegin(stream.__pysched_handle)
     yield
     __pysched_dll.CritialSectionEnd(stream.__pysched_handle)
-
-

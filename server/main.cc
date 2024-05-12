@@ -17,6 +17,7 @@
 #include <common/cuda_allocator.h>
 #include <common/init.h>
 #include <common/mempool.h>
+#include <common/sm_partition.h>
 #include <common/util.h>
 
 #include "grpc/grpc_server.h"
@@ -107,6 +108,8 @@ void init_cli_options() {
       "profiler acquire resource lock during profiling, not use for performance eval");
   app.add_flag("--dummy-adjust", colserve::Config::dummy_adjust,
       "dummy adjust for eval, default is 0");
+  app.add_flag("--skip-set-mps-thread-percent", colserve::Config::skip_set_mps_thread_percent,
+      "skip set mps thread percent, default is 0");
 
   app.add_flag("--enable-warm-cache-fallback", colserve::Config::enable_warm_cache_fallback,
       "enable warm cache fallback, default is 1");
@@ -169,6 +172,10 @@ void init_config() {
               << colserve::sta::ByteDisplay(cfg::max_warm_cache_nbytes);
   }
 
+  if (!cfg::skip_set_mps_thread_percent && cfg::dynamic_sm_partition) {
+    LOG(WARNING) << "Dynamic partition SM may not work correctly with control of MPS thread percent";
+  }
+
   STREAM_OUTPUT(serve_mode);
   STREAM_OUTPUT(use_shared_tensor);
   STREAM_OUTPUT(use_shared_tensor_infer);
@@ -225,6 +232,9 @@ int main(int argc, char *argv[]) {
       LOG(INFO) << "train predict memory " 
                 <<  colserve::TrainLauncher::Get()->PredictMemUsageMB(true) << "."; 
       }, colserve::sta::MemType::kInfer);
+  }
+  if (colserve::Config::dynamic_sm_partition) {
+    colserve::SMPartitioner::Init(0, true);
   }
   colserve::ResourceManager::Init();
   colserve::Controller::Init();
