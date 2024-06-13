@@ -7,14 +7,6 @@
 
 namespace colserve {
 
-#define NVML_CALL(func) do{ \
-    auto error = func; \
-    if (error != NVML_SUCCESS) { \
-      LOG(FATAL) << #func << " " << nvmlErrorString(error); \
-      exit(EXIT_FAILURE); \
-    } \
-  } while(0);
-
 enum class ServeMode {
   kNormal,        // infer/train contention
 
@@ -138,10 +130,18 @@ class Config {
 
   static bool system_initialized;
 
-  static constexpr bool log_model_init_info = true;
   static constexpr bool log_grpc = false;
-  static constexpr bool log_train_init_info = false;
+  static constexpr bool log_train_init = false;
   static constexpr bool log_warm_cache = false;
+  static constexpr bool log_cold_cache = false;
+
+  static constexpr bool log_infer_model_init = false;
+  static constexpr bool log_infer_model_reclaim = false;
+  static constexpr bool log_infer_time = false;
+  static constexpr bool log_infer_pipeline_exec = false;
+  static constexpr bool log_infer_load_param = false;
+
+  static constexpr bool log_memory_adjust = false;
 
   inline static bool IsSwitchMode() {
     return Config::serve_mode == ServeMode::kTaskSwitchL1

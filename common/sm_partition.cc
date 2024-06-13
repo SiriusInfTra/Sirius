@@ -7,6 +7,7 @@ namespace colserve {
 std::unique_ptr<SMPartitioner> SMPartitioner::sm_partitioner_ = nullptr;
 
 void SMPartitioner::Init(int device, bool cleanup) {
+  // DLOG(INFO) << "[SM Partitioner] Init";
   if (sm_partitioner_ == nullptr) {
     sm_partitioner_ = std::make_unique<SMPartitioner>(device, cleanup);
   }

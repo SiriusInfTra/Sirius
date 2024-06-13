@@ -13,6 +13,7 @@ void InitSMPartition() {
     return ;
   }  
 
+  LOG(INFO) << "Init SMPartition";
   colserve::SMPartitioner::Init(0, !has_colocated_infer_server);
 
   auto stream = reinterpret_cast<cudaStream_t>(GetRegisteredGlobalStream());
@@ -26,8 +27,8 @@ void InitSMPartition() {
     return nullptr;
   };
 
-  auto res = RegisterCudaKernelLaunchPreHook(hook);
-  if (res != 0) {
+  auto succ = RegisterCudaKernelLaunchPreHook(hook);
+  if (!succ) {
     LOG(FATAL) << "[PySched] RegisterCudaKernelLaunchPreHook failed"; 
   }
   LOG(INFO) << "[PySched] init_sm_partition done";

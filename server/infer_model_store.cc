@@ -202,7 +202,8 @@ void WarmModelCache::ReserveCacheInternal(
 
   infer_model_cache_->cached_nbytes_ = nbytes;
   infer_model_cache_->warm_cache_[model_name]->cached = true;
-  LOG(INFO) << ss.str() << " | now cached_nbytes=" << sta::ByteDisplay(nbytes);
+  LOG_IF(INFO, Config::log_warm_cache) 
+      << ss.str() << " | now cached_nbytes=" << sta::ByteDisplay(nbytes);
 }
 
 InferModelStore* InferModelStore::Get() {
@@ -289,7 +290,7 @@ void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
                                   std::stoi(model.second["num-worker"]),
                                   std::stoi(model.second["max-worker"]));
     }
-    LOG_IF(INFO, Config::log_model_init_info) 
+    LOG_IF(INFO, Config::log_infer_model_init) 
         << "[InferModelStore Init] "<< "Add " << model.first << ":" << model.second["device"]
         << ", batch-size=" << model.second["batch-size"];
   }
@@ -455,9 +456,10 @@ void InferModelStore::ColocateMonitor() {
         bool res = model->ReclaimMemory(rank, cold_cache_lock, model_lock, nullptr);
         if (res) {
           num_exit++;
-          LOG(INFO) << "[InferModelStore] " << model_name << " reclaim memory"
-                    << " cold cache nbytes " 
-                    << sta::ByteDisplay(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock));
+          LOG_IF(INFO, Config::log_infer_model_reclaim) 
+              << "[InferModelStore] reclaim " << model_name
+              << ", cold cache nbytes "
+              << sta::ByteDisplay(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock));
         }
       }
     }
@@ -522,7 +524,9 @@ void InferModelStore::TaskSwitchMonitor() {
 std::tuple<ColdModelCache::group_id_list, ColdModelCache::evict_list, bool>
 ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<size_t> groups_nbytes, 
                                 size_t total_nbytes, std::unique_lock<std::mutex> &lock, Model *source_model) {
-  DLOG(INFO) << "PushCacheItem, name = " << name << ", rank = " << rank << ", groups_nbytes = " << groups_nbytes 
+  DLOG(INFO) << "PushCacheItem, name = " << name 
+             << ", rank = " << rank 
+             << ", groups_nbytes = " << groups_nbytes 
              << ", total_nbytes = " << total_nbytes;
   if (cold_cache_.count(name) != 0) { return {{}, {}, false}; }
 
@@ -540,8 +544,10 @@ ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<
       break;
     }
   }
-  LOG(INFO) <<"[ColdModelCache] decide to cache " << name << " decide to cache group = [ "
-            << cache_item->cached_groups_id << " ]," << " total " << groups_nbytes.size() << ".";
+  LOG_IF(INFO, Config::log_cold_cache) 
+      <<"[ColdModelCache] decide to cache " << name 
+      << " decide to cache group = [ "<< cache_item->cached_groups_id << " ]," 
+      << " total " << groups_nbytes.size() << ".";
 
   std::vector<Model*> coldest_model;
   for (auto &&[name, cache_item] : cold_cache_) {

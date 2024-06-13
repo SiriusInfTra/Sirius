@@ -32,11 +32,12 @@ double ResourceManager::GetFreeMemoryMB(bool verbose) {
     );
   }
 
-  LOG_IF(INFO, verbose) << "[ResourceManager] "
-                        << " infer memory " << infer_memory_mb 
-                        << " train memory " << train_memory_mb 
-                        << " predict train memory " << train_predict_memory_mb
-                        << " free memory " << free_memory_mb;
+  LOG_IF(INFO, verbose && Config::log_memory_adjust) 
+      << "[ResourceManager] "
+      << " infer memory " << infer_memory_mb 
+      << " train memory " << train_memory_mb 
+      << " predict train memory " << train_predict_memory_mb
+      << " free memory " << free_memory_mb;
             
   return free_memory_mb;
 }

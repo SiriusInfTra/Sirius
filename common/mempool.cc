@@ -150,7 +150,7 @@ void HandleTransfer::ExportWorker() {
             &fd_list[k], phy_mem_list_[chunk_base + k].cu_handle,
             CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR, 0));
       }
-      LOG(INFO) << "[mempool] Master is sending handles: " << chunk_base << "/"
+      DLOG(INFO) << "[mempool] Master is sending handles: " << chunk_base << "/"
                 << phy_mem_list_.size() << ".";
       SendHandles(fd_list.data(), chunk_size, ready_lock);
       for (size_t k = 0; k < chunk_size; ++k) {
@@ -173,9 +173,9 @@ HandleTransfer::HandleTransfer(bip::managed_shared_memory &shm,
   char *username = getenv("USER");
   CHECK(username != nullptr);
   master_name_ = std::string("gpu-col-vmmipc-master-") + username + "-" + gpu_id;
-  LOG(INFO) << "[mempool] Init VMM IPC, master_name = " << master_name_ << ".";
+  DLOG(INFO) << "[mempool] Init VMM IPC, master_name = " << master_name_ << ".";
   slave_name_ = std::string("gpu-col-vmmipc-slave-") + username + "-" + gpu_id;
-  LOG(INFO) << "[mempool] Init VMM IPC, slave_name = " << slave_name_ << ".";
+  DLOG(INFO) << "[mempool] Init VMM IPC, slave_name = " << slave_name_ << ".";
   request_mutex_ = shared_memory_.find_or_construct<bip::interprocess_mutex>("HT_request_mutex_")();
   request_cond_ = shared_memory_.find_or_construct<bip::interprocess_condition>("HT_request_cond")();
   ready_mutex_ = shared_memory_.find_or_construct<bip::interprocess_mutex>("HT_ready_mutex_")();
@@ -219,7 +219,7 @@ void HandleTransfer::InitSlave() {
   }
   while(chunk_base < phy_mem_list_.size()) {
     size_t chunk_size = std::min(TRANSFER_CHUNK_SIZE, phy_mem_list_.size() - chunk_base);
-    LOG(INFO) << "[mempool] Slave is receving handles: " 
+    DLOG(INFO) << "[mempool] Slave is receving handles: " 
               << chunk_base << "/" << phy_mem_list_.size() << ".";
     ReceiveHandle(fd_list.data(), chunk_size);
     for (size_t k = 0; k < chunk_size; ++k) {

@@ -43,12 +43,12 @@ void ConfigTorchCol(int use_shared_tensor) {
     shared_tensor_pool_gb = std::stod(pool_size_env);
   }
 
-  LOG(INFO) << "use_shared_tensor: " << use_shared_tensor;
-  LOG(INFO) << "colocate_use_xsched: " << colocate_use_xsched;
-  LOG(INFO) << "has_colocated_infer_server:" << has_colocated_infer_server;
-  LOG(INFO) << "has_shared_tensor_server:" << has_shared_tensor_server;
-  LOG(INFO) << "shared_tensor_pool_gb:" << shared_tensor_pool_gb;
-  LOG(INFO) << "dynamic_sm_partition:" << dynamic_sm_partition;
+  LOG(INFO) << "TorchColConfig::use_shared_tensor: " << use_shared_tensor;
+  LOG(INFO) << "TorchColConfig::colocate_use_xsched: " << colocate_use_xsched;
+  LOG(INFO) << "TorchColConfig::has_colocated_infer_server:" << has_colocated_infer_server;
+  LOG(INFO) << "TorchColConfig::has_shared_tensor_server:" << has_shared_tensor_server;
+  LOG(INFO) << "TorchColConfig::shared_tensor_pool_gb:" << shared_tensor_pool_gb;
+  LOG(INFO) << "TorchColConfig::dynamic_sm_partition:" << dynamic_sm_partition;
   configured = true;
 }
 

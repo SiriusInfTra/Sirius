@@ -303,7 +303,7 @@ GenericAllocator::GenericAllocator(
   CHECK(lock.owns());
   CU_CALL(cuMemAddressReserve(reinterpret_cast<CUdeviceptr *>(&base_ptr_),
                               mempool_.mempool_nbytes * VA_RESERVE_SCALE, MEM_BLOCK_NBYTES, 0, 0));
-  LOG(INFO) << log_prefix_ << "dev_ptr = " << base_ptr_ << ".";
+  DLOG(INFO) << log_prefix_ << "dev_ptr = " << base_ptr_ << ".";
 }
 
 

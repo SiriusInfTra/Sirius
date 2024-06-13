@@ -117,7 +117,7 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
   }
   infer_workers_.resize(max_num_worker_);
 
-  LOG_IF(INFO, Config::log_model_init_info)
+  LOG_IF(INFO, Config::log_infer_model_init)
       << "[Model Init] " << name << " initilized " << num_worker << " executor";
 
   // if (Config::colocate_config.skip_malloc || Config::colocate_config.skip_loading) {
@@ -154,7 +154,7 @@ void Model::InitMetaInfo() {
     std::stringstream ss;
     for (size_t i = 0; i < shape.size(); i++) 
       ss << shape[i] << " ";
-    LOG_IF(INFO, Config::log_model_init_info) 
+    LOG_IF(INFO, Config::log_infer_model_init) 
         << "[Model Init] Input: " << name_ << " " << kv.first 
         << " shape [ " << ss.str()  << "] dtype " << dtype;
     CHECK_EQ(shape[0], batch_size_) << "batch size mismatch";
@@ -167,7 +167,7 @@ void Model::InitMetaInfo() {
     std::stringstream ss;
     for (size_t i = 0; i < shape.size(); i++)
       ss << shape[i] << " ";
-    LOG_IF(INFO, Config::log_model_init_info) 
+    LOG_IF(INFO, Config::log_infer_model_init) 
         << "[Model Init] Output: " << name_ << " " << kv.first 
         << " shape [ " << ss.str()  << "] dtype " << dtype;
     
@@ -291,14 +291,15 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
         if (is_first_adjust) {
           Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, PROFILE_DURATRION(TrainAdjust));
         }
-        LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
-                  << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
-                  << " wait train pid " << wait_train_pid
-                  << " | before adjust: free memory " << free_memory_MB
-                  << " cold cache free memory " << cold_cache_free_memory_MB
-                  << " reserve memory " << adjust_reserve_mb
-                  << " adjust_batch_buffer_mb " << adjust_batch_buffer_mb
-                  << " delta batch size " << adjust_batch_size << ".";
+        LOG_IF(INFO, Config::log_memory_adjust) 
+            << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
+            << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
+            << " wait train pid " << wait_train_pid
+            << " | before adjust: free memory " << free_memory_MB
+            << " cold cache free memory " << cold_cache_free_memory_MB
+            << " reserve memory " << adjust_reserve_mb
+            << " adjust_batch_buffer_mb " << adjust_batch_buffer_mb
+            << " delta batch size " << adjust_batch_size << ".";
       } else {
         LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
                   << ", skip adjust due to negative target batch size (" << cur_target_bs << ")" ; 
@@ -306,13 +307,14 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
     } else {
       LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank << " , skip adjust";
     }
-    free_memory_MB = ResourceManager::GetFreeMemoryMB(true);
+    free_memory_MB = ResourceManager::GetFreeMemoryMB(Config::log_memory_adjust);
   }
-  LOG(INFO) << "[Model, Cold Cache Adjust] after adjust, "
-            << "free memory " << free_memory_MB
-            << " cold cache free memory " 
-            << ColdModelCache::Get().GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock)
-            << " model required " << total_storage_MB;
+  LOG_IF(INFO, Config::log_memory_adjust) 
+      << "[Model, Cold Cache Adjust] after adjust, "
+      << "free memory " << free_memory_MB
+      << " cold cache free memory " 
+      << ColdModelCache::Get().GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock)
+      << " model required " << total_storage_MB;
   if (total_storage_MB > free_memory_MB) {
     long capacity = static_cast<long>(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock)) 
                     - static_cast<long>((total_storage_MB - free_memory_MB) * 1024 * 1024);
@@ -373,14 +375,14 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
   while (!InferModelStore::Initialized()) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
-  LOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") start inference";
+  DLOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") start inference";
   {
     auto reserved_lock = WarmModelCache::ReserveCache(name_, rank);
     CHECK(status_[rank] == Status::kWithoutMemory);
     executors_[rank]->Init(true);
     ChangeStatus(rank, Status::kReady);
   }
-  LOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") Init Success";
+  DLOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") Init Success";
 
   // bool first_exec = true;
   
@@ -516,7 +518,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
 
     ss << " total_infer_ms=" << std::chrono::duration<double, std::milli>(infer_end - infer_begin).count();
     if (WarmModelCache::Enable()) { ss << " | reserve_cache_ms=" << reserve_cache_ms; }
-    LOG(INFO) << ss.str();
+    LOG_IF(INFO, Config::log_infer_time) << ss.str();
 
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferRealBatchSize, jobs.size());
     for (auto& job : jobs) {
@@ -664,14 +666,15 @@ void Model::EstimateTPC(uint32_t rank, tvm::Executor &graph_executor) {
     uint64_t mask_64 = -1;
     mask_64 = mask_64 << mid;
     SMPartitioner::SetStreamTpcMask(static_cast<cudaStream_t>(graph_executor.GetExecStream()), mask_64);
-    LOG(INFO) << SMPartitioner::CheckStreamSM(static_cast<cudaStream_t>(graph_executor.GetExecStream()));
+    DLOG(INFO) << SMPartitioner::CheckStreamSM(static_cast<cudaStream_t>(graph_executor.GetExecStream()));
     double exec_ms = get_exec_ms();
     if (exec_ms >= target_exec_ms) {
       left = mid;
     } else {
       right = mid;
     }
-    LOG(INFO) << "num_sm " << (mid << 1) << " exec_ms " << exec_ms << " / " << target_exec_ms;
+    LOG(INFO) << "[EstimateTPC] " <<  model_name_without_dup_id 
+              << "num_sm " << (mid << 1) << " exec_ms " << exec_ms << " / " << target_exec_ms;
   }
   required_num_tpc_ = left;
   LOG(INFO) << "[Model TPC Estimate] " << name_ << " required num_tpc " << required_num_tpc_;

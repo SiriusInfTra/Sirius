@@ -84,7 +84,7 @@ void TrainLauncher::Init(const std::filesystem::path &train_store_path) {
   for (auto train_script : std::filesystem::directory_iterator(train_store_path)) {
     if (train_script.is_regular_file()) {
       train_launcher_->train_handles_[train_script.path().stem().string()] = train_script.path();
-      LOG_IF(INFO, Config::log_train_init_info) << "TrainLauncher: Add " 
+      LOG_IF(INFO, Config::log_train_init) << "TrainLauncher: Add " 
                                                 << train_script.path().stem().string();
     }
   }
@@ -123,12 +123,15 @@ bool TrainLauncher::AddJob(network::TrainHandler::TrainData* data) {
 }
 
 double TrainLauncher::PredictMemUsageMB(bool verbose) {
-  LOG_IF(INFO, verbose) << "Predict train memory, target batch size " << target_batch_size_;
   if (target_batch_size_ <= 0) {
     return 0;
   } else {
     auto [base, slope] = GetModelMemParam();
-    return base + slope * target_batch_size_;
+    auto res = base + slope * target_batch_size_;
+    LOG_IF(INFO, verbose && Config::log_memory_adjust) 
+        << "Predict train memory " << res
+        << ", target batch size " << target_batch_size_;
+    return res;
   }
 }
 
@@ -304,7 +307,8 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
       extra_env_ss << "USE_SHARED_TENSOR=1"
                    << " HAS_SHARED_TENSOR_SERVER=1"
                    << " SHARED_TENSOR_POOL_GB=" << Config::cuda_memory_pool_gb
-                   << " SHARED_TENSOR_POOL_FREELIST_POLICY=" << Config::mempool_freelist_policy << " ";
+                   << " SHARED_TENSOR_POOL_FREELIST_POLICY=" << Config::mempool_freelist_policy 
+                   << " ";
       // CHECK_NE(setenv("CUDA_LAUNCH_BLOCKING", "1", 1), -1);
     } else {
       CHECK_NE(setenv("USE_SHARED_TENSOR", "0", 1), -1);
@@ -312,10 +316,16 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
     }
     if (Config::skip_set_mps_thread_percent) {
       LOG(INFO) << "[TrainLauncher]: skip set CUDA_MPS_ACTIVE_THREAD_PERCENTAGE";
+      if (Config::dynamic_sm_partition) {
+        CHECK_NE(setenv("DYNAMIC_SM_PARTITION", "1", 1), -1);
+        extra_env_ss << "DYNAMIC_SM_PARTITION=1";
+      }
     } else if (Config::train_mps_thread_percent >= 0 && Config::train_mps_thread_percent <= 100) {
-      // CHECK_NE(setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", std::to_string(Config::train_mps_thread_percent).c_str(), 1), -1);
-      // extra_env_ss << "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE=" << Config::train_mps_thread_percent << " ";
-      // LOG(INFO) << "[TrainLauncher]: set CUDA_MPS_ACTIVE_THREAD_PERCENTAGE to " << Config::train_mps_thread_percent;
+      CHECK_NE(setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", 
+                      std::to_string(Config::train_mps_thread_percent).c_str(), 1), -1);
+      extra_env_ss << "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE=" << Config::train_mps_thread_percent << " ";
+      LOG(INFO) << "[TrainLauncher]: set CUDA_MPS_ACTIVE_THREAD_PERCENTAGE to " 
+                << Config::train_mps_thread_percent;
     }
 
     LOG(INFO) << "[TrainLauncher]: " << "Train " << job << " ( "

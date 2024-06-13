@@ -167,8 +167,9 @@ void Executor::DeInit(const std::vector<size_t> &keep_cold_cached_group_id) {
     cold_cached_nbytes += storage_group_.at(k)->nbytes;
   }
 
-  LOG(INFO) << "[Executor] " << tvm_graph_.model_name_ << " deinit, cold_cached_nbytes = " 
-            << sta::ByteDisplay(cold_cached_nbytes) << ".";
+  LOG_IF(INFO, Config::log_infer_model_reclaim) 
+      << "[Executor] " << tvm_graph_.model_name_ 
+      << " deinit, cold_cached_nbytes = " << sta::ByteDisplay(cold_cached_nbytes) << ".";
   cold_cached_nbytes_.store(cold_cached_nbytes, std::memory_order_relaxed);
   if (!Config::colocate_config.skip_malloc) {
     ResetStorage();
@@ -255,10 +256,11 @@ void Executor::PipelineRun() {
     }
   }
   DeviceAPI::Get(devices_[0])->StreamSync(devices_[0], exec_stream_);
-  LOG(INFO) << "[Executor] [PipelineRun] " << tvm_graph_.model_name_
-            << " wait_load_ms " << wait_load_ms 
-            << " wait_ms " << wait_ms
-            << " tot " << Profiler::MilliFrom(begin);
+  LOG_IF(INFO, Config::log_infer_pipeline_exec) 
+      << "[Executor] [PipelineRun] " << tvm_graph_.model_name_
+      << " wait_load_ms " << wait_load_ms 
+      << " wait_ms " << wait_ms
+      << " tot " << Profiler::MilliFrom(begin);
 }
 
 // double Executor::ComputePipelineExecTime() {
@@ -515,13 +517,14 @@ void Executor::LoadParams(bool pipeline, bool force) {
       param_ready_[p.first]->store(true);
   }
 
-  LOG(INFO) << "[Executor] [LoadParamas] "
-            << tvm_graph_.model_name_
-            << " call_api_ms " << call_api_ms
-            << " tot_ms " << Profiler::MilliFrom(load_param_t)
-            << " cold_cache_hit " << cold_cache_hit
-            << " total_nbytes " << GetParamStorageSize()
-            << " cached_nbytes " << cold_cached_nbytes_.load(std::memory_order_relaxed);
+  LOG_IF(INFO, Config::log_infer_load_param) 
+      << "[Executor] [LoadParamas] "
+      << tvm_graph_.model_name_
+      << " call_api_ms " << call_api_ms
+      << " tot_ms " << Profiler::MilliFrom(load_param_t)
+      << " cold_cache_hit " << cold_cache_hit
+      << " total_nbytes " << GetParamStorageSize()
+      << " cached_nbytes " << cold_cached_nbytes_.load(std::memory_order_relaxed);
 }
 
 void Executor::ReSetupDataEntry() {
@@ -775,10 +778,11 @@ void Executor::SetupStorageGroup() {
   auto model_name_without_dup_id = GetModelNameWithoutDuplicatedId(tvm_graph_.model_name_);
   if (!logged.count((model_name_without_dup_id))) {
     logged.insert(model_name_without_dup_id);
-    LOG(INFO) << "[Executor] " << tvm_graph_.model_name_ << " internal fragment: " 
-              << sta::ByteDisplay(fragment_nbytes) << " / " << sta::ByteDisplay(model_nbytes)
-              << " | model with group fragment "
-              << sta::ByteDisplay(model_nbytes_with_group_fragment_);
+    LOG_IF(INFO, Config::log_infer_model_init) 
+        << "[Executor] " << tvm_graph_.model_name_ << " internal fragment: " 
+        << sta::ByteDisplay(fragment_nbytes) << " / " << sta::ByteDisplay(model_nbytes)
+        << " | model with group fragment "
+        << sta::ByteDisplay(model_nbytes_with_group_fragment_);
   }
 }
 
@@ -786,7 +790,7 @@ void Executor::LoadParamGroupParti(const std::string &path) {
   std::ifstream handle(path);
   CHECK(handle.is_open()) << "Cannot open file " << path
                           << ", enable `group_param_dump` to generate it";
-  LOG(INFO) << "load from mod.group from " << path; 
+  LOG_IF(INFO, Config::log_infer_model_init) << "load from mod.group from " << path; 
   std::string buf;
   while (handle >> buf) {
     storage_group_parti_.push_back(std::stoul(buf));

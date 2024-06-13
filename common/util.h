@@ -11,6 +11,7 @@
 
 #include <cuda.h>
 #include <cuda_runtime_api.h>
+#include <nvml.h>
 
 #define CUDA_CALL(func) do { \
   auto error = func; \
@@ -30,6 +31,14 @@
       exit(EXIT_FAILURE); \
     } \
   } while (0);
+
+#define NVML_CALL(func) do{ \
+    auto error = func; \
+    if (error != NVML_SUCCESS) { \
+      LOG(FATAL) << #func << " " << nvmlErrorString(error); \
+      exit(EXIT_FAILURE); \
+    } \
+  } while(0);
 
 namespace colserve {
 namespace literals {
