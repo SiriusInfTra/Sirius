@@ -140,6 +140,8 @@ class Config {
 
   static constexpr bool log_model_init_info = true;
   static constexpr bool log_grpc = false;
+  static constexpr bool log_train_init_info = false;
+  static constexpr bool log_warm_cache = false;
 
   inline static bool IsSwitchMode() {
     return Config::serve_mode == ServeMode::kTaskSwitchL1

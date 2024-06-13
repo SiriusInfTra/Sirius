@@ -146,7 +146,7 @@ void WarmModelCache::ReserveCacheInternal(
   // 1. already cached
   if (infer_model_cache_->warm_cache_[model_name]->cached) {
     ss << " already cached";
-    LOG(INFO) << ss.str();
+    LOG_IF(INFO, Config::log_warm_cache) << ss.str();
     return ;
   }
 

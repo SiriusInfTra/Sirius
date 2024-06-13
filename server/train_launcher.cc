@@ -84,7 +84,8 @@ void TrainLauncher::Init(const std::filesystem::path &train_store_path) {
   for (auto train_script : std::filesystem::directory_iterator(train_store_path)) {
     if (train_script.is_regular_file()) {
       train_launcher_->train_handles_[train_script.path().stem().string()] = train_script.path();
-      LOG(INFO) << "TrainLauncher: Add " << train_script.path().stem().string();
+      LOG_IF(INFO, Config::log_train_init_info) << "TrainLauncher: Add " 
+                                                << train_script.path().stem().string();
     }
   }
 
