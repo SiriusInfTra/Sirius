@@ -53,7 +53,9 @@ class SMPartitioner {
   std::atomic<int>* ref_cnt_;
   std::string shm_name_;
   bip::managed_shared_memory shm_;
-  
+
+  // assume one thread per stream, so no need for lock  
+  static thread_local std::unordered_map<CUstream, uint64_t> stream_last_tpc_mask_map_;
 };
 
 

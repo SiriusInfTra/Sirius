@@ -5,6 +5,7 @@
 namespace colserve {
 
 std::unique_ptr<SMPartitioner> SMPartitioner::sm_partitioner_ = nullptr;
+thread_local std::unordered_map<CUstream, uint64_t> SMPartitioner::stream_last_tpc_mask_map_;
 
 void SMPartitioner::Init(int device, bool cleanup) {
   // DLOG(INFO) << "[SM Partitioner] Init";
@@ -82,7 +83,7 @@ void SMPartitioner::DecInferRequiredTpcNum(int tpc_num) {
 uint64_t SMPartitioner::GetTrainAvailTpcMask() {
   CHECK(sm_partitioner_ != nullptr);
   int num_disabled = sm_partitioner_->tpc_data_->infer_required_tpc_num.load(std::memory_order_relaxed);
-  CHECK_GT(num_disabled, 0);
+  CHECK_GE(num_disabled, 0);
   if (num_disabled == 0) {
     return 0;
   }
@@ -98,7 +99,7 @@ uint64_t SMPartitioner::GetTrainAvailTpcMask() {
 int SMPartitioner::GetTrainAvailTpcNum() {
   CHECK(sm_partitioner_ != nullptr);
   int num_disabled = sm_partitioner_->tpc_data_->infer_required_tpc_num.load(std::memory_order_relaxed);
-  CHECK_GT(num_disabled, 0);
+  CHECK_GE(num_disabled, 0);
   return std::max(1, sm_partitioner_->gpu_tpc_num_ - num_disabled);
 }
 

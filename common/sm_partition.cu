@@ -310,10 +310,22 @@ void SMPartitioner::SetGlobalTpcMask(uint64_t mask_64) {
 }
 
 void SMPartitioner::SetStreamTpcMask(CUstream s, uint64_t mask_64) {
+	auto &stream_last_tpc_mask_map = sm_partitioner_->stream_last_tpc_mask_map_;
+	auto it = stream_last_tpc_mask_map.find(s);
+	if (it == stream_last_tpc_mask_map.end()) {
+		stream_last_tpc_mask_map.insert({s, mask_64});
+	} else {
+		if (it->second == mask_64) {
+			return;
+		} else {
+			it->second = mask_64;
+		}
+	}
+
 	uint128_t mask_128 = -1;
 	mask_128 <<= 64;
 	mask_128 |= mask_64;
-	libsmctrl_set_stream_mask_ext(s, mask_128);
+ 	libsmctrl_set_stream_mask_ext(s, mask_128);
 }
 
 

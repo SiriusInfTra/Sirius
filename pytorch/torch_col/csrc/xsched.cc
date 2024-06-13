@@ -13,17 +13,18 @@ void InitSMPartition() {
     return ;
   }  
 
-  LOG(INFO) << "Init SMPartition";
   colserve::SMPartitioner::Init(0, !has_colocated_infer_server);
 
   auto stream = reinterpret_cast<cudaStream_t>(GetRegisteredGlobalStream());
   CHECK(reinterpret_cast<uint64_t>(stream) != 0);
 
-  auto hook = [&]() -> void*{
+  LOG(INFO) << "Init SMPartition, stream " << stream << " " << *(void**)stream;
+
+  auto hook = [stream]() -> void*{
     // colserve::SetGlobalTPCMask(0x1);
     // colserve::SetStreamTpcMask(stream, 0x1);
     auto mask = colserve::SMPartitioner::SetTrainStreamTpcMask(stream);
-    LOG(INFO) << "set train stream tpc mask " << std::hex << mask;
+    // LOG(INFO) << "set train stream tpc mask " << std::hex << mask;
     return nullptr;
   };
 

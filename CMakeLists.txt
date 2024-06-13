@@ -133,3 +133,12 @@ include(cmake/xsched.cmake)
 
 # add_subdirectory(python)
 add_subdirectory(pytorch)
+
+if (NOT ${CMAKE_BINARY_DIR} STREQUAL ${CMAKE_SOURCE_DIR}/build)
+  if (EXISTS "${CMAKE_SOURCE_DIR}/build")
+      execute_process(COMMAND unlink ${CMAKE_SOURCE_DIR}/build)
+  endif()
+  if (NOT EXISTS "${CMAKE_SOURCE_DIR}/build")
+      execute_process(COMMAND ln -s ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}/build)
+  endif()
+endif()
