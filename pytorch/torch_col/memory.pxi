@@ -15,11 +15,13 @@ cdef extern from "<csrc/cuda_allocator_plugin.h>" namespace "torch::cuda::CUDACo
 
 
 def init_col_allocator(use_shared_tensor: bool):
+    import sys
+    
     CUDAColAllocator.Init()
     if use_shared_tensor:
         CUDAColAllocator.Get().init(0)
         CUDAColAllocator.SetCurrentAllocator()
-        print("CUDAColAllocator initialized")
+        # print("CUDAColAllocator initialized", file=sys.stderr, flush=True)
 
 cdef extern from "<common/cuda_allocator.h>" namespace "colserve::sta":
     cdef cppclass CUDAMemPool:

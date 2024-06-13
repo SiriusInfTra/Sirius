@@ -10,6 +10,8 @@ __pysched_handle_dict = {}
 def register_stream(stream: Stream):
     handle: ctypes.c_uint64 = __pysched_dll.RegisterStream(ctypes.c_uint64(stream.cuda_stream))
     __pysched_handle_dict[stream.cuda_stream] = handle
+
+    torch_col._C.InitSMPartition()
     
 
 def initial_kill_batch(epoch, batch, stream: Optional[Stream] = None):
