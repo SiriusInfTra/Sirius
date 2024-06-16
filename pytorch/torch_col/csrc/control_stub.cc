@@ -34,8 +34,10 @@ bool __CanExitAfterInferWorkloadDone(long infer_workload_done_timestamp) {
 }
 
 DummyStub::DummyStub() {
-  cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("cmd-ctrl", !has_colocated_infer_server);
-  status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("status-ctrl", !has_colocated_infer_server);
+  cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
+      "cmd-ctrl", !TorchColConfig::has_colocated_infer_server);
+  status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
+      "status-ctrl", !TorchColConfig::has_colocated_infer_server);
 
   thread_.reset(new std::thread([&]() {
     while (running_) {
@@ -69,8 +71,10 @@ void DummyStub::TrainEnd() {
 }
 
 SwitchStub::SwitchStub() {
-  cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("cmd-ctrl", !has_colocated_infer_server);
-  status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("status-ctrl", !has_colocated_infer_server);
+  cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
+      "cmd-ctrl", !TorchColConfig::has_colocated_infer_server);
+  status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
+      "status-ctrl", !TorchColConfig::has_colocated_infer_server);
 
   thread_.reset(new std::thread([&](){
     while (running_) {
@@ -79,7 +83,8 @@ SwitchStub::SwitchStub() {
       if (succ) {
         std::unique_lock locker{mutex_};
         if (data.event == static_cast<int>(ctrl::CtrlEvent::kInterruptTrain)) {
-          if (cmd_ == static_cast<int>(ctrl::CtrlEvent::kInterruptTrain) && cmd_id_ == 0) { // already interrupting train
+          if (cmd_ == static_cast<int>(ctrl::CtrlEvent::kInterruptTrain) && cmd_id_ == 0) {
+            // already interrupting train
             cmd_id_ = data.id;
             last_reply_cmd_id_ = cmd_id_;
             status_event_mq_->Put({cmd_id_, static_cast<int>(ctrl::CtrlEvent::kInterruptTrainDone)});
@@ -92,7 +97,8 @@ SwitchStub::SwitchStub() {
           }
           // status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kInterruptTrainDone)});
         } else if (data.event == static_cast<int>(ctrl::CtrlEvent::kResumeTrain)) {
-          if (cmd_ == static_cast<int>(ctrl::CtrlEvent::kInterruptTrain) && cmd_id_ == 0) { // already interrupting train
+          if (cmd_ == static_cast<int>(ctrl::CtrlEvent::kInterruptTrain) && cmd_id_ == 0) {
+            // already interrupting train
             cmd_ = static_cast<int>(ctrl::CtrlEvent::kResumeTrain);
             LOG(INFO) << "[SwitchStub] Resume train";
             status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kResumeTrainDone)});
@@ -149,7 +155,7 @@ void SwitchStub::Cmd(int cmd) {
 }
 
 void SwitchStub::ReportBatchSize(int batch_size) {
-  if (has_colocated_infer_server) { 
+  if (TorchColConfig::has_colocated_infer_server) { 
     status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kReportBatchSize), batch_size});
   }
 }
@@ -168,8 +174,10 @@ void SwitchStub::StepsNoInteruptEnd() {
 ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_(batch_size) {
   // char *has_server_env = std::getenv("HAS_INFER_SERVER");
   // bool has_server = has_server_env == nullptr ? true : (std::string(has_server_env) == "1");
-  cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("cmd-ctrl", !has_colocated_infer_server);
-  status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("status-ctrl", !has_colocated_infer_server);
+  cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
+      "cmd-ctrl", !TorchColConfig::has_colocated_infer_server);
+  status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
+      "status-ctrl", !TorchColConfig::has_colocated_infer_server);
   // adjust_event_mq_ = std::make_unique<MemoryQueue<int>>("adjust-ctrl", false);
 
   thread_.reset(new std::thread([&]() {
@@ -198,7 +206,8 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
           this->target_bs_ = data.value;
 
           // only used for colocate l1
-          if (kill_batch_on_recv && data.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)) {
+          if (TorchColConfig::kill_batch_on_recv 
+              && data.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)) {
             // TODO: better cancel kernel launch
             std::unique_lock step_lock{step_mutex_};
             auto t1 = torch_col::get_unix_timestamp();
@@ -302,7 +311,7 @@ void ColocateStub::ReportBatchSize(int batch_size) {
   // char *has_server_env = std::getenv("HAS_INFER_SERVER");
   current_bs_ = batch_size;
   // bool has_server = has_server_env == nullptr ? true : (std::string(has_server_env) == "1");
-  if (has_colocated_infer_server) {
+  if (TorchColConfig::has_colocated_infer_server) {
     status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kReportBatchSize), batch_size});
   }
  

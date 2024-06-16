@@ -7,14 +7,18 @@ namespace colserve {
 std::unique_ptr<SMPartitioner> SMPartitioner::sm_partitioner_ = nullptr;
 thread_local std::unordered_map<CUstream, uint64_t> SMPartitioner::stream_last_tpc_mask_map_;
 
-void SMPartitioner::Init(int device, bool cleanup) {
+void SMPartitioner::Init(int device, bool cleanup, bool observe) {
   // DLOG(INFO) << "[SM Partitioner] Init";
   if (sm_partitioner_ == nullptr) {
-    sm_partitioner_ = std::make_unique<SMPartitioner>(device, cleanup);
+    sm_partitioner_ = std::make_unique<SMPartitioner>(device, cleanup, observe);
   }
 }
 
-SMPartitioner::SMPartitioner(int device, bool cleanup) : device_(device) {
+SMPartitioner::SMPartitioner(int device, bool cleanup, bool observe) : device_(device) {
+  if (cleanup && observe) {
+    LOG(FATAL) << "[SMPartitioner] cleanup and observe can't be both true";
+  }
+
   auto *gpu_id = std::getenv("CUDA_VISIBLE_DEVICES");
   CHECK(gpu_id != nullptr);
   shm_name_ = "gpu-colocate-sm-partition-" + std::to_string(getuid()) + "-" + gpu_id;
@@ -70,6 +74,11 @@ void SMPartitioner::SetInferRequiredTpcNum(int tpc_num) {
   sm_partitioner_->tpc_data_->infer_required_tpc_num.store(tpc_num, std::memory_order_relaxed);
 }
 
+int SMPartitioner::GetInferRequiredTpcNum() {
+  CHECK(sm_partitioner_ != nullptr);
+  return sm_partitioner_->tpc_data_->infer_required_tpc_num.load(std::memory_order_relaxed);
+}
+
 void SMPartitioner::AddInferRequiredTpcNum(int tpc_num) {
   CHECK(sm_partitioner_ != nullptr);
   sm_partitioner_->tpc_data_->infer_required_tpc_num.fetch_add(tpc_num, std::memory_order_relaxed);
@@ -88,10 +97,10 @@ uint64_t SMPartitioner::GetTrainAvailTpcMask() {
     return 0;
   }
 
-  if (num_disabled >= sm_partitioner_->gpu_tpc_num_) {
-    // avoid hanging training kernel
-    num_disabled = sm_partitioner_->gpu_tpc_num_ - 1; 
-  }
+  // avoid hanging training kernel
+  num_disabled = std::min(num_disabled, 
+                          sm_partitioner_->gpu_tpc_num_ - sm_partitioner_->min_train_tpc_num_);
+
   uint64_t mask = (1ull << num_disabled) - 1;
   return mask;
 }
@@ -100,7 +109,8 @@ int SMPartitioner::GetTrainAvailTpcNum() {
   CHECK(sm_partitioner_ != nullptr);
   int num_disabled = sm_partitioner_->tpc_data_->infer_required_tpc_num.load(std::memory_order_relaxed);
   CHECK_GE(num_disabled, 0);
-  return std::max(1, sm_partitioner_->gpu_tpc_num_ - num_disabled);
+  return std::max(sm_partitioner_->min_train_tpc_num_, 
+                  sm_partitioner_->gpu_tpc_num_ - num_disabled);
 }
 
 uint64_t SMPartitioner::SetTrainStreamTpcMask(CUstream s) {

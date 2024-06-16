@@ -322,10 +322,11 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
     for (auto &&[name, cached_groups_id] : evict_models) {
       InferModelStore::Get()->GetModel(name)->ClearColdCache(cached_groups_id, rank, cold_cache_lock);
     }
-    LOG(INFO) << "[Model, Cold Cache Adjust] after adjust, furthur evict model to make room for model "
-              << name_ << " rank " << rank
-              << " current cache nbytes " 
-              << sta::ByteDisplay(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock));
+    LOG_IF(INFO, Config::log_memory_adjust) 
+        << "[Model, Cold Cache Adjust] after adjust, furthur evict model to make room for model "
+        << name_ << " rank " << rank
+        << " current cache nbytes " 
+        << sta::ByteDisplay(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock));
   }
 
 #if 1
@@ -397,7 +398,9 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     }
 
     // avoid interference
-    WaitEstimateTPC();
+    if (Config::dynamic_sm_partition) {
+      WaitEstimateTPC();
+    }
 
     // let cache serve models in a fifo manner
     auto reserve_cache_begin = Profiler::Now();
@@ -463,7 +466,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
 
     // claim gpu sm
     int recorded_required_tpc_num = required_num_tpc_;
-    if (recorded_required_tpc_num > 0) {
+    if (Config::dynamic_sm_partition && recorded_required_tpc_num > 0) {
       SMPartitioner::AddInferRequiredTpcNum(recorded_required_tpc_num);
     }
 
@@ -488,7 +491,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
       }
     }
 
-    if (recorded_required_tpc_num > 0) {
+    if (Config::dynamic_sm_partition && recorded_required_tpc_num > 0) {
       SMPartitioner::DecInferRequiredTpcNum(recorded_required_tpc_num);
     }
 
@@ -532,7 +535,9 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
 
     // estimate tpc after first infer
     // to avoid interference w/ training, do this during infer warmup
-    if (Config::estimate_infer_model_tpc && required_num_tpc_ == -1) {
+    if (Config::dynamic_sm_partition 
+        && Config::estimate_infer_model_tpc 
+        && required_num_tpc_ == -1) {
       EstimateTPC(rank, *graph_executor);
     }
   }
@@ -624,6 +629,8 @@ bool Model::GetOutput(tvm::Executor &graph_executor,
 }
 
 void Model::EstimateTPC(uint32_t rank, tvm::Executor &graph_executor) {
+  CHECK(Config::dynamic_sm_partition);
+
   if (required_num_tpc_ != -1) {
     return; // skip already estimated
   }

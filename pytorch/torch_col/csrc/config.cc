@@ -7,24 +7,25 @@
 
 namespace torch_col {
 
-int colocate_use_xsched = 1;
+int TorchColConfig::use_shared_tensor = false;
+double TorchColConfig::shared_tensor_pool_gb = 12;
+
+int TorchColConfig::has_colocated_infer_server = 0;
+int TorchColConfig::has_shared_tensor_server = 0;
+
+int TorchColConfig::colocate_use_xsched = 1;
+int TorchColConfig::kill_batch_on_recv = 1 & TorchColConfig::colocate_use_xsched;
   
-int kill_batch_on_recv = 1 & colocate_use_xsched;
+int TorchColConfig::dynamic_sm_partition = false;
 
-int has_colocated_infer_server = 0;
 
-int has_shared_tensor_server = 0;
-
-double shared_tensor_pool_gb = 12;
-
-bool dynamic_sm_partition = false;
-
-void ConfigTorchCol(int use_shared_tensor) {
+void TorchColConfig::InitConfig(int use_shared_tensor_) {
   static bool configured = false;
   if (configured) {
     return;
   }
 
+  use_shared_tensor = use_shared_tensor;
   auto has_infer_server_env = std::getenv("HAS_INFER_SERVER");
   auto has_shared_tensor_server_env = std::getenv("HAS_SHARED_TENSOR_SERVER");
   auto pool_size_env = std::getenv("SHARED_TENSOR_POOL_GB");

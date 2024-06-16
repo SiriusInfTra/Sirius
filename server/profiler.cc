@@ -1,11 +1,12 @@
 #include "logging_as_glog.h"
 #include <common/cuda_allocator.h>
 #include <common/util.h>
-#include <server/infer_model_store.h>
+#include <common/sm_partition.h>
 
-#include "train_launcher.h"
-#include "profiler.h"
-#include "config.h"
+#include <server/infer_model_store.h>
+#include <server/train_launcher.h>
+#include <server/profiler.h>
+#include <server/config.h>
 
 #include <nvml.h>
 #include <numeric>
@@ -173,6 +174,7 @@ Profiler::Profiler(const std::string &profile_log_path)
       double cold_cache_buffer_mb = 0;
       double infer_mem_in_cold_cache_buffer_mb = 0;
       double cold_cache_size_mb = 0;
+      int infer_required_tpc_num = 0, train_avail_tpc_num = 0;
       if (!Config::use_shared_tensor || !Config::use_shared_tensor_train) {
         uint32_t info_cnt = max_info_cnt;
         NVML_CALL(nvmlDeviceGetComputeRunningProcesses_v3(device, &info_cnt, infos));
@@ -214,13 +216,21 @@ Profiler::Profiler(const std::string &profile_log_path)
       }
       this->last_infer_mem_ = infer_mem;
       this->last_train_mem_ = train_mem;
+
+      if (Config::dynamic_sm_partition) {
+        infer_required_tpc_num = SMPartitioner::GetInferRequiredTpcNum();
+        train_avail_tpc_num = SMPartitioner::GetTrainAvailTpcNum();
+      }
+
       this->resource_info_.push_back({this->Passed(), Profiler::GetTimeStamp(),
           ResourceInfo{.infer_mem = infer_mem, .train_mem = train_mem, 
                        .train_all_mem = train_all_mem, .gpu_used_mem = total_mem, 
                        .cold_cache_nbytes = cold_cache_nbytes, 
                        .cold_cache_buffer_mb = cold_cache_buffer_mb,
                        .infer_mem_in_cold_cache_buffer_mb = infer_mem_in_cold_cache_buffer_mb,
-                       .cold_cache_size_mb = cold_cache_size_mb}});
+                       .cold_cache_size_mb = cold_cache_size_mb,
+                       .infer_required_tpc_num = infer_required_tpc_num,
+                       .train_avail_tpc_num = train_avail_tpc_num}});
       this->infering_memory_nbytes_.push_back({this->Passed(), Profiler::GetTimeStamp(),
                                               InferModelStore::GetInferingModelNbytes()});
       // this->profile_log_ifs_ << this->Passed()
@@ -390,9 +400,20 @@ void Profiler::WriteLog() {
     ofs << Profiler::PerfItem::InferExec << " avg:\n";
     ofs << std::fixed << std::setprecision(1) << infer_avg_exec << std::endl;
   }
-
   ofs << std::endl;
 
+  if (Config::dynamic_sm_partition) {
+    ofs << "[SM Partition Info]" << std::endl;
+    for (auto &r : resource_info_) {
+      ofs << std::get<0>(r) << ": "
+          << std::get<1>(r) << ": "
+          << " InferRequiredTpc " << std::get<2>(r).infer_required_tpc_num
+          << " TrainAvailTpc " << std::get<2>(r).train_avail_tpc_num
+          << std::endl;
+    }
+  }
+
+  ofs << std::endl;
   // int hit_count = std::accumulate()
   // ofs << "[Cache Info]" << "Hit: " << << std::endl;
 

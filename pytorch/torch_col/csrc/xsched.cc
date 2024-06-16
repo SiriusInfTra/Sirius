@@ -9,11 +9,11 @@
 namespace torch_col {
 
 void InitSMPartition() {
-  if (!dynamic_sm_partition) {
+  if (!TorchColConfig::dynamic_sm_partition) {
     return ;
   }  
 
-  colserve::SMPartitioner::Init(0, !has_colocated_infer_server);
+  colserve::SMPartitioner::Init(0, !TorchColConfig::has_colocated_infer_server, false);
 
   auto stream = reinterpret_cast<cudaStream_t>(GetRegisteredGlobalStream());
   CHECK(reinterpret_cast<uint64_t>(stream) != 0);

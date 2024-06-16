@@ -143,6 +143,8 @@ class Config {
 
   static constexpr bool log_memory_adjust = false;
 
+  static constexpr bool log_controller = false;
+
   inline static bool IsSwitchMode() {
     return Config::serve_mode == ServeMode::kTaskSwitchL1
         || Config::serve_mode == ServeMode::kTaskSwitchL2

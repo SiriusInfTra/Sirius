@@ -4,6 +4,8 @@
 #include <common/util.h>
 #include <boost/interprocess/managed_shared_memory.hpp>
 
+#include <thread>
+
 namespace colserve {
 
 namespace bip = boost::interprocess;
@@ -18,7 +20,7 @@ class SMPartitioner {
     kSeperateTpc,
   };
 
-  static void Init(int device, bool cleanup);
+  static void Init(int device, bool cleanup, bool observe);
   static int GetGPUNumSM();
   static int GetGPUNumTpc();
   static void SetGlobalTpcMask(uint64_t mask_64);
@@ -26,6 +28,7 @@ class SMPartitioner {
   static std::string CheckStreamSM(CUstream s);
 
   static void SetInferRequiredTpcNum(int tpc_num);
+  static int GetInferRequiredTpcNum();
   static void AddInferRequiredTpcNum(int tpc_num);
   static void DecInferRequiredTpcNum(int tpc_num);
   static uint64_t GetTrainAvailTpcMask();
@@ -33,7 +36,7 @@ class SMPartitioner {
 
   static uint64_t SetTrainStreamTpcMask(CUstream s);
 
-  SMPartitioner(int device, bool cleanup);
+  SMPartitioner(int device, bool cleanup, bool observe);
   ~SMPartitioner();
 
  private:
@@ -53,6 +56,8 @@ class SMPartitioner {
   std::atomic<int>* ref_cnt_;
   std::string shm_name_;
   bip::managed_shared_memory shm_;
+
+  int min_train_tpc_num_ = 1;
 
   // assume one thread per stream, so no need for lock  
   static thread_local std::unordered_map<CUstream, uint64_t> stream_last_tpc_mask_map_;

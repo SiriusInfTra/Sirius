@@ -48,6 +48,9 @@ class Profiler {
     double cold_cache_buffer_mb;
     double infer_mem_in_cold_cache_buffer_mb;
     double cold_cache_size_mb;
+
+    int infer_required_tpc_num;
+    int train_avail_tpc_num;
   };
   struct InferInfo {
     size_t id;

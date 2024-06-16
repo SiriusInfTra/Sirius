@@ -74,7 +74,7 @@ bool Config::dump_adjust_info = false;
 bool Config::profiler_acquire_resource_lock = false;
 
 bool Config::skip_set_mps_thread_percent = false;
-bool Config::dynamic_sm_partition = true;
+bool Config::dynamic_sm_partition = false;
 bool Config::estimate_infer_model_tpc = true;
 double Config::infer_exec_time_estimate_scale = 1.1;
 

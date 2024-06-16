@@ -130,6 +130,10 @@ def initialize_sgd_optimizer(model, optimizer):
             state = optimizer.state[p]
             state['momentum_buffer'] = torch.zeros_like(p)
 
+
+# def monitor_sm_partition():
+#     if torch_col._C.
+
 # def print_sgd_optimizer(optimizer):
 #     nbytes = 0
 #     ptrs = ""

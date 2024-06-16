@@ -80,6 +80,8 @@ void init_cli_options() {
       "colocate skip loading, default is false");
   app.add_option("--use-xsched", colserve::Config::use_xsched, 
       "use xsched, default is false");
+  app.add_option("--dynamic-sm-partition", colserve::Config::dynamic_sm_partition, 
+      "dynamic sm partition, default is false");
   app.add_option("--train-profile", colserve::Config::train_profile, 
     "train timeline path, default is train-timeline");
   app.add_option("--max-warm-cache-nbytes", colserve::Config::max_warm_cache_nbytes, 
@@ -173,7 +175,16 @@ void init_config() {
   }
 
   if (!cfg::skip_set_mps_thread_percent && cfg::dynamic_sm_partition) {
-    LOG(WARNING) << "Dynamic partition SM may not work correctly with control of MPS thread percent";
+    LOG(FATAL) << "Dynamic partition SM may not work correctly with control of MPS thread percent";
+  }
+
+  auto *cuda_device_env = getenv("CUDA_VISIBLE_DEVICES");
+  auto *cuda_mps_env = getenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE");
+  if (cuda_device_env != nullptr) {
+    LOG(INFO) << "ENV::CUDA_VISIBLE_DEVICES: " << cuda_device_env;
+  }
+  if (cuda_mps_env != nullptr) {
+    LOG(INFO) << "ENV::CUDA_MPS_ACTIVE_THREAD_PERCENTAGE: " << cuda_mps_env;
   }
 
   STREAM_OUTPUT(serve_mode);
@@ -193,6 +204,7 @@ void init_config() {
   STREAM_OUTPUT(train_over_adjust_nbytes);
   STREAM_OUTPUT(cold_cache_ratio);
   STREAM_OUTPUT(infer_model_max_idle_ms);
+  STREAM_OUTPUT(dynamic_sm_partition);
   STREAM_OUTPUT(colocate_config.skip_malloc);
   STREAM_OUTPUT(colocate_config.skip_loading);
 
@@ -234,7 +246,7 @@ int main(int argc, char *argv[]) {
       }, colserve::sta::MemType::kInfer);
   }
   if (colserve::Config::dynamic_sm_partition) {
-    colserve::SMPartitioner::Init(0, true);
+    colserve::SMPartitioner::Init(0, true, false);
   }
   colserve::ResourceManager::Init();
   colserve::Controller::Init();

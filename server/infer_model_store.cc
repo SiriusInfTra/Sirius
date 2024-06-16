@@ -522,8 +522,9 @@ void InferModelStore::TaskSwitchMonitor() {
 }
 
 std::tuple<ColdModelCache::group_id_list, ColdModelCache::evict_list, bool>
-ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<size_t> groups_nbytes, 
-                                size_t total_nbytes, std::unique_lock<std::mutex> &lock, Model *source_model) {
+ColdModelCache::PushCacheItem(
+    const std::string& name, size_t rank, std::vector<size_t> groups_nbytes, 
+    size_t total_nbytes, std::unique_lock<std::mutex> &lock, Model *source_model) {
   DLOG(INFO) << "PushCacheItem, name = " << name 
              << ", rank = " << rank 
              << ", groups_nbytes = " << groups_nbytes 
@@ -555,7 +556,8 @@ ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<
   }
 
   DLOG(INFO) << "check whether should evict models.";
-  auto evict_models = GetEvictModels(Config::cold_cache_max_capability_nbytes, {cache_item->model, source_model}, lock);
+  auto evict_models = GetEvictModels(Config::cold_cache_max_capability_nbytes, 
+                                     {cache_item->model, source_model}, lock);
   current_cached_nbytes_ += cache_item->cached_group_nbytes;
   DLOG(INFO) << "put to cold_cache_.";
   CHECK(cold_cache_.emplace(std::make_pair(name, cache_item)).second == true) << name;
@@ -574,7 +576,10 @@ std::pair<std::vector<size_t>, bool> ColdModelCache::PopCacheItem(const std::str
   return {cached_groups_id, true};
 }
 
-ColdModelCache::evict_list ColdModelCache::GetEvictModels(long capacity, std::array<Model*, 2> ignore_models, std::unique_lock<std::mutex>& lock) {
+ColdModelCache::evict_list ColdModelCache::GetEvictModels(
+    long capacity, 
+    std::array<Model*, 2> ignore_models, 
+    std::unique_lock<std::mutex>& lock) {
   const size_t default_rank = 0;
   std::vector<Model*> coldest_model;
   for (auto&& [name, cache_item] : cold_cache_) {
@@ -597,7 +602,8 @@ ColdModelCache::evict_list ColdModelCache::GetEvictModels(long capacity, std::ar
 
     coldest_model.pop_back();
   }
-  CHECK_LE(current_cached_nbytes_, capacity) << "Unable to evict models to make sure current_cached_nbytes_ > capacity";
+  CHECK_LE(current_cached_nbytes_, capacity) 
+      << "Unable to evict models to make sure current_cached_nbytes_ > capacity";
   return evict_models;
 }
 

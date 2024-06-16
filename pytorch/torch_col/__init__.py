@@ -49,10 +49,16 @@ def __setup_torch_col():
     if os.environ.get('USE_SHARED_TENSOR', '0') == '1':
         global __use_shared_tensor
         __use_shared_tensor = 1
-    ConfigTorchCol(use_shared_tensor())
-    init_col_allocator(use_shared_tensor())
+    torch_col_init(use_shared_tensor())
+
+    # TorchColConfig.InitConfig(use_shared_tensor())
+    # CUDAColAllocator.Init()
+    # if use_shared_tensor():
+    #     CUDAColAllocator.Get().init(0)
+    #     CUDAColAllocator.SetCurrentAllocator()
+
 
 
 __setup_torch_col()
 
-print('torch_col init') 
+print('torch_col init done') 
