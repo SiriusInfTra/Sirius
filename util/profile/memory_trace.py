@@ -34,47 +34,6 @@ with open(log) as f:
 
 df = pd.read_csv(StringIO(memory_info_str), sep=',', header=0, index_col=0)
 
-# timeline = []
-# infer_mem, train_mem, train_all_mem, total_mem = [], [], [], []
-# events = []
-# with open(log) as f:
-#     parse_mem = False
-#     paser_ev = False
-#     for line in f.readlines():
-#         if '[Memory Info]' in line:
-#             parse_mem = True
-#             continue
-#         if '[Event Info]' in line:
-#             paser_ev = True
-#             continue
-#         if len(line.strip()) == 0:
-#             parse_mem = False
-#             paser_ev = False
-
-#         if parse_mem:
-#             m = re.search(r'(\d+(\.\d+)?):', line)
-#             timeline.append(float(m.group(1)) - begin_time)
-
-#             m = re.search(r'Infer (\d+\.\d+) Mb', line)
-#             infer_mem.append(float(m.group(1)))
-
-#             m = re.search(r'Train (\d+\.\d+) Mb', line)
-#             train_mem.append(float(m.group(1)))
-
-#             m = re.search(r'TrainAll (\d+\.\d+) Mb', line)
-#             train_all_mem.append(float(m.group(1)))
-
-#             m = re.search(r'Total (\d+\.\d+) Mb', line)
-#             total_mem.append(float(m.group(1)))
-
-#         if paser_ev:
-#             m = re.search(r'(\d+(\.\d+)?):', line)
-#             t = float(m.group(1)) - begin_time
-            
-#             m = re.search(r'[a-zA-Z]+', line)
-#             e = m.group(0)
-#             events.append((t, e))
-
 
 memory_transform = lambda x: float(re.search(r'(\d+\.\d+) Mb', x).group(1))
 
