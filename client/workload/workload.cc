@@ -56,10 +56,12 @@ void Workload::WarmupDone() {
 
 void Workload::InferenceWorkloadDone() {
   grpc::ClientContext context;
-  EmptyRequest request;
+  InferWorkloadDoneRequest request;
   EmptyResult result;
+
+  request.set_time_stamp(end_time_stamp_);
   grpc::Status status = stub_->InferenceWorkloadDone(&context, request, &result);
-  CHECK(status.ok());
+  CHECK(status.ok()) << "Report Inference workload done fail";
 }
 
 void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_infer) {
@@ -451,17 +453,17 @@ bool Workload::Hello() {
   }
 }
 
-bool Workload::ReportTimeStampToServer() {
-  TimeStampRequest request;
+bool Workload::InferenceWorkloadStart() {
+  InferenceWorkloadStartRequest request;
   EmptyResult result;
   request.set_time_stamp(start_time_stamp_);
   request.set_delay_before_profile(delay_before_profile_);
 
   grpc::ClientContext context;
   grpc::CompletionQueue cq;
-  grpc::Status status = stub_->ReportStartTimeStamp(&context, request, &result);
-  CHECK(status.ok()) << "ReportTimeStampToServer Failed " << status.error_message() << "|" << status.error_details();
-  LOG(INFO) << "ReportTimeStampToServer " << start_time_stamp_;
+  grpc::Status status = stub_->InferenceWorkloadStart(&context, request, &result);
+  CHECK(status.ok()) << "Report InferenceWorkloadStart Failed " << status.error_message() << "|" << status.error_details();
+  LOG(INFO) << "Report InferenceWorkloadStart " << start_time_stamp_;
   return true;
 }
 
