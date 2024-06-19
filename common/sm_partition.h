@@ -57,7 +57,7 @@ class SMPartitioner {
   std::string shm_name_;
   bip::managed_shared_memory shm_;
 
-  int min_train_tpc_num_ = 1;
+  int min_train_tpc_num_ = 5;
 
   // assume one thread per stream, so no need for lock  
   static thread_local std::unordered_map<CUstream, uint64_t> stream_last_tpc_mask_map_;

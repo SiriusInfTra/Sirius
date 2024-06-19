@@ -216,6 +216,7 @@ void Shutdown(int sig) {
   colserve::InferModelStore::Shutdown();
   colserve::TrainLauncher::Shutdown();
   colserve::Profiler::Shutdown();
+  NVML_CALL(nvmlShutdown());
   std::terminate();
 }
 
@@ -234,6 +235,7 @@ int main(int argc, char *argv[]) {
   });
 
   CHECK_EQ(cuInit(0), CUDA_SUCCESS);
+  NVML_CALL(nvmlInit());
   auto free_list_policy = colserve::sta::getFreeListPolicy(
       colserve::Config::mempool_freelist_policy);
   if (colserve::Config::use_shared_tensor) {

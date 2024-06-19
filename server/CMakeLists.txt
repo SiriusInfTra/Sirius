@@ -32,7 +32,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/)
 
 target_link_libraries(${PROJECT_NAME} 
   grpc++ proto tvm_runtime CLI11::CLI11 glog::glog
-  CUDA::nvml CUDA::cudart CUDA::cuda_driver
+  CUDA::nvml CUDA::cudart CUDA::cuda_driver dcgm
   sta
 )
 

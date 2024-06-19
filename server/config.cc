@@ -82,4 +82,7 @@ bool Config::dummy_adjust = false;
 
 bool Config::system_initialized = false;
 
+bool Config::profile_gpu_smact = true;
+bool Config::profile_gpu_util = true;
+
 }

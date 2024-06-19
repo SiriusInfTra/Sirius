@@ -41,6 +41,10 @@
   } while(0);
 
 namespace colserve {
+
+using memory_nbyte_t = size_t;
+using memory_mb_t = double;
+
 namespace literals {
 
 constexpr size_t operator ""_B(unsigned long long n) {
@@ -90,6 +94,8 @@ inline std::string ByteDisplay(size_t nbytes) {
 }
 
 }
+
+
 
 using namespace colserve::literals;
 

@@ -130,6 +130,9 @@ class Config {
 
   static bool system_initialized;
 
+  static bool profile_gpu_smact;
+  static bool profile_gpu_util;
+
   static constexpr bool log_grpc = false;
   static constexpr bool log_train_init = false;
   static constexpr bool log_warm_cache = false;
