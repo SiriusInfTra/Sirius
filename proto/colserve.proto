@@ -5,9 +5,9 @@ service ColServe {
 
     rpc WarmupDone(EmptyRequest) returns (EmptyResult) {}
 
-    rpc InferenceWorkloadDone(EmptyRequest) returns (EmptyResult) {}
+    rpc InferenceWorkloadDone(InferWorkloadDoneRequest) returns (EmptyResult) {}
 
-    rpc ReportStartTimeStamp(TimeStampRequest) returns (EmptyResult) {}
+    rpc InferenceWorkloadStart(InferenceWorkloadStartRequest) returns (EmptyResult) {}
 
     rpc Shutdown(EmptyRequest) returns (EmptyRequest) {}
 
@@ -21,9 +21,13 @@ message EmptyRequest {}
 
 message EmptyResult {}
 
-message TimeStampRequest {
+message InferenceWorkloadStartRequest {
     int64 time_stamp = 1;
     double delay_before_profile = 2;
+}
+
+message InferWorkloadDoneRequest {
+    int64 time_stamp = 1;
 }
 
 message ServerStatus {
