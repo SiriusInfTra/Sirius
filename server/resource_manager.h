@@ -19,36 +19,24 @@ class ResourceManager {
   static double GetFreeMemoryMB(bool verbose);
   static double GetTrainAvailMemoryMB(bool verbose);
 
-  static void InferMemoryChangingLock() {
-    resource_manager_->infer_memory_changing_mut_.lock();
-  }
-  static void InferMemoryChangingUnlock() {
-    resource_manager_->infer_memory_changing_mut_.unlock();
-  }
+  static void InferMemoryChangingLock();
+  static void InferMemoryChangingUnlock();
+  static bool InferChangeMemoryTryLock();
 
-  static bool InferChangeMemoryTryLock() {
-    return resource_manager_->infer_memory_changing_mut_.try_lock();
-  }
+  static double GetInferMemoryMB();
+  static double GetTrainMemoryMB();
+  
+  static int GetNumGpu();
+  static int GetGpuSystemId(int gpu_id);
+  static const std::string& GetGpuSystemUuid(int gpu_id);
 
-  static double GetInferMemoryMB() {
-    using namespace sta;
-    if (Config::use_shared_tensor_infer) {
-      return ByteToMB(CUDAMemPool::InferMemUsage());
-    } else {
-      return ByteToMB(Profiler::GetLastInferMem());
-    }
-  }
-  static double GetTrainMemoryMB() {
-    using namespace sta;
-    if (Config::use_shared_tensor_train) {
-      return ByteToMB(CUDAMemPool::TrainAllMemUsage());
-    } else {
-      return ByteToMB(Profiler::GetLastTrainMem());
-    }
-  }
+  ResourceManager();
 
  private:
   static std::unique_ptr<ResourceManager> resource_manager_;
+
+  std::vector<std::string> system_gpu_uuids_;
+  std::unordered_map<int, std::pair<int, std::string>> gpu_id_map_; // visible id -> (system id, uuid)
 
   std::mutex infer_memory_changing_mut_;
 };
