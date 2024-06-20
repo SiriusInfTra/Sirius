@@ -680,7 +680,7 @@ void Model::EstimateTPC(uint32_t rank, tvm::Executor &graph_executor) {
     } else {
       right = mid;
     }
-    LOG(INFO) << "[EstimateTPC] " <<  model_name_without_dup_id 
+    DLOG(INFO) << "[EstimateTPC] " <<  model_name_without_dup_id 
               << " num_sm " << (mid << 1) << " exec_ms " << exec_ms << " / " << target_exec_ms;
   }
   required_num_tpc_ = left;

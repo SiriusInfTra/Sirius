@@ -132,6 +132,7 @@ class Config {
 
   static bool profile_gpu_smact;
   static bool profile_gpu_util;
+  static bool profile_sm_partition;
 
   static constexpr bool log_grpc = false;
   static constexpr bool log_train_init = false;

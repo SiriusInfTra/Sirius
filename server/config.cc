@@ -84,5 +84,6 @@ bool Config::system_initialized = false;
 
 bool Config::profile_gpu_smact = true;
 bool Config::profile_gpu_util = true;
+bool Config::profile_sm_partition = false;
 
 }

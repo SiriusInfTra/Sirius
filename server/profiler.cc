@@ -286,11 +286,10 @@ Profiler::Profiler(const std::string &profile_log_path)
       this->last_infer_mem_ = infer_mem;
       this->last_train_mem_ = train_mem;
 
-      if (Config::dynamic_sm_partition) {
+      if (Config::dynamic_sm_partition && Config::profile_sm_partition) {
         infer_required_tpc_num = SMPartitioner::GetInferRequiredTpcNum();
         train_avail_tpc_num = SMPartitioner::GetTrainAvailTpcNum();
       }
-
 
       if (Config::profile_gpu_util || Config::profile_gpu_smact) {
         Profiler::dcgmEntityStat dcgm_stat;
@@ -446,18 +445,6 @@ void Profiler::WriteLog() {
   ofs << std::endl;
   
   ofs << "[Memory Info]" << std::endl;  
-  // for (auto &r : resource_info_) {
-  //   ofs << std::get<0>(r) << ": " 
-  //       << " Infer " << GetMemMbStr(std::get<1>(r).infer_mem)
-  //       << " Train " << GetMemMbStr(std::get<1>(r).train_mem)
-  //       << " TrainAll " << GetMemMbStr(std::get<1>(r).train_all_mem)
-  //       << " Total " << GetMemMbStr(std::get<1>(r).gpu_used_mem)
-  //       << " | ColdCache " << GetMemMbStr(std::get<1>(r).cold_cache_nbytes)
-  //       << " ColdCacheBuffer " << std::get<1>(r).cold_cache_buffer_mb << " Mb"
-  //       << " InferInColdCacheBuffer " << std::get<1>(r).infer_mem_in_cold_cache_buffer_mb << " Mb"
-  //       << " ColdCacheSize " << std::get<1>(r).cold_cache_size_mb << " Mb"
-  //       << std::endl;
-  // }
   auto memory_table = FmtResourceInfos({
     offsetof(ResourceInfo, infer_mem),
     offsetof(ResourceInfo, train_mem),
@@ -514,14 +501,8 @@ void Profiler::WriteLog() {
   }
   ofs << std::endl;
 
-  if (Config::dynamic_sm_partition) {
+  if (Config::dynamic_sm_partition && Config::profile_sm_partition) {
     ofs << "[SM Partition Info]" << std::endl;
-    // for (auto &r : resource_info_) {
-    //   ofs << std::get<0>(r) << ": "
-    //       << " InferRequiredTpc " << std::get<1>(r).infer_required_tpc_num
-    //       << " TrainAvailTpc " << std::get<1>(r).train_avail_tpc_num
-    //       << std::endl;
-    // }
     auto sm_part_table = FmtResourceInfos({
       offsetof(ResourceInfo, infer_required_tpc_num),
       offsetof(ResourceInfo, train_avail_tpc_num),
@@ -544,11 +525,11 @@ void Profiler::WriteLog() {
         [](double v) { return !std::isnan(v); });
 
     if (Config::profile_gpu_util) {
-      ofs << "GPU Util: avg " << mean(gpu_utils) 
+      ofs << "GPU Util: avg " << mean(gpu_utils) << " %"
           << std::endl;
     }
     if (Config::profile_gpu_smact) {
-      ofs << "SM Activity: avg "  << mean(gpu_smacts)
+      ofs << "SM Activity: avg "  << mean(gpu_smacts) * 100 << " %"
           << std::endl;
     }
   }
@@ -576,7 +557,6 @@ Profiler::FmtResourceInfos(
 
     std::vector<std::string> row(table[0].size(), "");
     row[0] = (boost::format("%.1f") % std::get<0>(r)).str();
-    // row[0] = std::to_string(std::get<0>(r));
 
     for (int fid = 1; fid <= field_offs.size(); fid++) {
       std::string header;
