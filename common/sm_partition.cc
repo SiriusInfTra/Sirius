@@ -23,7 +23,9 @@ SMPartitioner::SMPartitioner(int device, bool cleanup, bool observe) : device_(d
   CHECK(gpu_id != nullptr);
   shm_name_ = "gpu-colocate-sm-partition-" + std::to_string(getuid()) + "-" + gpu_id;
 
-  LOG(INFO) << "[SM Partitioner] initialize, shm_name " << shm_name_.c_str();
+  LOG(INFO) << "[SM Partitioner] initialize, "
+            << "train_tpc " << min_train_tpc_num_ << " - " << max_train_tpc_num_ << ", "
+            << "shm_name " << shm_name_.c_str();
 
   if (cleanup) {
     bip::shared_memory_object::remove(shm_name_.c_str());
@@ -50,6 +52,10 @@ SMPartitioner::SMPartitioner(int device, bool cleanup, bool observe) : device_(d
   gpu_sm_num_ = deviceProp.multiProcessorCount;
   gpu_tpc_num_ = gpu_sm_num_ >> 1;
   sm_num_per_tpc_ = 2; // volta -- hopper
+
+  CHECK_GE(min_train_tpc_num_, 1);
+  CHECK_LE(max_train_tpc_num_, gpu_tpc_num_);
+  CHECK_GE(max_train_tpc_num_, min_train_tpc_num_);
 }
 
 SMPartitioner::~SMPartitioner() {
@@ -101,7 +107,12 @@ uint64_t SMPartitioner::GetTrainAvailTpcMask() {
   num_disabled = std::min(num_disabled, 
                           sm_partitioner_->gpu_tpc_num_ - sm_partitioner_->min_train_tpc_num_);
 
+  num_disabled = std::max(num_disabled, 
+                          sm_partitioner_->gpu_tpc_num_ - sm_partitioner_->max_train_tpc_num_);
+
+  // train use SM with higher index
   uint64_t mask = (1ull << num_disabled) - 1;
+
   return mask;
 }
 
@@ -109,8 +120,11 @@ int SMPartitioner::GetTrainAvailTpcNum() {
   CHECK(sm_partitioner_ != nullptr);
   int num_disabled = sm_partitioner_->tpc_data_->infer_required_tpc_num.load(std::memory_order_relaxed);
   CHECK_GE(num_disabled, 0);
-  return std::max(sm_partitioner_->min_train_tpc_num_, 
-                  sm_partitioner_->gpu_tpc_num_ - num_disabled);
+  
+  int res = std::max(sm_partitioner_->min_train_tpc_num_, 
+                     sm_partitioner_->gpu_tpc_num_ - num_disabled);
+  res = std::min(res, sm_partitioner_->max_train_tpc_num_);
+  return res;
 }
 
 uint64_t SMPartitioner::SetTrainStreamTpcMask(CUstream s) {
