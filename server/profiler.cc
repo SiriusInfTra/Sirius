@@ -443,6 +443,29 @@ void Profiler::WriteLog() {
         << std::endl;
   }
   ofs << std::endl;
+
+  if (Config::profile_gpu_util || Config::profile_gpu_smact) {
+    ofs << "[GPU Util Info]" << std::endl;
+  
+    auto gpu_utils = SelectResourceInfo<decltype(((ResourceInfo*)0)->gpu_util)>(
+        offsetof(ResourceInfo, gpu_util), 
+        workload_profile_start_ts, workload_profile_end_ts, 
+        [](double v) { return !std::isnan(v); });
+    auto gpu_smacts = SelectResourceInfo<decltype(((ResourceInfo*)0)->sm_activity)>(
+        offsetof(ResourceInfo, sm_activity), 
+        workload_profile_start_ts, workload_profile_end_ts,
+        [](double v) { return !std::isnan(v); });
+
+    if (Config::profile_gpu_util) {
+      ofs << "GPU Util: avg " << mean(gpu_utils) << " %"
+          << std::endl;
+    }
+    if (Config::profile_gpu_smact) {
+      ofs << "SM Activity: avg "  << mean(gpu_smacts) * 100 << " %"
+          << std::endl;
+    }
+    ofs << std::endl;
+  }
   
   ofs << "[Memory Info]" << std::endl;  
   auto memory_table = FmtResourceInfos({
@@ -510,31 +533,6 @@ void Profiler::WriteLog() {
     FmtTable(ofs, sm_part_table);
     ofs << std::endl;
   }
-
-  if (Config::profile_gpu_util || Config::profile_gpu_smact) {
-    ofs << "[GPU Util Info]" << std::endl;
-  
-    auto gpu_utils = SelectResourceInfo<decltype(((ResourceInfo*)0)->gpu_util)>(
-        offsetof(ResourceInfo, gpu_util), 
-        workload_profile_start_ts, workload_profile_end_ts, 
-        [](double v) { return !std::isnan(v); });
-
-    auto gpu_smacts = SelectResourceInfo<decltype(((ResourceInfo*)0)->sm_activity)>(
-        offsetof(ResourceInfo, sm_activity), 
-        workload_profile_start_ts, workload_profile_end_ts,
-        [](double v) { return !std::isnan(v); });
-
-    if (Config::profile_gpu_util) {
-      ofs << "GPU Util: avg " << mean(gpu_utils) << " %"
-          << std::endl;
-    }
-    if (Config::profile_gpu_smact) {
-      ofs << "SM Activity: avg "  << mean(gpu_smacts) * 100 << " %"
-          << std::endl;
-    }
-  }
-
-  ofs << std::endl;
 
   LOG(INFO) << "[Profiler] write prfile info to " << profile_log_path_;
 }
