@@ -38,7 +38,7 @@ df = pd.read_csv(StringIO(memory_info_str), sep=',', header=0, index_col=0)
 memory_transform = lambda x: float(re.search(r'(\d+\.\d+) Mb', x).group(1))
 
 df.columns = df.columns.str.strip()
-print(df.columns)
+# print(df.columns)
 timeline = df.index - df.index[0]
 total_mem = df['TotalMem'].apply(memory_transform)
 train_all_mem = df['TrainAllMem'].apply(memory_transform)

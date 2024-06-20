@@ -3,6 +3,7 @@ import re
 import pandas
 from collections import defaultdict
 import matplotlib.pyplot as plt
+from matplotlib import transforms
 import pathlib
 
 parser = argparse.ArgumentParser('Collect inference latency')
@@ -75,6 +76,10 @@ if slo_output_file is not None:
     ax.set_xlabel('Factor')
     ax.set_ylabel('SLO (%)')
     ax.set_ylim(0, 1)
+    trans = transforms.blended_transform_factory(ax.transData, ax.transAxes)
+    for i in range(len(factor)):
+        ax.text(i, 1.01, f'{slo[factor[i]]:.2f}', va='bottom', ha='center',
+                transform=trans)
     plt.savefig(slo_output_file)
 
 
