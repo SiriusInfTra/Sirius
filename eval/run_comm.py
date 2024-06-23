@@ -115,7 +115,7 @@ def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
     # assert train_epoch is not None, "train_epoch is None"
     if train_epoch is None:
         train_epoch = get_train_epoch(UniformConfig.train_epoch_time, UniformConfig.duration)
-    print(f'Train {train_model} Epoch {train_epoch} Batc {train_batch_size}')
+    print(f'Train {train_model} Epoch {train_epoch} Batch {train_batch_size}')
     workload = HyperWorkload(concurrency=2048,
                              warmup=5,
                              wait_warmup_done_sec=5,
@@ -125,7 +125,7 @@ def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
     if not infer_only:
         workload.set_train_workload(
             train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
-    workload.set_infer_workloads(MicrobenchmarkInferWorkload(
+    workload.set_infer_workloads(MicrobenchmarkInferWorkload_v1(
         model_list=client_model_list,
         interval_sec=UniformConfig.interval_sec, fix_request_sec=rps, rps_fn=rps_fn,
         duration=UniformConfig.duration + workload.infer_extra_infer_sec,
@@ -149,7 +149,7 @@ def skewed(rps, client_model_list, infer_only=True, rps_fn=None,
     if not infer_only:
         workload.set_train_workload(
             train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
-    workload.set_infer_workloads(MicrobenchmarkInferWorkload(
+    workload.set_infer_workloads(MicrobenchmarkInferWorkload_v1(
         model_list=client_model_list,
         interval_sec=SkewedConfig.interval_sec, fix_request_sec=rps, rps_fn=rps_fn,
         zipf_alpha=SkewedConfig.zipf_aplha,
@@ -186,6 +186,7 @@ def _run(system: System, workload: HyperWorkload, server_model_config: str, unit
     time.sleep(5)
     system.draw_memory_usage()
     system.draw_trace_cfg()
+    system.draw_infer_slo()
     system.calcuate_train_thpt()
     
 

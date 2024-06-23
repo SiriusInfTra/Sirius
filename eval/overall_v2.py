@@ -2,6 +2,7 @@ import os
 import argparse
 from runner import *
 from dataclasses import dataclass
+import workload_collections as wkld_coll
 
 set_global_seed(42)
 
@@ -25,6 +26,8 @@ enable_hybrid = False
 # should be false to eval infer-only
 infer_only_without_mps = False
 
+skip_set_mps_pct = False
+
 # args parser
 parser = argparse.ArgumentParser()
 parser.add_argument('--colsys', action='store_true')
@@ -45,6 +48,7 @@ parser.add_argument('--all-workload', action='store_true')
 parser.add_argument('--infer-only-without-mps', action='store_true')
 parser.add_argument('--retry-limit', type=int, default=0)
 parser.add_argument('--azure-rps', type=int, default=150)
+parser.add_argument('--skip-set-mps-pct', action='store_true')
 args = parser.parse_args()
 
 if args.colsys or args.all_sys:
@@ -77,8 +81,11 @@ if args.azure_profile_memory or args.all_workload:
 if args.hybrid or args.all_workload:
     enable_hybrid = True
 
-if args.infer_only_without_mps:
+if args.infer_only_without_mps or args.skip_set_mps_pct:
     infer_only_without_mps = True
+
+if args.skip_set_mps_pct:
+    skip_set_mps_pct = True
 
 retry_limit = args.retry_limit
 retry_if_fail = retry_limit >= 1
@@ -203,7 +210,7 @@ def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
     if not infer_only:
         workload.set_train_workload(
             train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
-    workload.set_infer_workloads(MicrobenchmarkInferWorkload(
+    workload.set_infer_workloads(MicrobenchmarkInferWorkload_v1(
         model_list=client_model_list,
         interval_sec=UniformConfig.interval_sec, fix_request_sec=rps, rps_fn=rps_fn,
         duration=UniformConfig.duration + workload.infer_extra_infer_sec,
@@ -223,7 +230,7 @@ def skewed(rps, client_model_list, infer_only=True, rps_fn=None,
     if not infer_only:
         workload.set_train_workload(
             train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
-    workload.set_infer_workloads(MicrobenchmarkInferWorkload(
+    workload.set_infer_workloads(MicrobenchmarkInferWorkload_v1(
         model_list=client_model_list,
         interval_sec=SkewedConfig.interval_sec, fix_request_sec=rps, rps_fn=rps_fn,
         zipf_alpha=SkewedConfig.zipf_aplha,
@@ -259,7 +266,7 @@ def azure(rps, client_model_list, infer_only=True, rps_fn=None,
 def _run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
     try:
         system.launch(unit, tag, time_stamp=use_time_stamp,
-                    infer_model_config=server_model_config, fake_launch=False)
+                      infer_model_config=server_model_config, fake_launch=False)
         workload.launch_workload(system, fake_launch=False)
         system.stop()
     except Exception as e:
@@ -284,6 +291,7 @@ def _run(system: System, workload: HyperWorkload, server_model_config: str, unit
     time.sleep(5)
     system.draw_memory_usage()
     system.draw_trace_cfg()
+    system.draw_infer_slo()
     system.calcuate_train_thpt()
     
 
@@ -306,7 +314,9 @@ for tag, item in {
         'mode' : System.ServerMode.Normal,
         'use_sta': True,
         'mps': True,
+        'skip_set_mps_thread_percent': skip_set_mps_pct,
         'use_xsched': False,
+        'dynamic_sm_partition': True,
         'has_warmup': True,
         'max_warm_cache_nbytes': int(5.5 * 1024 ** 3),
         'cuda_memory_pool_gb': '7.5',
@@ -316,7 +326,9 @@ for tag, item in {
         'mode' : System.ServerMode.Normal,
         'use_sta': True,
         'mps': True,
+        'skip_set_mps_thread_percent': skip_set_mps_pct,
         'use_xsched': False,
+        'dynamic_sm_partition': True,
         'has_warmup': True,
         'max_warm_cache_nbytes': int(9 * 1024 ** 3),
         'cuda_memory_pool_gb': '10.5',
@@ -397,6 +409,7 @@ if run_colsys:
         'mode' : System.ServerMode.ColocateL1,
         'use_sta' : True, 
         'mps' : True, 
+        'skip_set_mps_thread_percent': skip_set_mps_pct,
         'use_xsched' : True, 
         'has_warmup' : True,
         'ondemand_adjust' : True,
@@ -406,6 +419,7 @@ if run_colsys:
         'cold_cache_ratio': 0.5, 
         'cold_cache_min_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),
         'cold_cache_max_capability_nbytes': int(2 * 1024 * 1024 * 1024),
+        'dynamic_sm_partition': True,
     }
 
     if UniformConfig.enable and UniformConfig.high_load.enable:
@@ -563,6 +577,7 @@ if run_infer_only:
         'mode' : System.ServerMode.Normal,
         'use_sta' : False,
         'mps': True,
+        'skip_set_mps_thread_percent': skip_set_mps_pct,
         'use_xsched': False,
         'has_warmup': True,
     }
@@ -618,8 +633,10 @@ if run_um_mps:
         'mode' : System.ServerMode.Normal,
         'use_sta': False,
         'mps': True,
+        'skip_set_mps_thread_percent': skip_set_mps_pct,
         'use_xsched': False,
         'has_warmup': True,
+        'dynamic_sm_partition': True,
     }
 
     if UniformConfig.enable and UniformConfig.high_load.enable:

@@ -68,6 +68,7 @@ class System:
                  mps: bool = True,
                  skip_set_mps_thread_percent: bool = False,
                  use_xsched: bool = False,
+                 dynamic_sm_partition: bool = False,
                  infer_blob_alloc: bool = False,
                  train_mps_thread_percent: Optional[int] = None,
                  colocate_skip_malloc: bool = False,
@@ -109,6 +110,7 @@ class System:
         self.infer_model_config_path = None
         self.mps = mps
         self.skip_set_mps_thread_percent = skip_set_mps_thread_percent
+        self.dynamic_sm_partition = dynamic_sm_partition
         self.mps_server = None
         self.infer_blob_alloc = infer_blob_alloc
         self.train_mps_thread_percent = train_mps_thread_percent
@@ -259,10 +261,14 @@ class System:
         else:
             cmd += ["--use-xsched", "0"]
         
+        if self.dynamic_sm_partition:
+            cmd += ["--dynamic-sm-partition", "1"]
+        else:
+            cmd += ["--dynamic-sm-partition", "0"]
+
         if self.max_live_minute is not None:
             cmd += ["--max-live-minute", str(self.max_live_minute)]
 
-        self.cmd_trace.append(" ".join(cmd))
         print("\n---------------------------\n")
         print(" ".join(cmd))
 
@@ -290,9 +296,13 @@ class System:
             if self.mps and self.skip_set_mps_thread_percent:
                 print(f'  --> Skip set MPS pct')
             if not self.skip_set_mps_thread_percent and '_CUDA_MPS_ACTIVE_THREAD_PERCENTAGE' in env_copy:
-                # env_copy['CUDA_MPS_ACTIVE_THREAD_PERCENTAGE'] = env_copy['_CUDA_MPS_ACTIVE_THREAD_PERCENTAGE']
-                # print(f"  --> MPS: {env_copy['CUDA_MPS_ACTIVE_THREAD_PERCENTAGE']}")
+                env_copy['CUDA_MPS_ACTIVE_THREAD_PERCENTAGE'] = env_copy['_CUDA_MPS_ACTIVE_THREAD_PERCENTAGE']
+                print(f"  --> MPS: {env_copy['CUDA_MPS_ACTIVE_THREAD_PERCENTAGE']}")
                 pass
+            self.cmd_trace.append(f"CUDA_ENV: "
+                    + f"CUDA_VISIBLE_DEVICES {env_copy.get('CUDA_VISIBLE_DEVICES')}"
+                    + f", CUDA_MPS_ACTIVE_THREAD_PERCENTAGE {env_copy.get('CUDA_MPS_ACTIVE_THREAD_PERCENTAGE')}")
+            self.cmd_trace.append(" ".join(cmd))
             self.server = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=env_copy)
 
         print('\n')
@@ -362,6 +372,11 @@ class System:
 
     def calcuate_train_thpt(self):
         cmd = f'python util/profile/throughput.py --log-dir {self.exit_log_dir} > {self.exit_log_dir}/train_thpt 2>&1'
+        print(f'execute {cmd}')
+        os.system(cmd)
+
+    def draw_infer_slo(self):
+        cmd = f'python util/profile/collect_infer_ltc.py -l {self.exit_log_dir}/workload-log --slo-output {self.exit_log_dir}'
         print(f'execute {cmd}')
         os.system(cmd)
 

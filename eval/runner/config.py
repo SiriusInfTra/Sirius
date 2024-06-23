@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import contextlib
+import hashlib
 
 __global_seed = None
 
@@ -9,6 +10,12 @@ def get_global_seed():
     if __global_seed is None:
         __global_seed = np.random.randint(2<<31)
     return __global_seed
+
+def get_global_seed_by_hash(s:str):
+    seed = get_global_seed()
+    seed = seed + eval('0x' + hashlib.md5(s.encode()).hexdigest()[:4])
+    print(f'{s}, seed = {seed}, global_seed = {get_global_seed()}')
+    return seed
 
 def set_global_seed(seed):
     global __global_seed
