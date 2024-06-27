@@ -45,15 +45,27 @@ timepoints = list(range(max_time))
 
 # print(start_points)
 
-ax = plt.subplot(211)
-ax.bar(timepoints, num_models, color='C0', label='rps')
-# ax.set_xlabel('time(s)')
-ax.set_ylabel('rps')
+fig, axes = plt.subplots(2, 2)
+fig.subplots_adjust(hspace=0.3, wspace=0.3)
 
-ax = plt.subplot(212)
-ax.bar(timepoints, num_types, color='C1', label='num model')
-ax.set_xlabel('time(s)')
-ax.set_ylabel('num_model')
-# plt.legend()
+# RPS
+axes[0][0].bar(timepoints, num_models, color='C0', label='rps')
+axes[0][0].set_ylabel('rps')
+axes[0][0].set_xlabel('time(s)')
+
+# RPS CDF
+axes[0][1].ecdf(num_models, label='RPS CDF')
+axes[0][1].set_xlabel('RPS')
+axes[0][1].set_ylabel('CDF')
+
+# num_models
+axes[1][0].bar(timepoints, num_types, color='C1', label='num model')
+axes[1][0].set_xlabel('time(s)')
+axes[1][0].set_ylabel('num_model')
+
+# num_models CDF
+axes[1][1].ecdf(num_types, label='#model CDF')
+axes[1][1].set_xlabel('#model')
+axes[1][1].set_ylabel('CDF')
 
 plt.savefig(os.path.join(outdir, 'trace.svg'))
