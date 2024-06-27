@@ -174,17 +174,22 @@ void init_config() {
               << colserve::sta::ByteDisplay(cfg::max_warm_cache_nbytes);
   }
 
-  if (!cfg::skip_set_mps_thread_percent && cfg::dynamic_sm_partition) {
-    LOG(FATAL) << "Dynamic partition SM may not work correctly with control of MPS thread percent";
-  }
-
   auto *cuda_device_env = getenv("CUDA_VISIBLE_DEVICES");
-  auto *cuda_mps_env = getenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE");
+  auto *cuda_mps_thread_pct_env = getenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE");
   if (cuda_device_env != nullptr) {
     LOG(INFO) << "ENV::CUDA_VISIBLE_DEVICES: " << cuda_device_env;
   }
-  if (cuda_mps_env != nullptr) {
-    LOG(INFO) << "ENV::CUDA_MPS_ACTIVE_THREAD_PERCENTAGE: " << cuda_mps_env;
+  if (cuda_mps_thread_pct_env != nullptr) {
+    LOG(INFO) << "ENV::CUDA_MPS_ACTIVE_THREAD_PERCENTAGE: " << cuda_mps_thread_pct_env;
+  }
+
+  if (cuda_mps_thread_pct_env == nullptr && cfg::train_mps_thread_percent == -1) {
+    LOG(INFO) << "no CUDA_MPS_ACTIVE_THREAD_PERCENTAGE set, skip set mps thread percent";
+    cfg::skip_set_mps_thread_percent = true;
+  }
+
+  if (!cfg::skip_set_mps_thread_percent && cfg::dynamic_sm_partition) {
+    LOG(FATAL) << "Dynamic partition SM may not work correctly with control of MPS thread percent";
   }
 
   STREAM_OUTPUT(serve_mode);
