@@ -5,30 +5,37 @@ from dataclasses import dataclass
 from numpy.random import MT19937, SeedSequence
 import math
 
+class DistParamBase:
+    pass
 
 @dataclass
-class NormalParam:
+class NormalParam(DistParamBase):
     mean: float
     sigma: float
 
 @dataclass
-class LogNormalParam:
+class LogNormalParam(DistParamBase):
     mean: float
     sigma: float
 
 @dataclass
-class WeibullParam:
+class WeibullParam(DistParamBase):
     shape: float
     scale: float
 
 @dataclass
-class GEVParam:
+class GammaParam(DistParamBase):
+    shape: float
+    scale: float
+
+@dataclass
+class GEVParam(DistParamBase):
     shape: float
     loc: float
     scale: float
 
 @dataclass
-class ZipfParam:
+class ZipfParam(DistParamBase):
     alpha: float
 
 
@@ -50,7 +57,7 @@ class Distribution(DistributionBase):
         super().__init__()
         self.dist_param = dist_param
         self.seed = seed
-        print(dist_param, seed)
+        # print(dist_param, seed)
         self.rs = np.random.RandomState(MT19937(SeedSequence(seed)))
 
         self.dist_fn = None
@@ -62,12 +69,16 @@ class Distribution(DistributionBase):
             raise ValueError(f'Invalid distribution parameter type: {type(dist_param)}')
 
     def get(self):
-        return self.dist_fn(**self.dist_param.__dict__)
+        if isinstance(self.dist_param, WeibullParam):
+            # accroding to numpy, we have to manually set the scale parameter
+            return self.dist_param.scale * self.dist_fn(self.dist_param.shape)
+        else:
+            return self.dist_fn(**self.dist_param.__dict__)
 
 
 class MarkovModulatedDistribution_2(DistributionBase):
     def __init__(self,
-                 dists: list[Distribution],
+                 dists: list[Distribution | DistParamBase],
                  trans_prob: list[float],
                  seed):
         super().__init__()
@@ -77,6 +88,10 @@ class MarkovModulatedDistribution_2(DistributionBase):
         trans_prob = np.array(trans_prob)
         if not np.all((trans_prob >= 0) & (trans_prob <= 1)):
             raise Exception('Invalid transition probability')
+
+        for i in range(len(dists)):
+            if isinstance(dists[i], DistParamBase):
+                dists[i] = Distribution(dists[i], seed)
 
         self.dists = dists
         self.trans_mat = np.array([

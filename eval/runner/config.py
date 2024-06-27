@@ -32,7 +32,7 @@ def unset_mps_thread_percent():
 
 @contextlib.contextmanager
 def mps_thread_percent(percent, skip=False):
-    if skip:
+    if percent is None or skip:
         yield
         return
     else:

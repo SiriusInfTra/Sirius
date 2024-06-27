@@ -717,8 +717,8 @@ class MicrobenchmarkInferWorkload_ModelMajor(MicrobenchmarkInferWorkloadBase):
                              num_request_model_arr: np.ndarray,
                              poisson_param_arr: np.ndarray):
         for i in range(len(num_request_model_arr)):
-            num_request_model_arr[i] = self.request_model_dist.get()
-        acf = np.array([self.acf.get() for _ in range(self.num_period())])
+            num_request_model_arr[i] = min(len(self.model_list), self.request_model_dist.get())
+        acf = np.array([self.acf.get(x) for x in range(self.num_period())])
 
         permute_rs = RandomState(MT19937(SeedSequence(self.rs.randint(1, self.seed+1))))
         while True:
@@ -740,8 +740,11 @@ class MicrobenchmarkInferWorkload_ModelMajor(MicrobenchmarkInferWorkloadBase):
             rps += noise
 
             model_rps = np.zeros(len(self.model_list))
-            model_rps[request_model] = self._split_request(rps, num_request_model, 
-                                                           self.model_hotness[request_model])
+            if self.model_hotness is None:
+                model_rps[request_model] = self._split_request(rps, num_request_model)
+            else:
+                model_rps[request_model] = self._split_request(rps, num_request_model, 
+                                                               self.model_hotness[request_model])
             poisson_param_arr[:, i] = model_rps            
 
 
@@ -765,7 +768,8 @@ class InferTraceDumper:
             # check trace and update trace
             for index, model in enumerate(model_list_local):
                 # TODO support discontinuous sequence of model id
-                assert len(self.infer_workloads) == 1 or index == model.model_id, f"model {model} index {index} not match at {infer_workload}"
+                assert len(self.infer_workloads) == 1 or index == model.model_id, \
+                    f"model {model} index {index} not match at {infer_workload}"
                 model.model_id += len(trace_list)
             trace_list.extend(trace_list_local)
             model_list.extend(model_list_local)
