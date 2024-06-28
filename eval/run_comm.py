@@ -1,7 +1,9 @@
 import os
 import argparse
-from runner import *
 from dataclasses import dataclass
+
+from runner import *
+import workload_collections as wkld_coll
 
 # !!! do not import * from run_comm
 
@@ -75,6 +77,23 @@ class UniformConfig:
     hybrid_load = HybridLoad(enable=False)
 
 
+class UniformConfig_v2:
+    train_model = 'swin_b'
+    train_batch_size = 72
+    train_global_batch_size = 500 # not used, hard code for global batch size and dataset size
+    train_dataset_size = 1000 
+    train_epoch_time = 5.5 # used for predict number epoch
+
+    model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
+                  InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
+                  InferModel.ResNet152, InferModel.DistilGPT2] 
+    num_model = 64
+    interval_sec = 20
+    duration = 120
+    port = str(get_unique_port())
+    enable = enable_uniform
+
+
 class SkewedConfig:
     # train_model = 'gpt2'
     # train_batch_size = 20
@@ -130,6 +149,31 @@ def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
         interval_sec=UniformConfig.interval_sec, fix_request_sec=rps, rps_fn=rps_fn,
         duration=UniformConfig.duration + workload.infer_extra_infer_sec,
     ))
+    return workload
+
+
+def uniform_v2(wkld_type, client_model_list, infer_only=True, train_epoch=None):
+    workload = HyperWorkload(concurrency=2048,
+                             warmup=5,
+                             wait_warmup_done_sec=5,
+                             wait_train_setup_sec=40 ,
+                             wait_stable_before_start_profiling_sec=10)
+    InferModel.reset_model_cnt()
+    if not infer_only:
+        if train_epoch is None:
+            train_model = UniformConfig_v2.train_model
+            train_epoch = get_train_epoch(UniformConfig_v2.train_epoch_time, 
+                                          UniformConfig_v2.duration)
+            train_batch_size = UniformConfig_v2.train_batch_size
+        print(f'Train {train_model} Epoch {train_epoch} Batch {train_batch_size}')
+        workload.set_train_workload(
+            train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
+    if isinstance(wkld_type, str):
+        wkld_type = getattr(wkld_coll, wkld_type)
+    workload.set_infer_workloads(wkld_type(
+        model_list=client_model_list,
+        interval_sec=UniformConfig.interval_sec,
+        duration=UniformConfig.duration + workload.infer_extra_infer_sec))
     return workload
 
 

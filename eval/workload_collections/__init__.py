@@ -1,1 +1,1 @@
-from .normal import NormalA, NormalAConfig
+from .normal import *

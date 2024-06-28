@@ -1,4 +1,4 @@
-import os
+import os, sys
 import abc
 from dataclasses import dataclass
 from typing import List, Optional, NamedTuple, Dict
@@ -96,6 +96,10 @@ class PoissonParam(NamedTuple):
 class InferWorkloadBase(abc.ABC):
     @abc.abstractmethod
     def get_trace(self) -> list[TraceRecord]:
+        pass
+
+    @abc.abstractmethod
+    def summary_trace(self, text_io=None, verbose=False):
         pass
 
 
@@ -371,8 +375,27 @@ class DynamicPoissonInferWorkload(RandomInferWorkload):
                 poisson_params, infer_model, self.rs))
         return trace_record
     
+    def summary_trace(self, text_io=None, verbose=False):
+        if text_io is None:
+            text_io = sys.stdout
+        poisson_param_arr = [poisson_param[1] for poisson_param in self.poisson_params]
+        poisson_param_arr = np.array(poisson_param_arr)[:, :, 1]
+
+        with np.printoptions(precision=1, suppress=True):
+            print('microbenchmark total #request: \n', 
+                  np.array(np.sum(poisson_param_arr, axis=0)), 
+                  file=text_io)
+            print('microbenchmark request #model : \n', 
+                  np.sum(poisson_param_arr > 0, axis=0), 
+                  file=text_io)
+            if verbose:
+                print('microbenchmark model #request: \n', 
+                      np.array(np.sum(poisson_param_arr, axis=1)), 
+                      file=text_io)
+
     @classmethod
-    def get_dynamic_poisson_params(cls, simple_poisson_params: dict[InferModel, list[tuple]]) -> list[tuple[InferModel, list[PoissonParam]]]:
+    def get_dynamic_poisson_params(cls, 
+                                   simple_poisson_params: dict[InferModel, list[tuple]]) -> list[tuple[InferModel, list[PoissonParam]]]:
         poisson_params = []
         for infer_model, req_dist in simple_poisson_params.items():
             if isinstance(infer_model, str):
@@ -490,8 +513,8 @@ class MicrobenchmarkInferWorkload_v1(DynamicPoissonInferWorkload):
                     if (j + 1) % 20 == 0: print_str += '\n'
                 print(print_str, '\n')
         with np.printoptions(precision=1, suppress=True):
-            print('microbenmark total #request: \n', np.array(np.sum(poisson_params_ndarray, axis=0)))
-            print('microbenmark request #model : \n', np.array(num_model_to_requests))
+            print('microbenchmark total #request: \n', np.array(np.sum(poisson_params_ndarray, axis=0)))
+            print('microbenchmark request #model : \n', np.array(num_model_to_requests))
             # print(poisson_params_ndarray)
 
     def _split_request(self, num_request, num_model, alpha=None):
@@ -594,14 +617,17 @@ class MicrobenchmarkInferWorkloadBase(DynamicPoissonInferWorkload):
                     print_str += f'{self.poisson_param_arr[j, i]:>5.2f} '
                     if (j + 1) % 20 == 0: print_str += '\n'
                 print(print_str, '\n')
-        with np.printoptions(precision=1, suppress=True):
-            print('microbenmark total #request: \n', np.sum(self.poisson_param_arr, axis=0))
-            print('microbenmark request #model : \n', self.num_request_model_arr)
-            if verbose:
-                print('microbenmark model #request: \n', np.sum(self.poisson_param_arr, axis=1))
-            # print(poisson_params_ndarray)
-
+        self.summary_trace(verbose=verbose)
         self._build_poisson_params(self.poisson_param_arr)
+
+    def summary_trace(self, text_io=None, verbose=False):
+        if text_io is None:
+            text_io = sys.stdout
+        with np.printoptions(precision=1, suppress=True):
+            print('microbenchmark total #request: \n', np.sum(self.poisson_param_arr, axis=0), file=text_io)
+            print('microbenchmark request #model : \n', self.num_request_model_arr, file=text_io)
+            if verbose:
+                print('microbenchmark model #request: \n', np.sum(self.poisson_param_arr, axis=1), file=text_io)
 
     def total_num_model(self):
         return len(self.model_list)

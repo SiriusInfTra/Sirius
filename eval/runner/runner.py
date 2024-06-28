@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime
 import time
 import numpy as np
-import os
+import os, io
 from os import PathLike
 import pathlib
 import subprocess
@@ -455,7 +455,11 @@ class HyperWorkload:
             trace_cfg = pathlib.Path(server.log_dir) / self.trace_cfg
             InferTraceDumper(self.infer_workloads, trace_cfg).dump()
             infer_trace_args += ["--infer-trace", str(trace_cfg)]
-        
+            
+            string_io = io.StringIO()
+            workload.summary_trace(string_io)
+            server.cmd_trace.append(string_io.getvalue())
+            
         self._launch(server, "workload_launcher", infer_trace_args, **kwargs)
 
     def launch_busy_loop(self, server: System, infer_models: List[InferModel] = None):
