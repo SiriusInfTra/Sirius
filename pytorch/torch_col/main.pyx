@@ -4,13 +4,22 @@ include "./memory.pxi"
 include "./ctrl_stub.pxi"
 include "./sm.pxi"
 
+from libcpp.string cimport string
+
+
 cdef extern from "<csrc/config.h>" namespace "torch_col":
     cdef cppclass TorchColConfig:
         @staticmethod
         void InitConfig(bint)
 
         @staticmethod
-        bint GetDynamicSmPartition()
+        bint EnableDynamicSmPartition()
+
+        @staticmethod
+        bint EnableXsched()
+
+        @staticmethod
+        string GetHookMode()
 
 
 cdef extern from "<csrc/xsched.h>" namespace "torch_col":

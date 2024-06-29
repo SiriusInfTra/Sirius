@@ -16,9 +16,13 @@ class TorchColConfig {
 
   static int dynamic_sm_partition;
 
+  static std::string hook_mode;
+
   static void InitConfig(int use_shared_tensor_);
 
-  static inline int GetDynamicSmPartition() { return dynamic_sm_partition; }
+  static inline std::string GetHookMode() { return hook_mode; }
+  static inline int EnableXsched() { return colocate_use_xsched; }
+  static inline int EnableDynamicSmPartition() { return dynamic_sm_partition; }
   // static inline int GetKillBatchOnRecv() { return kill_batch_on_recv; }
 };
 
