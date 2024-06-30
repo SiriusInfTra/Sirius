@@ -214,27 +214,27 @@ bool TrainLauncher::Train() {
     LOG(FATAL) << "Unsupported serve mode: " << static_cast<int>(Config::serve_mode);
   }
 
-  if (Config::serve_mode == ServeMode::kColocateL1 || Config::serve_mode == ServeMode::kTaskSwitchL1) {
-    if (Config::use_xsched) {
-      args_str.push_back("--hook-mode");
-      args_str.push_back("xsched-sync2");
-      // args_str.push_back("xsched-sync"); # used for dummy adjust
-    } else {
-      args_str.push_back("--hook-mode");
-      args_str.push_back("sync");
-    }
-  } else {
-    args_str.push_back("--hook-mode");
-    args_str.push_back("none");
-  }
+  // if (Config::serve_mode == ServeMode::kColocateL1 || Config::serve_mode == ServeMode::kTaskSwitchL1) {
+  //   if (Config::use_xsched) {
+  //     args_str.push_back("--hook-mode");
+  //     args_str.push_back("xsched-sync2");
+  //     // args_str.push_back("xsched-sync"); # used for dummy adjust
+  //   } else {
+  //     args_str.push_back("--hook-mode");
+  //     args_str.push_back("sync");
+  //   }
+  // } else {
+  //   args_str.push_back("--hook-mode");
+  //   args_str.push_back("none");
+  // }
 
-  if (Config::use_xsched) {
-    args_str.push_back("--use-xsched");
-    args_str.push_back("1");
-  } else {
-    args_str.push_back("--use-xsched");
-    args_str.push_back("0");
-  }
+  // if (Config::use_xsched) {
+  //   args_str.push_back("--use-xsched");
+  //   args_str.push_back("1");
+  // } else {
+  //   args_str.push_back("--use-xsched");
+  //   args_str.push_back("0");
+  // }
 
   args_str.push_back("--train-profile");
   args_str.push_back(Config::train_profile);
@@ -290,35 +290,54 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
       CHECK(std::filesystem::exists(xsched_lib_cuda));
 
       // std::string xsched_preload_path = xsched_path + "lib/libinstrument_sm70.so";
-      
+      CHECK_NE(setenv("COL_USE_XSCHED", "1", 1), -1);
+      extra_env_ss << "COL_USE_XSCHED=1" << " ";
       CHECK_NE(setenv("LD_LIBRARY_PATH", xsched_lib_path.string().c_str(), 1), -1);
       extra_env_ss << "LD_LIBRARY_PATH=" << xsched_lib_path.string() << " ";
       // CHECK_NE(setenv("LD_PRELOAD", xsched_preload_path.c_str(), 1), -1);
       LOG(INFO) << "[TrainLauncher]: enable xsched.";
+    } else {
+      CHECK_NE(setenv("COL_USE_XSCHED", "0", 1), -1);
+      extra_env_ss << "COL_USE_XSCHED=0" << " ";
     }
 
-    CHECK_NE(setenv("HAS_INFER_SERVER", "1", 1), -1);
-    extra_env_ss << "HAS_INFER_SERVER=1" << " ";
+    CHECK_NE(setenv("COL_HAS_INFER_SERVER", "1", 1), -1);
+    extra_env_ss << "COL_HAS_INFER_SERVER=1" << " ";
     if (Config::use_shared_tensor_train) {
-      CHECK_NE(setenv("USE_SHARED_TENSOR", "1", 1), -1);
-      CHECK_NE(setenv("HAS_SHARED_TENSOR_SERVER", "1", 1), -1);
-      CHECK_NE(setenv("SHARED_TENSOR_POOL_GB", std::to_string(Config::cuda_memory_pool_gb).c_str(), 1), -1);
+      CHECK_NE(setenv("COL_USE_SHARED_TENSOR", "1", 1), -1);
+      CHECK_NE(setenv("COL_HAS_SHARED_TENSOR_SERVER", "1", 1), -1);
+      CHECK_NE(setenv("COL_SHARED_TENSOR_POOL_GB", std::to_string(Config::cuda_memory_pool_gb).c_str(), 1), -1);
       CHECK_NE(setenv("SHARED_TENSOR_POOL_FREELIST_POLICY", Config::mempool_freelist_policy.c_str(), 1), -1);
-      extra_env_ss << "USE_SHARED_TENSOR=1"
-                   << " HAS_SHARED_TENSOR_SERVER=1"
-                   << " SHARED_TENSOR_POOL_GB=" << Config::cuda_memory_pool_gb
+      extra_env_ss << "COL_USE_SHARED_TENSOR=1"
+                   << " COL_HAS_SHARED_TENSOR_SERVER=1"
+                   << " COL_SHARED_TENSOR_POOL_GB=" << Config::cuda_memory_pool_gb
                    << " SHARED_TENSOR_POOL_FREELIST_POLICY=" << Config::mempool_freelist_policy 
                    << " ";
       // CHECK_NE(setenv("CUDA_LAUNCH_BLOCKING", "1", 1), -1);
     } else {
-      CHECK_NE(setenv("USE_SHARED_TENSOR", "0", 1), -1);
-      extra_env_ss << "USE_SHARED_TENSOR=0 ";
+      CHECK_NE(setenv("COL_USE_SHARED_TENSOR", "0", 1), -1);
+      extra_env_ss << "COL_USE_SHARED_TENSOR=0 ";
     }
+
+    if (Config::serve_mode == ServeMode::kColocateL1 || Config::serve_mode == ServeMode::kTaskSwitchL1) {
+      if (Config::use_xsched) {
+        CHECK_NE(setenv("COL_HOOK_MODE", "xsched-sync2", 1), -1);
+        extra_env_ss << "COL_HOOK_MODE=xsched-sync2 ";
+        // use xsched-sync for dummy adjust
+      } else {
+        CHECK_NE(setenv("COL_HOOK_MODE", "sync", 1), -1);
+        extra_env_ss << "COL_HOOK_MODE=sync ";
+      }
+    } else {
+      CHECK_NE(setenv("COL_HOOK_MODE", "none", 1), -1);
+      extra_env_ss << "COL_HOOK_MODE=none ";
+    }
+
     if (Config::skip_set_mps_thread_percent) {
       LOG(INFO) << "[TrainLauncher]: skip set CUDA_MPS_ACTIVE_THREAD_PERCENTAGE";
       if (Config::dynamic_sm_partition) {
-        CHECK_NE(setenv("DYNAMIC_SM_PARTITION", "1", 1), -1);
-        extra_env_ss << "DYNAMIC_SM_PARTITION=1";
+        CHECK_NE(setenv("COL_DYNAMIC_SM_PARTITION", "1", 1), -1);
+        extra_env_ss << "COL_DYNAMIC_SM_PARTITION=1";
       }
     } else if (Config::train_mps_thread_percent >= 0 && Config::train_mps_thread_percent <= 100) {
       CHECK_NE(setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", 

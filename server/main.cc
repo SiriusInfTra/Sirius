@@ -68,6 +68,12 @@ void init_cli_options() {
       "infer model config path, default is config in models store");
   app.add_option("--profile-log", colserve::Config::profile_log_path, 
       "profile log path, default is server-profile");
+  app.add_option("--profile-gpu-smact", colserve::Config::profile_gpu_smact, 
+      "profile gpu smact, default is " + std::to_string(colserve::Config::profile_gpu_smact));
+  app.add_option("--profile-gpu-util", colserve::Config::profile_gpu_util, 
+      "profile gpu util, default is " + std::to_string(colserve::Config::profile_gpu_util));
+  app.add_option("--profile-sm-partition", colserve::Config::profile_sm_partition, 
+      "profile sm partition, default is " + std::to_string(colserve::Config::profile_sm_partition));
   app.add_option("--capture-train-log", colserve::Config::capture_train_log, 
       "capture train log, default is 1");
   app.add_flag("--infer-blob-alloc", colserve::Config::infer_raw_blob_alloc, 
@@ -191,11 +197,15 @@ void init_config() {
   if (!cfg::skip_set_mps_thread_percent && cfg::dynamic_sm_partition) {
     LOG(FATAL) << "Dynamic partition SM may not work correctly with control of MPS thread percent";
   }
+  if (cfg::dynamic_sm_partition && !cfg::use_xsched) {
+    LOG(FATAL) << "Dynamic partition SM must work with xsched";
+  }
 
   STREAM_OUTPUT(serve_mode);
   STREAM_OUTPUT(use_shared_tensor);
   STREAM_OUTPUT(use_shared_tensor_infer);
   STREAM_OUTPUT(use_shared_tensor_train);
+  STREAM_OUTPUT(use_xsched);
   STREAM_OUTPUT(cuda_memory_pool_gb);
   STREAM_OUTPUT(ondemand_adjust);
   STREAM_OUTPUT(better_alloc);

@@ -209,7 +209,8 @@ Profiler::Profiler(const std::string &profile_log_path)
     CUDA_CALL(cudaSetDevice(0));
 
     if (Config::profile_gpu_smact || Config::profile_gpu_util) {
-      char dcgm_group_name[] = "dcgm_colserve";
+      char dcgm_group_name[128]; // = "dcgm_colserve";
+      snprintf(dcgm_group_name, sizeof(dcgm_group_name), "dcgm_colserve_%d", pid);
       DCGM_CALL(dcgmGroupCreate(this->dcgm_handle_, DCGM_GROUP_EMPTY, 
                                 dcgm_group_name, &this->dcgm_gpu_grp_));
       dcgmGroupInfo_t group_info;

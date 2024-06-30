@@ -73,5 +73,6 @@ add_custom_command(
     "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/sm.pxi"
     "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/ctrl_stub.pxi"
     "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/ctrl_stub.pxd"
+    "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/main.pyx"
     ${TORCH_COL_PYTHON_FILES}
 )

@@ -46,7 +46,7 @@ class EngineColocateAdjustL1Exception(Exception):
 
 def __setup_torch_col():
     import os, sys
-    if os.environ.get('USE_SHARED_TENSOR', '0') == '1':
+    if os.environ.get('COL_USE_SHARED_TENSOR', '0') == '1':
         global __use_shared_tensor
         __use_shared_tensor = 1
     torch_col_init(use_shared_tensor())

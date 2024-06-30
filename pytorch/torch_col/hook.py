@@ -5,6 +5,7 @@ import time
 
 import torch
 import torch_col
+from torch_col._C import HookMode
 from .util import TrainMode, EventManager, MemoryPool
 from . import xsched
 from typing import List
@@ -23,15 +24,15 @@ def register_saved_tensor_hook():
         torch._C._autograd._push_saved_tensors_default_hooks(pack_hook, unpack_hook)
 
 
-class HookMode(Enum):
-    NONE = 'none'
-    SYNC = 'sync'
-    # XSCHED_ASYNC_SIGNAL = 'xsched-async-signal'  
-    XSCHED_SYNC = 'xsched-sync'
-    XSCHED_SYNC2 = 'xsched-sync2'
+# class HookMode(Enum):
+#     NONE = 'none'
+#     SYNC = 'sync'
+#     # XSCHED_ASYNC_SIGNAL = 'xsched-async-signal'  
+#     XSCHED_SYNC = 'xsched-sync'
+#     XSCHED_SYNC2 = 'xsched-sync2'
     
-    def use_xsched(self):
-        return self in {HookMode.XSCHED_SYNC, HookMode.XSCHED_SYNC2}
+#     def use_xsched(self):
+        # return self in {HookMode.XSCHED_SYNC, HookMode.XSCHED_SYNC2}
 
 
 class HookABC(abc.ABC):
