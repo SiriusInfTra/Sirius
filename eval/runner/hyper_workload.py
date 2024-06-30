@@ -694,6 +694,15 @@ class MicrobenchmarkInferWorkload_RpsMajor(MicrobenchmarkInferWorkloadBase):
         super().__init__(model_list, interval_sec, 
                          duration=duration,
                          period_num=num_period, **kargs)
+        
+    def __repr__(self) -> str:
+        return f'''MicrobenchmarkInferWorkload_RpsMajor(
+    rps_dist={self.rps_dist}, 
+    acf={self.acf}, 
+    acf_mse_err={self.acf_mse_err}, 
+    interval={self.interval_sec}sec, 
+    duration={self.duration}sec,
+    ...)'''
     
     def _gen_poission_params(self,
                              num_request_model_arr: np.ndarray,
@@ -739,11 +748,21 @@ class MicrobenchmarkInferWorkload_ModelMajor(MicrobenchmarkInferWorkloadBase):
                         duration=duration,
                         period_num=num_period, **kargs)
         
+    def __repr__(self) -> str:
+        return f'''MicrobenchmarkInferWorkload_ModelMajor(
+    request_model_dist={self.request_model_dist},
+    rps_dist={self.rps_dist},
+    acf={self.acf},
+    acf_mse_err={self.acf_mse_err},
+    interval={self.interval_sec}sec,
+    duration={self.duration}sec,
+    ...)'''
+        
     def _gen_poission_params(self,
                              num_request_model_arr: np.ndarray,
                              poisson_param_arr: np.ndarray):
         for i in range(len(num_request_model_arr)):
-            num_request_model_arr[i] = min(len(self.model_list), self.request_model_dist.get())
+            num_request_model_arr[i] = min(len(self.model_list), int(self.request_model_dist.get() + 0.5))
         acf = np.array([self.acf.get(x) for x in range(self.num_period())])
 
         permute_rs = RandomState(MT19937(SeedSequence(self.rs.randint(1, self.seed+1))))

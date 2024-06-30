@@ -14,7 +14,7 @@ def get_global_seed():
 def get_global_seed_by_hash(s:str):
     seed = get_global_seed()
     seed = seed + eval('0x' + hashlib.md5(s.encode()).hexdigest()[:4])
-    print(f'{s}, seed = {seed}, global_seed = {get_global_seed()}')
+    # print(f'{s}, seed = {seed}, global_seed = {get_global_seed()}')
     return seed
 
 def set_global_seed(seed):

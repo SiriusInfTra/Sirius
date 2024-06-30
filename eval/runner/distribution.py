@@ -67,6 +67,9 @@ class Distribution(DistributionBase):
                 break
         if self.dist_fn is None:
             raise ValueError(f'Invalid distribution parameter type: {type(dist_param)}')
+        
+    def __repr__(self) -> str:
+        return f'[{self.dist_param} seed={self.seed}]'
 
     def get(self):
         if isinstance(self.dist_param, WeibullParam):
@@ -102,6 +105,9 @@ class MarkovModulatedDistribution_2(DistributionBase):
         self.seed = seed
         self.rs = np.random.RandomState(MT19937(SeedSequence(seed)))
         self.state = 0
+    
+    def __repr__(self) -> str:
+        return f'Markov({self.dists[0]} {self.trans_mat[0]}, {self.dists[1]} {self.trans_mat[1]} seed={self.seed})'
 
     def get(self):
         dist = self.dists[self.state]
@@ -118,10 +124,22 @@ class AutoCorrelationGenerator:
     def __init__(self, decay_type, period,
                  exp_decay_param = None,
                  inverse_decay_param = None):
+        self.decay_type = decay_type
+        self.exp_decay_param = exp_decay_param
+        self.inverse_decay_param = inverse_decay_param
+        self.period = period
         if decay_type == 'exp':
             self.decay_fn = self.exp_decay_fn(exp_decay_param, period)
         elif decay_type == 'inverse':
             self.decay_fn = self.inverse_decay_fn(inverse_decay_param, period)
+        else:
+            raise ValueError('Invalid decay type')
+        
+    def __repr__(self) -> str:
+        if self.decay_type == 'exp':
+            return f'ACF([exp {self.exp_decay_param}] period={self.period})'
+        elif self.decay_type == 'inverse':
+            return f'ACF([inverse {self.inverse_decay_param}] period={self.period})'
         else:
             raise ValueError('Invalid decay type')
 

@@ -86,6 +86,9 @@ class System:
                  dump_adjust_info: bool = False, # used for adjust break down
                  profiler_acquire_resource_lock: bool = False, # used for better profiling memory
                  enable_warm_cache_fallback: bool = True, # used for switch and colocate mode
+                 profile_gpu_smact: bool = True,
+                 profile_gpu_util: bool = True,
+                 profile_sm_partition: bool = True,
                  dummy_adjust: bool = False,
                  keep_last_time_stamp: bool = True,
                  max_live_minute: Optional[int] = None) -> None:
@@ -137,10 +140,7 @@ class System:
             System._last_time_stamp = self.time_stamp
         else:
             self.time_stamp = System._last_time_stamp
-        if use_xsched and not (self.mode in {System.ServerMode.ColocateL1, System.ServerMode.TaskSwitchL1}):
-            raise RuntimeError('xsched is only available for ColocateL1 and TaskSwitchL1')
         self.use_xsched = use_xsched
-            
 
     def next_time_stamp(self):
         self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
@@ -194,10 +194,13 @@ class System:
                 "sudo", "/opt/mps-control/launch-mps-daemon-private.sh",
                 "--device", os.environ['CUDA_VISIBLE_DEVICES'], "--mps-pipe", os.environ['CUDA_MPS_PIPE_DIRECTORY']
             ]))
-            self.mps_server = subprocess.Popen(
-                ['sudo', '/opt/mps-control/launch-mps-daemon-private.sh',
-                 '--device', os.environ['CUDA_VISIBLE_DEVICES'], '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']],
-                stderr=subprocess.PIPE, stdout=subprocess.PIPE, env=os.environ.copy())
+            if not fake_launch:
+                self.mps_server = subprocess.Popen(
+                    ['sudo', '/opt/mps-control/launch-mps-daemon-private.sh',
+                    '--device', os.environ['CUDA_VISIBLE_DEVICES'], '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']],
+                    stderr=subprocess.PIPE, stdout=subprocess.PIPE, env=os.environ.copy())
+            else:
+                self.mps_server is None
         else:
             cmd += ["--mps", "0"]
             self.mps_server = None
@@ -260,7 +263,7 @@ class System:
             cmd += ["--use-xsched", "1"]
         else:
             cmd += ["--use-xsched", "0"]
-        
+
         if self.dynamic_sm_partition:
             cmd += ["--dynamic-sm-partition", "1"]
         else:
@@ -455,11 +458,15 @@ class HyperWorkload:
             trace_cfg = pathlib.Path(server.log_dir) / self.trace_cfg
             InferTraceDumper(self.infer_workloads, trace_cfg).dump()
             infer_trace_args += ["--infer-trace", str(trace_cfg)]
-            
-            string_io = io.StringIO()
-            workload.summary_trace(string_io)
-            server.cmd_trace.append(string_io.getvalue())
-            
+
+            # record workload summary
+            with io.StringIO() as string_io:
+                print("WORKLOAD_SUMMARY:", file=string_io)
+                for workload in self.infer_workloads:
+                    print(f'{workload}', file=string_io)
+                    workload.summary_trace(string_io)
+                    server.cmd_trace.append(string_io.getvalue())
+
         self._launch(server, "workload_launcher", infer_trace_args, **kwargs)
 
     def launch_busy_loop(self, server: System, infer_models: List[InferModel] = None):
