@@ -3,6 +3,7 @@ import argparse
 from runner import *
 from dataclasses import dataclass
 import workload_collections as wkld_coll
+import run_comm
 
 set_global_seed(42)
 
@@ -23,10 +24,17 @@ enable_azure = False
 enable_azure_profile_memory = False
 enable_hybrid = False
 
+enable_uniform_v2 = False
+uniform_v2_workload_types = [
+    'NormalA', 
+    'NormalB',
+]
+
 # should be false to eval infer-only
 infer_only_without_mps = False
 
 skip_set_mps_pct = False
+dynamic_sm_partition = True
 
 # args parser
 parser = argparse.ArgumentParser()
@@ -38,6 +46,7 @@ parser.add_argument('--static-partition-i', action='store_true')
 parser.add_argument('--static-partition-f', action='store_true')
 parser.add_argument('--infer-only', action='store_true')
 parser.add_argument('--uniform', action='store_true')
+parser.add_argument('--uniform-v2', action='store_true')
 parser.add_argument('--skewed', action='store_true')
 parser.add_argument('--hybrid', action='store_true')
 parser.add_argument('--strawman', action='store_true')
@@ -72,6 +81,8 @@ if args.infer_only or args.all_sys:
 
 if args.uniform or args.all_workload:
     enable_uniform = True
+if args.uniform_v2 or args.all_workload:
+    enable_uniform_v2 = True
 if args.skewed or args.all_workload:
     enable_skewed = True
 if args.azure or args.all_workload:
@@ -86,6 +97,9 @@ if args.infer_only_without_mps or args.skip_set_mps_pct:
 
 if args.skip_set_mps_pct:
     skip_set_mps_pct = True
+
+if not skip_set_mps_pct:
+    dynamic_sm_partition = False
 
 retry_limit = args.retry_limit
 retry_if_fail = retry_limit >= 1
@@ -143,9 +157,9 @@ class UniformConfig:
     port = str(get_unique_port())
     enable = enable_uniform
 
-    low_load = LowLoad(enable=True)
+    low_load = LowLoad(enable=False)
     high_load = HighLoad(enable=True)
-    hybrid_load = HybridLoad(enable=True)
+    hybrid_load = HybridLoad(enable=False)
 
 
 class SkewedConfig:
@@ -170,9 +184,9 @@ class SkewedConfig:
     port = str(get_unique_port())
     enable = enable_skewed
 
-    low_load = LowLoad(enable=True)
+    low_load = LowLoad(enable=False)
     high_load = HighLoad(enable=True)
-    hybrid_load = HybridLoad(enable=True)
+    hybrid_load = HybridLoad(enable=False)
 
 
 class AzureConfig:
@@ -315,11 +329,11 @@ for tag, item in {
         'use_sta': True,
         'mps': True,
         'skip_set_mps_thread_percent': skip_set_mps_pct,
-        'use_xsched': False,
-        'dynamic_sm_partition': True,
+        'use_xsched': True,
+        'dynamic_sm_partition': dynamic_sm_partition,
         'has_warmup': True,
         'max_warm_cache_nbytes': int(5.5 * 1024 ** 3),
-        'cuda_memory_pool_gb': '7.5',
+        'cuda_memory_pool_gb': '7',
         'use_sta_train': False
     }, {'train_batch_size': 32, 'epoch_time': 5.5}),
     'I': ({
@@ -327,8 +341,8 @@ for tag, item in {
         'use_sta': True,
         'mps': True,
         'skip_set_mps_thread_percent': skip_set_mps_pct,
-        'use_xsched': False,
-        'dynamic_sm_partition': True,
+        'use_xsched': True,
+        'dynamic_sm_partition': dynamic_sm_partition,
         'has_warmup': True,
         'max_warm_cache_nbytes': int(9 * 1024 ** 3),
         'cuda_memory_pool_gb': '10.5',
@@ -366,6 +380,15 @@ for tag, item in {
             system = System(train_mps_thread_percent=UniformConfig.low_load.mps_train,
                             port=UniformConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-uniform", f"static-partition-low-{tag}")
+
+    if enable_uniform_v2:
+        for wkld_type in uniform_v2_workload_types:
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                UniformConfig.model_list, UniformConfig.num_model, 1)
+            workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
+            system = System(port=run_comm.UniformConfig_v2.port, **system_config)
+            run_comm.run(system, workload, server_model_config, 
+                         "overall-uniform-v2", f'static-partition-{wkld_type}-{tag}')
 
     if SkewedConfig.enable and SkewedConfig.high_load.enable:
         with mps_thread_percent(SkewedConfig.high_load.mps_infer):
@@ -410,16 +433,16 @@ if run_colsys:
         'use_sta' : True, 
         'mps' : True, 
         'skip_set_mps_thread_percent': skip_set_mps_pct,
-        'use_xsched' : True, 
+        'use_xsched' : True,
         'has_warmup' : True,
         'ondemand_adjust' : True,
-        'cuda_memory_pool_gb' : "13.5",
+        'cuda_memory_pool_gb' : "13",
         'train_memory_over_predict_mb' : 1500,
         'infer_model_max_idle_ms' : 5000,
         'cold_cache_ratio': 0.5, 
         'cold_cache_min_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),
         'cold_cache_max_capability_nbytes': int(2 * 1024 * 1024 * 1024),
-        'dynamic_sm_partition': True,
+        'dynamic_sm_partition': dynamic_sm_partition,
     }
 
     if UniformConfig.enable and UniformConfig.high_load.enable:
@@ -455,6 +478,14 @@ if run_colsys:
                             **system_config)
             run(system, workload, server_model_config, "overall-uniform", "colsys-hybrid")
 
+    if enable_uniform_v2:
+        for wkld_type in uniform_v2_workload_types:
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                UniformConfig.model_list, UniformConfig.num_model, 1)
+            workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
+            system = System(port=run_comm.UniformConfig_v2.port, **system_config)
+            run_comm.run(system, workload, server_model_config, 
+                         "overall-uniform-v2", f'colsys-{wkld_type}')
 
     if SkewedConfig.enable and SkewedConfig.high_load.enable:
         with mps_thread_percent(SkewedConfig.high_load.mps_infer):
@@ -546,6 +577,15 @@ if run_task_switch:
         system = System(port=UniformConfig.port, **system_config)
         run(system, workload, server_model_config, "overall-uniform", "task-switch-low")
 
+    if enable_uniform_v2:
+        for wkld_type in uniform_v2_workload_types:
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                UniformConfig.model_list, UniformConfig.num_model, 1)
+            workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
+            system = System(port=run_comm.UniformConfig_v2.port, **system_config)
+            run_comm.run(system, workload, server_model_config, 
+                         "overall-uniform-v2", f'task-switch-{wkld_type}')
+
     if SkewedConfig.enable and SkewedConfig.high_load.enable:
         client_model_list, server_model_config = InferModel.get_multi_model(
             SkewedConfig.model_list, SkewedConfig.num_model, 1)
@@ -636,7 +676,7 @@ if run_um_mps:
         'skip_set_mps_thread_percent': skip_set_mps_pct,
         'use_xsched': False,
         'has_warmup': True,
-        'dynamic_sm_partition': True,
+        'dynamic_sm_partition': dynamic_sm_partition,
     }
 
     if UniformConfig.enable and UniformConfig.high_load.enable:
