@@ -116,25 +116,30 @@ class ColdModelCache {
    * @param total_nbytes The total size of the cache item in bytes.
    * @param source_model The loading model that causes pushing cache item.
    * @param lock The unique lock used to synchronize access to the infer model store.
-   * @return A tuple containing the vector of group sizes, a vector of pairs representing the names and group sizes,
+   * @return A tuple containing the vector of group sizes, 
+   *         a vector of pairs representing the names and group sizes,
    *         and a boolean indicating the success of the operation.
    */
   std::tuple<std::vector<size_t>, std::vector<std::pair<std::string, std::vector<size_t>>>, bool>
-  PushCacheItem(const std::string& name, size_t rank, std::vector<size_t> groups_nbytes, size_t total_nbytes, 
-                                                        std::unique_lock<std::mutex> &lock, Model *source_model);
+  PushCacheItem(const std::string& name, size_t rank, 
+                std::vector<size_t> groups_nbytes, size_t total_nbytes, 
+                std::unique_lock<std::mutex> &lock, Model *source_model);
 
 
   /**
    * @brief Pops a cache item from the infer model store.
    *
-   * This function removes and returns a cache item identified by the given name and rank from the infer model store.
+   * This function removes and returns a cache item identified by 
+   * the given name and rank from the infer model store.
    *
    * @param name The name of the cache item to pop.
    * @param rank The rank of the cache item to pop.
    * @param lock A unique lock that ensures thread safety during the operation.
-   * @return A pair containing the vector of sizes associated with the cache item and a boolean indicating whether the pop operation was successful.
+   * @return A pair containing the vector of sizes associated with the cache item 
+   *         and a boolean indicating whether the pop operation was successful.
    */
-  std::pair<std::vector<size_t>, bool> PopCacheItem(const std::string& name, size_t rank, std::unique_lock<std::mutex> &lock);
+  std::pair<std::vector<size_t>, bool> 
+  PopCacheItem(const std::string& name, size_t rank, std::unique_lock<std::mutex> &lock);
 
   /**
    * Retrieves the list of models that are eligible for eviction from the infer model store.
@@ -144,7 +149,8 @@ class ColdModelCache {
    * @param lock A unique lock on the mutex.
    * @return The list of models that should be evicted.
    */
-  evict_list GetEvictModels(long capacity, std::array<Model*, 2> ignore_models, std::unique_lock<std::mutex>& lock);
+  evict_list GetEvictModels(long capacity, std::array<Model*, 2> ignore_models, 
+                            std::unique_lock<std::mutex>& lock);
 
 
   std::unique_lock<std::mutex> Lock() {
