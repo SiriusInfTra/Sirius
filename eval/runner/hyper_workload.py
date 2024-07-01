@@ -767,6 +767,7 @@ class MicrobenchmarkInferWorkload_ModelMajor(MicrobenchmarkInferWorkloadBase):
         acf = np.array([self.acf.get(x) for x in range(self.num_period())])
 
         permute_rs = RandomState(MT19937(SeedSequence(self.rs.randint(1, self.seed+1))))
+        noise_rs = RandomState(MT19937(SeedSequence(self.rs.randint(1, self.seed+1))))
         while True:
             cur_acf = dist.normalized_acf(num_request_model_arr)
             mse = np.mean((cur_acf - acf) ** 2) / np.mean(acf ** 2)
@@ -782,7 +783,7 @@ class MicrobenchmarkInferWorkload_ModelMajor(MicrobenchmarkInferWorkloadBase):
             else:
                 scale_factor = np.sum(self.model_hotness[request_model]) / np.sum(self.model_hotness)
             rps = rps * scale_factor
-            noise = self.rs.normal(0, 0.1 * rps)
+            noise = noise_rs.normal(0, 0.1 * rps)
             rps += noise
             rps = max(0, rps)
 

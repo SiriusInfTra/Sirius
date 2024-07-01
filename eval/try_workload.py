@@ -5,7 +5,7 @@ import workload_collections as wkld_coll
 import run_comm
 
 
-run_comm.use_time_stamp = False
+run_comm.use_time_stamp = True
 run_comm.retry_if_fail = True
 run_comm.retry_limit = 3
 run_comm.fake_launch = False
