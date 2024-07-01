@@ -8,7 +8,7 @@ import run_comm
 run_comm.use_time_stamp = False
 run_comm.retry_if_fail = True
 run_comm.retry_limit = 3
-run_comm.fake_launch = True
+run_comm.fake_launch = False
 
 run_comm.UniformConfig_v2.duration = 300
 run_comm.UniformConfig_v2.interval_sec = 20
