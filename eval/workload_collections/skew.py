@@ -1,21 +1,23 @@
 from runner import *
 import runner.distribution as dist
 from . import normal
-import typing
+from typing import Callable, Dict, Optional
 import inspect
 
 
 def get_model_hotness(zipf_alpha:float, num_models:int, 
-                      seed:Optional[int]=None, sample_size:int=10000):
+                      seed:Optional[int]=None, sample_size:int=100000):
     if seed is None:
         # we can get same hotness for different workloads
         seed = get_global_seed_by_hash("model_hotness")
     rs = np.random.RandomState(MT19937(SeedSequence(seed)))
+    print(f'zipf_alpha: {zipf_alpha}, sample size: {sample_size} num_models {num_models}')
     zipf_seq = rs.zipf(zipf_alpha, sample_size)
     zipf_freq = np.zeros(1 + num_models)
     for i in zipf_seq:
         if i <= num_models:
             zipf_freq[i] += 1
+    # print(f'zipf_freq: {zipf_freq}')
     zipf_freq = zipf_freq[1:]
     zipf_freq = zipf_freq / sum(zipf_freq)
     zipf_freq = rs.permutation(zipf_freq)
@@ -113,8 +115,10 @@ def skew_model_major(name):
     return register_config
 
 
-def get_all_skew_workload(name_filter:str=None, 
-                            base_type_filter:type=None) -> Dict:
+def get_all_skew_workload(
+        name_filter:str=None, 
+        base_type_filter:type=None) \
+        -> Dict[str, Callable[[], MicrobenchmarkInferWorkload_RpsMajor | MicrobenchmarkInferWorkload_ModelMajor]]:
     wkld_dict = {}
     for cfg_name, obj in inspect.getmembers(sys.modules[__name__]):
         try:
@@ -122,9 +126,13 @@ def get_all_skew_workload(name_filter:str=None,
                 if name_filter is not None and not re.search(name_filter, cfg_name):
                     continue
                 if base_type_filter is not None and not issubclass(obj, base_type_filter):
-                    continue                    
-                wkld_name = re.search(r"(.*)Config", obj.__name__).group(1)
+                    continue
+                m = re.search(r"(.*)Config$", obj.__name__)
+                if m is None:
+                    continue
+                wkld_name = m.group(1)
                 wkld_dict[wkld_name] = getattr(sys.modules[__name__], wkld_name)
+                # print(f'get {wkld_name} {wkld_dict[wkld_name]} from {cfg_name}')
         except TypeError:
             pass
     return wkld_dict
@@ -142,7 +150,7 @@ def construct_skew_config_from_normal(
             super(type(self), self).__init__(
                 zipf_alpha=zipf_alpha,
                 seed=normal_config.seed,
-                rps_dist=normal_config.rps_dist,
+                rps_dist=normal_config.rps_dist.copy(),
                 acf=normal_config.acf,
                 acf_mse_err=normal_config.acf_mse_err
             )
@@ -152,13 +160,13 @@ def construct_skew_config_from_normal(
         skew_rps_major(wkld_type)(skew_config_cls)
         return skew_config_cls
     elif isinstance(normal_config, normal.NormalModelMajorConfigBase):
-        assert parents == (SkewRpsMajorConfigBase, )
+        assert parents == (SkewModelMajorConfigBase, )
         def init_fn(self):
             super(type(self), self).__init__(
                 zipf_alpha=zipf_alpha,
                 seed=normal_config.seed,
-                request_model_dist=normal_config.request_model_dist,
-                rps_dist=normal_config.rps_dist,
+                request_model_dist=normal_config.request_model_dist.copy(),
+                rps_dist=normal_config.rps_dist.copy(),
                 acf=normal_config.acf,
                 acf_mse_err=normal_config.acf_mse_err
             )
@@ -174,7 +182,7 @@ def construct_skew_config_from_normal(
 
 # construct skew config from normal config
 def construct_skew_configs(zipf_alpha:float):
-    for object in inspect.getmembers(normal):
+    for obj_name, object in inspect.getmembers(normal):
         try:
             if not issubclass(object, (normal.NormalRpsMajorConfigBase, normal.NormalModelMajorConfigBase)):
                 continue
@@ -183,11 +191,13 @@ def construct_skew_configs(zipf_alpha:float):
             else:
                 parents = (SkewModelMajorConfigBase, )
 
-            cls_name = object.__name__.replace('Normal', 'Skew')
+            assert re.search(r'^Normal', obj_name)
+            cls_name = re.sub(r'^Normal', 'Skew', obj_name)
             skew_config_cls = construct_skew_config_from_normal(
                 cls_name, parents, {}, 
                 zipf_alpha=zipf_alpha, 
                 normal_config=object())
             setattr(sys.modules[__name__], cls_name, skew_config_cls)
+            # print(f'construct {cls_name} by {object.__name__}')
         except TypeError:
             pass

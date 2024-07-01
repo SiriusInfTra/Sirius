@@ -5,6 +5,7 @@ import inspect
 sys.path.append('./eval')
 from runner import *
 
+from typing import Callable, Union
 
 def NormalRpsMajor(config:NormalRpsMajorConfigBase, 
                    model_list, interval_sec, duration, **kargs):
@@ -132,8 +133,10 @@ def normal_model_major(name):
     return register_config
 
 
-def get_all_normal_workload(name_filter:str=None, 
-                            base_type_filter:type=None) -> Dict:
+def get_all_normal_workload(
+        name_filter:str=None, 
+        base_type_filter:type=None) \
+        -> Dict[str, Callable[[], MicrobenchmarkInferWorkload_RpsMajor | MicrobenchmarkInferWorkload_ModelMajor]]:
     wkld_dict = {}
     for cfg_name, obj in inspect.getmembers(sys.modules[__name__]):
         try:
@@ -141,8 +144,11 @@ def get_all_normal_workload(name_filter:str=None,
                 if name_filter is not None and not re.search(name_filter, cfg_name):
                     continue
                 if base_type_filter is not None and not issubclass(obj, base_type_filter):
-                    continue                    
-                wkld_name = re.search(r"(.*)Config", obj.__name__).group(1)
+                    continue
+                m = re.search(r"(.*)Config$", obj.__name__)
+                if m is None:
+                    continue
+                wkld_name = m.group(1)
                 wkld_dict[wkld_name] = getattr(sys.modules[__name__], wkld_name)
         except TypeError:
             pass
@@ -190,7 +196,7 @@ class NormalModelMajorConfigBase:
     acf_mse_err={self.acf_mse_err})'''
 
 
-# MARK: Normal RPS Major
+# MARK: 1.1. Normal RPS Major
 @normal_rps_major("NormalA")
 class NormalAConfig(NormalRpsMajorConfigBase):
     def __init__(self) -> None:
@@ -284,6 +290,7 @@ class Normal_Weibull_DConfig(NormalRpsMajorConfigBase):
             0.4
         )
 
+# MARK: 1.2. +Markov
 @normal_rps_major("Normal_Markov_LogNormal_AB")
 class Normal_Markov_LogNormal_ABConfig(
         NormalRpsMajorConfigBase, metaclass=combine_rps_major_config_by_markov,
@@ -402,7 +409,7 @@ class NormalBConfig(NormalRpsMajorConfigBase):
         self.acf_mse_err = 0.35
 
 
-# MARK: Normal Model Major
+# MARK: 2.1. Normal Model Major
 @normal_model_major("Normal_Model_LogNormal_A")
 class Normal_Model_LogNormal_AConfig(NormalModelMajorConfigBase):
     def __init__(self):
@@ -492,7 +499,7 @@ class Normal_Model_Weibull_DConfig(NormalModelMajorConfigBase):
             acf_mse_err=0.3
         )
 
-
+# MARK: 2.2. +Markov
 @normal_model_major("Normal_Model_Markov_LogNormal_AB")
 class Normal_Model_Markov_LogNormal_ABConfig(NormalModelMajorConfigBase, 
         metaclass=combine_model_major_config_by_markov,

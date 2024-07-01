@@ -9,6 +9,7 @@ def get_global_seed():
     global __global_seed
     if __global_seed is None:
         __global_seed = np.random.randint(2<<31)
+        print(f'\x1b[33;1mWARNING: global seed is not set, set to {__global_seed}\x1b[0m')
     return __global_seed
 
 def get_global_seed_by_hash(s:str):

@@ -567,7 +567,7 @@ class MicrobenchmarkInferWorkloadBase(DynamicPoissonInferWorkload):
         self.sequential_choose_model = sequential_choose_model
 
         if model_hotness is not None:
-            self.model_hotness = np.array(self.model_hotness)
+            self.model_hotness = np.array(model_hotness)
         else:
             self.model_hotness = None
 
@@ -652,6 +652,7 @@ class MicrobenchmarkInferWorkloadBase(DynamicPoissonInferWorkload):
         if self.model_hotness is None:
             return self.rs.choice(np.arange(len(self.model_list)), num_model, replace=False)
         else:
+            # print(self.model_hotness, np.arange(len(self.model_list)), num_model)
             return self.rs.choice(np.arange(len(self.model_list)), num_model, replace=False, 
                                   p = self.model_hotness)
 
@@ -781,8 +782,9 @@ class MicrobenchmarkInferWorkload_ModelMajor(MicrobenchmarkInferWorkloadBase):
             else:
                 scale_factor = np.sum(self.model_hotness[request_model]) / np.sum(self.model_hotness)
             rps = rps * scale_factor
-            noise = self.rs.normal(rps, 0.1 * rps)
+            noise = self.rs.normal(0, 0.1 * rps)
             rps += noise
+            rps = max(0, rps)
 
             model_rps = np.zeros(len(self.model_list))
             if self.model_hotness is None:

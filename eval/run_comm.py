@@ -55,6 +55,7 @@ class HybridLoad:
     mps_train: int = HighLoad.rps
     enable: bool = True
 
+
 # MARK: Trace Config
 class UniformConfig:
     train_model = 'swin_b'
@@ -88,8 +89,8 @@ class UniformConfig_v2:
                   InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
                   InferModel.ResNet152, InferModel.DistilGPT2] 
     num_model = 64
-    interval_sec = 20
-    duration = 120
+    interval_sec = 20  # 10/20 sec seem to be good choice
+    duration = 300
     port = str(get_unique_port())
     enable = enable_uniform
 
@@ -121,15 +122,58 @@ class SkewedConfig:
     hybrid_load = HybridLoad(enable=False)
 
 
+class SkewedConfig_v2:
+    train_model = 'swin_b'
+    train_batch_size = 72
+    train_global_batch_size = 500
+    train_dataset_size = 1000
+    train_epoch_time = 5.5
+
+    model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
+                  InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
+                  InferModel.ResNet152, InferModel.DistilGPT2] 
+    num_model = 64
+    interval_sec = 20
+    duration = 300
+    port = str(get_unique_port())
+    enable = enable_skewed
+
+
 # MARK: Workload
 ## =========================================================== ##
 
 def get_train_epoch(train_epoch_time, duration):
     return int(duration / train_epoch_time + 5)
 
+
+def _workload_v2(wkld_type, client_model_list, infer_only,
+                train_model:str, train_epoch:Optional[int], 
+                train_batch_size:int, train_epoch_time:float,
+                interval_sec:int, duration:int):
+    workload = HyperWorkload(concurrency=2048,
+                             warmup=5,
+                             wait_warmup_done_sec=5,
+                             wait_train_setup_sec=40 ,
+                             wait_stable_before_start_profiling_sec=10)
+    InferModel.reset_model_cnt()
+    if not infer_only:
+        if train_epoch is None:
+            train_epoch = get_train_epoch(train_epoch_time, duration)
+        print(f'Train {train_model} Epoch {train_epoch} Batch {train_batch_size}')
+        workload.set_train_workload(
+            train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
+    if isinstance(wkld_type, str):
+        wkld_type = getattr(wkld_coll, wkld_type)
+    workload.set_infer_workloads(wkld_type(
+        model_list=client_model_list,
+        interval_sec=interval_sec,
+        duration=duration + workload.infer_extra_infer_sec))
+    return workload
+
+
 def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
             train_model:str = UniformConfig.train_model, 
-            train_epoch:int = None, 
+            train_epoch:Optional[int] = None, 
             train_batch_size:int = UniformConfig.train_batch_size):
     # assert train_epoch is not None, "train_epoch is None"
     if train_epoch is None:
@@ -153,42 +197,48 @@ def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
 
 
 def uniform_v2(wkld_type, client_model_list, infer_only=True, 
-               train_model:str = None,
-               train_epoch:int = None,
-               train_batch_size:int = None,
-               train_epoch_time:float = None):
+               train_model:Optional[str] = None,
+               train_epoch:Optional[int] = None,
+               train_batch_size:Optional[int] = None,
+               train_epoch_time:Optional[float] = None):
     if train_model is None:
         train_model = UniformConfig_v2.train_model
     if train_batch_size is None:
         train_batch_size = UniformConfig_v2.train_batch_size
     if train_epoch_time is None:
         train_epoch_time = UniformConfig_v2.train_epoch_time
-    workload = HyperWorkload(concurrency=2048,
-                             warmup=5,
-                             wait_warmup_done_sec=5,
-                             wait_train_setup_sec=40 ,
-                             wait_stable_before_start_profiling_sec=10)
-    InferModel.reset_model_cnt()
-    if not infer_only:
-        if train_epoch is None:
-            train_epoch = get_train_epoch(train_epoch_time, 
-                                          UniformConfig_v2.duration)
-            # train_batch_size = UniformConfig_v2.train_batch_size
-        print(f'Train {train_model} Epoch {train_epoch} Batch {train_batch_size}')
-        workload.set_train_workload(
-            train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
-    if isinstance(wkld_type, str):
-        wkld_type = getattr(wkld_coll, wkld_type)
-    workload.set_infer_workloads(wkld_type(
-        model_list=client_model_list,
-        interval_sec=UniformConfig_v2.interval_sec,
-        duration=UniformConfig_v2.duration + workload.infer_extra_infer_sec))
-    return workload
+    return _workload_v2(wkld_type, client_model_list, infer_only,
+                        train_model, train_epoch, 
+                        train_batch_size, train_epoch_time,
+                        UniformConfig_v2.interval_sec, 
+                        UniformConfig_v2.duration)
+
+    # workload = HyperWorkload(concurrency=2048,
+    #                          warmup=5,
+    #                          wait_warmup_done_sec=5,
+    #                          wait_train_setup_sec=40 ,
+    #                          wait_stable_before_start_profiling_sec=10)
+    # InferModel.reset_model_cnt()
+    # if not infer_only:
+    #     if train_epoch is None:
+    #         train_epoch = get_train_epoch(train_epoch_time, 
+    #                                       UniformConfig_v2.duration)
+    #         # train_batch_size = UniformConfig_v2.train_batch_size
+    #     print(f'Train {train_model} Epoch {train_epoch} Batch {train_batch_size}')
+    #     workload.set_train_workload(
+    #         train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
+    # if isinstance(wkld_type, str):
+    #     wkld_type = getattr(wkld_coll, wkld_type)
+    # workload.set_infer_workloads(wkld_type(
+    #     model_list=client_model_list,
+    #     interval_sec=UniformConfig_v2.interval_sec,
+    #     duration=UniformConfig_v2.duration + workload.infer_extra_infer_sec))
+    # return workload
 
 
 def skewed(rps, client_model_list, infer_only=True, rps_fn=None,
            train_model:str =SkewedConfig.train_model, 
-           train_epoch:int = None, 
+           train_epoch:Optional[int] = None, 
            train_batch_size:int = SkewedConfig.train_batch_size):
     # assert train_epoch is not None, "train_epoch is None"
     if train_epoch is None:
@@ -210,6 +260,24 @@ def skewed(rps, client_model_list, infer_only=True, rps_fn=None,
     ))
     return workload
 
+
+def skewed_v2(wkld_type, client_model_list, infer_only=True,
+              train_model:Optional[str] = None,
+              train_epoch:Optional[int] = None,
+              train_batch_size:Optional[int] = None,
+              train_epoch_time:Optional[float] = None):
+    if train_model is None:
+        train_model = SkewedConfig_v2.train_model
+    if train_batch_size is None:
+        train_batch_size = SkewedConfig_v2.train_batch_size
+    if train_epoch_time is None:
+        train_epoch_time = SkewedConfig_v2.train_epoch_time
+    return _workload_v2(wkld_type, client_model_list, infer_only,
+                        train_model, train_epoch, 
+                        train_batch_size, train_epoch_time,
+                        SkewedConfig_v2.interval_sec, 
+                        SkewedConfig_v2.duration)
+    
 
 def _run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
     try:
@@ -258,5 +326,6 @@ def run(system: System, workload: HyperWorkload, server_model_config: str, unit:
             time.sleep(1)
     else:
         _run(system, workload, server_model_config, unit, tag)
+    print("\n===========================\n===========================\n")
 
 

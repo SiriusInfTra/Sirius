@@ -1,4 +1,6 @@
 from runner import *
+set_global_seed(42)
+
 import workload_collections as wkld_coll
 import run_comm
 
@@ -7,7 +9,6 @@ run_comm.use_time_stamp = False
 run_comm.retry_if_fail = True
 run_comm.retry_limit = 1
 
-set_global_seed(42)
 
 intervals = [
     # 1, 5, 
@@ -86,7 +87,4 @@ for interval in intervals:
                     system = System(port=run_comm.UniformConfig_v2.port,
                                     **system_config)
                     run_comm.run(system, workload, server_model_config,
-                                "try-interval", f"static-partition-{tag}-{wkld_type}")
-
-                
-
+                                "try-interval", f"static-partition-{tag}-{wkld_type}-I{interval}-D{duration}")

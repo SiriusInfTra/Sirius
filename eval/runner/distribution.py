@@ -6,7 +6,13 @@ from numpy.random import MT19937, SeedSequence
 import math
 
 class DistParamBase:
-    pass
+    @abc.abstractmethod
+    def get(self):
+        pass
+
+    @abc.abstractmethod
+    def copy(self):
+        pass
 
 @dataclass
 class NormalParam(DistParamBase):
@@ -77,6 +83,9 @@ class Distribution(DistributionBase):
             return self.dist_param.scale * self.dist_fn(self.dist_param.shape)
         else:
             return self.dist_fn(**self.dist_param.__dict__)
+        
+    def copy(self):
+        return Distribution(self.dist_param, self.seed)
 
 
 class MarkovModulatedDistribution_2(DistributionBase):
@@ -118,6 +127,13 @@ class MarkovModulatedDistribution_2(DistributionBase):
             self.state = 1 - self.state
 
         return res
+    
+    def copy(self):
+        return MarkovModulatedDistribution_2(
+            dists=[dist.copy() for dist in self.dists],
+            trans_prob=[self.trans_mat[0][1], self.trans_mat[1][0]],
+            seed=self.seed
+        )
     
 
 class AutoCorrelationGenerator:
