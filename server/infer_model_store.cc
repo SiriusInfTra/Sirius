@@ -325,8 +325,14 @@ bool InferModelStore::Shutdown() {
 }
 
 void InferModelStore::WarmupDone() {
-  infer_model_store_->ClearWarmCache();
-  infer_model_store_->ClearColdCache();
+  // Reclaim all models for colcoation mode and switch mode,
+  // for static partition, we don't need to clear models.
+  // As cold cache is zero for static partition, 
+  // the result is same if we dnot clear cold cache for static partition.
+  if (Config::IsColocateMode() || Config::IsSwitchMode()) {
+    infer_model_store_->ClearWarmCache();
+    infer_model_store_->ClearColdCache();
+  }
   infer_model_store_->warmup_done_ = true;
   LOG(INFO) << "[InferModelStore] warmup done, num ready model "
             << Model::GetNumModel(Model::Status::kReady);
