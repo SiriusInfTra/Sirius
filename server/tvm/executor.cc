@@ -7,9 +7,7 @@
 #include <tvm/runtime/logging.h>
 #include <c10/core/MemoryFormat.h>
 
-#include <common/tvm_allocator.h>
 #include <common/shape_helper.h>
-#include <common/mempool.h>
 #include <common/util.h>
 #include <server/train_launcher.h>
 #include <server/infer_model_store.h>
@@ -94,7 +92,7 @@ Executor::Executor(TVMGraph &factory, size_t worker_id, const std::vector<DLDevi
       auto eit = sit;
       for (; eit != tvm_graph_.params_.end() && total_nbytes < Config::group_param_load_threshold; eit++) {
         auto &p = *eit;
-        auto aligned_nbytes = sta::detail::GetAlignedNbytes(GetDataSize(*p.second.operator->()));
+        auto aligned_nbytes = GetAlignedNbytes(GetDataSize(*p.second.operator->()));
         total_nbytes += aligned_nbytes;
         param_eids.push_back(p.first);
         param_ready_event_ids_[p.first] = host_param_storage_group_.size();
@@ -105,7 +103,7 @@ Executor::Executor(TVMGraph &factory, size_t worker_id, const std::vector<DLDevi
         auto &p = *sit;
         std::memcpy(static_cast<char*>(param_group->data) + off, p.second->data,
           GetDataSize(*p.second.operator->()));
-        auto aligned_nbytes = sta::detail::GetAlignedNbytes(GetDataSize(*p.second.operator->()));
+        auto aligned_nbytes = GetAlignedNbytes(GetDataSize(*p.second.operator->()));
         off += aligned_nbytes;
       }
       this->host_param_storage_group_.push_back(std::make_pair(param_group, param_eids));
@@ -382,7 +380,7 @@ void Executor::AllocStorage() {
           CHECK(tensor.IsNull());
           auto aligned_nbytes = sta::ComputeStorageNbytes(
               tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
-          aligned_nbytes = sta::detail::GetAlignedNbytes(aligned_nbytes);
+          aligned_nbytes = GetAlignedNbytes(aligned_nbytes);
           auto mdata = std::shared_ptr<sta::CUDAMemPool::PoolEntry>(
               new sta::CUDAMemPool::PoolEntry{static_cast<char*>(mdata_group->addr) + off, aligned_nbytes});
           tensor.SetMDataForNull(mdata);
@@ -745,7 +743,7 @@ void Executor::SetupStorageGroup() {
       // CHECK(tensor.IsNull());
       auto aligned_nbytes = sta::ComputeStorageNbytes(
           tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
-      aligned_nbytes = sta::detail::GetAlignedNbytes(aligned_nbytes);
+      aligned_nbytes = GetAlignedNbytes(aligned_nbytes);
       group_nbytes += aligned_nbytes;
     }
     storage_group_nbytes_.push_back(group_nbytes);
@@ -766,8 +764,8 @@ void Executor::SetupStorageGroup() {
     // storage_group_.push_back(mdata_group);
 
     model_nbytes += group_nbytes;
-    fragment_nbytes += sta::TVMAllocator::AlignNBytes(group_nbytes) - group_nbytes;
-    model_nbytes_with_group_fragment_ += sta::TVMAllocator::AlignNBytes(group_nbytes);
+    fragment_nbytes += AlignNBytes(group_nbytes) - group_nbytes;
+    model_nbytes_with_group_fragment_ += AlignNBytes(group_nbytes);
   }
 
   static std::set<std::string> logged;

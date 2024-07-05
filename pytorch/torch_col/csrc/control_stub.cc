@@ -1,6 +1,5 @@
 #include <common/log_as_glog_sta.h>
 #include <common/cuda_allocator.h>
-#include <common/mempool.h>
 
 #include <torch_col/csrc/control_stub.h>
 #include <torch_col/csrc/config.h>

@@ -16,7 +16,6 @@
 
 #include <common/cuda_allocator.h>
 #include <common/init.h>
-#include <common/mempool.h>
 #include <common/util.h>
 
 #include "grpc/grpc_server.h"
