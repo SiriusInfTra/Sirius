@@ -159,6 +159,11 @@ int ResourceManager::GetNumGpu() {
   return resource_manager_->system_gpu_uuids_.size();
 }
 
+int ResourceManager::GetNumVisibleGpu() {
+  CHECK(resource_manager_ != nullptr);
+  return resource_manager_->gpu_id_map_.size();
+}
+
 int ResourceManager::GetGpuSystemId(int gpu_id) {
   CHECK(resource_manager_ != nullptr);
   auto iter = resource_manager_->gpu_id_map_.find(gpu_id);

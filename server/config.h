@@ -19,6 +19,12 @@ enum class ServeMode {
   kColocateL2,    // adjust batch at end of mini-batch
 };
 
+// used for multi-GPU serving
+enum class ModelPlacePolicy {
+  kRoundRobin,
+};
+
+
 inline std::ostream & operator<<(std::ostream &os, const ServeMode &mode) {
   switch (mode) {
     case ServeMode::kNormal:
@@ -56,6 +62,8 @@ struct ColocateConfig {
 class Config {
  public:
   static ServeMode serve_mode;
+  static ModelPlacePolicy model_place_policy;
+
   static std::filesystem::path binary_directory;
 
   static ColocateConfig colocate_config;

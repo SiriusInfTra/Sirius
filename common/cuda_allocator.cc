@@ -24,12 +24,14 @@ CUDAMemPool *CUDAMemPool::Get() {
   return cuda_mem_pool_.get();
 }
 
-void CUDAMemPool::Init(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy) {
+void CUDAMemPool::Init(std::size_t nbytes, bool cleanup, 
+                       bool observe, FreeListPolicyType free_list_policy) {
   // DLOG(INFO) << "[CUDA Memory Pool] initilized with size " << size / 1024 / 1024 << " Mb";
   cuda_mem_pool_ = std::make_unique<CUDAMemPool>(nbytes, cleanup, observe, free_list_policy);
 }
 
-CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy) {
+CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool cleanup, 
+                         bool observe, FreeListPolicyType free_list_policy) {
 //    remove("/dev/shm/gpu_colocation_mempool");
   std::string nbytes_s = std::to_string(nbytes);
   std::string cleanup_s = cleanup ? "1" : "0";
@@ -41,7 +43,7 @@ CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool cleanup, bool observe, FreeLis
 
 
 std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(
-    std::size_t nbytes, MemType mtype, bool allow_nullptr) {
+  int deivce_id, std::size_t nbytes, MemType mtype, bool allow_nullptr) {
   CHECK(!allow_nullptr) << "currently deprecated";
   if (nbytes == 0) {
     return std::shared_ptr<CUDAMemPool::PoolEntry>{
@@ -63,8 +65,9 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(
   }
   auto t1 = std::chrono::steady_clock::now();
   if (mtype == MemType::kTrain) {
-    train_alloc_us_.fetch_add(std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count(),
-                              std::memory_order_relaxed);
+    cuda_mem_pool_->train_alloc_us_.fetch_add(
+        std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count(),
+        std::memory_order_relaxed);
   }
   // DLOG(INFO) << "mtype = " << static_cast<size_t>(mtype) << ", alloc time = " 
   //            << std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() << ".";
@@ -86,7 +89,8 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::Alloc(
   };
 }
 
-std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::RawAlloc(size_t nbytes, MemType mtype) {
+std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::RawAlloc(
+    int device_id, size_t nbytes, MemType mtype) {
   static bool initilized = false;
   static bool unified_memory = false;
   if (!initilized) {
@@ -99,15 +103,15 @@ std::shared_ptr<CUDAMemPool::PoolEntry> CUDAMemPool::RawAlloc(size_t nbytes, Mem
   }
 
   void *ptr;
-  CUDA_CALL(cudaSetDevice(0));
+  CUDA_CALL(cudaSetDevice(device_id));
   if (!unified_memory) {
     CUDA_CALL(cudaMalloc(&ptr, nbytes));
   } else {
     CUDA_CALL(cudaMallocManaged(&ptr, nbytes));
   }
   return std::shared_ptr<PoolEntry>(
-      new PoolEntry{ptr, nbytes, mtype}, [](PoolEntry *entry) {
-        CUDA_CALL(cudaSetDevice(0));
+      new PoolEntry{ptr, nbytes, mtype}, [device_id](PoolEntry *entry) {
+        CUDA_CALL(cudaSetDevice(device_id));
         CUDA_CALL(cudaFree(entry->addr));
         delete entry;
       });

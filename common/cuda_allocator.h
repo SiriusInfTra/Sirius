@@ -85,13 +85,15 @@ public:
     cuda_mem_pool_->train_alloc_us_.store(0, std::memory_order_relaxed); 
   }
 
-  static std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes, MemType mtype);
+  static std::shared_ptr<PoolEntry> RawAlloc(int device_id, size_t nbytes, MemType mtype);
 
   void RegisterOOMHandler(std::function<void()> oom_handler, MemType mtype);
 
   CUDAMemPool(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy);
-  ~CUDAMemPool();
-  std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes, MemType mtype, bool allow_nullptr);
+
+  static std::shared_ptr<PoolEntry> Alloc(int device_id, std::size_t nbytes, 
+                                          MemType mtype, bool allow_nullptr);
+
   // std::shared_ptr<PoolEntry> Resize(std::shared_ptr<PoolEntry> entry, std::size_t nbytes);
   // void CopyFromTo(std::shared_ptr<PoolEntry> src, std::shared_ptr<PoolEntry> dst);
 
@@ -99,6 +101,8 @@ public:
     // return impl_->CheckAddr(addr);
     return true;
   }
+
+  ~CUDAMemPool();
 
  private:
   static std::unique_ptr<CUDAMemPool> cuda_mem_pool_;

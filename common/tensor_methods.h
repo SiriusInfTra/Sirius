@@ -16,13 +16,13 @@
 namespace colserve {
 namespace sta {
 
-STensor Null(at::IntArrayRef size, DLDataType dtype);
+STensor Null(at::IntArrayRef size, DLDevice device, DLDataType dtype);
 
 STensor Empty(at::IntArrayRef size, at::MemoryFormat memory_format, 
-              DLDataType dtype, MemType mtype);
+              DLDevice device, DLDataType dtype, MemType mtype);
 
 STensor EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride, 
-                     DLDataType dtype, MemType mtype);
+                     DLDevice device, DLDataType dtype, MemType mtype);
 
 STensor ViewDtype(uint64_t tensor, DLDataType dtype);
 

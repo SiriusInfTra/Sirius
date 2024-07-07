@@ -94,6 +94,7 @@ std::unique_lock<std::mutex> WarmModelCache::OrderedReserveCache(
 
 // #if 0
 //   // fifo may cause increasing latency
+//
 //   infer_model_cache_->fifo_cv_.wait(lock, [&lock, infer_req_id]() {
 //     std::unique_lock ims_lock{InferModelStore::Get()->mutex_};
 //     if (InferModelStore::Get()->queing_infer_reqs_.empty()) {
@@ -268,6 +269,7 @@ void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
   }
 
   // mod.so, mod.json, mod.params should be in the model directory
+  int next_gpu = 0;
   for (auto &model : models) {
     auto model_path = infer_store_path / model.second["path"];
     CHECK(std::filesystem::exists(model_path)) << "InferModelStore: " << model_path << " not exist";
@@ -280,7 +282,7 @@ void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
       size_t batch_size = std::stoi(model.second["batch-size"]);
       DLDevice device;
       if (model_device == "cuda") {
-        device = DLDevice{kDLCUDA, 0};
+        device = DLDevice{kDLCUDA, next_gpu++};
       } else {
         LOG(FATAL) << model_name << " unsupport device type " << model_device;
       }
@@ -289,6 +291,11 @@ void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
                                   device, batch_size, 
                                   std::stoi(model.second["num-worker"]),
                                   std::stoi(model.second["max-worker"]));
+      if (Config::model_place_policy == ModelPlacePolicy::kRoundRobin) {
+        if (next_gpu >= ResourceManager::GetNumVisibleGpu()) {
+          next_gpu = 0;
+        }
+      }
     }
     LOG_IF(INFO, Config::log_infer_model_init) 
         << "[InferModelStore Init] "<< "Add " << model.first << ":" << model.second["device"]

@@ -25,22 +25,23 @@ class TensorContainer {
   TensorContainer();
 
   // null tensor container, same as normal tensor but without memory and have null flag set
-  TensorContainer(std::vector<int64_t> shape, DLDataType dtype);
+  TensorContainer(std::vector<int64_t> shape, DLDevice device, DLDataType dtype);
   TensorContainer(std::vector<int64_t> shape, std::vector<int64_t> stride, 
-                  DLDataType dtype, size_t storage_offset);
+                  DLDevice device, DLDataType dtype, size_t storage_offset);
                   
-  TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, DLDataType dtype);
+  TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, 
+                  DLDevice device, DLDataType dtype);
   TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, at::MemoryFormat memory_format, 
-                  DLDataType dtype);
+                  DLDevice device, DLDataType dtype);
   TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, std::vector<int64_t> stride, 
-                  DLDataType dtype, size_t storage_offset);
+                  DLDevice device, DLDataType dtype, size_t storage_offset);
   virtual ~TensorContainer();
 
   void SetTensor(TensorContainer::memory_data_t mdata, std::vector<int64_t> shape, 
-                 DLDataType dtype, std::optional<size_t> storage_offset);
+                 DLDevice device, DLDataType dtype, std::optional<size_t> storage_offset);
   void SetTensor(TensorContainer::memory_data_t mdata, std::vector<int64_t> shape, 
                  std::vector<int64_t> stride, 
-                 DLDataType dtype, std::optional<size_t> storage_offset);
+                 DLDevice device, DLDataType dtype, std::optional<size_t> storage_offset);
 
   friend STensor;
  private:

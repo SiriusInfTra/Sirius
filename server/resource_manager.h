@@ -27,6 +27,7 @@ class ResourceManager {
   static double GetTrainMemoryMB();
   
   static int GetNumGpu();
+  static int GetNumVisibleGpu();
   static int GetGpuSystemId(int gpu_id);
   static const std::string& GetGpuSystemUuid(int gpu_id);
 

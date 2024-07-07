@@ -377,7 +377,8 @@ void Executor::AllocStorage() {
         if (auto iter = cold_cached_group_.find(k); iter != cold_cached_group_.cend()) {
           mdata_group = iter->second;
         } else {
-          mdata_group = sta::CUDAMemPool::Get()->Alloc(group_nbytes, sta::MemType::kInfer, false);
+          mdata_group = sta::CUDAMemPool::Get()->Alloc(devices_[0].device_id, group_nbytes, 
+                                                       sta::MemType::kInfer, false);
         }
         size_t off = 0;
         for (; i < j; i++) {
@@ -402,7 +403,7 @@ void Executor::AllocStorage() {
     for (auto &s : storage_pool_) {
       total_nbytes += (GetDataSize(*s.operator->()) + align - 1) & (~(align - 1));
     }
-    blob_mem_ = sta::CUDAMemPool::RawAlloc(total_nbytes, sta::MemType::kInfer);
+    blob_mem_ = sta::CUDAMemPool::RawAlloc(devices_[0].device_id, total_nbytes, sta::MemType::kInfer);
     // blob_mem_ = sta::CUDAMemPool::Get()->Alloc(total_nbytes, sta::MemType::kInfer);
     for (auto &s : storage_pool_) {
       size_t nbytes = (GetDataSize(*s.operator->()) + align - 1) & (~(align - 1));
@@ -614,9 +615,10 @@ void Executor::SetupStorage(bool alloc) {
     CHECK(dev.device_type == kDLCUDA && dev.device_id == 0);
     sta::STensor last_tensor;
     if (!alloc) {
-      storage_pool_.push_back(sta::Null(shape, pit.dtype));
+      storage_pool_.push_back(sta::Null(shape, dev, pit.dtype));
     } else {
-      storage_pool_.push_back(sta::Empty(shape, at::MemoryFormat::Contiguous, pit.dtype, sta::MemType::kInfer));
+      storage_pool_.push_back(sta::Empty(shape, at::MemoryFormat::Contiguous, dev, 
+                                         pit.dtype, sta::MemType::kInfer));
     }
     last_tensor = storage_pool_.back();
     // op_node_storage_id_map_[sid] = storage_pool_.size() - 1;
@@ -632,7 +634,8 @@ void Executor::SetupStorage(bool alloc) {
   for (size_t i = 0; i < data_entry_.size(); i++) {
     int storage_id = tvm_graph_.attrs_.storage_id[i];
     
-    data_entry_[i] = sta::ViewShapeDtype(storage_pool_[storage_id], tvm_graph_.attrs_.shape[i], vtype[i]);
+    data_entry_[i] = sta::ViewShapeDtype(storage_pool_[storage_id], 
+                                         tvm_graph_.attrs_.shape[i], vtype[i]);
     data_alignment_[i] = details::GetDataAlignment(*data_entry_[i].operator->());
   }
 

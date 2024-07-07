@@ -76,7 +76,10 @@ c10::DeleterFnPtr CUDAColAllocator::raw_deleter() const {
 }
 
 void* CUDAColAllocator::raw_alloc(size_t nbytes) {
-  auto entry = sta::CUDAMemPool::Get()->Alloc(nbytes, colserve::sta::MemType::kTrain, false);
+  int device;
+  CUDA_CALL(cudaGetDevice(&device));
+  
+  auto entry = sta::CUDAMemPool::Get()->Alloc(device, nbytes, colserve::sta::MemType::kTrain, false);
   DLOG(INFO) << "CUDAColAllocator alloc " << sta::ByteDisplay(nbytes) 
             << " : addr " << entry->addr << " nbytes " << sta::ByteDisplay(entry->nbytes);
   

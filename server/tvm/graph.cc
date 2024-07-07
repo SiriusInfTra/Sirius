@@ -299,12 +299,14 @@ std::map<std::string, TVMArray> TVMGraph::LoadParamsAsTVMArray(const std::string
   return params_ret;
 }
 
-std::unique_ptr<Executor> TVMGraph::CreateGraphExecutor(size_t worker_id, const std::vector<DLDevice> &devs) {
+std::unique_ptr<Executor> TVMGraph::CreateGraphExecutor(
+    size_t worker_id, 
+    const std::vector<DLDevice> &devs) {
   return std::make_unique<Executor>(*this, worker_id, devs);
 }
 
 std::tuple<TVMGraph::ShapeInfo, TVMGraph::DtypeInfo>
-    TVMGraph::GetInputInfo() const {
+TVMGraph::GetInputInfo() const {
   ShapeInfo shape_info;
   DtypeInfo dtype_info;
   for (auto nid : input_nodes_) {

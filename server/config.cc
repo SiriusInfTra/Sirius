@@ -5,6 +5,7 @@
 namespace colserve {
 
 ServeMode Config::serve_mode = ServeMode::kNormal;
+ModelPlacePolicy Config::model_place_policy = ModelPlacePolicy::kRoundRobin;
 
 std::filesystem::path Config::binary_directory;
 
