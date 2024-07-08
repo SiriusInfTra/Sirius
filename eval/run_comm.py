@@ -20,8 +20,9 @@ retry_limit = 1
 fake_launch = False
 
 def get_unique_port():
-    cuda_device = os.environ['CUDA_VISIBLE_DEVICES']
-    assert ',' not in cuda_device
+    cuda_device_env = os.environ['CUDA_VISIBLE_DEVICES']
+    # assert ',' not in cuda_device
+    cuda_device = cuda_device_env.split(',')[0]
     try:
         cuda_device = int(cuda_device)
     except:

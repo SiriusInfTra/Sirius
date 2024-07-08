@@ -1,11 +1,13 @@
 import os
 import argparse
 from runner import *
+set_global_seed(42)
+
 from dataclasses import dataclass
 import workload_collections as wkld_coll
 import run_comm
 
-set_global_seed(42)
+set_binary_dir('bin')
 
 use_time_stamp = True
 skip_fail = True
@@ -25,9 +27,14 @@ enable_azure_profile_memory = False
 enable_hybrid = False
 
 enable_uniform_v2 = False
+enable_skewed_v2 = False
 uniform_v2_workload_types = [
     'NormalA', 
     'NormalB',
+]
+skew_v2_workload_types = [
+    'SkewA',
+    'SkewB',
 ]
 
 # should be false to eval infer-only
@@ -48,6 +55,7 @@ parser.add_argument('--infer-only', action='store_true')
 parser.add_argument('--uniform', action='store_true')
 parser.add_argument('--uniform-v2', action='store_true')
 parser.add_argument('--skewed', action='store_true')
+parser.add_argument('--skewed-v2', action='store_true')
 parser.add_argument('--hybrid', action='store_true')
 parser.add_argument('--strawman', action='store_true')
 parser.add_argument('--azure', action='store_true')
@@ -85,6 +93,8 @@ if args.uniform_v2 or args.all_workload:
     enable_uniform_v2 = True
 if args.skewed or args.all_workload:
     enable_skewed = True
+if args.skewed_v2 or args.all_workload:
+    enable_skewed_v2 = True
 if args.azure or args.all_workload:
     enable_azure = True
 if args.azure_profile_memory or args.all_workload:
@@ -130,8 +140,9 @@ class HybridLoad:
     enable: bool = enable_hybrid
 
 def get_unique_port():
-    cuda_device = os.environ['CUDA_VISIBLE_DEVICES']
-    assert ',' not in cuda_device
+    cuda_device_env = os.environ['CUDA_VISIBLE_DEVICES']
+    # assert ',' not in cuda_device
+    cuda_device = cuda_device_env.split(',')[0]
     try:
         cuda_device = int(cuda_device)
     except:
@@ -383,12 +394,15 @@ for tag, item in {
 
     if enable_uniform_v2:
         for wkld_type in uniform_v2_workload_types:
-            client_model_list, server_model_config = InferModel.get_multi_model(
-                UniformConfig.model_list, UniformConfig.num_model, 1)
-            workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
-            system = System(port=run_comm.UniformConfig_v2.port, **system_config)
-            run_comm.run(system, workload, server_model_config, 
-                         "overall-uniform-v2", f'static-partition-{wkld_type}-{tag}')
+            with mps_thread_percent(None):
+                client_model_list, server_model_config = InferModel.get_multi_model(
+                    run_comm.UniformConfig_v2.model_list, run_comm.UniformConfig_v2.num_model, 1)
+                workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False,
+                                               train_batch_size=workload_config['train_batch_size'],
+                                               train_epoch_time=workload_config['epoch_time'])
+                system = System(port=run_comm.UniformConfig_v2.port, **system_config)
+                run_comm.run(system, workload, server_model_config, 
+                            "overall-uniform-v2", f'static-partition-{wkld_type}-{tag}')
 
     if SkewedConfig.enable and SkewedConfig.high_load.enable:
         with mps_thread_percent(SkewedConfig.high_load.mps_infer):
@@ -413,6 +427,18 @@ for tag, item in {
             system = System(train_mps_thread_percent=SkewedConfig.low_load.mps_train,
                             port=SkewedConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-skewed", f"static-partition-low-{tag}")
+    
+    if enable_skewed_v2:
+        for wkld_type in skew_v2_workload_types:
+            with mps_thread_percent(None):
+                client_model_list, server_model_config = InferModel.get_multi_model(
+                    run_comm.SkewedConfig_v2.model_list, run_comm.SkewedConfig_v2.num_model, 1)
+                workload = run_comm.skewed_v2(wkld_type, client_model_list, infer_only=False,
+                                              train_batch_size=workload_config['train_batch_size'],
+                                              train_epoch_time=workload_config['epoch_time'])
+                system = System(port=run_comm.SkewedConfig_v2.port, **system_config)
+                run_comm.run(system, workload, server_model_config, 
+                            "overall-skewed-v2", f'static-partition-{wkld_type}-{tag}')
 
     if AzureConfig.enable:
         with mps_thread_percent(AzureConfig.mps_infer):
@@ -480,12 +506,13 @@ if run_colsys:
 
     if enable_uniform_v2:
         for wkld_type in uniform_v2_workload_types:
-            client_model_list, server_model_config = InferModel.get_multi_model(
-                UniformConfig.model_list, UniformConfig.num_model, 1)
-            workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
-            system = System(port=run_comm.UniformConfig_v2.port, **system_config)
-            run_comm.run(system, workload, server_model_config, 
-                         "overall-uniform-v2", f'colsys-{wkld_type}')
+            with mps_thread_percent(None):
+                client_model_list, server_model_config = InferModel.get_multi_model(
+                    run_comm.UniformConfig_v2.model_list, run_comm.UniformConfig_v2.num_model, 1)
+                workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
+                system = System(port=run_comm.UniformConfig_v2.port, **system_config)
+                run_comm.run(system, workload, server_model_config, 
+                            "overall-uniform-v2", f'colsys-{wkld_type}')
 
     if SkewedConfig.enable and SkewedConfig.high_load.enable:
         with mps_thread_percent(SkewedConfig.high_load.mps_infer):
@@ -508,6 +535,16 @@ if run_colsys:
                             port=SkewedConfig.port,
                             **system_config)
             run(system, workload, server_model_config, "overall-skewed", "colsys-low")
+
+    if enable_skewed_v2:
+        for wkld_type in skew_v2_workload_types:
+            with mps_thread_percent(None):
+                client_model_list, server_model_config = InferModel.get_multi_model(
+                    run_comm.SkewedConfig_v2.model_list, run_comm.SkewedConfig_v2.num_model, 1)
+                workload = run_comm.skewed_v2(wkld_type, client_model_list, infer_only=False)
+                system = System(port=run_comm.SkewedConfig_v2.port, **system_config)
+                run_comm.run(system, workload, server_model_config, 
+                            "overall-skewed-v2", f'colsys-{wkld_type}')
 
     if AzureConfig.enable:
         with mps_thread_percent(AzureConfig.mps_infer):
@@ -603,6 +640,15 @@ if run_task_switch:
         system = System(port=SkewedConfig.port, **system_config)
         run(system, workload, server_model_config, "overall-skewed", "task-switch-low")
 
+    if enable_skewed_v2:
+        for wkld_type in skew_v2_workload_types:
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                run_comm.SkewedConfig_v2.model_list, run_comm.SkewedConfig_v2.num_model, 1)
+            workload = run_comm.skewed_v2(wkld_type, client_model_list, infer_only=False)
+            system = System(port=run_comm.SkewedConfig_v2.port, **system_config)
+            run_comm.run(system, workload, server_model_config, 
+                         "overall-skewed-v2", f'task-switch-{wkld_type}')
+
     if AzureConfig.enable:
         client_model_list, server_model_config = InferModel.get_multi_model(
             AzureConfig.model_list, AzureConfig.num_model, 1)
@@ -641,6 +687,16 @@ if run_infer_only:
             system = System(port=UniformConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-uniform", f"infer-only-low{mps_tag}")
 
+    if enable_uniform_v2:
+        for wkld_type in uniform_v2_workload_types:
+            with mps_thread_percent(None, skip=infer_only_without_mps):
+                client_model_list, server_model_config = InferModel.get_multi_model(
+                    run_comm.UniformConfig_v2.model_list, run_comm.UniformConfig_v2.num_model, 1)
+                workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=True)
+                system = System(port=run_comm.UniformConfig_v2.port, **system_config)
+                run_comm.run(system, workload, server_model_config, 
+                            "overall-uniform-v2", f'infer-only-{wkld_type}')
+
     if SkewedConfig.enable and SkewedConfig.high_load.enable:
         with mps_thread_percent(SkewedConfig.high_load.mps_infer, skip=infer_only_without_mps):
             client_model_list, server_model_config = InferModel.get_multi_model(
@@ -656,6 +712,16 @@ if run_infer_only:
             workload = skewed(SkewedConfig.low_load.rps, client_model_list, infer_only=True)
             system = System(port=SkewedConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-skewed", f"infer-only-low{mps_tag}")
+
+    if enable_skewed_v2:
+        for wkld_type in skew_v2_workload_types:
+            with mps_thread_percent(None, skip=infer_only_without_mps):
+                client_model_list, server_model_config = InferModel.get_multi_model(
+                    run_comm.SkewedConfig_v2.model_list, run_comm.SkewedConfig_v2.num_model, 1)
+                workload = run_comm.skewed_v2(wkld_type, client_model_list, infer_only=True)
+                system = System(port=run_comm.SkewedConfig_v2.port, **system_config)
+                run_comm.run(system, workload, server_model_config, 
+                            "overall-skewed-v2", f'infer-only-{wkld_type}')
 
     if AzureConfig.enable:
         with mps_thread_percent(AzureConfig.mps_infer, skip=infer_only_without_mps):
@@ -699,6 +765,16 @@ if run_um_mps:
                             **system_config)
             run(system, workload, server_model_config, "overall-uniform", "um-mps-low")
 
+    if enable_uniform_v2:
+        for wkld_type in uniform_v2_workload_types:
+            with um_mps(None):
+                client_model_list, server_model_config = InferModel.get_multi_model(
+                    run_comm.UniformConfig_v2.model_list, run_comm.UniformConfig_v2.num_model, 1)
+                workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
+                system = System(port=run_comm.UniformConfig_v2.port, **system_config)
+                run_comm.run(system, workload, server_model_config, 
+                            "overall-uniform-v2", f'um-mps-{wkld_type}')
+
     if SkewedConfig.enable and SkewedConfig.high_load.enable:
         with um_mps(SkewedConfig.high_load.mps_infer):
             client_model_list, server_model_config = InferModel.get_multi_model(
@@ -718,6 +794,16 @@ if run_um_mps:
                             port=SkewedConfig.port, max_live_minute=int(SkewedConfig.duration * 0.1),
                             **system_config)
             run(system, workload, server_model_config, "overall-skewed", "um-mps-low")
+
+    if enable_skewed_v2:
+        for wkld_type in skew_v2_workload_types:
+            with um_mps(None):
+                client_model_list, server_model_config = InferModel.get_multi_model(
+                    run_comm.SkewedConfig_v2.model_list, run_comm.SkewedConfig_v2.num_model, 1)
+                workload = run_comm.skewed_v2(wkld_type, client_model_list, infer_only=False)
+                system = System(port=run_comm.SkewedConfig_v2.port, **system_config)
+                run_comm.run(system, workload, server_model_config, 
+                            "overall-skewed-v2", f'um-mps-{wkld_type}')
 
     if AzureConfig.enable:
         with um_mps(AzureConfig.mps_infer):

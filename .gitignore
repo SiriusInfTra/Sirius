@@ -1,6 +1,7 @@
 .vscode
 build
 build/
+bin/
 build_*/
 /cmake-*
 /.cache

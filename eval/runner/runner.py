@@ -12,8 +12,9 @@ from types import NoneType
 from dataclasses import dataclass
 import re
 
-from .hyper_workload import InferWorkloadBase, TrainWorkload, InferTraceDumper, InferModel, RandomInferWorkload
-from .config import get_global_seed
+from .hyper_workload import InferWorkloadBase, TrainWorkload, \
+    InferTraceDumper, InferModel, RandomInferWorkload
+from .config import get_global_seed, get_binary_dir
 
 
 class System:
@@ -167,7 +168,7 @@ class System:
         self.cmd_trace = []
         cmd = [
             # "compute-sanitizer", "--tool", "memcheck",
-            "./build/server/colserve", 
+            f"./{get_binary_dir()}/server/colserve", 
             "-p", self.port, 
             "--mode", self.mode, 
             "--use-sta", "1" if self.use_sta else "0", 
@@ -192,12 +193,14 @@ class System:
             cmd += ["--mps", "1"]
             self.cmd_trace.append(" ".join([
                 "sudo", "/opt/mps-control/launch-mps-daemon-private.sh",
-                "--device", os.environ['CUDA_VISIBLE_DEVICES'], "--mps-pipe", os.environ['CUDA_MPS_PIPE_DIRECTORY']
+                "--device", os.environ['CUDA_VISIBLE_DEVICES'], 
+                "--mps-pipe", os.environ['CUDA_MPS_PIPE_DIRECTORY']
             ]))
             if not fake_launch:
                 self.mps_server = subprocess.Popen(
                     ['sudo', '/opt/mps-control/launch-mps-daemon-private.sh',
-                    '--device', os.environ['CUDA_VISIBLE_DEVICES'], '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']],
+                    '--device', os.environ['CUDA_VISIBLE_DEVICES'], 
+                    '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']],
                     stderr=subprocess.PIPE, stdout=subprocess.PIPE, env=os.environ.copy())
             else:
                 self.mps_server is None
@@ -483,7 +486,7 @@ class HyperWorkload:
     def _launch(self, server: System, launcher: str, custom_args: List[str] = [], **kwargs):
         assert server is not None
         cmd = [
-            f"./build/{launcher}",
+            f"./{get_binary_dir()}/{launcher}",
             "-p", server.port,
             "-c", str(self.concurrency),
         ]

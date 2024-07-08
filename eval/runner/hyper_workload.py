@@ -576,40 +576,7 @@ class MicrobenchmarkInferWorkloadBase(DynamicPoissonInferWorkload):
 
         self._gen_poission_params(self.num_request_model_arr, self.poisson_param_arr)
         self._scale_poisson_param(self.poisson_param_arr, max_request_sec)
-        # poisson_params = [[] 
-        #                     for _ in range(len(model_list))]
 
-        # num_model_to_requests = []
-
-        # num_model_rs = RandomState(MT19937(SeedSequence(self.rs.randint(1, self.seed+1))))
-        # for i in range(period_num):
-        #     num_model = num_request_model_fn(i)
-        #     num_model_to_requests.append(num_model)
-        #     if not sequential_choose_model:
-        #         model_req_list = self.rs.choice(np.arange(len(model_list)), num_model, 
-        #                                         replace=False, p = model_hotness)
-        #     else:
-        #         model_req_list = np.arange(num_model)
-        #     num_request = rps_fn(i, model_req_list)
-        #     assert len(model_req_list) == num_model
-        #     if verbose:
-        #         print(f'[period {i}]: {num_model} request models: {model_req_list}')
-
-        #     if not equal_partition_rps:
-        #         model_num_req = self._split_request(num_request, num_model, alpha=model_hotness)
-        #     else:
-        #         model_num_req = np.ones(num_model) * num_request / num_model
-        #     for model, num_req in zip(model_req_list, model_num_req):
-        #         poisson_params[model].append(PoissonParam(i * interval_sec, num_req))
-        #     for j in range(len(model_list)):
-        #         if j not in set(model_req_list):
-        #             poisson_params[j].append(PoissonParam(i * interval_sec, 0))
-        # # print(poisson_params)
-        # self.poisson_params = []
-        # for i, poisson_param in enumerate(poisson_params):
-        #     self.poisson_params.append((model_list[i], poisson_param))
-
-        # poisson_params_ndarray = np.array(poisson_params)[:, :, 1]
         if verbose and model_hotness is not None:
             for i in range(period_num):
                 print_str = f"[period {i}]:\n"

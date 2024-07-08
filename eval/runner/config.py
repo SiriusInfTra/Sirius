@@ -4,6 +4,15 @@ import contextlib
 import hashlib
 
 __global_seed = None
+__binary_dir = 'build'
+
+def set_binary_dir(binary_dir):
+    global __binary_dir
+    __binary_dir = binary_dir
+
+def get_binary_dir():
+    global __binary_dir
+    return __binary_dir
 
 def get_global_seed():
     global __global_seed

@@ -229,7 +229,8 @@ void STensor::DeallocToDummy() {
   get()->tensor_.data = (void*)-1;
   auto nbytes = get()->mdata_->nbytes;
   auto mtype = get()->mdata_->mtype;
-  get()->mdata_ = std::shared_ptr<CUDAMemPool::PoolEntry>(new CUDAMemPool::PoolEntry{(void*)-1, nbytes, mtype});
+  get()->mdata_ = std::shared_ptr<CUDAMemPool::PoolEntry>(
+      new CUDAMemPool::PoolEntry{(void*)-1, nbytes, mtype});
   this->UpdateVersion();
 }
 

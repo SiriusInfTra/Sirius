@@ -61,6 +61,9 @@ std::string GetModelNameWithoutDuplicatedId(const std::string &model_name) {
 Executor::Executor(TVMGraph &factory, size_t worker_id, const std::vector<DLDevice> &devs)
     : tvm_graph_(factory), infer_model_worker_id_(worker_id), devices_(devs), 
       initialized_(false), cold_cached_nbytes_(0) {
+  // currently, we still assume that a model is only used in one device
+  // we will support multi-device inference in the future
+  
   using namespace ::tvm::runtime;
   auto t0 = std::chrono::steady_clock::now();
   SetupStorage(false);
@@ -612,7 +615,8 @@ void Executor::SetupStorage(bool alloc) {
     if (!pit.scope.empty()) {
       mem_scope = ::tvm::runtime::String(pit.scope);
     }
-    CHECK(dev.device_type == kDLCUDA && dev.device_id == 0);
+    // CHECK(dev.device_type == kDLCUDA && dev.device_id == 0);
+    CHECK(dev.device_type == kDLCUDA);
     sta::STensor last_tensor;
     if (!alloc) {
       storage_pool_.push_back(sta::Null(shape, dev, pit.dtype));

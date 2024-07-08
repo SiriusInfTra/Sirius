@@ -287,7 +287,7 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
       auto xsched_path = Config::binary_directory / "xsched";
       auto xsched_lib_path = xsched_path / "lib";
       auto xsched_lib_cuda = xsched_lib_path / "libcuda.so.1";
-      CHECK(std::filesystem::exists(xsched_lib_cuda));
+      CHECK(std::filesystem::exists(xsched_lib_cuda)) << xsched_lib_cuda << " not exists";
 
       // std::string xsched_preload_path = xsched_path + "lib/libinstrument_sm70.so";
       CHECK_NE(setenv("COL_USE_XSCHED", "1", 1), -1);

@@ -197,8 +197,8 @@ class NormalModelMajorConfigBase:
 
 
 # MARK: 1.1. Normal RPS Major
-@normal_rps_major("NormalA")
-class NormalAConfig(NormalRpsMajorConfigBase):
+@normal_rps_major("NormalA_v0")
+class NormalA_v0Config(NormalRpsMajorConfigBase):
     def __init__(self) -> None:
         super().__init__(
             get_global_seed_by_hash("NormalA"),
@@ -396,8 +396,8 @@ class Normal_Markov_Weibull_CDConfig(NormalRpsMajorConfigBase,
 #         self.acf_mse_err = 0.4
 
 
-@normal_rps_major("NormalB")
-class NormalBConfig(NormalRpsMajorConfigBase):
+@normal_rps_major("NormalB_v0")
+class NormalB_v0Config(NormalRpsMajorConfigBase):
     def __init__(self):
         self.seed = get_global_seed_by_hash("NormalB")
         self.rps_dist =dist.MarkovModulatedDistribution_2(
@@ -584,8 +584,8 @@ class Normal_Model_Markov_Weibull_CDConfig(NormalModelMajorConfigBase,
     pass
 
 
-@normal_model_major("NormalC")
-class NormalCConfig:
+@normal_model_major("NormalC_v0")
+class NormalC_v0Config:
     def __init__(self) -> None:
         self.seed = get_global_seed_by_hash("NormalC")
         # self.request_model_dist = dist.Distribution(dist.LogNormalParam(2, 1), seed=self.seed)
