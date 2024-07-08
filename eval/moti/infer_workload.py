@@ -46,7 +46,7 @@ def azure(rps, client_model_list):
         func_num=AzureConfig.num_model * 3, # 3 is a suitable number
         sort_trace_by='var_v2'
     ))
-    # workload.set_infer_workloads(MicrobenchmarkInferWorkload(
+    # workload.set_infer_workloads(MicrobenchmarkInferWorkload_v1(
     #     model_list=client_model_list,
     #     max_request_sec=rps, 
     #     interval_sec=AzureConfig.interval_sec, 

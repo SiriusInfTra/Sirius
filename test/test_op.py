@@ -3,7 +3,7 @@
 # %env CUDA_VISIBLE_DEVICES="GPU-ea8006f2-470f-f147-2425-74cede8f6cd8"
 # %env USE_SHARED_TENSOR=1
 # %env HAS_SHARED_TENSOR_SERVER=0
-# %env SHARED_TENSOR_POOL_GB=12
+# %env COL_SHARED_TENSOR_POOL_GB=12
 
 import torch
 import torch_col
