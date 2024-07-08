@@ -1,24 +1,22 @@
 #include <common/cuda_allocator.h>
 
 #include <glog/logging.h>
-#include <mapping_region.h>
-#include <mem_block.h>
-#include <cstdint>
+#include <mpool/mapping_region.h>
+#include <mpool/mem_block.h>
+#include <mpool/caching_allocator.h>
+#include <mpool/direct_allocator.h>
+#include <mpool/pages.h>
+#include <mpool/pages_pool.h>
+#include <mpool/shm.h>
+#include <mpool/vmm_allocator.h>
+
+
 #include <cstdlib>
-#include <exception>
 #include <iostream>
 #include <memory>
 #include <mutex>
-#include <numeric>
 #include <string>
-#include "caching_allocator.h"
-#include "common/util.h"
-#include "direct_allocator.h"
-#include "pages.h"
-#include "pages_pool.h"
-#include "shm.h"
-#include "vmm_allocator.h"
-
+#include <common/util.h>
 namespace colserve {
 namespace sta {
 
