@@ -2,6 +2,9 @@
 #define COLSERVE_CUDA_ALLOCATOR_H
 
 #include <common/util.h>
+#include <mpool/pages_pool.h>
+#include <mpool/caching_allocator.h>
+#include <mpool/direct_allocator.h>
 
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/vector.hpp>
@@ -15,10 +18,6 @@
 #include <functional>
 #include <memory>
 #include <atomic>
-#include <mpool/pages_pool.h>
-#include <mpool/caching_allocator.h>
-#include <mpool/direct_allocator.h>
-
 
 namespace colserve {
 namespace sta {
@@ -82,13 +81,13 @@ public:
   }
 
   static std::shared_ptr<PoolEntry> RawAlloc(int device_id, size_t nbytes, MemType mtype);
+  static std::shared_ptr<PoolEntry> Alloc(int device_id, std::size_t nbytes, 
+                                          MemType mtype, bool allow_nullptr);
 
   void RegisterOOMHandler(std::function<void()> oom_handler, MemType mtype);
 
   CUDAMemPool(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy);
 
-  static std::shared_ptr<PoolEntry> Alloc(int device_id, std::size_t nbytes, 
-                                          MemType mtype, bool allow_nullptr);
 
   // std::shared_ptr<PoolEntry> Resize(std::shared_ptr<PoolEntry> entry, std::size_t nbytes);
   // void CopyFromTo(std::shared_ptr<PoolEntry> src, std::shared_ptr<PoolEntry> dst);
@@ -109,9 +108,7 @@ public:
   std::atomic<size_t> train_alloc_us_;
 };
 
-
   // extern CUDAMemPoolImpl::MemPoolConfig mempool_config_template;
-
 
 }
 }

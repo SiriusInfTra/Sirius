@@ -16,7 +16,6 @@
 
 #include <common/cuda_allocator.h>
 #include <common/init.h>
-#include <common/mempool.h>
 #include <common/sm_partition.h>
 #include <common/util.h>
 

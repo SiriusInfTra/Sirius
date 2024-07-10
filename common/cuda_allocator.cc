@@ -1,6 +1,7 @@
 #include <common/cuda_allocator.h>
 
 #include <glog/logging.h>
+#include <common/util.h>
 #include <mpool/mapping_region.h>
 #include <mpool/mem_block.h>
 #include <mpool/caching_allocator.h>
@@ -10,13 +11,12 @@
 #include <mpool/shm.h>
 #include <mpool/vmm_allocator.h>
 
-
 #include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <common/util.h>
+
 namespace colserve {
 namespace sta {
 
@@ -98,11 +98,12 @@ CUDAMemPool::Alloc(int deivce_id, std::size_t nbytes,
   mpool::MemBlock* mem_block;
   std::byte* ptr;
   if (mtype == MemType::kInfer) {
-    mem_block = tvm_allocator_->GetObject()->Alloc(nbytes, 512, 0, 0);
-    ptr = tvm_allocator_->GetObject()->GetBasePtr() + mem_block->addr_offset;
+    mem_block = cuda_mem_pool_->tvm_allocator_->GetObject()->Alloc(nbytes, 512, 0, 0);
+    ptr = cuda_mem_pool_->tvm_allocator_->GetObject()->GetBasePtr() + mem_block->addr_offset;
   } else if (mtype == MemType::kTrain) {
-    mem_block = torch_allocator_->GetObject()->Alloc(nbytes, 512, 0, mpool::VMMAllocator::ALLOC_TRY_EXPAND_VA);
-    ptr = torch_allocator_->GetObject()->GetBasePtr() + mem_block->addr_offset;
+    mem_block = cuda_mem_pool_->torch_allocator_->GetObject()->Alloc(nbytes, 512, 0, 
+                                                                     mpool::VMMAllocator::ALLOC_TRY_EXPAND_VA);
+    ptr = cuda_mem_pool_->torch_allocator_->GetObject()->GetBasePtr() + mem_block->addr_offset;
     DLOG(INFO) << "Torch Alloc: " << ptr << ", nbytes = " << nbytes;
   } else {
     LOG(FATAL) << "Unknown mtype: " << static_cast<size_t>(mtype);
@@ -119,9 +120,9 @@ CUDAMemPool::Alloc(int deivce_id, std::size_t nbytes,
   auto free = [&, mtype](CUDAMemPool::PoolEntry* entry) {
     std::unique_lock lock{mutex_};
     if (mtype == MemType::kInfer) {
-      tvm_allocator_->GetObject()->Free(entry->block, 0);
+      Get()->tvm_allocator_->GetObject()->Free(entry->block, 0);
     } else if (mtype == MemType::kTrain) {
-      torch_allocator_->GetObject()->Free(entry->block, 0);
+      Get()->torch_allocator_->GetObject()->Free(entry->block, 0);
       DLOG(INFO) << "Torch Free: " << entry->addr
                  << ", nbytes = " << entry->nbytes;
     } else {
@@ -130,7 +131,9 @@ CUDAMemPool::Alloc(int deivce_id, std::size_t nbytes,
   };
 
   return std::shared_ptr<CUDAMemPool::PoolEntry>{
-      new PoolEntry{.addr = ptr, .nbytes = nbytes, .mtype = mtype, .block = mem_block}, free};
+      new PoolEntry{.addr = ptr, .nbytes = nbytes, .mtype = mtype, .block = mem_block}, 
+      free
+    };
 }
 
 std::shared_ptr<CUDAMemPool::PoolEntry>
@@ -167,31 +170,6 @@ CUDAMemPool::~CUDAMemPool() {
   delete pages_pool_;
 }
 
-// void CUDAMemPoolImpl::DumpSummary() {
-//   DLOG(INFO) << "---------- mempool summary ----------";
-//   DLOG(INFO) << "free blocks: " << size2entry_->size();
-//   DLOG(INFO) << "free size: " << std::accumulate(size2entry_->cbegin(), size2entry_->cend(), 0L,
-//                                                 [](auto acc, auto &&pair) { return acc + pair.first; });
-//   DLOG(INFO) << "largest free block size: " << (--size2entry_->cend())->first;
-//   DLOG(INFO) << "total blocks: " << addr2entry_->size();
-//   DLOG(INFO) << "total size: " << std::accumulate(addr2entry_->cbegin(), addr2entry_->cend(), 0L,
-//                                                  [&](auto acc, auto &&pair) {
-//                                                    return acc + GetEntry(pair.second)->nbytes;
-//                                                  });
-//   DLOG(INFO) << "infer usage: " << InferMemUsage();
-//   DLOG(INFO) << "train usage: " << TrainMemUsage();
-// }
-
-// bool CUDAMemPoolImpl::CheckAddr(void *addr) {
-//   bool ok = reinterpret_cast<size_t>(addr) >= reinterpret_cast<size_t>(mem_pool_base_ptr_)
-//       && reinterpret_cast<size_t>(addr) <= reinterpret_cast<size_t>(static_cast<char*>(mem_pool_base_ptr_) + config_.cuda_memory_size);
-//   if (!ok) {
-//     LOG(WARNING) << "MemoryPool CheckAddr " << addr << " failed"
-//                  << " memory range [" << mem_pool_base_ptr_ << ", "
-//                  << static_cast<void*>(static_cast<char*>(mem_pool_base_ptr_) + config_.cuda_memory_size) << "]";
-//   }
-//   return ok;
-// }
 
 size_t CUDAMemPool::InferMemUsage() {
   auto status = Get()->tvm_allocator_->GetObject()->GetStats();
