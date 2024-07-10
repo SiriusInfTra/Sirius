@@ -213,7 +213,7 @@ size_t CUDAMemPool::TrainPeakMemUsage() {
 size_t CUDAMemPool::TrainAllMemUsage() {
   // return TorchAllocator::Get().PeekAllocatedNbytes();
   // return MemPool::Get().GetPhyMemPageNbytes(Belong::kTrain);
-  return Get()->torch_allocator_->GetObject()->belong.GetAllocatedNbytes();
+  return Get()->torch_allocator_->GetObject()->belong.GetPagesNum() * Get()->pages_pool_->GetObject()->config.page_nbytes;
 }
 
 size_t CUDAMemPool::PoolNbytes() {
