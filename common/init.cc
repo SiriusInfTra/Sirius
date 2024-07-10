@@ -1,7 +1,6 @@
 // #include <glog/logging.h>
 
 #include "init.h"
-#include "mempool.h"
 
 namespace colserve {
 namespace sta {

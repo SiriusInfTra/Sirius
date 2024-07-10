@@ -48,12 +48,14 @@ def config_extension():
         include_dirs=[
             "../",
             "torch_col/",
+            "../third_party/mpool/allocator/include/",
+            "../third_party/mpool/pages_pool/include/",
             torch_include_path,
             f"{cuda_root_path}/include"
         ],
         libraries=["new_torch_col"],
         library_dirs=["torch_col/lib"],
-        extra_compile_args=["-std=c++17"],
+        extra_compile_args=["-std=c++17", "-DMPOOL_VERBOSE_LEVEL=0", "-DMPOOL_CHECK_LEVEL=0"],
         extra_link_args=["-Wl,-rpath,$ORIGIN/lib"],
     )
     return cythonize([ext]) 

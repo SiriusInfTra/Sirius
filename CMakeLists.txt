@@ -107,6 +107,8 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 add_library(proto ${proto_srcs} ${proto_hdrs} ${grpc_srcs} ${grpc_hdrs})
 target_link_libraries(proto ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF} )
 
+add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/mpool)
+
 add_subdirectory(common)
 add_subdirectory(server)
 

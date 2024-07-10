@@ -3,8 +3,6 @@
 
 #include <common/tensor_methods.h>
 #include <common/tensor.h>
-#include <common/mempool.h>
-#include <common/tvm_allocator.h>
 #include <common/cuda_allocator.h>
 
 #include <server/tvm/graph.h>
@@ -28,6 +26,26 @@ namespace tvm {
     CHECK_EQ(ret, 0) << TVMGetLastError();  \
   }
 
+
+// TODO read from configuration
+static const constexpr size_t MEM_BLOCK_NBYTES = 32_MB;
+static const constexpr size_t ALIGN_NBYTES = 16_MB;
+template<size_t align>
+inline size_t AlignedNBytes(size_t nbytes) {
+  static_assert((align & (align - 1)) == 0, "alignment must be power of 2");
+  return (nbytes + (align - 1)) & (~(align - 1));
+}
+
+inline size_t AlignNBytes(size_t nbytes) {
+
+    return nbytes >= MEM_BLOCK_NBYTES ? AlignedNBytes<MEM_BLOCK_NBYTES>(nbytes) : AlignedNBytes<ALIGN_NBYTES>(nbytes);
+}
+
+constexpr size_t alignment = 1024;
+inline size_t GetAlignedNbytes(size_t nbytes) {
+  static_assert((alignment & (alignment - 1)) == 0, "alignment must be power of 2");
+  return (nbytes + (alignment - 1)) & (~(alignment - 1));
+}
 
 class Executor {
  public:
@@ -91,7 +109,7 @@ class Executor {
       if (Config::group_param_nbytes_with_fragment) {
         return model_nbytes_with_group_fragment_;
       } else {
-        return sta::detail::AlignedNBytes<sta::TVMAllocator::ALIGN_NBYTES>(GetStorageSize());
+        return AlignedNBytes<ALIGN_NBYTES>(GetStorageSize());
       }
     } else {
       return GetStorageSize();

@@ -1,7 +1,6 @@
 #ifndef COLSERVE_CUDA_ALLOCATOR_H
 #define COLSERVE_CUDA_ALLOCATOR_H
 
-#include <common/mempool.h>
 #include <common/util.h>
 
 #include <boost/interprocess/managed_shared_memory.hpp>
@@ -14,15 +13,11 @@
 #include <boost/thread/lock_guard.hpp>
 
 #include <functional>
-#include <mutex>
-#include <map>
-#include <set>
 #include <memory>
 #include <atomic>
-#include <array>
-#include <iostream>
-#include <thread>
-#include <chrono>
+#include <mpool/pages_pool.h>
+#include <mpool/caching_allocator.h>
+#include <mpool/direct_allocator.h>
 
 
 namespace colserve {
@@ -64,6 +59,7 @@ public:
     void *addr;
     std::size_t nbytes;
     MemType mtype;
+    mpool::MemBlock *block;
   };
   static void Init(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy);
   static CUDAMemPool* Get();
@@ -106,7 +102,9 @@ public:
 
  private:
   static std::unique_ptr<CUDAMemPool> cuda_mem_pool_;
-  MemPool *impl_;
+  mpool::SharableObject<mpool::PagesPool> *pages_pool_;
+  mpool::SharableObject<mpool::CachingAllocator> *torch_allocator_;
+  mpool::SharableObject<mpool::DirectAllocator> *tvm_allocator_;
 
   std::atomic<size_t> train_alloc_us_;
 };
