@@ -17,6 +17,7 @@ dependencies:
   - pip:
     - cmake==3.26.4
     - cython
+    - pybind11
     - onnx
     - onnxruntime
     - protobuf
