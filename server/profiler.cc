@@ -1,14 +1,15 @@
 #include "logging_as_glog.h"
+#include <common/cuda_allocator.h>
+#include <common/util.h>
+#include <server/infer_model_store.h>
+
+#include "train_launcher.h"
+#include "profiler.h"
+#include "config.h"
+
 #include <nvml.h>
 #include <numeric>
 #include <regex>
-#include <cuda.h>
-#include <cuda_runtime_api.h>
-
-#include "sta/cuda_allocator.h"
-#include "model_train_store.h"
-#include "profiler.h"
-#include "config.h"
 
 namespace colserve {
 namespace {
@@ -58,6 +59,7 @@ std::ostream& operator<<(std::ostream &os, Profiler::PerfItem item) {
 
     LOG_ITEM(Profiler::PerfItem, InferRealBatchSize)
     LOG_ITEM(Profiler::PerfItem, InferModelLoad)
+    LOG_ITEM(Profiler::PerfItem, InferModelColdCacheHit)
   default:
     return os;
   }
@@ -92,6 +94,7 @@ void Profiler::Start() {
   profiler_->infer_info_.clear();
   // profiler_->event_info_.clear();
   profiler_->resource_info_.clear();
+  profiler_->infering_memory_nbytes_.clear();
   profiler_->start_profile_ = true;
 }
 
@@ -151,13 +154,14 @@ Profiler::Profiler(const std::string &profile_log_path)
   }
 
 #if defined(USE_NVML_V3) && USE_NVML_V3 == 0
-  LOG(WARNING) << "USE_NVML_V3 is set to 0, profiler will not record memory info, mps server will not be checked";
+  LOG(FATAL) << "USE_NVML_V3 is set to 0, profiler will not record memory info, mps server will not be checked";
 #endif
 
   thread_.reset(new std::thread([this, device]() {
     while (!this->start_profile_) {
       std::this_thread::sleep_for(std::chrono::microseconds(10));
     }
+    LOG(INFO) << "start profiler thread";
     uint32_t pid = getpid();
     CUDA_CALL(cudaSetDevice(0));
     
@@ -165,43 +169,65 @@ Profiler::Profiler(const std::string &profile_log_path)
     nvmlProcessInfo_t infos[32];
     while (Config::running) {
       size_t infer_mem = 0, train_mem = 0, train_all_mem = 0, total_mem = 0;
-
-      if (!Config::use_shared_tensor) {
+      size_t cold_cache_nbytes = 0;
+      double cold_cache_buffer_mb = 0;
+      double infer_mem_in_cold_cache_buffer_mb = 0;
+      double cold_cache_size_mb = 0;
+      if (!Config::use_shared_tensor || !Config::use_shared_tensor_train) {
         uint32_t info_cnt = max_info_cnt;
-#if !defined(USE_NVML_V3) || USE_NVML_V3 != 0
         NVML_CALL(nvmlDeviceGetComputeRunningProcesses_v3(device, &info_cnt, infos));
-        // CHECK(info_cnt <= 2) << "found " << infos[0].pid << " " << infos[1].pid << " " << infos[2].pid << " ...";
         for (uint32_t i = 0; i < info_cnt; i++) {
-          if (infos[i].pid == pid) {
+          if (!Config::use_shared_tensor_train && infos[i].pid == pid) {
             infer_mem = infos[i].usedGpuMemory;
-          } else if (infos[i].pid == ModelTrainStore::Get()->GetTrainPid()) {
+          } else if (infos[i].pid == TrainLauncher::Get()->GetTrainPid()) {
             train_mem = infos[i].usedGpuMemory;
+            train_all_mem = train_mem;
           }
         }
-#else
-        infer_mem = 0;
-        train_mem = 0;
-#endif
-        train_all_mem = train_mem;
         size_t free, total;
         CUDA_CALL(cudaMemGetInfo(&free, &total));
         total_mem = total - free;
+        if (Config::use_shared_tensor) {
+          infer_mem = sta::CUDAMemPool::InferMemUsage();
+        }
       } else {
-        infer_mem = sta::CUDAMemPool::InferMemUsage();
-        train_mem = sta::CUDAMemPool::TrainMemUsage();
-        train_all_mem = sta::CUDAMemPool::TrainAllMemUsage();
-        total_mem = static_cast<size_t>(Config::cuda_memory_pool_gb * 1024 * 1024 * 1024);
+        auto read_resource_info = [&]() {
+          infer_mem = sta::CUDAMemPool::InferMemUsage();
+          train_mem = sta::CUDAMemPool::TrainMemUsage();
+          train_all_mem = sta::CUDAMemPool::TrainAllMemUsage();
+          total_mem = static_cast<size_t>(Config::cuda_memory_pool_gb * 1_GB);
+          if (Config::cold_cache_max_capability_nbytes != 0) {
+            cold_cache_nbytes = ColdModelCache::Get().GetCachedNbytesUnsafe();
+            cold_cache_buffer_mb = ColdModelCache::Get().GetBufferMBUnsafe();
+            infer_mem_in_cold_cache_buffer_mb = ColdModelCache::Get().GetColdCacheReleasableMemoryMBUnsafe();
+            cold_cache_size_mb = ColdModelCache::Get().GetCacheSizeMBUnsafe();
+          }  
+        };
+        if (Config::profiler_acquire_resource_lock) {
+          auto cold_cache_lock = ColdModelCache::Get().Lock();
+          ResourceManager::InferMemoryChangingLock();
+          read_resource_info();
+          ResourceManager::InferMemoryChangingUnlock();
+        } else {
+          read_resource_info();
+        }
       }
-
       this->last_infer_mem_ = infer_mem;
       this->last_train_mem_ = train_mem;
       this->resource_info_.push_back({this->Passed(), Profiler::GetTimeStamp(),
-                                     ResourceInfo{infer_mem, train_mem, train_all_mem, total_mem}});
+          ResourceInfo{.infer_mem = infer_mem, .train_mem = train_mem, 
+                       .train_all_mem = train_all_mem, .gpu_used_mem = total_mem, 
+                       .cold_cache_nbytes = cold_cache_nbytes, 
+                       .cold_cache_buffer_mb = cold_cache_buffer_mb,
+                       .infer_mem_in_cold_cache_buffer_mb = infer_mem_in_cold_cache_buffer_mb,
+                       .cold_cache_size_mb = cold_cache_size_mb}});
+      this->infering_memory_nbytes_.push_back({this->Passed(), Profiler::GetTimeStamp(),
+                                              InferModelStore::GetInferingModelNbytes()});
       // this->profile_log_ifs_ << this->Passed()
       //                        << " InferMem " << GetMemString(infer_mem)
       //                        << " TrainMem " << GetMemString(train_mem)
       //                        << std::endl;
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
   }));
 }
@@ -237,6 +263,9 @@ void Profiler::RecordPerf(PerfItem item, Profiler::time_point_t start, Profiler:
 void Profiler::SetWorkloadStartTimeStamp(long ts, double delay_before_profile) {
   workload_start_time_stamp_ = ts;
   delay_before_profile_ = delay_before_profile;
+  LOG(INFO) << "workload start at " << ts 
+            << ", profile will start after " << delay_before_profile
+            << " sec from this time point";
 }
 
 double Profiler::Passed() {
@@ -246,8 +275,11 @@ double Profiler::Passed() {
 
 void Profiler::WriteLog() {
   std::ofstream ofs{profile_log_path_};
+
+  double infer_avg_exec = -1;
   
-  ofs << "[Perf Info] workload start time stamp " << workload_start_time_stamp_ << " delay before profile " << delay_before_profile_ << std::endl;
+  ofs << "[Perf Info] workload start time stamp " << workload_start_time_stamp_ 
+      << " delay before profile " << delay_before_profile_ << " sec " << std::endl;
   for (auto &it : perf_info_) {
     auto item = static_cast<Profiler::PerfItem>(it.first);
     std::vector<double> item_perf_info;
@@ -281,6 +313,9 @@ void Profiler::WriteLog() {
         << " p60 " << sorted[int(0.60 * sorted.size())]
         << " p50 " << sorted[int(0.50 * sorted.size())]
         << std::endl;
+    if (item == Profiler::PerfItem::InferExec) {
+      infer_avg_exec = avg;
+    }
   }
   for (int i = 0; i < static_cast<int>(Profiler::PerfItem::NumPerfItem); i++) {
     auto item = static_cast<Profiler::PerfItem>(i);
@@ -306,8 +341,56 @@ void Profiler::WriteLog() {
         << " Train " << GetMemString(std::get<2>(r).train_mem)
         << " TrainAll " << GetMemString(std::get<2>(r).train_all_mem)
         << " Total " << GetMemString(std::get<2>(r).gpu_used_mem)
+        << " | ColdCache " << GetMemString(std::get<2>(r).cold_cache_nbytes)
+        << " ColdCacheBuffer " << std::get<2>(r).cold_cache_buffer_mb << " Mb"
+        << " InferInColdCacheBuffer " << std::get<2>(r).infer_mem_in_cold_cache_buffer_mb << " Mb"
+        << " ColdCacheSize " << std::get<2>(r).cold_cache_size_mb << " Mb"
         << std::endl;
   }
+  ofs << std::endl;
+
+  // ofs << "[Infering Model Memory Info]" << std::endl;
+  // for (auto &x : infering_memory_nbytes_) {
+  //   ofs << std::get<0>(x) << ": "
+  //       << std::get<1>(x) << ": "
+  //       << std::get<2>(x) << std::endl;
+  // }
+
+  if (Config::dump_adjust_info) {
+    std::vector<Profiler::PerfItem> adjust_item = {
+      Profiler::PerfItem::TrainAdjust,
+      Profiler::PerfItem::InferAllocStorage,
+      Profiler::PerfItem::InferLoadParam,
+      Profiler::PerfItem::InferPipelineExec
+    };
+
+    ofs << "[Adjust Info]" << std::endl;
+    for (auto item : adjust_item) {
+      // auto item = static_cast<int>(key);
+      std::vector<double> item_perf_info;
+      for (auto &p : perf_info_[static_cast<int>(item)]) {
+        auto time_stamp = std::get<0>(p);
+        auto value = std::get<1>(p);
+        if (time_stamp > workload_start_time_stamp_ + static_cast<long>(delay_before_profile_ * 1000)) {
+          item_perf_info.push_back(value);
+        }
+      }
+      if (item_perf_info.empty()) {
+        ofs << item << ": no record after workload start profile time stamp" << std::endl;
+        continue;
+      }
+      ofs << item << ":\n";
+      for (size_t i = 0; i < item_perf_info.size(); i++) {
+        ofs << std::setw(5) << std::fixed << std::setprecision(2) 
+            << item_perf_info[i] << " ";
+        if ((i + 1) % 20 == 0) ofs << std::endl;
+      }
+      if (item_perf_info.size() % 20 != 0) ofs << std::endl;
+    }
+    ofs << Profiler::PerfItem::InferExec << " avg:\n";
+    ofs << std::fixed << std::setprecision(1) << infer_avg_exec << std::endl;
+  }
+
   ofs << std::endl;
 
   // int hit_count = std::accumulate()

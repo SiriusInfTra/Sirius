@@ -24,10 +24,15 @@ def unset_mps_thread_percent():
 
 
 @contextlib.contextmanager
-def mps_thread_percent(percent):
-    set_mps_thread_percent(percent)
-    yield
-    unset_mps_thread_percent()
+def mps_thread_percent(percent, skip=False):
+    if skip:
+        yield
+        return
+    else:
+        set_mps_thread_percent(percent)
+        print('MPS: ', percent)
+        yield
+        unset_mps_thread_percent()
 
 
 @contextlib.contextmanager
@@ -35,6 +40,7 @@ def um_mps(percent):
     set_mps_thread_percent(percent)
     os.environ['TORCH_UNIFIED_MEMORY'] = "1"
     os.environ['STA_RAW_ALLOC_UNIFIED_MEMORY'] = "1"
+    print('MPS: ', percent)
     yield
     unset_mps_thread_percent()
     os.environ.pop('TORCH_UNIFIED_MEMORY', None)

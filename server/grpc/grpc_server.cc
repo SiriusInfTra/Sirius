@@ -1,12 +1,14 @@
 #include "logging_as_glog.h"
+
+#include <server/grpc/grpc_server.h>
+#include <server/infer_model_store.h>
+#include <server/infer_model.h>
+#include <server/train_launcher.h>
+#include <server/controller.h>
+#include <server/config.h>
+
 #include <thread>
 #include <pthread.h> 
-#include "../model_infer_store.h"
-#include "grcp_server.h"
-#include "../model_train_store.h"
-#include "../controller.h"
-#include "../config.h"
-
 
 namespace colserve {
 namespace network {
@@ -102,6 +104,8 @@ void CommonHandler::SetupCallData() {
       CommonData<EmptyRequest, EmptyResult>* data) {
     LOG(INFO) << "[Common Data]: WarmupDone";
     Profiler::Get()->Clear();
+    // InferModelStore::Get()->ClearColdCache();
+    InferModelStore::WarmupDone();
     data->responder_.Finish(data->response_, grpc::Status::OK, (void*)data);
   };
   new CommonData<EmptyRequest, EmptyResult>{0, "WarmupDone", service_, cq_,
@@ -123,6 +127,22 @@ void CommonHandler::SetupCallData() {
   new CommonData<TimeStampRequest, EmptyResult>{0, "ReportTimeStampDone", service_, cq_,
                                             register_report_time_stamp_done,
                                             exec_report_time_stamp_done};
+
+  auto register_inference_workload_done = [this](
+      CommonData<EmptyRequest, EmptyResult>* data) {
+    this->service_->RequestInferenceWorkloadDone(
+        &data->ctx_, &data->request_, &data->responder_, 
+        data->cq_, data->cq_, (void*)data);
+  };
+  auto exec_inference_workload_done = [this](
+      CommonData<EmptyRequest, EmptyResult>* data) {
+    LOG(INFO) << "[Common Data]: InferenceWorkloadDone";
+    Controller::Get()->InferenceWorkloadDone();
+    data->responder_.Finish(data->response_, grpc::Status::OK, (void*)data);
+  };
+  new CommonData<EmptyRequest, EmptyResult>{0, "InferenceWorkloadDone", service_, cq_,
+                                            register_inference_workload_done,
+                                            exec_inference_workload_done};
 }
 
 void InferHandler::Start() {
@@ -208,16 +228,15 @@ bool InferHandler::InferData::Process(bool ok) {
   {
   case Status::kCreate: {
       new InferData{id_ + 1, name_, service_, cq_};
-      VLOG(1) << "[Process InferData] [" << GetModelName() << ", Id " << id_ << "]";
+      LOG_IF(INFO, Config::log_grpc) 
+          << "[gPRC Process InferData] [" << GetModelName() << ", Id " << id_ << "]";
       status_ = Status::kFinish;
       
-      auto model = ModelInferStore::Get()->GetModel(GetModelName());
-      if (!model) {
+      auto res = InferModelStore::AddJob(GetModelName(), this);
+      if (!res) {
         LOG(FATAL) << "[Process InferData] Model " << GetModelName() << " not found";
         response_.set_result("model not found");
         responder_.Finish(response_, grpc::Status::CANCELLED, (void*)this);
-      } else {
-        model->AddJob(this);
       }
       return true;
     }
@@ -260,11 +279,12 @@ bool TrainHandler::TrainData::Process(bool ok) {
   {
   case Status::kCreate:
     new TrainData{id_ + 1, name_, service_, cq_};
-    LOG(INFO) << "Process TrainData [" << GetModelName() << ", Id " << id_ << "]";
+    LOG_IF(INFO, Config::log_grpc) 
+        << "[gRPC Process TrainData] [" << GetModelName() << ", Id " << id_ << "]";
     status_ = Status::kFinish;
-    // ModelInferStore::Get()->GetModel("dummy")->AddJob(this);
-    // ModelInferStore::Get()->GetModel(GetModelName())->AddJob(this);
-    ModelTrainStore::Get()->AddJob(this);
+    // InferModelStore::Get()->GetModel("dummy")->AddJob(this);
+    // InferModelStore::Get()->GetModel(GetModelName())->AddJob(this);
+    TrainLauncher::Get()->AddJob(this);
     return true;
   case Status::kFinish:
     // LOG(INFO) << "Process TrainData delete " << std::hex << this;

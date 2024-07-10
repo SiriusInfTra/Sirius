@@ -5,13 +5,14 @@ build_*/
 /cmake-*
 /.cache
 /log
+/log-*
 /.idea
 
 *.gz
 *.tar
+*.xz
 *.onnx
 
-models/*/
 server/models/*/
 
 .pkl_memoize_py3/
@@ -30,6 +31,12 @@ dist/
 *.pyc
 
 log/*
+log_*/*
 /dcgmi_output/*.txt
 
 .env
+.gdb_history
+
+mempool_dump*/*
+
+cifar-10-batches-py/*

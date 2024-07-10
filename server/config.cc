@@ -1,3 +1,5 @@
+#include <common/util.h>
+
 #include "config.h"
 
 namespace colserve {
@@ -24,10 +26,13 @@ bool Config::use_shared_tensor_infer = true;
 bool Config::use_shared_tensor_train = true;
 bool Config::ondemand_adjust = true;
 bool Config::better_alloc = true;
-size_t Config::better_alloc_threshold = 64 * 1024 * 1024;
+
+size_t Config::better_alloc_threshold = 64_MB;
 
 bool Config::group_param_load = true;
-size_t Config::group_param_load_threshold = 8 * 1024 * 1024;
+bool Config::group_param_dump = false;
+bool Config::group_param_nbytes_with_fragment = true;
+size_t Config::group_param_load_threshold = 8_MB;
 
 double Config::cuda_memory_pool_gb = 12;
 
@@ -45,7 +50,15 @@ double Config::train_memory_over_predict_mb = 0;
 
 int Config::train_mps_thread_percent = -1;
 
-size_t Config::max_cache_nbytes = 0 * 1024 * 1024 * 1024;
+size_t Config::cold_cache_min_capability_nbytes = 0_GB;
+size_t Config::cold_cache_max_capability_nbytes = 0_GB;
+
+double Config::cold_cache_ratio = 0.3;
+size_t Config::train_over_adjust_nbytes = 500_MB;
+
+size_t Config::max_warm_cache_nbytes = 0_GB;
+
+bool Config::enable_warm_cache_fallback = true;
 
 double Config::memory_pressure_mb = 0;
 
@@ -56,8 +69,13 @@ double Config::task_switch_delay_ms = 5;
 bool Config::has_warmup = false;
 double Config::infer_model_max_idle_ms = 3000;
 
+bool Config::dump_adjust_info = false;
+
+bool Config::profiler_acquire_resource_lock = false;
+
 bool Config::dummy_adjust = false;
 
 bool Config::system_initialized = false;
+
 
 }

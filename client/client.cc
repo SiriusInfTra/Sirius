@@ -173,9 +173,9 @@ int main() {
 
   std::cout << client.DummyInfer() << std::endl;
 
-  auto mnist_data = ReadInput("data/mnist/input-7.bin");
-  auto resnet_data = ReadInput("data/resnet/input-0.bin");
-  auto inception_data = ReadInput("data/inception/input-0.bin");
+  auto mnist_data = ReadInput("mnist/input-7.bin");
+  auto resnet_data = ReadInput("resnet/input-0.bin");
+  auto inception_data = ReadInput("inception/input-0.bin");
 
   begin = std::chrono::steady_clock::now();
   reply = client.InferMnist(mnist_data);

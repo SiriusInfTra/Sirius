@@ -153,23 +153,35 @@ class Workload {
   bool ReportTimeStampToServer();
 
   void Run() {
-    LOG(INFO) << "Workload start ...";
     running_ = true;
     ready_promise_.set_value();
     run_btime_ = std::chrono::steady_clock::now();
     start_time_stamp_ = GetTimeStamp();
     ReportTimeStampToServer();
+    LOG(INFO) << "Workload start at " << start_time_stamp_ 
+              << " profiling will begin after " << delay_before_profile_
+              << " sec from this time point";
+
     std::this_thread::sleep_for(duration_);
     LOG(INFO) << "Workload timeout ...";
     running_ = false;
-    for (auto &thread : threads_) {
-      LOG(INFO) << "Worker Thread " << std::hex << thread->get_id() << " joined";
+    for (auto &thread : infer_threads_) {
+      LOG(INFO) << "Infer Worker Thread " << std::hex << thread->get_id() << " joined";
       thread->join();
     }
+    InferenceWorkloadDone();
+    LOG(INFO) << "Inference Workload Done";
+    for (auto &thread : train_threads_) {
+      LOG(INFO) << "Train Worker Thread " << std::hex << thread->get_id() << " joined";
+      thread->join();
+    }
+    LOG(INFO) << "Train Workload Done";
   }
 
 
   void WarmupModel(const std::string& model_name, int warmup);
+  void WarmupDone();
+  void InferenceWorkloadDone();
   void InferBusyLoop(const std::string &model, size_t concurrency, 
                      std::function<double_ms_t(size_t)> interval_fn,
                      double delay_before_infer, int warmup,
@@ -178,6 +190,7 @@ class Workload {
                   const std::vector<double> &start_points, 
                   double delay_before_infer, int warmup,
                   int64_t show_result = 0);
+  void Train(const std::string &model, size_t num_epoch, size_t batch_size);
   void TrainResnet(size_t num_epoch, size_t batch_size);
 
 
@@ -191,6 +204,7 @@ class Workload {
   std::function<void(InferRequest&)> SetResnetRequestFn(const std::string &model);
   std::function<void(InferRequest&)> SetInceptionRequestFn(const std::string &model);
   std::function<void(InferRequest&)> SetBertRequestFn(const std::string &model);
+  std::function<void(InferRequest&)> SetGPTRequestFn(const std::string &model);
 
   void InferOverallReport(std::ostream &os);
 
@@ -199,7 +213,7 @@ class Workload {
   std::shared_future<void> ready_future_;
   time_point_t run_btime_;
   std::chrono::seconds duration_;
-  std::vector<std::unique_ptr<std::thread>> threads_;
+  std::vector<std::unique_ptr<std::thread>> infer_threads_, train_threads_;
   std::vector<std::unique_ptr<InferWorker>> infer_workers_;
   std::vector<std::unique_ptr<TrainWorker>> train_workers_;
 
@@ -212,6 +226,8 @@ class Workload {
 
   double delay_before_profile_;
   long start_time_stamp_;
+
+
 
   // friend class InferRecorder;
 

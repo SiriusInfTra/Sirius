@@ -7,7 +7,7 @@ import tarfile
 import pathlib
 
 batch_size = 1
-model_store = "models"
+model_store = "server/models"
 tmp_dir = tempfile.gettempdir()
 
 resnet152 = models.resnet152(weights=models.ResNet152_Weights.DEFAULT).eval()
@@ -22,6 +22,6 @@ tvmc_model = tvmc.load(f"{tmp_dir}/resnet152.onnx",
 tvmc.compile(tvmc_model=tvmc_model, target='cuda', package_path=f"{tmp_dir}/resnet152-tvm.tar")
 
 
-model_store_path = f'models/resnet152-b{batch_size}' 
+model_store_path = f'{model_store}/resnet152-b{batch_size}' 
 pathlib.Path(model_store_path).mkdir(parents=True, exist_ok=True)
 tarfile.open(f"{tmp_dir}/resnet152-tvm.tar").extractall(model_store_path)

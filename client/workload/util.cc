@@ -1,10 +1,15 @@
+#include <filesystem>
+#include <glog/logging.h>
+
 #include "util.h"
-#include "glog/logging.h"
 
 namespace colserve {
 namespace workload {
 
-std::string ReadInput(const std::string &data_path) {
+std::filesystem::path data_repo_path{"client/data"};
+
+std::string ReadInput(std::filesystem::path data_path) {
+  data_path = data_repo_path / data_path;
   std::ifstream data_file{data_path, std::ios::binary};
   CHECK(data_file.good()) << "data " << data_path << " not exist";
   std::string data{std::istreambuf_iterator<char>(data_file), std::istreambuf_iterator<char>()};
@@ -24,15 +29,15 @@ AppBase::AppBase(const std::string &name) : app{name} {
   app.add_option("-v,--verbose", verbose, "verbose level");
   app.add_option("--show-result", show_result, "show result");
   app.add_option( "-p,--port", port, "grpc port");
-  app.add_option("--delay-before-infer", delay_before_infer, "delay before start infer.");
-
-
   app.add_option("--seed", seed, "random seed");
 
   app.add_option("--warmup", warmup, "warm up infer model");
+  app.add_option("--wait-warmup-done-sec", wait_warmup_done_sec, "trace file of infer workload");
+
+  app.add_option("--wait-train-setup-sec", wait_train_setup_sec, "delay before start infer.");
+  app.add_option("--wait-stable-before-start-profiling-sec", wait_stable_before_start_profiling_sec, "trace file of infer workload");
+
   app.add_option("--infer-timeline", infer_timeline, "path of infer timeline");
-  app.add_option("--delay-after-warmup", delay_after_warmup, "trace file of infer workload");
-  app.add_option("--delay-before-profile", delay_before_profile, "trace file of infer workload");
 }
 
 uint64_t AppBase::seed = static_cast<uint64_t>(-1);

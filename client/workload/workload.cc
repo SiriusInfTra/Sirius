@@ -43,14 +43,23 @@ void Workload::WarmupModel(const std::string& model_name, int warmup) {
     grpc::Status status = stub_->Inference(&context, request, &result);
     CHECK(status.ok());
   }
-  {
-    grpc::ClientContext context;
-    EmptyRequest request;
-    EmptyResult result;
-    grpc::Status status = stub_->WarmupDone(&context, request, &result);
-    CHECK(status.ok());
-  }
-  DLOG(INFO) << "Complete sending " <<  warmup << " warmup infer request(s) for " << model_name << ".";
+  LOG(INFO) << "Complete sending " <<  warmup << " warmup infer request(s) for " << model_name << ".";
+}
+
+void Workload::WarmupDone() {
+  grpc::ClientContext context;
+  EmptyRequest request;
+  EmptyResult result;
+  grpc::Status status = stub_->WarmupDone(&context, request, &result);
+  CHECK(status.ok());
+}
+
+void Workload::InferenceWorkloadDone() {
+  grpc::ClientContext context;
+  EmptyRequest request;
+  EmptyResult result;
+  grpc::Status status = stub_->InferenceWorkloadDone(&context, request, &result);
+  CHECK(status.ok());
 }
 
 void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_infer) {
@@ -96,7 +105,9 @@ void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_i
   LOG(INFO) << log_prefix.str() << "RequestInfer stop";
 }
 
-void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double>& start_points, double delay_before_infer) {
+void InferWorker::RequestInferTrace(Workload& workload, 
+                                    const std::vector<double>& start_points, 
+                                    double delay_before_infer) {
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << this << ") " << model_ << " TRACE] "; 
   workload.ready_future_.wait();
@@ -107,7 +118,9 @@ void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double
   {
     size_t debug_num = std::min(start_points.size(), 10UL);
     std::stringstream debug_stream;
-    debug_stream << log_prefix.str() << "RequestInfer start, " << "len(start_points)=" << start_points.size() << ", start_points[0:" << debug_num << "]={";
+    debug_stream << log_prefix.str() << "RequestInfer start, " 
+                 << "len(start_points)=" << start_points.size() 
+                 << ", start_points[0:" << debug_num << "]={";
     for (size_t k=0; k<debug_num; ++k) {
       debug_stream << start_points[k];
       if (k != debug_num - 1) {
@@ -169,7 +182,7 @@ void InferWorker::RequestInferTrace(Workload& workload, const std::vector<double
   }
   while(workload.running_) {
     DLOG(INFO) << log_prefix.str() << "Workload client is still running, wait 500ms.";
-    std::this_thread::sleep_for(500 * std::chrono::milliseconds());
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
   LOG(INFO) << log_prefix.str() << "RequestInfer stop";
 }
@@ -189,7 +202,7 @@ void InferWorker::FetchInferResult(Workload &workload,
     // cq_.Next(&tag, &ok);
     while (true) {
       auto next_status = 
-          cq_.AsyncNext(&tag, &ok, std::chrono::system_clock::now() + std::chrono::seconds(1));
+          cq_.AsyncNext(&tag, &ok, std::chrono::system_clock::now() + std::chrono::seconds(5));
       if (next_status == grpc::CompletionQueue::GOT_EVENT) {
         break;
       } else if (next_status == grpc::CompletionQueue::SHUTDOWN) {
@@ -212,9 +225,11 @@ void InferWorker::FetchInferResult(Workload &workload,
     {
       std::unique_lock status_lock{slot_status_mutex_};
       std::shared_lock slot_lock{slot_mutex_};
-      CHECK(slots_[slot]->rpc_status_.ok()) << " slot " << slot << ": " 
-                                           << slots_[slot]->rpc_status_.error_code() << " " << slots_[slot]->rpc_status_.error_message();
-      CHECK(status_slots_id_[InferReqStatus::kWait].count(slot)) << " " << slot << " " << status_slots_id_[InferReqStatus::kWait].size();
+      CHECK(slots_[slot]->rpc_status_.ok()) 
+          << " slot " << slot << ": " << slots_[slot]->rpc_status_.error_code() << " " 
+          << slots_[slot]->rpc_status_.error_message();
+      CHECK(status_slots_id_[InferReqStatus::kWait].count(slot)) 
+          << " " << slot << " " << status_slots_id_[InferReqStatus::kWait].size();
     }
     auto response_time = std::chrono::steady_clock::now();
     // latency_.push_back(std::chrono::duration<double, std::milli>(end - request_status_[i].request_time_).count());
@@ -455,24 +470,36 @@ std::function<void(InferRequest&)> Workload::GetSetRequestFn(const std::string &
     return SetMnistRequestFn(model);
   } else if (model.find("resnet") != std::string::npos
       || model.find("vgg") != std::string::npos
-      || model.find("densenet") != std::string::npos) {
+      || model.find("densenet") != std::string::npos
+      || model.find("vit") != std::string::npos
+      || model.find("swin") != std::string::npos
+      || model.find("efficientnet") != std::string::npos
+  ) {
     return SetResnetRequestFn(model);
   } else if ( model.find("inception") != std::string::npos) {
     return SetInceptionRequestFn(model);
   } else if (model.find("bert") != std::string::npos) {
     return SetBertRequestFn(model);
+  } else if (model.find("gpt") != std::string::npos) {
+    return SetGPTRequestFn(model);
   } else {
     LOG(FATAL) << "unable to find SetRequestFn for " << model;
   }
 }
 
 std::function<void(InferRequest&)> Workload::SetMnistRequestFn(const std::string &model) {
+  static std::mutex mnist_input_datas_mutex;
   static std::vector<std::string> mnist_input_datas;
-  if (mnist_input_datas.empty()) {
-    for (size_t i = 0; i < 10; i++) {
-      mnist_input_datas.push_back(ReadInput("data/mnist/input-" + std::to_string(i) + ".bin"));
+
+  {
+    std::unique_lock lock{mnist_input_datas_mutex};
+    if (mnist_input_datas.empty()) {
+      for (size_t i = 0; i < 10; i++) {
+        mnist_input_datas.push_back(ReadInput("mnist/input-" + std::to_string(i) + ".bin"));
+      }
     }
   }
+
   auto set_mnist_request_fn = [&](InferRequest &request) {
     static uint32_t i = 0;
     request.set_model(model);
@@ -490,10 +517,15 @@ std::function<void(InferRequest&)> Workload::SetMnistRequestFn(const std::string
 
 
 std::function<void(InferRequest&)> Workload::SetResnetRequestFn(const std::string &model) {
+  static std::mutex resnet_input_datas_mutex;
   static std::vector<std::string> resnet_input_datas;
-  if (resnet_input_datas.empty()) {
-    for (size_t i = 0; i < 1; i++) {
-      resnet_input_datas.push_back(ReadInput("data/resnet/input-" + std::to_string(i) + ".bin"));
+
+  {
+    std::unique_lock lock(resnet_input_datas_mutex);
+    if (resnet_input_datas.empty()) {
+      for (size_t i = 0; i < 1; i++) {
+        resnet_input_datas.push_back(ReadInput("resnet/input-" + std::to_string(i) + ".bin"));
+      }
     }
   }
 
@@ -514,34 +546,45 @@ std::function<void(InferRequest&)> Workload::SetResnetRequestFn(const std::strin
 
 
 std::function<void(InferRequest&)> Workload::SetInceptionRequestFn(const std::string &model) {
-      static std::vector<std::string> resnet_input_datas;
+  static  std::mutex inception_input_datas_mutex;
+  static std::vector<std::string> resnet_input_datas;
+
+  {
+    std::unique_lock lock{inception_input_datas_mutex};
     if (resnet_input_datas.empty()) {
       for (size_t i = 0; i < 1; i++) {
-        resnet_input_datas.push_back(ReadInput("data/inception/input-" + std::to_string(i) + ".bin"));
+        resnet_input_datas.push_back(ReadInput("inception/input-" + std::to_string(i) + ".bin"));
       }
     }
-    auto set_resnet_request_fn = [&](InferRequest &request) {
-      static uint32_t i = 0;
-      request.set_model(model);
-      request.add_inputs();
-      request.mutable_inputs(0)->set_dtype("float32");
-      request.mutable_inputs(0)->add_shape(1);
-      request.mutable_inputs(0)->add_shape(3);
-      request.mutable_inputs(0)->add_shape(299);
-      request.mutable_inputs(0)->add_shape(299);
-      request.mutable_inputs(0)->set_data(resnet_input_datas[0]);
-      i++;
-    };
-    return set_resnet_request_fn;
+  }
+
+  auto set_resnet_request_fn = [&](InferRequest &request) {
+    static uint32_t i = 0;
+    request.set_model(model);
+    request.add_inputs();
+    request.mutable_inputs(0)->set_dtype("float32");
+    request.mutable_inputs(0)->add_shape(1);
+    request.mutable_inputs(0)->add_shape(3);
+    request.mutable_inputs(0)->add_shape(299);
+    request.mutable_inputs(0)->add_shape(299);
+    request.mutable_inputs(0)->set_data(resnet_input_datas[0]);
+    i++;
+  };
+  return set_resnet_request_fn;
 }
 
 std::function<void(InferRequest&)> Workload::SetBertRequestFn(const std::string &model) {
+  static std::mutex bert_input_datas_mutex;
   static std::vector<std::string> bert_input_datas;
   static std::vector<std::string> bert_mask_datas;
-  if (bert_input_datas.empty()) {
-    for (size_t i = 0; i < 1; i++) {
-      bert_input_datas.push_back(ReadInput("data/bert/input-" + std::to_string(i) + ".bin"));
-      bert_mask_datas.push_back(ReadInput("data/bert/mask-" + std::to_string(i) + ".bin"));
+
+  {
+    std::unique_lock lock(bert_input_datas_mutex);
+    if (bert_input_datas.empty()) {
+      for (size_t i = 0; i < 1; i++) {
+        bert_input_datas.push_back(ReadInput("bert/input-" + std::to_string(i) + ".bin"));
+        bert_mask_datas.push_back(ReadInput("bert/mask-" + std::to_string(i) + ".bin"));
+      }
     }
   }
   
@@ -563,6 +606,32 @@ std::function<void(InferRequest&)> Workload::SetBertRequestFn(const std::string 
   return set_bert_request_fn;
 }
 
+std::function<void(InferRequest&)> Workload::SetGPTRequestFn(const std::string &model) {
+  static std::mutex gpt_input_datas_mutex;
+  static std::vector<std::string> gpt_input_datas;
+
+  {
+    std::unique_lock lock(gpt_input_datas_mutex);
+    if (gpt_input_datas.empty()) {
+      for (size_t i = 0; i < 1; i++) {
+        gpt_input_datas.push_back(ReadInput("bert/input-" + std::to_string(i) + ".bin"));
+      }
+    }
+  }
+  
+  auto set_gpt_request_fn = [&](InferRequest &request) {
+    static uint32_t i = 0;
+    request.set_model(model);
+    request.add_inputs();
+    request.mutable_inputs(0)->set_dtype("int64");
+    request.mutable_inputs(0)->add_shape(1);
+    request.mutable_inputs(0)->add_shape(64);
+    request.mutable_inputs(0)->set_data(gpt_input_datas[0]);
+    i++;
+  };
+  return set_gpt_request_fn;
+}
+
 void Workload::InferBusyLoop(const std::string &model, size_t concurrency, 
                              std::function<double_ms_t(size_t)> interval_fn,
                              double delay_before_infer, int warmup,
@@ -570,26 +639,43 @@ void Workload::InferBusyLoop(const std::string &model, size_t concurrency,
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);
-  threads_.push_back(std::make_unique<std::thread>(
+  infer_threads_.push_back(std::make_unique<std::thread>(
       &InferWorker::RequestInferBusyLoop, worker.get(), std::ref(*this), delay_before_infer));
-  threads_.push_back(std::make_unique<std::thread>(
+  infer_threads_.push_back(std::make_unique<std::thread>(
       &InferWorker::FetchInferResult, worker.get(), std::ref(*this),
       interval_fn, show_result));
   infer_workers_.push_back(std::move(worker));
 }
 
-void Workload::InferTrace(const std::string &model, size_t concurrency, const std::vector<double> &start_points, double delay_before_infer,
+void Workload::InferTrace(const std::string &model, size_t concurrency, 
+                          const std::vector<double> &start_points, 
+                          double delay_before_infer,
                           int warmup, int64_t show_result) {
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);
-  threads_.push_back(std::make_unique<std::thread>(
+  infer_threads_.push_back(std::make_unique<std::thread>(
       &InferWorker::RequestInferTrace, worker.get(), std::ref(*this), start_points, delay_before_infer));
-  threads_.push_back(std::make_unique<std::thread>(
+  infer_threads_.push_back(std::make_unique<std::thread>(
       &InferWorker::FetchInferResult, worker.get(), std::ref(*this),
       nullptr, show_result));
   infer_workers_.push_back(std::move(worker));
 }
+
+void Workload::Train(const std::string &model, size_t num_epoch, size_t batch_size) {
+  auto set_resnet_request_fn = [&](TrainRequest &request) {
+    std::stringstream args;
+    args << "num-epoch=" << num_epoch << ", batch-size=" << batch_size;
+    request.set_model(model);
+    request.set_args(args.str());
+  };
+  
+  auto worker = std::make_unique<TrainWorker>(model, set_resnet_request_fn);
+  train_threads_.push_back(std::make_unique<std::thread>(
+      &TrainWorker::RequestTrain, worker.get(), std::ref(*this)));
+  train_workers_.push_back(std::move(worker));
+}
+
 
 void Workload::TrainResnet(size_t num_epoch, size_t batch_size) {
   auto set_resnet_request_fn = [&](TrainRequest &request) {
@@ -600,7 +686,7 @@ void Workload::TrainResnet(size_t num_epoch, size_t batch_size) {
   };
   
   auto worker = std::make_unique<TrainWorker>("resnet152", set_resnet_request_fn);
-  threads_.push_back(std::make_unique<std::thread>(
+  train_threads_.push_back(std::make_unique<std::thread>(
       &TrainWorker::RequestTrain, worker.get(), std::ref(*this)));
   train_workers_.push_back(std::move(worker));
 }

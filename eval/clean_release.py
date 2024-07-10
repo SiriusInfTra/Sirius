@@ -13,8 +13,8 @@ eval_config = EvalConfig()
 
 def train_only():
     workload = HyperWorkload(duration=30, concurrency=2048,
-                             delay_before_infer=5,)
-    workload.set_train_workload(train_workload=TrainWorkload('resnet', 5, 48))
+                             wait_train_setup_sec=5,)
+    workload.set_train_workload(train_workload=TrainWorkload('swin_b', 10, 36))
     return workload
 
 

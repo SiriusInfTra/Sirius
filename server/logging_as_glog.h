@@ -12,14 +12,14 @@
 
 #ifndef NO_TVM
   #include <dmlc/logging.h>
-  #include "undef_log.h"
+  #include <common/undef_log.h>
   #include <tvm/runtime/logging.h>
-  #include "undef_log.h"
+  #include <common/undef_log.h>
 #endif
 
 #ifndef NO_TORCH
   #include <c10/util/Logging.h>
-  #include "undef_log.h"
+  #include <common/undef_log.h>
 #endif
 #include <glog/logging.h>
 #endif

@@ -10,6 +10,7 @@ import subprocess
 from typing import List, Dict, Optional
 from types import NoneType
 from dataclasses import dataclass
+import re
 
 from .hyper_workload import InferWorkloadBase, TrainWorkload, InferTraceDumper, InferModel, RandomInferWorkload
 from .config import get_global_seed
@@ -56,6 +57,7 @@ class System:
 '''
 
     def __init__(self, mode: str, use_sta: bool, 
+                 use_sta_train: Optional[bool] = None,
                  cuda_memory_pool_gb: str = None,
                  memory_pool_policy: str = MemoryPoolPolicy.BestFit,
                  profile_log: str = "profile-log", 
@@ -69,18 +71,25 @@ class System:
                  train_mps_thread_percent: Optional[int] = None,
                  colocate_skip_malloc: bool = False,
                  colocate_skip_loading: bool = False,
-                 max_cache_nbytes: int = 0 * 1024 * 1024 * 1024,
+                 max_warm_cache_nbytes: int = 0 * 1024 * 1024 * 1024,
+                 cold_cache_min_capability_nbytes: int = 0 * 1024 * 1024 * 1024,
+                 cold_cache_max_capability_nbytes: int = 0 * 1024 * 1024 * 1024,
+                 cold_cache_ratio: float = 0.0,
                  memory_pressure_mb: str | float = None,
                  ondemand_adjust: bool = True,
                  pipeline_load: bool = True,
                  train_memory_over_predict_mb: str | float = None,
                  infer_model_max_idle_ms : Optional[int] = None,
                  has_warmup: bool = False,
+                 dump_adjust_info: bool = False, # used for adjust break down
+                 profiler_acquire_resource_lock: bool = False, # used for better profiling memory
+                 enable_warm_cache_fallback: bool = True, # used for switch and colocate mode
                  dummy_adjust: bool = False,
                  keep_last_time_stamp: bool = True,
                  max_live_minute: Optional[int] = None) -> None:
         self.mode = mode
         self.use_sta = use_sta
+        self.use_sta_train = use_sta_train if use_sta_train is not None else use_sta
         self.cuda_memory_pool_gb = cuda_memory_pool_gb
         self.memory_pool_policy = memory_pool_policy
         self.profile_log = profile_log
@@ -103,15 +112,22 @@ class System:
         self.train_mps_thread_percent = train_mps_thread_percent
         self.colocate_skip_malloc = colocate_skip_malloc
         self.colocate_skip_loading = colocate_skip_loading
-        self.max_cache_nbytes = max_cache_nbytes
+        self.max_warm_cache_nbytes = max_warm_cache_nbytes
+        self.cold_cache_min_capability_nbytes = cold_cache_min_capability_nbytes
+        self.cold_cache_max_capability_nbytes = cold_cache_max_capability_nbytes
+        self.cold_cache_ratio = cold_cache_ratio
         self.memory_pressure_mb = memory_pressure_mb
         self.ondemand_adjust = ondemand_adjust
         self.pipeline_load = pipeline_load
         self.train_memory_over_predict_mb = train_memory_over_predict_mb
         self.infer_model_max_idle_ms = infer_model_max_idle_ms
         self.has_warmup = has_warmup
+        self.dump_adjust_info = dump_adjust_info
+        self.profiler_acquire_resource_lock = profiler_acquire_resource_lock
         self.dummy_adjust = dummy_adjust
         self.max_live_minute = max_live_minute
+        self.dcgmi_monitor = None
+        self.smi_monitor = None
         if System._last_time_stamp is None or not keep_last_time_stamp:
             self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
             System._last_time_stamp = self.time_stamp
@@ -126,7 +142,9 @@ class System:
         self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
 
     def launch(self, name: str, subdir: Optional[str] = None, time_stamp:bool=True, 
-               infer_model_config: List[InferModelConfig] | InferModelConfig = None):
+               infer_model_config: List[InferModelConfig] | InferModelConfig = None,
+               dcgmi: bool = False,
+               fake_launch: bool = False):
         if subdir is None:
             if time_stamp:
                 self.log_dir = pathlib.Path("log") / f'{name}-{self.time_stamp}'
@@ -145,10 +163,11 @@ class System:
         self.cmd_trace = []
         cmd = [
             # "compute-sanitizer", "--tool", "memcheck",
-            "./build/colserve", 
+            "./build/server/colserve", 
             "-p", self.port, 
             "--mode", self.mode, 
             "--use-sta", "1" if self.use_sta else "0", 
+            "--use-sta-train", "1" if self.use_sta_train else "0",
             "--profile-log", profile_log
         ]
         if self.cuda_memory_pool_gb is not None:
@@ -191,7 +210,11 @@ class System:
             cmd += ["--colocate-skip-loading"]
 
         cmd += ['--train-profile', str(train_profile)]
-        cmd += ['--max-cache-nbytes', str(self.max_cache_nbytes)]
+        
+        cmd += ['--max-warm-cache-nbytes', str(self.max_warm_cache_nbytes)]
+        cmd += ['--cold-cache-min-capability-nbytes', str(self.cold_cache_min_capability_nbytes)]
+        cmd += ['--cold-cache-max-capability-nbytes', str(self.cold_cache_max_capability_nbytes)]
+        cmd += ['--cold-cache-ratio', str(self.cold_cache_ratio)]
 
         if self.memory_pressure_mb:
             cmd += ["--memory-pressure-mb", str(self.memory_pressure_mb)]
@@ -216,6 +239,13 @@ class System:
         else:
             cmd += ["--has-warmup", "0"]
 
+        if self.dump_adjust_info:
+            cmd += ["--dump-adjust-info"]
+
+        if self.profiler_acquire_resource_lock:
+            cmd += ["--profiler-acquire-resource-lock"]
+
+
         if self.dummy_adjust:
             cmd += ["--dummy-adjust"]
         
@@ -230,7 +260,25 @@ class System:
         self.cmd_trace.append(" ".join(cmd))
         print("\n---------------------------\n")
         print(" ".join(cmd))
+
+        if fake_launch:
+            print(f"  --> fake launch")
+            return
+
         print(f"  --> [server-log] {server_log}  |  [server-profile] {profile_log}\n")
+
+        if dcgmi:
+            with open(f"{self.log_dir}/dcgmi-monitor.log", "w") as log_file:
+                self.dcgmi_monitor = subprocess.Popen(
+                    ["dcgmi", "dmon", "-e", "1002", 
+                    "-i", os.environ['CUDA_VISIBLE_DEVICES']], 
+                    stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
+
+            with open(f'{self.log_dir}/gpu-util.log', 'w') as log_file:
+                self.smi_monitor = subprocess.Popen(
+                    ["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv", 
+                     "-l", "1", "-i", os.environ['CUDA_VISIBLE_DEVICES']],
+                     stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
 
         with open(server_log, "w") as log_file:
             self.server = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
@@ -246,31 +294,60 @@ class System:
                 else:
                     break
     
-    def stop(self):
+    def stop(self, kill_train: bool = False):
         if self.server is not None:
             self.server.send_signal(subprocess.signal.SIGINT)
             self.server = None
+        if kill_train and self.log_dir is not None:
+            train_pids = set()
+            print('Force to kill train.')
+            with open(f'{self.log_dir}/{self.server_log}.log') as f:
+                for line in f:
+                    if "[TrainLauncher]: Train TrainJob" in line:
+                        regex = r'pid (\d+)'
+                        m = re.search(regex, line)
+                        if m is not None:
+                            pid = int(m.group(1))
+                            train_pids.add(pid)
+            for pid in train_pids:
+                cmd = f'kill -9 {pid}'
+                print(f'Execute {cmd}')
+                os.system(cmd)
         self.infer_model_config_path = None
         if self.mps_server is not None:
             self.quit_mps()
             self.mps_server.wait()
             self.mps_server = None
-        self.cmd_trace.append(" ".join([
-            'sudo', '/opt/mps-control/quit-mps-daemon-private.sh',
-            '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']
-        ]))
-        with open(f'{self.log_dir}/cmd-trace', 'w') as f:
-            f.write("\n\n".join(self.cmd_trace))
-        self.exit_log_dir = self.log_dir                                                                                                                               
-        self.log_dir = None
+        if self.dcgmi_monitor is not None:
+            self.dcgmi_monitor.send_signal(subprocess.signal.SIGINT)
+            self.dcgmi_monitor = None
+        if self.smi_monitor is not None:
+            self.smi_monitor.send_signal(subprocess.signal.SIGINT)
+            self.smi_monitor = None
+        if self.log_dir is not None:
+            self.cmd_trace.append(" ".join([
+                'sudo', '/opt/mps-control/quit-mps-daemon-private.sh',
+                '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']
+            ]))
+            with open(f'{self.log_dir}/cmd-trace', 'w') as f:
+                f.write("\n\n".join(self.cmd_trace))
+            self.exit_log_dir = self.log_dir                                                                                                                                   
+            self.log_dir = None
     
     def draw_memory_usage(self):
         cmd = f'python util/profile/memory_trace.py  -l {self.exit_log_dir}/profile-log.log  -o {self.exit_log_dir}'
         print(f'execute {cmd}')
         os.system(cmd)
     
-    def draw_trace_cfg(self):
+    def draw_trace_cfg(self, time_scale=None):
         cmd = f'python util/profile/trace_cfg.py  -t {self.exit_log_dir}/trace-cfg  -o {self.exit_log_dir}'
+        if time_scale:
+            cmd += f' --time-scale {time_scale}'
+        print(f'execute {cmd}')
+        os.system(cmd)
+
+    def calcuate_train_thpt(self):
+        cmd = f'python util/profile/throughput.py --log-dir {self.exit_log_dir} > {self.exit_log_dir}/train_thpt 2>&1'
         print(f'execute {cmd}')
         os.system(cmd)
 
@@ -290,11 +367,19 @@ class HyperWorkload:
                  trace_cfg:str = "trace-cfg",
                  infer_timeline:str = "infer-timeline",
                  seed: Optional[int] = None, 
-                 delay_before_infer: float = 0,
                  warmup: int = 0,
-                 delay_after_warmup: Optional[float] = None,
-                 delay_before_profile: Optional[float] = None, # delay before start profiling infer, note different between cpp and py
+                 wait_warmup_done_sec: float = 0, # see [Note: client timeline] in client/workload/util.h
+                 wait_train_setup_sec: float = 0,
+                 wait_stable_before_start_profiling_sec: float = 0, 
                  show_result: Optional[int] = None) -> None:
+        """
+        Args:
+            - concurrency: 
+                busy loop -> max number of outgoing requests
+                workload  -> initial number of outgoing requests
+            - duration: workload duration
+                for trace workload, duration will be according to the trace
+        """
         self.enable_infer = True
         self.enable_train = True
         self.infer_workloads: List[InferWorkloadBase] = []
@@ -310,14 +395,13 @@ class HyperWorkload:
             self.seed = seed
         else:
             self.seed = get_global_seed()
-        self.delay_before_infer = delay_before_infer
         self.warmup = warmup
-        self.delay_after_warmup = delay_after_warmup
-        if delay_before_profile is None:
-            self.delay_before_profile = delay_before_profile
-        else:
-            self.delay_before_profile = delay_before_profile + delay_before_infer
+        self.wait_warmup_done_sec = wait_warmup_done_sec
+        self.wait_train_setup_sec = wait_train_setup_sec
+        self.wait_stable_before_start_profiling_sec = wait_stable_before_start_profiling_sec
         self.show_result = show_result
+
+        self.infer_extra_infer_sec = self.wait_stable_before_start_profiling_sec
 
     def set_infer_workloads(self, *infer_workloads: InferWorkloadBase):
         self.infer_workloads = list(infer_workloads)
@@ -331,7 +415,7 @@ class HyperWorkload:
     def disable_train(self):
         self.enable_train = False
 
-    def launch_workload(self, server: System, trace_cfg: Optional[PathLike] = None):
+    def launch_workload(self, server: System, trace_cfg: Optional[PathLike] = None, **kwargs):
         infer_trace_args = []
         if trace_cfg is not None:
             infer_trace_args += ["--infer-trace", str(trace_cfg)]
@@ -343,7 +427,7 @@ class HyperWorkload:
             InferTraceDumper(self.infer_workloads, trace_cfg).dump()
             infer_trace_args += ["--infer-trace", str(trace_cfg)]
         
-        self._launch(server, "workload_launcher", infer_trace_args)
+        self._launch(server, "workload_launcher", infer_trace_args, **kwargs)
 
     def launch_busy_loop(self, server: System, infer_models: List[InferModel] = None):
         if infer_models is None:
@@ -356,13 +440,12 @@ class HyperWorkload:
 
         self._launch(server, "busy_loop_launcher", infer_model_args)
         
-    def _launch(self, server: System, launcher: str, custom_args: List[str] = []):
+    def _launch(self, server: System, launcher: str, custom_args: List[str] = [], **kwargs):
         assert server is not None
         cmd = [
             f"./build/{launcher}",
             "-p", server.port,
             "-c", str(self.concurrency),
-            "--delay-before-infer", str(self.delay_before_infer)
         ]
         if self.duration is not None:
             cmd += ["-d", str(self.duration)]
@@ -383,11 +466,15 @@ class HyperWorkload:
         cmd += ["--seed", str(self.seed)]
 
         cmd += ["--warmup", str(self.warmup)]
-        if self.warmup > 0 and self.delay_after_warmup is not None:
-            cmd += ["--delay-after-warmup", str(self.delay_after_warmup)]
+        if self.warmup > 0 and self.wait_warmup_done_sec > 0:
+            cmd += ["--wait-warmup-done-sec", str(self.wait_warmup_done_sec)]
 
-        if self.delay_before_profile is not None:
-            cmd += ['--delay-before-profile', str(self.delay_before_profile)]
+        if self.wait_train_setup_sec > 0:
+            cmd += ['--wait-train-setup-sec', str(self.wait_train_setup_sec)]
+
+        if self.wait_stable_before_start_profiling_sec > 0:
+            cmd += ['--wait-stable-before-start-profiling-sec', 
+                    str(self.wait_stable_before_start_profiling_sec)]
 
         workload_log = pathlib.Path(server.log_dir) / self.workload_log
 
@@ -404,6 +491,11 @@ class HyperWorkload:
 
         server.cmd_trace.append(" ".join(cmd))
         print(" ".join(cmd))
+
+        if kwargs.get("fake_launch", False):
+            print(f"  --> fake launch")
+            return
+
         print(f"  --> [workload-profile] {workload_log}\n")
 
         try:
@@ -414,5 +506,5 @@ class HyperWorkload:
                     raise Exception(f"Workload exited with code {completed.returncode}")
         except Exception as e:
             print(f"Workload exited with exception, see detail in {server.log_dir}/{server.server_log}.log and {client_log}")
-            server.stop()
+            server.stop(kill_train=True)
             raise e

@@ -5,32 +5,34 @@
 #include <tvm/runtime/module.h>
 #include <tvm/runtime/registry.h>
 #include <tvm/runtime/logging.h>
-#include "sta/mempool.h"
 #include <iostream>
 #include <filesystem>
 #include <csignal>
-#include "model_infer_store.h"
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/health_check_service_interface.h>
 #include <glog/logging.h>
 #include <CLI/CLI.hpp>
-#include <cuda.h>
 
-#include <sta/init.h>
+#include <common/cuda_allocator.h>
+#include <common/init.h>
+#include <common/util.h>
 
-#include "grpc/grcp_server.h"
+#include "grpc/grpc_server.h"
 #include "colserve.grpc.pb.h"
-#include "model_train_store.h"
-#include "cache.h"
+#include "infer_model_store.h"
+#include "train_launcher.h"
+#include "resource_manager.h"
 #include "controller.h"
 #include "profiler.h"
 #include "config.h"
 
+#define STREAM_OUTPUT(field) std::cerr << "cfg::" #field "=" << cfg::field << std::endl
+
 CLI::App app{"ColServe"};
 std::string mode = "normal";
 std::string port = "8080";
-int max_live_minute = 15;
+int max_live_minute = 20;
 
 void* memory_pressure_ptr = nullptr;
 
@@ -78,8 +80,14 @@ void init_cli_options() {
       "use xsched, default is false");
   app.add_option("--train-profile", colserve::Config::train_profile, 
     "train timeline path, default is train-timeline");
-  app.add_option("--max-cache-nbytes", colserve::Config::max_cache_nbytes, 
-    "max cache nbytes, default is 1*1024*1024*1024(1G).");
+  app.add_option("--max-warm-cache-nbytes", colserve::Config::max_warm_cache_nbytes, 
+    "max warm cache nbytes, default is 0*1024*1024*1024(0G).");
+  app.add_option("--cold-cache-min-capability-nbytes", colserve::Config::cold_cache_min_capability_nbytes, 
+    "min cold cache capability nbytes, default is 0*1024*1024*1024(0G).");
+  app.add_option("--cold-cache-max-capability-nbytes", colserve::Config::cold_cache_max_capability_nbytes, 
+    "max cold cache capability nbytes, default is 0*1024*1024*1024(0G).");
+  app.add_option("--cold-cache-ratio", colserve::Config::cold_cache_ratio, 
+    "cold cache ratio, default is 0.3(30%).");
   app.add_option("--memory-pressure-mb", colserve::Config::memory_pressure_mb,
       "memory pressure in MB, default is 0");
   app.add_option("--ondemand-adjust", colserve::Config::ondemand_adjust,
@@ -92,8 +100,15 @@ void init_cli_options() {
       "infer model max idle in ms, default is 3000");
   app.add_option("--has-warmup", colserve::Config::has_warmup,
       "has warmup, default is 0");
+  app.add_flag("--dump-adjust-info", colserve::Config::dump_adjust_info,
+      "dump adjust info, default is 0");
+  app.add_flag("--profiler-acquire-resource-lock", colserve::Config::profiler_acquire_resource_lock,
+      "profiler acquire resource lock during profiling, not use for performance eval");
   app.add_flag("--dummy-adjust", colserve::Config::dummy_adjust,
       "dummy adjust for eval, default is 0");
+
+  app.add_flag("--enable-warm-cache-fallback", colserve::Config::enable_warm_cache_fallback,
+      "enable warm cache fallback, default is 1");
 }
 
 void init_config() {
@@ -141,33 +156,53 @@ void init_config() {
     cfg::group_param_load = false;
   }
 
-  std::cerr << "cfg::serve_mode=" << static_cast<int>(cfg::serve_mode) << std::endl
-            << "cfg::use_shared_tensor=" << cfg::use_shared_tensor << std::endl
-            << "cfg::use_shared_tensor_infer=" << cfg::use_shared_tensor_infer << std::endl
-            << "cfg::use_shared_tensor_train=" << cfg::use_shared_tensor_train << std::endl
-            << "cfg::ondemand_adjust=" << cfg::ondemand_adjust << std::endl
-            << "cfg::better_alloc=" << cfg::better_alloc << std::endl
-            << "cfg::group_param_load=" << cfg::group_param_load << std::endl
-            << "cfg::pipeline_load=" << cfg::pipeline_load << std::endl
-            << "cfg::has_warmup=" << cfg::has_warmup << std::endl
-            << "cfg::colocate_config.skip_malloc=" << cfg::colocate_config.skip_malloc << std::endl
-            << "cfg::colocate_config.skip_loading=" << cfg::colocate_config.skip_loading << std::endl;
+  if ((cfg::IsColocateMode() || cfg::IsSwitchMode()) && 
+      cfg::use_shared_tensor &&
+      cfg::enable_warm_cache_fallback) {
+    CHECK_EQ(cfg::max_warm_cache_nbytes, 0);
+    cfg::max_warm_cache_nbytes = 
+      static_cast<size_t>((cfg::cuda_memory_pool_gb * 1024 
+                           - cfg::train_memory_over_predict_mb) * 1_MB
+                           - cfg::cold_cache_max_capability_nbytes); // for warmup
+    LOG(INFO) << "enable enable_warm_cache_fallback, cache nbytes (used in warmup, conservative estimated) " 
+              << colserve::sta::ByteDisplay(cfg::max_warm_cache_nbytes);
+  }
+
+  STREAM_OUTPUT(serve_mode);
+  STREAM_OUTPUT(use_shared_tensor);
+  STREAM_OUTPUT(use_shared_tensor_infer);
+  STREAM_OUTPUT(use_shared_tensor_train);
+  STREAM_OUTPUT(cuda_memory_pool_gb);
+  STREAM_OUTPUT(ondemand_adjust);
+  STREAM_OUTPUT(better_alloc);
+  STREAM_OUTPUT(group_param_load);
+  STREAM_OUTPUT(pipeline_load);
+  STREAM_OUTPUT(has_warmup);
+  STREAM_OUTPUT(enable_warm_cache_fallback);
+  STREAM_OUTPUT(max_warm_cache_nbytes);
+  STREAM_OUTPUT(cold_cache_max_capability_nbytes);
+  STREAM_OUTPUT(cold_cache_min_capability_nbytes);
+  STREAM_OUTPUT(train_over_adjust_nbytes);
+  STREAM_OUTPUT(cold_cache_ratio);
+  STREAM_OUTPUT(infer_model_max_idle_ms);
+  STREAM_OUTPUT(colocate_config.skip_malloc);
+  STREAM_OUTPUT(colocate_config.skip_loading);
 
 }
 
 void Shutdown(int sig) {
-  LOG(INFO) <<"signal " <<  strsignal(sig) << " received, shutting down...";
+  LOG(INFO) <<"signal " <<  strsignal(sig) << "(" << sig << ")" << " received, shutting down...";
   colserve::Config::running = false;
-  colserve::ModelInferStore::Shutdown();
-  colserve::ModelTrainStore::Shutdown();
+  colserve::InferModelStore::Shutdown();
+  colserve::TrainLauncher::Shutdown();
   colserve::Profiler::Shutdown();
   std::terminate();
 }
 
 int main(int argc, char *argv[]) {
   google::InitGoogleLogging(argv[0]);
-  colserve::Config::binary_directory = std::filesystem::path(argv[0]).parent_path();
-
+  colserve::Config::binary_directory = std::filesystem::path(argv[0]).parent_path().parent_path();
+  
   init_cli_options();
   CLI11_PARSE(app, argc, argv);
   init_config();
@@ -182,19 +217,23 @@ int main(int argc, char *argv[]) {
   auto free_list_policy = colserve::sta::getFreeListPolicy(
       colserve::Config::mempool_freelist_policy);
   if (colserve::Config::use_shared_tensor) {
-    colserve::sta::Init(
-      static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1024 * 1024 * 1024),
+    colserve::sta::InitMemoryPool(
+      static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
       true, false, free_list_policy);
+    colserve::sta::CUDAMemPool::Get()->RegisterOOMHandler([]() {
+      LOG(INFO) << "train predict memory " 
+                <<  colserve::TrainLauncher::Get()->PredictMemUsageMB(true) << "."; 
+      }, colserve::sta::MemType::kInfer);
   }
+  colserve::ResourceManager::Init();
   colserve::Controller::Init();
   colserve::Profiler::Init(colserve::Config::profile_log_path);
-  colserve::GraphCache::Init(colserve::Config::max_cache_nbytes);
-  colserve::ModelTrainStore::Init("train");
-  colserve::ModelInferStore::Init("models");
+  colserve::TrainLauncher::Init("train");
+  colserve::InferModelStore::Init("server/models");
   colserve::Profiler::Start();
 
   if (colserve::Config::memory_pressure_mb > 0) { 
-    size_t nbytes = static_cast<size_t>(colserve::Config::memory_pressure_mb * 1024 * 1024);
+    size_t nbytes = static_cast<size_t>(colserve::Config::memory_pressure_mb * 1_MB);
     CUDA_CALL(cudaMalloc(&memory_pressure_ptr, nbytes));
   }
 
