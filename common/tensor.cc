@@ -1,7 +1,7 @@
 #include "log_as_glog_sta.h"
-#include "tensor.h"
-#include "cuda_allocator.h"
-#include "shape_helper.h"
+#include <common/tensor.h>
+#include <common/cuda_allocator.h>
+#include <common/shape_helper.h>
 
 
 namespace colserve {

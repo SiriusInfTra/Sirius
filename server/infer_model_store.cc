@@ -1,4 +1,5 @@
 #include <common/dtype_helper.h>
+#include <common/device_manager.h>
 #include <server/logging_as_glog.h>
 #include <server/infer_model_store.h>
 #include <server/infer_model.h>
@@ -292,7 +293,7 @@ void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
                                   std::stoi(model.second["num-worker"]),
                                   std::stoi(model.second["max-worker"]));
       if (Config::model_place_policy == ModelPlacePolicy::kRoundRobin) {
-        if (next_gpu >= ResourceManager::GetNumVisibleGpu()) {
+        if (next_gpu >= DeviceManager::GetNumVisibleGpu()) {
           next_gpu = 0;
         }
       }

@@ -1,6 +1,7 @@
 #ifndef TORCH_COL_CUDA_ALLOCATOR_PLUGIN_H
 #define TORCH_COL_CUDA_ALLOCATOR_PLUGIN_H
 
+#include <common/cuda_allocator.h>
 
 #include <ATen/core/TensorBody.h>
 #include <ATen/core/TensorBody.h>
@@ -8,8 +9,6 @@
 #include <c10/core/Storage.h>
 #include <c10/cuda/CUDAStream.h>
 #include <c10/cuda/CUDACachingAllocator.h>
-
-#include <common/init.h>
 
 #include <mutex>
 #include <unordered_map>

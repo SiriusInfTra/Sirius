@@ -14,20 +14,22 @@ cdef extern from "<csrc/config.h>" namespace "torch_col":
         void InitConfig(bint)
 
         @staticmethod
-        bint EnableDynamicSmPartition()
+        bint IsEnableDynamicSmPartition()
 
         @staticmethod
-        bint EnableXsched()
+        bint IsEnableXsched()
 
         @staticmethod
         string GetHookMode()
 
 
-def enable_dynamic_sm_partition():
-    return TorchColConfig.EnableDynamicSmPartition()
+def is_enable_dynamic_sm_partition():
+    return TorchColConfig.IsEnableDynamicSmPartition()
 
-def enable_xsched():
-    return TorchColConfig.EnableXsched()
+
+def is_enable_xsched():
+    return TorchColConfig.IsEnableXsched()
+    
 
 class HookMode(Enum):
     NONE = 'none'

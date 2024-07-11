@@ -190,8 +190,8 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
           LOG(INFO) << "[ColocateStub] Adjust batch size, target " << data.value
                     << " cur target " << this->target_bs_
                     << " current " << this->current_bs_
-                    << " timestamp: " << torch_col::get_unix_timestamp()
-                    << " malloc_ms " << colserve::sta::CUDAMemPool::TrainAllocMs();
+                    << " timestamp: " << torch_col::get_unix_timestamp();
+                    // << " malloc_ms " << colserve::sta::CUDAMemPool::TrainAllocMs();
           // CHECK_LT(this->target_bs_, this->current_bs_);
           if (data.value >= this->target_bs_) {
             LOG(INFO) << "[ColocateStub] skip satisfied adjust, reply adjust immediately";
@@ -277,8 +277,8 @@ void ColocateStub::ColocateAdjustL1Done() {
     SetBlockCudaCalls_v2(false);
     // colserve::sta::CUDAMemPool::EnableTrainAlloc();
     StubProfiler::RecordAdjustDone();
-    LOG(INFO) << "[ColocateStub] Adjust L1 done, timestamp: " << torch_col::get_unix_timestamp()
-              << " train_alloc_ms " << colserve::sta::CUDAMemPool::TrainAllocMs();
+    LOG(INFO) << "[ColocateStub] Adjust L1 done, timestamp: " << torch_col::get_unix_timestamp();
+              // << " train_alloc_ms " << colserve::sta::CUDAMemPool::TrainAllocMs();
   }
 }
 

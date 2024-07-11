@@ -1,6 +1,7 @@
 #include "logging_as_glog.h"
 #include <common/cuda_allocator.h>
 #include <common/util.h>
+#include <common/device_manager.h>
 #include <common/sm_partition.h>
 
 #include <server/infer_model_store.h>
@@ -8,10 +9,10 @@
 #include <server/profiler.h>
 #include <server/config.h>
 
+#include <boost/format.hpp>
 #include <numeric>
 #include <regex>
 #include <limits>
-#include <boost/format.hpp>
 
 namespace colserve {
 namespace {
@@ -51,7 +52,7 @@ int GetDcgmFieldValues(dcgm_field_entity_group_t entity_grp_id,
                        int num_values, void* user_data) {
   auto& entry_stat = *static_cast<Profiler::dcgmEntityStat*>(user_data);
 
-  CHECK(entity_grp_id == DCGM_FE_GPU && entity_id == ResourceManager::GetGpuSystemId(0))
+  CHECK(entity_grp_id == DCGM_FE_GPU && entity_id == DeviceManager::GetGpuSystemId(0))
       << "entity_grp_id " << entity_grp_id << " entity_id " << entity_id;
         
   for (int i = 0; i < num_values; i++) {
@@ -182,7 +183,7 @@ Profiler::Profiler(const std::string &profile_log_path)
   CHECK_GT(dev_cnt, 0);
 
   nvmlDevice_t device;
-  auto gpu_uuid = ResourceManager::GetGpuSystemUuid(0);
+  auto gpu_uuid = DeviceManager::GetGpuSystemUuid(0);
   NVML_CALL(nvmlDeviceGetHandleByUUID(gpu_uuid.c_str(), &device));
 
   // CHECK MPS
@@ -217,9 +218,9 @@ Profiler::Profiler(const std::string &profile_log_path)
       // DCGM_CALL(dcgmGroupGetInfo(this->dcgm_handle_, this->dcgm_gpu_grp_, &group_info));
       // LOG(INFO) << group_info.groupName << " " << group_info.count;
 
-      LOG(INFO) << ResourceManager::GetGpuSystemId(0) << " " << ResourceManager::GetGpuSystemUuid(0);
+      LOG(INFO) << DeviceManager::GetGpuSystemId(0) << " " << DeviceManager::GetGpuSystemUuid(0);
       DCGM_CALL(dcgmGroupAddEntity(this->dcgm_handle_, this->dcgm_gpu_grp_, 
-                                   DCGM_FE_GPU, ResourceManager::GetGpuSystemId(0)));
+                                   DCGM_FE_GPU, DeviceManager::GetGpuSystemId(0)));
       std::vector<uint16_t> field_ids;
       if (Config::profile_gpu_util) field_ids.push_back(DCGM_FI_DEV_GPU_UTIL);
       if (Config::profile_gpu_smact) field_ids.push_back(DCGM_FI_PROF_SM_ACTIVE);
@@ -260,13 +261,13 @@ Profiler::Profiler(const std::string &profile_log_path)
         CUDA_CALL(cudaMemGetInfo(&free, &total));
         total_mem = total - free;
         if (Config::use_shared_tensor) {
-          infer_mem = sta::CUDAMemPool::InferMemUsage();
+          infer_mem = sta::CUDAMemPool::InferMemUsage(0);
         }
       } else {
         auto read_resource_info = [&]() {
-          infer_mem = sta::CUDAMemPool::InferMemUsage();
-          train_mem = sta::CUDAMemPool::TrainMemUsage();
-          train_all_mem = sta::CUDAMemPool::TrainAllMemUsage();
+          infer_mem = sta::CUDAMemPool::InferMemUsage(0);
+          train_mem = sta::CUDAMemPool::TrainMemUsage(0);
+          train_all_mem = sta::CUDAMemPool::TrainAllMemUsage(0);
           total_mem = static_cast<size_t>(Config::cuda_memory_pool_gb * 1_GB);
           if (Config::cold_cache_max_capability_nbytes != 0) {
             cold_cache_nbytes = ColdModelCache::Get().GetCachedNbytesUnsafe();

@@ -15,8 +15,8 @@
 #include <CLI/CLI.hpp>
 
 #include <common/cuda_allocator.h>
-#include <common/init.h>
 #include <common/sm_partition.h>
+#include <common/device_manager.h>
 #include <common/util.h>
 
 #include "grpc/grpc_server.h"
@@ -253,7 +253,7 @@ int main(int argc, char *argv[]) {
   auto free_list_policy = colserve::sta::getFreeListPolicy(
       colserve::Config::mempool_freelist_policy);
   if (colserve::Config::use_shared_tensor) {
-    colserve::sta::InitMemoryPool(
+    colserve::sta::CUDAMemPool::Init(
       static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
       true, false, free_list_policy);
     colserve::sta::CUDAMemPool::Get()->RegisterOOMHandler([]() {
@@ -264,6 +264,7 @@ int main(int argc, char *argv[]) {
   if (colserve::Config::dynamic_sm_partition) {
     colserve::SMPartitioner::Init(0, true, false);
   }
+  colserve::DeviceManager::Init();
   colserve::ResourceManager::Init();
   colserve::Controller::Init();
   colserve::Profiler::Init(colserve::Config::profile_log_path);

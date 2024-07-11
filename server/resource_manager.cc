@@ -15,49 +15,7 @@ namespace colserve {
 std::unique_ptr<ResourceManager> ResourceManager::resource_manager_;
 
 ResourceManager::ResourceManager() {
-  auto visible_gpu_env = std::getenv("CUDA_VISIBLE_DEVICES");
-  uint32_t num_gpus;
-  NVML_CALL(nvmlDeviceGetCount(&num_gpus));
-  for (int i = 0; i < num_gpus; i++) {
-    nvmlDevice_t device;
-    NVML_CALL(nvmlDeviceGetHandleByIndex(i, &device));
-    char uuid[128];
-    NVML_CALL(nvmlDeviceGetUUID(device, uuid, 128));
-    system_gpu_uuids_.push_back(uuid);
-  }
-  if (visible_gpu_env) {
-    std::string visible_gpu_str(visible_gpu_env);
-    // std::vector<std::string> visible_gpu_strs = 
-    std::vector<std::string> visible_gpu_strs;
-    boost::algorithm::split(visible_gpu_strs, visible_gpu_str, boost::is_any_of(","));
-    for (int i = 0; i < visible_gpu_strs.size(); i++) {
-      try {
-        int gpu_id = std::stoi(visible_gpu_strs[i]);
-        if (gpu_id < 0 || gpu_id >= num_gpus) {
-          LOG(FATAL) << "Invalid CUDA_VISIBLE_DEVICES " << visible_gpu_strs[i];
-        }
-        gpu_id_map_[i] = {gpu_id, system_gpu_uuids_[gpu_id]};
-      } catch (std::invalid_argument &e) {
-        std::regex r{"GPU-[^ ,]+"};
-        std::smatch m;
-        if (std::regex_search(visible_gpu_strs[i], m, r)) {
-          std::string gpu_uuid = m.str();
-          auto it = std::find(system_gpu_uuids_.begin(), system_gpu_uuids_.end(), gpu_uuid);
-          if (it == system_gpu_uuids_.end()) {
-            LOG(FATAL) << "Invalid CUDA_VISIBLE_DEVICES " << visible_gpu_strs[i];
-          }
-          auto gpu_sys_id = it - system_gpu_uuids_.begin();
-          gpu_id_map_[i] = {gpu_sys_id, system_gpu_uuids_[gpu_sys_id]};
-        } else {
-          LOG(FATAL) << "Invalid CUDA_VISIBLE_DEVICES " << visible_gpu_strs[i];
-        }
-      } 
-    }
-  } else {
-    for (int i = 0; i < num_gpus; i++) {
-      gpu_id_map_[i] = {i, system_gpu_uuids_[i]};
-    }
-  }
+  
 }
 
 double ResourceManager::GetFreeMemoryMB(bool verbose) {
@@ -69,7 +27,7 @@ double ResourceManager::GetFreeMemoryMB(bool verbose) {
   double train_predict_memory_mb = TrainLauncher::Get()->PredictMemUsageMB(verbose);
 
   if (Config::use_shared_tensor) {
-    free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::PoolNbytes());
+    free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::PoolNbytes(0));
     free_memory_mb -= infer_memory_mb;
     free_memory_mb -= std::max(train_memory_mb, train_predict_memory_mb);
     free_memory_mb -= Config::train_memory_over_predict_mb;
@@ -102,7 +60,7 @@ double ResourceManager::GetTrainAvailMemoryMB(bool verbose) {
 
   double free_memory_mb;
   if (Config::use_shared_tensor) {
-    free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::PoolNbytes());
+    free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::PoolNbytes(0));
     free_memory_mb -= infer_memory_mb;
     free_memory_mb -= Config::train_memory_over_predict_mb;
   } else {
@@ -114,9 +72,9 @@ double ResourceManager::GetTrainAvailMemoryMB(bool verbose) {
     );
   }
 
-    LOG_IF(INFO, verbose) << "[ResourceManager]"
-                          << " free memory " << free_memory_mb
-                          << " infer memory " << infer_memory_mb;
+  LOG_IF(INFO, verbose) << "[ResourceManager]"
+                        << " free memory " << free_memory_mb
+                        << " infer memory " << infer_memory_mb;
 
   return free_memory_mb;  
 }
@@ -139,7 +97,7 @@ bool ResourceManager::InferChangeMemoryTryLock() {
 double ResourceManager::GetInferMemoryMB() {
   using namespace sta;
   if (Config::use_shared_tensor_infer) {
-    return ByteToMB(CUDAMemPool::InferMemUsage());
+    return ByteToMB(CUDAMemPool::InferMemUsage(0));
   } else {
     return ByteToMB(Profiler::GetLastInferMem());
   }
@@ -148,35 +106,12 @@ double ResourceManager::GetInferMemoryMB() {
 double ResourceManager::GetTrainMemoryMB() {
   using namespace sta;
   if (Config::use_shared_tensor_train) {
-    return ByteToMB(CUDAMemPool::TrainAllMemUsage());
+    return ByteToMB(CUDAMemPool::TrainAllMemUsage(0));
   } else {
     return ByteToMB(Profiler::GetLastTrainMem());
   }
 }
 
-int ResourceManager::GetNumGpu() {
-  CHECK(resource_manager_ != nullptr);
-  return resource_manager_->system_gpu_uuids_.size();
-}
-
-int ResourceManager::GetNumVisibleGpu() {
-  CHECK(resource_manager_ != nullptr);
-  return resource_manager_->gpu_id_map_.size();
-}
-
-int ResourceManager::GetGpuSystemId(int gpu_id) {
-  CHECK(resource_manager_ != nullptr);
-  auto iter = resource_manager_->gpu_id_map_.find(gpu_id);
-  CHECK(iter != resource_manager_->gpu_id_map_.end());
-  return iter->second.first;
-}
-
-const std::string& ResourceManager::GetGpuSystemUuid(int gpu_id) {
-  CHECK(resource_manager_ != nullptr);
-  auto iter = resource_manager_->gpu_id_map_.find(gpu_id);
-  CHECK(iter != resource_manager_->gpu_id_map_.end());
-  return iter->second.second;
-}
 
 
 }

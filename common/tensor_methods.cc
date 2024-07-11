@@ -3,11 +3,10 @@
 #include <ATen/native/TensorConversions.h>
 #include <cuda_runtime_api.h>
 
-#include "init.h"
-#include "tensor_methods.h"
-#include "tensor.h"
-#include "shape_helper.h"
-#include "dtype_helper.h"
+#include <common/tensor_methods.h>
+#include <common/tensor.h>
+#include <common/shape_helper.h>
+#include <common/dtype_helper.h>
 
 namespace colserve {
 namespace sta {
@@ -21,7 +20,7 @@ STensor Empty(at::IntArrayRef size, at::MemoryFormat memory_format,
   CHECK(device.device_type == kDLCUDA);
   auto storage_nbytes = ComputeStorageNbytes(size, dtype);
   std::shared_ptr<CUDAMemPool::PoolEntry> entry;
-  if (allocate_tensor_from_memory_pool) {
+  if (CUDAMemPool::IsEnable()) {
     entry = CUDAMemPool::Get()->Alloc(device.device_id, storage_nbytes, mtype, false);
   } else {
     entry = CUDAMemPool::RawAlloc(device.device_id, storage_nbytes, mtype);
@@ -41,7 +40,7 @@ STensor EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride,
   CHECK(device.device_type == kDLCUDA);
   auto storage_nbytes = ComputeStorageNbytes(size, stride, dtype);
   std::shared_ptr<CUDAMemPool::PoolEntry> entry;
-  if (allocate_tensor_from_memory_pool) {
+  if (CUDAMemPool::IsEnable()) {
     entry = CUDAMemPool::Get()->Alloc(device.device_id, storage_nbytes, mtype, false);
   } else {
     entry = CUDAMemPool::Get()->RawAlloc(device.device_id, storage_nbytes, mtype);
@@ -186,7 +185,7 @@ void STensor::AllocForNull(MemType mtype) {
   auto storage_nbytes = ComputeStorageNbytes(
       get()->shape_, get()->stride_, get()->tensor_.dtype, StorageOffset());
   TensorContainer::memory_data_t mdata;
-  if (allocate_tensor_from_memory_pool) {
+  if (CUDAMemPool::IsEnable()) {
     mdata = CUDAMemPool::Get()->Alloc(get()->tensor_.device.device_id, 
                                       storage_nbytes, mtype, false);
   } else {

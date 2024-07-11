@@ -18,29 +18,29 @@ cdef extern from "<csrc/cuda_allocator_plugin.h>" namespace "torch::cuda::CUDACo
 cdef extern from "<common/cuda_allocator.h>" namespace "colserve::sta":
     cdef cppclass CUDAMemPool:
         @staticmethod
-        size_t InferMemUsage()
+        size_t InferMemUsage(int)
         @staticmethod
-        size_t TrainMemUsage()
+        size_t TrainMemUsage(int)
         @staticmethod
-        size_t TrainAllMemUsage()
+        size_t TrainAllMemUsage(int)
         @staticmethod
-        void FreeTrainLocals()
+        void FreeTrainLocals(int)
         @staticmethod
         size_t TrainAllocMs()
         @staticmethod
         void ResetTrainAllocMs()
 
-def cuda_memory_pool_infer_usage():
-    return CUDAMemPool.InferMemUsage()
+def cuda_memory_pool_infer_usage(device_id):
+    return CUDAMemPool.InferMemUsage(device_id)
 
-def cuda_memory_pool_train_usage():
-    return CUDAMemPool.TrainMemUsage()
+def cuda_memory_pool_train_usage(device_id):
+    return CUDAMemPool.TrainMemUsage(device_id)
 
-def cuda_memory_pool_train_all_usage():
-    return CUDAMemPool.TrainAllMemUsage()
+def cuda_memory_pool_train_all_usage(device_id):
+    return CUDAMemPool.TrainAllMemUsage(device_id)
 
-def cuda_memory_pool_free_train_local():
-    CUDAMemPool.FreeTrainLocals()
+def cuda_memory_pool_free_train_local(device_id):
+    CUDAMemPool.FreeTrainLocals(device_id)
 
 
 # release activations by traversing grad_fn 

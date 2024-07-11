@@ -182,7 +182,7 @@ def main():
     train_valiation.val_begin()
     stream = torch.cuda.Stream()
     # if hook_mode.use_xsched():
-    if torch_col.enable_xsched():
+    if torch_col.is_enable_xsched():
         from torch_col import xsched
         xsched.register_stream(stream)
         print("CUDA Stream create with xsched registered.")

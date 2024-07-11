@@ -6,7 +6,7 @@ add_library(sta SHARED
   shape_helper.cc
   tensor_methods.cc
   tensor.cc
-  init.cc
+  device_manager.cc
   sm_partition.cu
   sm_partition.cc
 )

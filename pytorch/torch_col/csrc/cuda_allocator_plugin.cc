@@ -55,12 +55,15 @@ void CUDAColAllocator::init(int device_count) {
   // auto pool_freelist_policy = colserve::sta::getFreeListPolicy(pool_freelist_policy_str);
   sta::FreeListPolicyType policy;
   size_t pool_nbytes = static_cast<size_t>(torch_col::TorchColConfig::shared_tensor_pool_gb * 1_GB); 
-  colserve::sta::InitMemoryPool(pool_nbytes, !torch_col::TorchColConfig::has_shared_tensor_server, 
-                                false, policy);
+  // colserve::sta::InitMemoryPool(pool_nbytes, !torch_col::TorchColConfig::has_shared_tensor_server, 
+  //                               false, policy);
+  colserve::sta::CUDAMemPool::Init(
+      pool_nbytes, !torch_col::TorchColConfig::has_shared_tensor_server, 
+      false, policy);
 
   initialized_ = true;
   LOG(INFO) << "pytorch CUDAColAllocator Initialized, "
-            << " infer memory usage " << sta::ByteDisplay(sta::CUDAMemPool::InferMemUsage());
+            << " infer memory usage " << sta::ByteDisplay(sta::CUDAMemPool::InferMemUsage(0));
 }
 
 c10::DataPtr CUDAColAllocator::allocate(size_t nbytes) const {
@@ -109,7 +112,9 @@ void CUDAColAllocator::raw_delete(void* ptr) {
 }
 
 void CUDAColAllocator::emptyCache() {
-  sta::CUDAMemPool::FreeTrainLocals();
+  int device;
+  CUDA_CALL(cudaGetDevice(&device));
+  sta::CUDAMemPool::FreeTrainLocals(device);
 }
 
 void CUDAColAllocator::setMemoryFraction(double fraction, int device) {

@@ -1,7 +1,7 @@
+#include "log_as_glog_sta.h"
 #include <common/cuda_allocator.h>
-
-#include <glog/logging.h>
 #include <common/util.h>
+#include <common/device_manager.h>
 #include <mpool/mapping_region.h>
 #include <mpool/mem_block.h>
 #include <mpool/caching_allocator.h>
@@ -20,6 +20,7 @@
 namespace colserve {
 namespace sta {
 
+bool CUDAMemPool::allocate_tensor_from_memory_pool_ = false;
 std::unique_ptr<CUDAMemPool> CUDAMemPool::cuda_mem_pool_;
 
 CUDAMemPool* CUDAMemPool::Get() {
@@ -29,62 +30,72 @@ CUDAMemPool* CUDAMemPool::Get() {
   return cuda_mem_pool_.get();
 }
 
+bool CUDAMemPool::IsEnable() {
+  return allocate_tensor_from_memory_pool_;
+}
+
 void CUDAMemPool::Init(std::size_t nbytes, bool cleanup, bool observe,
                        FreeListPolicyType free_list_policy) {
   // DLOG(INFO) << "[CUDA Memory Pool] initilized with size " << size / 1024 / 1024 << " Mb";
   cuda_mem_pool_ =
       std::make_unique<CUDAMemPool>(nbytes, cleanup, observe, free_list_policy);
+  allocate_tensor_from_memory_pool_ = true;
 }
 
 CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool cleanup, bool observe,
                          FreeListPolicyType free_list_policy) {
   //    remove("/dev/shm/gpu_colocation_mempool");
-  // CHECK_EQ(setenv("COL_MEMPOOL_NBYTES", nbytes_s.c_str(), true), 0);
-  // CHECK_EQ(setenv("COL_MEMPOOL_CLEANUP", cleanup_s.c_str(), true), 0);
   std::string prefix =
       "gpu_colocation_" + std::string(getenv("CUDA_VISIBLE_DEVICES"));
-  mpool::PagesPoolConf pages_pool_config{
-      .device_id = 0,
-      .page_nbytes = 32_MB,
-      .pool_nbytes = nbytes,
-      .shm_name = prefix + "_pages_pool",
-      .log_prefix = "[PagesPool] ",
-      .shm_nbytes = 4_MB,
-  };
-  mpool::VMMAllocatorConfig torch_allocator_config{
-      .log_prefix = "[TorchAllocator] ",
-      .shm_name = prefix + "_torch_allocator",
-      .shm_nbytes = 64_MB,
-      .va_range_scale = 8,
-      .belong_name = "Torch",
-      .small_block_nbytes = 2_MB,
-      .align_nbytes = 512};
-  mpool::VMMAllocatorConfig tvm_allocator_config{
-      .log_prefix = "[TVMAllocator] ",
-      .shm_name = prefix + "_tvm_allocator",
-      .shm_nbytes = 64_MB,
-      .va_range_scale = 1 ,
-      .belong_name = "TVM",
-      .small_block_nbytes = 32_MB,
-      .align_nbytes = 512};
-  if (cleanup) {
-    mpool::PagesPool::RemoveShm(pages_pool_config);
-    mpool::VMMAllocator::RemoveShm(torch_allocator_config);
-    mpool::VMMAllocator::RemoveShm(tvm_allocator_config);
+
+  for (int i = 0; i < DeviceManager::GetNumVisibleGpu(); i++) {
+    mpool::PagesPoolConf pages_pool_config{
+        .device_id = i,
+        .page_nbytes = 32_MB,
+        .pool_nbytes = nbytes,
+        .shm_name = prefix + "_pages_pool",
+        .log_prefix = "[PagesPool] ",
+        .shm_nbytes = 4_MB,
+    };
+    mpool::VMMAllocatorConfig torch_allocator_config{
+        .log_prefix = "[TorchAllocator] ",
+        .shm_name = prefix + "_torch_allocator",
+        .shm_nbytes = 64_MB,
+        .va_range_scale = 8,
+        .belong_name = "Torch",
+        .small_block_nbytes = 2_MB,
+        .align_nbytes = 512};
+    mpool::VMMAllocatorConfig tvm_allocator_config{
+        .log_prefix = "[TVMAllocator] ",
+        .shm_name = prefix + "_tvm_allocator",
+        .shm_nbytes = 64_MB,
+        .va_range_scale = 1 ,
+        .belong_name = "TVM",
+        .small_block_nbytes = 32_MB,
+        .align_nbytes = 512};
+    if (cleanup) {
+      mpool::PagesPool::RemoveShm(pages_pool_config);
+      mpool::VMMAllocator::RemoveShm(torch_allocator_config);
+      mpool::VMMAllocator::RemoveShm(tvm_allocator_config);
+    }
+    auto pages_pool_ = new mpool::SharableObject<mpool::PagesPool>{
+        pages_pool_config.shm_name, pages_pool_config.shm_nbytes,
+        pages_pool_config};
+    auto torch_allocator = new mpool::SharableObject<mpool::CachingAllocator>{
+        torch_allocator_config.shm_name, torch_allocator_config.shm_nbytes,
+        *pages_pool_->GetObject(), torch_allocator_config};
+    auto tvm_allocator = new mpool::SharableObject<mpool::DirectAllocator>{
+        tvm_allocator_config.shm_name, tvm_allocator_config.shm_nbytes,
+        *pages_pool_->GetObject(), tvm_allocator_config};
+
+    pages_pools_.push_back(pages_pool_);
+    torch_allocators_.push_back(torch_allocator);
+    tvm_allocators_.push_back(tvm_allocator);
   }
-  pages_pool_ = new mpool::SharableObject<mpool::PagesPool>{
-      pages_pool_config.shm_name, pages_pool_config.shm_nbytes,
-      pages_pool_config};
-  torch_allocator_ = new mpool::SharableObject<mpool::CachingAllocator>{
-      torch_allocator_config.shm_name, torch_allocator_config.shm_nbytes,
-      *pages_pool_->GetObject(), torch_allocator_config};
-  tvm_allocator_ = new mpool::SharableObject<mpool::DirectAllocator>{
-      tvm_allocator_config.shm_name, tvm_allocator_config.shm_nbytes,
-      *pages_pool_->GetObject(), tvm_allocator_config};
 }
 
 std::shared_ptr<CUDAMemPool::PoolEntry> 
-CUDAMemPool::Alloc(int deivce_id, std::size_t nbytes, 
+CUDAMemPool::Alloc(int device_id, std::size_t nbytes, 
                    MemType mtype, bool allow_nullptr) {
   CHECK(!allow_nullptr) << "currently deprecated";
   if (nbytes == 0) {
@@ -94,35 +105,37 @@ CUDAMemPool::Alloc(int deivce_id, std::size_t nbytes,
 
   static std::mutex mutex_;
   std::unique_lock lock{mutex_};
-  auto t0 = std::chrono::steady_clock::now();
+  // auto t0 = std::chrono::steady_clock::now();
   mpool::MemBlock* mem_block;
   std::byte* ptr;
   if (mtype == MemType::kInfer) {
-    mem_block = cuda_mem_pool_->tvm_allocator_->GetObject()->Alloc(nbytes, 512, 0, 0);
-    ptr = cuda_mem_pool_->tvm_allocator_->GetObject()->GetBasePtr() + mem_block->addr_offset;
+    mem_block = cuda_mem_pool_->tvm_allocators_[device_id]->GetObject()->Alloc(nbytes, 512, 0, 0);
+    ptr = cuda_mem_pool_->tvm_allocators_[device_id]->GetObject()->GetBasePtr() 
+          + mem_block->addr_offset;
   } else if (mtype == MemType::kTrain) {
-    mem_block = cuda_mem_pool_->torch_allocator_->GetObject()->Alloc(nbytes, 512, 0, 
-                                                                     mpool::VMMAllocator::ALLOC_TRY_EXPAND_VA);
-    ptr = cuda_mem_pool_->torch_allocator_->GetObject()->GetBasePtr() + mem_block->addr_offset;
+    mem_block = cuda_mem_pool_->torch_allocators_[device_id]->GetObject()->Alloc(
+        nbytes, 512, 0, mpool::VMMAllocator::ALLOC_TRY_EXPAND_VA);
+    ptr = cuda_mem_pool_->torch_allocators_[device_id]->GetObject()->GetBasePtr() 
+          + mem_block->addr_offset;
     DLOG(INFO) << "Torch Alloc: " << ptr << ", nbytes = " << nbytes;
   } else {
     LOG(FATAL) << "Unknown mtype: " << static_cast<size_t>(mtype);
   }
-  auto t1 = std::chrono::steady_clock::now();
-  if (mtype == MemType::kTrain) {
-    cuda_mem_pool_->train_alloc_us_.fetch_add(
-        std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count(),
-        std::memory_order_relaxed);
-  }
+  // auto t1 = std::chrono::steady_clock::now();
+  // if (mtype == MemType::kTrain) {
+  //   cuda_mem_pool_->train_alloc_us_.fetch_add(
+  //       std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count(),
+  //       std::memory_order_relaxed);
+  // }
   // DLOG(INFO) << "mtype = " << static_cast<size_t>(mtype) << ", alloc time = "
   //            << std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() << ".";
 
-  auto free = [&, mtype](CUDAMemPool::PoolEntry* entry) {
+  auto free = [&, mtype, device_id](CUDAMemPool::PoolEntry* entry) {
     std::unique_lock lock{mutex_};
     if (mtype == MemType::kInfer) {
-      Get()->tvm_allocator_->GetObject()->Free(entry->block, 0);
+      Get()->tvm_allocators_[device_id]->GetObject()->Free(entry->block, 0);
     } else if (mtype == MemType::kTrain) {
-      Get()->torch_allocator_->GetObject()->Free(entry->block, 0);
+      Get()->torch_allocators_[device_id]->GetObject()->Free(entry->block, 0);
       DLOG(INFO) << "Torch Free: " << entry->addr
                  << ", nbytes = " << entry->nbytes;
     } else {
@@ -165,43 +178,48 @@ CUDAMemPool::RawAlloc(int device_id, size_t nbytes, MemType mtype) {
 }
 
 CUDAMemPool::~CUDAMemPool() {
-  delete torch_allocator_;
-  delete tvm_allocator_;
-  delete pages_pool_;
+  for (auto p : torch_allocators_) delete p;
+  for (auto p : tvm_allocators_) delete p;
+  for (auto p : pages_pools_) delete p;
+
+  torch_allocators_.clear();
+  tvm_allocators_.clear();
+  pages_pools_.clear();
 }
 
 
-size_t CUDAMemPool::InferMemUsage() {
-  auto status = Get()->tvm_allocator_->GetObject()->GetStats();
-  size_t nbytes =  status.mem_block_nbytes[false].allocated_free[0] + status.mem_block_nbytes[true].allocated_free[0];
+size_t CUDAMemPool::InferMemUsage(int device_id) {
+  auto status = Get()->tvm_allocators_[device_id]->GetObject()->GetStats();
+  size_t nbytes =  status.mem_block_nbytes[false].allocated_free[0] 
+                   + status.mem_block_nbytes[true].allocated_free[0];
   // LOG(INFO) << "InferMemUsage " << ByteDisplay(nbytes) << ".";
   return nbytes;
 }
 
-size_t CUDAMemPool::TrainMemUsage() {
-  auto status = Get()->torch_allocator_->GetObject()->GetStats();
-  size_t nbytes = status.mem_block_nbytes[false].allocated_free[0] + status.mem_block_nbytes[true].allocated_free[0];
+size_t CUDAMemPool::TrainMemUsage(int device_id) {
+  auto status = Get()->torch_allocators_[device_id]->GetObject()->GetStats();
+  size_t nbytes = status.mem_block_nbytes[false].allocated_free[0] 
+                  + status.mem_block_nbytes[true].allocated_free[0];
   // LOG(INFO) << "TrainMemUsage " << ByteDisplay(nbytes) << ".";
   return nbytes;
 }
 
-size_t CUDAMemPool::TrainPeakMemUsage() {
-  auto stats = Get()->torch_allocator_->GetObject()->GetStats();
+size_t CUDAMemPool::TrainPeakMemUsage(int device_id) {
+  auto stats = Get()->torch_allocators_[device_id]->GetObject()->GetStats();
   return stats.mem_block_nbytes[false].peak + stats.mem_block_nbytes[true].peak;
 }
 
-size_t CUDAMemPool::TrainAllMemUsage() {
-  // return TorchAllocator::Get().PeekAllocatedNbytes();
-  // return MemPool::Get().GetPhyMemPageNbytes(Belong::kTrain);
-  return Get()->torch_allocator_->GetObject()->belong.GetPagesNum() * Get()->pages_pool_->GetObject()->config.page_nbytes;
+size_t CUDAMemPool::TrainAllMemUsage(int device_id) {
+  return (Get()->torch_allocators_[device_id]->GetObject()->belong.GetPagesNum() 
+          * Get()->pages_pools_[device_id]->GetObject()->config.page_nbytes);
 }
 
-size_t CUDAMemPool::PoolNbytes() {
-  return Get()->pages_pool_->GetObject()->config.pool_nbytes;
+size_t CUDAMemPool::PoolNbytes(int device_id) {
+  return Get()->pages_pools_[device_id]->GetObject()->config.pool_nbytes;
 }
 
-void CUDAMemPool::FreeTrainLocals() {
-  Get()->torch_allocator_->GetObject()->EmptyCache();
+void CUDAMemPool::FreeTrainLocals(int device_id) {
+  Get()->torch_allocators_[device_id]->GetObject()->EmptyCache();
 }
 
 void CUDAMemPool::DumpDumpBlockList() {}
@@ -214,14 +232,26 @@ void CUDAMemPool::RegisterOOMHandler(std::function<void()> oom_handler,
       });
   switch (mtype) {
     case MemType::kInfer:
-      tvm_allocator_->GetObject()->AddOOMObserver(oom_observer);
+      for (auto allocator : tvm_allocators_) {
+        allocator->GetObject()->AddOOMObserver(oom_observer);
+      }
       break;
     case MemType::kTrain:
-      torch_allocator_->GetObject()->AddOOMObserver(oom_observer);
+      for (auto allocator : torch_allocators_) {
+        allocator->GetObject()->AddOOMObserver(oom_observer);
+      }
       break;
     default:
       LOG(FATAL) << "unknown MemType " << static_cast<int>(mtype) << ".";
   }
+}
+
+double CUDAMemPool::TrainAllocMs() { 
+  LOG(FATAL) << "deprecated";
+}
+
+void CUDAMemPool::ResetTrainAllocMs() {
+  LOG(FATAL) << "deprecated";
 }
 
 }  // namespace sta
