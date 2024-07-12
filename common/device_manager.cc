@@ -5,9 +5,9 @@
 #include <boost/algorithm/string.hpp>
 #include <regex>
 
-namespace colserve {
+namespace colserve::sta {
 
-std::unique_ptr<DeviceManager> DeviceManager::device_manager_;
+std::unique_ptr<DeviceManager> DeviceManager::device_manager_ = nullptr;
 
 DeviceManager::DeviceManager() {
   auto visible_gpu_env = std::getenv("CUDA_VISIBLE_DEVICES");
@@ -85,4 +85,4 @@ const std::string& DeviceManager::GetGpuSystemUuid(int gpu_id) {
   return iter->second.second;
 }
 
-}
+} // namespace colserve::sta

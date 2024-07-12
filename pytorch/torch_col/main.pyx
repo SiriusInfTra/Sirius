@@ -11,16 +11,35 @@ from enum import Enum
 cdef extern from "<csrc/config.h>" namespace "torch_col":
     cdef cppclass TorchColConfig:
         @staticmethod
-        void InitConfig(bint)
-
+        void InitConfig()
+        @staticmethod
+        bint IsEnableSharedTensor()
         @staticmethod
         bint IsEnableDynamicSmPartition()
-
         @staticmethod
         bint IsEnableXsched()
-
         @staticmethod
         string GetHookMode()
+        @staticmethod
+        bint IsReleaseIntermMemoryByGradFn()
+        @staticmethod
+        void SetReleaseIntermMemoryByGradFn(bint)
+        @staticmethod
+        void IsReleaseIntermMemoryByTagging()
+        @staticmethod
+        void SetReleaseIntermMemoryByTagging(bint)
+        @staticmethod
+        void IsEnableFbwardHook()
+
+
+cdef extern from "<common/device_manager.h>" namespace "colserve::sta":
+    cdef cppclass DeviceManager:
+        @staticmethod
+        void Init()
+
+
+def is_enable_shared_tensor():
+    return TorchColConfig.IsEnableSharedTensor()
 
 
 def is_enable_dynamic_sm_partition():
@@ -29,7 +48,7 @@ def is_enable_dynamic_sm_partition():
 
 def is_enable_xsched():
     return TorchColConfig.IsEnableXsched()
-    
+
 
 class HookMode(Enum):
     NONE = 'none'
@@ -50,18 +69,48 @@ def get_hook_mode():
     raise Exception(f"Invalid hook mode: {hook_mode_cstr}")
 
 
+def is_release_interm_memory_v1():
+    return TorchColConfig.IsReleaseIntermMemoryByGradFn()
+
+
+def is_release_interm_memory_v2():
+    return TorchColConfig.IsReleaseIntermMemoryByTagging()
+
+
+def disable_release_interm_memory():
+    TorchColConfig.SetReleaseIntermMemoryByGradFn(False)
+    TorchColConfig.SetReleaseIntermMemoryByTagging(False)
+
+
+def disable_fbward_hook():
+    TorchColConfig.SetReleaseIntermMemoryByGradFn(False)
+
+
+def is_enable_fbward_hook():
+    return TorchColConfig.IsEnableFbwardHook()
+
+
 cdef extern from "<csrc/xsched.h>" namespace "torch_col":
     cpdef void InitSMPartition()
 
-def torch_col_init(use_shared_tensor: bool):
-    import sys
 
-    TorchColConfig.InitConfig(use_shared_tensor)    
-    CUDAColAllocator.Init()
-    if use_shared_tensor:
-        CUDAColAllocator.Get().init(0)
-        CUDAColAllocator.SetCurrentAllocator()
-        # print("CUDAColAllocator initialized", file=sys.stderr, flush=True)
+cdef extern from "<csrc/init.h>" namespace "torch_col":
+    cpdef void TorchColInit()
+
+
+def torch_col_init():
+    TorchColInit()
+
+# def torch_col_init(use_shared_tensor: bool):
+#     import sys
+
+#     TorchColConfig.InitConfig(use_shared_tensor)
+#     DeviceManager.Init()
+#     CUDAColAllocator.Init()
+#     if use_shared_tensor:
+#         CUDAColAllocator.Get().init(0)
+#         CUDAColAllocator.SetCurrentAllocator()
+#         # print("CUDAColAllocator initialized", file=sys.stderr, flush=True)
 
 
 

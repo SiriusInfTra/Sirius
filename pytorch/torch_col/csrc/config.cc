@@ -20,14 +20,18 @@ int TorchColConfig::dynamic_sm_partition = false;
 
 std::string TorchColConfig::hook_mode = "none";
 
+int TorchColConfig::release_interm_memory_by_grad_fn = false;
+int TorchColConfig::release_interm_memory_by_tagging = true;
+int TorchColConfig::use_fbward_hook = true;
 
-void TorchColConfig::InitConfig(int use_shared_tensor_) {
+
+void TorchColConfig::InitConfig() {
   static bool configured = false;
   if (configured) {
     return;
   }
 
-  use_shared_tensor = use_shared_tensor;
+  auto use_shared_tensor_env = std::getenv("COL_USE_SHARED_TENSOR");
   auto colocate_use_xsched_env = std::getenv("COL_USE_XSCHED");
   auto has_infer_server_env = std::getenv("COL_HAS_INFER_SERVER");
   auto has_shared_tensor_server_env = std::getenv("COL_HAS_SHARED_TENSOR_SERVER");
@@ -35,6 +39,8 @@ void TorchColConfig::InitConfig(int use_shared_tensor_) {
   auto dynamic_sm_partition_env = std::getenv("COL_DYNAMIC_SM_PARTITION");
   auto hook_mode_env = std::getenv("COL_HOOK_MODE");
   
+  use_shared_tensor = use_shared_tensor_env == nullptr ? 
+                      false : (std::string(use_shared_tensor_env) == "1");
   colocate_use_xsched = colocate_use_xsched_env == nullptr ? 
                         false : (std::string(colocate_use_xsched_env) == "1");
   has_colocated_infer_server = has_infer_server_env == nullptr ? 

@@ -52,7 +52,7 @@ int GetDcgmFieldValues(dcgm_field_entity_group_t entity_grp_id,
                        int num_values, void* user_data) {
   auto& entry_stat = *static_cast<Profiler::dcgmEntityStat*>(user_data);
 
-  CHECK(entity_grp_id == DCGM_FE_GPU && entity_id == DeviceManager::GetGpuSystemId(0))
+  CHECK(entity_grp_id == DCGM_FE_GPU && entity_id == sta::DeviceManager::GetGpuSystemId(0))
       << "entity_grp_id " << entity_grp_id << " entity_id " << entity_id;
         
   for (int i = 0; i < num_values; i++) {
@@ -183,7 +183,7 @@ Profiler::Profiler(const std::string &profile_log_path)
   CHECK_GT(dev_cnt, 0);
 
   nvmlDevice_t device;
-  auto gpu_uuid = DeviceManager::GetGpuSystemUuid(0);
+  auto gpu_uuid = sta::DeviceManager::GetGpuSystemUuid(0);
   NVML_CALL(nvmlDeviceGetHandleByUUID(gpu_uuid.c_str(), &device));
 
   // CHECK MPS
@@ -198,7 +198,8 @@ Profiler::Profiler(const std::string &profile_log_path)
   }
 
 #if defined(USE_NVML_V3) && USE_NVML_V3 == 0
-  LOG(FATAL) << "USE_NVML_V3 is set to 0, profiler will not record memory info, mps server will not be checked";
+  LOG(FATAL) << "USE_NVML_V3 is set to 0, profiler will not record memory info, "
+             << "mps server will not be checked";
 #endif
 
   thread_.reset(new std::thread([this, device]() {
@@ -218,9 +219,10 @@ Profiler::Profiler(const std::string &profile_log_path)
       // DCGM_CALL(dcgmGroupGetInfo(this->dcgm_handle_, this->dcgm_gpu_grp_, &group_info));
       // LOG(INFO) << group_info.groupName << " " << group_info.count;
 
-      LOG(INFO) << DeviceManager::GetGpuSystemId(0) << " " << DeviceManager::GetGpuSystemUuid(0);
+      LOG(INFO) << sta::DeviceManager::GetGpuSystemId(0) 
+                << " " << sta::DeviceManager::GetGpuSystemUuid(0);
       DCGM_CALL(dcgmGroupAddEntity(this->dcgm_handle_, this->dcgm_gpu_grp_, 
-                                   DCGM_FE_GPU, DeviceManager::GetGpuSystemId(0)));
+                                   DCGM_FE_GPU, sta::DeviceManager::GetGpuSystemId(0)));
       std::vector<uint16_t> field_ids;
       if (Config::profile_gpu_util) field_ids.push_back(DCGM_FI_DEV_GPU_UTIL);
       if (Config::profile_gpu_smact) field_ids.push_back(DCGM_FI_PROF_SM_ACTIVE);

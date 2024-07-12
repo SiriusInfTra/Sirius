@@ -35,7 +35,7 @@ class TrainMode(Enum):
 class MemoryPool:
     @classmethod
     def get_memory_usage(cls):
-        if torch_col.use_shared_tensor():
+        if torch_col.is_enable_shared_tensor():
             return torch_col.cuda_memory_pool_train_all_usage(0) / 1024 / 1024 / 1024
         else:
             free, total = torch.cuda.mem_get_info(0)
@@ -43,7 +43,7 @@ class MemoryPool:
     
     @classmethod
     def get_allocated_memory(cls):
-        if torch_col.use_shared_tensor():
+        if torch_col.is_enable_shared_tensor():
             return torch_col.cuda_memory_pool_train_usage(0) / 1024 / 1024 / 1024
         else:
             free, total = torch.cuda.mem_get_info(0)
@@ -51,7 +51,7 @@ class MemoryPool:
     
     @classmethod
     def empty_cache(cls):
-        if torch_col.use_shared_tensor():
+        if torch_col.is_enable_shared_tensor():
             torch_col.cuda_memory_pool_free_train_local(0)
         else:
             torch.cuda.empty_cache()

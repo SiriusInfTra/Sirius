@@ -7,7 +7,6 @@ from dataclasses import dataclass
 import workload_collections as wkld_coll
 import run_comm
 
-set_binary_dir('bin')
 
 use_time_stamp = True
 skip_fail = True
@@ -66,6 +65,7 @@ parser.add_argument('--infer-only-without-mps', action='store_true')
 parser.add_argument('--retry-limit', type=int, default=0)
 parser.add_argument('--azure-rps', type=int, default=150)
 parser.add_argument('--skip-set-mps-pct', action='store_true')
+parser.add_argument('--binary-dir', type=str, default='build')
 args = parser.parse_args()
 
 if args.colsys or args.all_sys:
@@ -110,6 +110,9 @@ if args.skip_set_mps_pct:
 
 if not skip_set_mps_pct:
     dynamic_sm_partition = False
+
+if args.binary_dir != 'build':
+    set_binary_dir(args.binary_dir)
 
 retry_limit = args.retry_limit
 retry_if_fail = retry_limit >= 1

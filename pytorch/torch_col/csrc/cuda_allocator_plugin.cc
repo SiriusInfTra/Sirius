@@ -1,10 +1,10 @@
 #include <c10/core/Storage.h>
 #include <c10/core/TensorImpl.h>
-#include <common/util.h>
 
-#include "common/cuda_allocator.h"
-#include "cuda_allocator_plugin.h"
-#include "config.h"
+#include <common/cuda_allocator.h>
+#include <common/util.h>
+#include <torch_col/csrc/cuda_allocator_plugin.h>
+#include <torch_col/csrc/config.h>
 
 #include <glog/logging.h>
 #include <utility>

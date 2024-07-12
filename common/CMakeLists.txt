@@ -13,4 +13,11 @@ add_library(sta SHARED
 
 target_include_directories(sta PUBLIC "../")
 # target_include_directories(sta PUBLIC "../" ${TORCH_INCLUDE_DIRS})
-target_link_libraries(sta PUBLIC pages_pool allocator glog::glog CUDA::cudart CUDA::cuda_driver ${TORCH_LIBRARIES})
+target_link_libraries(sta PUBLIC 
+  pages_pool 
+  allocator 
+  glog::glog 
+  CUDA::cudart 
+  CUDA::cuda_driver 
+  CUDA::nvml
+  ${TORCH_LIBRARIES})

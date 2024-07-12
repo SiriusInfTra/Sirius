@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <memory>
 
-namespace colserve {
+namespace colserve::sta {
 
 class DeviceManager {
  public:
@@ -28,6 +28,6 @@ class DeviceManager {
 
 };
 
-}
+} // namespace colserve::sta
 
 #endif

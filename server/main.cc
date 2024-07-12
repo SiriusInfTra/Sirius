@@ -250,6 +250,7 @@ int main(int argc, char *argv[]) {
 
   CHECK_EQ(cuInit(0), CUDA_SUCCESS);
   NVML_CALL(nvmlInit());
+  colserve::sta::DeviceManager::Init();
   auto free_list_policy = colserve::sta::getFreeListPolicy(
       colserve::Config::mempool_freelist_policy);
   if (colserve::Config::use_shared_tensor) {
@@ -264,7 +265,6 @@ int main(int argc, char *argv[]) {
   if (colserve::Config::dynamic_sm_partition) {
     colserve::SMPartitioner::Init(0, true, false);
   }
-  colserve::DeviceManager::Init();
   colserve::ResourceManager::Init();
   colserve::Controller::Init();
   colserve::Profiler::Init(colserve::Config::profile_log_path);

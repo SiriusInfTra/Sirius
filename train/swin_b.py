@@ -14,7 +14,7 @@ from typing import Optional
 
 def train(train_mode: TrainMode, hook_mode: HookMode, 
           num_epoch: int, batch_size: int, global_batch_size: Optional[int] = None):
-    if torch_col.use_shared_tensor():
+    if torch_col.is_enable_shared_tensor():
         torch_col.tag_model_start()
 
     torch_col.train_model = model = models.swin_b(weights=models.Swin_B_Weights.DEFAULT).cuda()
@@ -127,7 +127,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
                 train_valiation.record_completed_batch(train_dataset, epoch, i, len(images), loss)
                 train_dataset.next_batch()
                 if epoch == 0 and i == 0:
-                    if torch_col.use_shared_tensor():
+                    if torch_col.is_enable_shared_tensor():
                         torch_col.tag_model_end()
             if hook_mode.use_xsched():
                 from torch_col import xsched
