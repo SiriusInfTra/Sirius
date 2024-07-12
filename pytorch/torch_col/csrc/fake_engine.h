@@ -32,7 +32,7 @@ class FakeEngine: public Engine {
     const std::shared_ptr<GraphTask>& graph_task,
     std::shared_ptr<Node> graph_root,
     InputBuffer&& input_buffer) {
-  return python_engine_.execute_with_graph_task(graph_task, graph_root, std::move(input_buffer));
+    return python_engine_.execute_with_graph_task(graph_task, graph_root, std::move(input_buffer));
   }
 
   virtual std::unique_ptr<AnomalyMetadata> make_anomaly_metadata() {
