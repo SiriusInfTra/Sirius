@@ -1,10 +1,10 @@
-#include "logging_as_glog.h"
-#include <common/cuda_allocator.h>
-#include <common/util.h>
-
+#include <server/logging_as_glog.h>
 #include <server/resource_manager.h>
 #include <server/train_launcher.h>
 #include <server/config.h>
+
+#include <common/cuda_allocator.h>
+#include <common/util.h>
 
 #include <regex>
 #include <boost/algorithm/string.hpp>

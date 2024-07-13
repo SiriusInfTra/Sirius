@@ -1,10 +1,11 @@
 #ifndef COLSERVE_RESOURCE_MANAGER_H
 #define COLSERVE_RESOURCE_MANAGER_H
 
-#include <common/cuda_allocator.h>
-#include <common/util.h>
 #include <server/profiler.h>
 #include <server/config.h>
+
+#include <common/cuda_allocator.h>
+#include <common/util.h>
 
 #include <memory>
 #include <cstddef>

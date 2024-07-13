@@ -1,12 +1,12 @@
 #ifndef COLSERVE_GRAPH_EXECUTOR
 #define COLSERVE_GRAPH_EXECUTOR
 
+#include <server/tvm/graph.h>
+#include <server/config.h>
+
 #include <common/tensor_methods.h>
 #include <common/tensor.h>
 #include <common/cuda_allocator.h>
-
-#include <server/tvm/graph.h>
-#include <server/config.h>
 
 #include <algorithm>
 #include <cstddef>

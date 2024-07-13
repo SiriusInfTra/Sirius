@@ -21,6 +21,7 @@ class DeviceManager {
  private:
   static std::unique_ptr<DeviceManager> device_manager_;
 
+  // uuid of all system gpu
   std::vector<std::string> system_gpu_uuids_;
 
   // visible id -> (system id, uuid)

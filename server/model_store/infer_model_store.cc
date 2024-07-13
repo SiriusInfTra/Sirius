@@ -1,12 +1,13 @@
-#include <common/dtype_helper.h>
-#include <common/device_manager.h>
 #include <server/logging_as_glog.h>
-#include <server/infer_model_store.h>
-#include <server/infer_model.h>
+#include <server/model_store/infer_model_store.h>
+#include <server/model_store/infer_model.h>
 #include <server/train_launcher.h>
-#include <server/controller.h>
+#include <server/train_control/controller.h>
 #include <server/profiler.h>
 #include <server/config.h> 
+
+#include <common/dtype_helper.h>
+#include <common/device_manager.h>
 
 #include <atomic>
 #include <filesystem>

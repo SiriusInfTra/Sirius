@@ -1,8 +1,11 @@
-#include "logging_as_glog.h"
-#include <pthread.h>
-#include <unistd.h>
-#include <sys/wait.h>
-#include <chrono>
+#include <server/logging_as_glog.h>
+#include <server/resource_manager.h>
+#include <server/model_store/infer_model_store.h>
+#include <server/train_launcher.h>
+#include <server/train_control/controller.h>
+#include <server/profiler.h>
+#include <server/config.h>
+
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/c_runtime_api.h>
 #include <tvm/runtime/packed_func.h>
@@ -11,13 +14,11 @@
 #include <tvm/runtime/logging.h>
 #include <glog/logging.h>
 #include <random>
+#include <pthread.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <chrono>
 
-#include <server/resource_manager.h>
-#include <server/infer_model_store.h>
-#include <server/train_launcher.h>
-#include <server/controller.h>
-#include <server/profiler.h>
-#include <server/config.h>
 
 
 namespace colserve {
@@ -306,8 +307,10 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
     if (Config::use_shared_tensor_train) {
       CHECK_NE(setenv("COL_USE_SHARED_TENSOR", "1", 1), -1);
       CHECK_NE(setenv("COL_HAS_SHARED_TENSOR_SERVER", "1", 1), -1);
-      CHECK_NE(setenv("COL_SHARED_TENSOR_POOL_GB", std::to_string(Config::cuda_memory_pool_gb).c_str(), 1), -1);
-      CHECK_NE(setenv("SHARED_TENSOR_POOL_FREELIST_POLICY", Config::mempool_freelist_policy.c_str(), 1), -1);
+      CHECK_NE(setenv("COL_SHARED_TENSOR_POOL_GB", 
+                      std::to_string(Config::cuda_memory_pool_gb).c_str(), 1), -1);
+      CHECK_NE(setenv("SHARED_TENSOR_POOL_FREELIST_POLICY", 
+                      Config::mempool_freelist_policy.c_str(), 1), -1);
       extra_env_ss << "COL_USE_SHARED_TENSOR=1"
                    << " COL_HAS_SHARED_TENSOR_SERVER=1"
                    << " COL_SHARED_TENSOR_POOL_GB=" << Config::cuda_memory_pool_gb

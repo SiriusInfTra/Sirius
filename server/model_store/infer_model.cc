@@ -1,11 +1,13 @@
-#include <common/util.h>
-#include <common/sm_partition.h>
-#include <server/infer_model_store.h>
-#include <server/infer_model.h>
-#include <server/controller.h>
+#include <server/logging_as_glog.h>
+#include <server/model_store/infer_model_store.h>
+#include <server/model_store/infer_model.h>
+#include <server/train_control/controller.h>
 #include <server/config.h>
 #include <server/resource_manager.h>
 #include <server/train_launcher.h>
+
+#include <common/util.h>
+#include <common/sm_partition.h>
 
 #include <algorithm>
 #include <chrono>

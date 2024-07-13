@@ -1,6 +1,6 @@
 #include <common/util.h>
 
-#include "config.h"
+#include <server/config.h>
 
 namespace colserve {
 

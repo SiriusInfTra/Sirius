@@ -1,17 +1,19 @@
 #ifndef COLSERVE_COMMON_UTIL_H
 #define COLSERVE_COMMON_UTIL_H
 
+#include <common/device_manager.h>
+
+#include <boost/format.hpp>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
+#include <nvml.h>
+#include <sys/unistd.h>
 
 #include <iostream>
 #include <iomanip>
 #include <cstdint>
 #include <sstream>
 
-#include <cuda.h>
-#include <cuda_runtime_api.h>
-#include <nvml.h>
 
 namespace colserve {
 
@@ -95,7 +97,13 @@ inline std::string ByteDisplay(size_t nbytes) {
 }
 }
 
+inline std::string GetDefaultShmNamePrefix() {
+  return (boost::format("colserve_%s_%s") % sta::DeviceManager::GetGpuSystemUuid(0) 
+                                          % getuid())
+                                          .str();
 }
+
+} // namespace colserve
 
 
 

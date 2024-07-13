@@ -1,4 +1,4 @@
-#include "logging_as_glog.h"
+#include <server/logging_as_glog.h>
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/c_runtime_api.h>
 #include <tvm/runtime/packed_func.h>
@@ -19,14 +19,13 @@
 #include <common/device_manager.h>
 #include <common/util.h>
 
-#include "grpc/grpc_server.h"
-#include "colserve.grpc.pb.h"
-#include "infer_model_store.h"
-#include "train_launcher.h"
-#include "resource_manager.h"
-#include "controller.h"
-#include "profiler.h"
-#include "config.h"
+#include <server/grpc/grpc_server.h>
+#include <server/model_store/infer_model_store.h>
+#include <server/train_launcher.h>
+#include <server/resource_manager.h>
+#include <server/train_control/controller.h>
+#include <server/profiler.h>
+#include <server/config.h>
 
 #define STREAM_OUTPUT(field) std::cerr << "cfg::" #field "=" << cfg::field << std::endl
 

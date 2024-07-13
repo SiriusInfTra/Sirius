@@ -1,15 +1,16 @@
 #ifndef COLSERVE_INFER_MODEL_STORE_H
 #define COLSERVE_INFER_MODEL_STORE_H
 
-#include "common/util.h"
-#include "logging_as_glog.h"
-#include "resource_manager.h"
+#include <server/logging_as_glog.h>
+#include <server/resource_manager.h>
 #include <server/tvm/executor.h>
 #include <server/grpc/grpc_server.h>
-#include <server/job_queue.h>
+#include <server/schedule/job_queue.h>
 #include <server/profiler.h>
-#include <server/infer_model.h>
+#include <server/model_store/infer_model.h>
 #include <server/config.h>
+
+#include <common/util.h>
 
 #include <atomic>
 #include <iomanip>

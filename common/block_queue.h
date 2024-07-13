@@ -1,6 +1,11 @@
 #ifndef COLSERVE_MEMORY_QUEUE_H
 #define COLSERVE_MEMORY_QUEUE_H
 
+#include <common/util.h>
+
+#include <glog/logging.h>
+#include <boost/format.hpp>
+
 #include <iostream>
 #include <array>
 #include <mutex>
@@ -12,7 +17,6 @@
 #include <semaphore.h>
 #include <queue>
 
-#include <glog/logging.h>
 
 
 namespace colserve {
@@ -234,12 +238,17 @@ class MemoryQueue {
 
 
   std::string GetShmName(size_t version) {
-    auto *gpu_id = std::getenv("CUDA_VISIBLE_DEVICES");
-    CHECK(gpu_id != nullptr);
+    // auto *gpu_id = std::getenv("CUDA_VISIBLE_DEVICES");
+    // CHECK(gpu_id != nullptr);
+    // auto gpu_uuid = sta::DeviceManager::GetGpuSystemUuid(0);
     if (version == static_cast<size_t>(-1)) {
-      return "colserve-mq-" + std::to_string(getuid()) + "-" + name_ + "-" + gpu_id;
+      // return boost::format("colserve_%d_%s_%s_mq") % getuid() % gpu_uuid % 
+      // return "colserve-mq-" + std::to_string(getuid()) + "-" + name_ + "-" + gpu_id;
+      return str(boost::format("%s_mq_%s") % GetDefaultShmNamePrefix() % name_);
+
     } else {
-      return "colserve-mq-" + std::to_string(getuid()) + "-" + name_ + "-" + gpu_id + "-" + std::to_string(version);
+      return str(boost::format("%s_mq_%s_%d") % GetDefaultShmNamePrefix() % name_ % version);
+      // return "colserve-mq-" + std::to_string(getuid()) + "-" + name_ + "-" + gpu_id + "-" + std::to_string(version);
     }
   }
   void Lock() {
