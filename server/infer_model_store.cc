@@ -178,7 +178,8 @@ void WarmModelCache::ReserveCacheInternal(
           if (cm == model) { continue; }
           auto &cm_name = cm->GetName();
           if (reclaimed_model.count(cm_name) > 0) { continue; }
-          std::unique_lock warm_cache_lock{infer_model_cache_->warm_cache_[cm_name]->mut, std::defer_lock}; /* slow */
+          std::unique_lock warm_cache_lock{infer_model_cache_->warm_cache_[cm_name]->mut, 
+                                           std::defer_lock}; /* slow */
           if (try_cnt == 0) {
             warm_cache_lock.try_lock();
             if (!warm_cache_lock.owns_lock()) { continue; }

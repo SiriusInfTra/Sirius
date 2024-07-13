@@ -538,7 +538,7 @@ void Profiler::WriteLog() {
     ofs << std::endl;
   }
 
-  LOG(INFO) << "[Profiler] write prfile info to " << profile_log_path_;
+  LOG(INFO) << "[Profiler] write profile info to " << profile_log_path_;
 }
 
 std::vector<std::vector<std::string>>

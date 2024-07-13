@@ -37,8 +37,8 @@ bool CUDAMemPool::IsEnable() {
 void CUDAMemPool::Init(std::size_t nbytes, bool cleanup, bool observe,
                        FreeListPolicyType free_list_policy) {
   // DLOG(INFO) << "[CUDA Memory Pool] initilized with size " << size / 1024 / 1024 << " Mb";
-  cuda_mem_pool_ =
-      std::make_unique<CUDAMemPool>(nbytes, cleanup, observe, free_list_policy);
+  cuda_mem_pool_ = std::make_unique<CUDAMemPool>(nbytes, cleanup, 
+                                                 observe, free_list_policy);
   allocate_tensor_from_memory_pool_ = true;
 }
 
@@ -109,7 +109,8 @@ CUDAMemPool::Alloc(int device_id, std::size_t nbytes,
   mpool::MemBlock* mem_block;
   std::byte* ptr;
   if (mtype == MemType::kInfer) {
-    mem_block = cuda_mem_pool_->tvm_allocators_[device_id]->GetObject()->Alloc(nbytes, 512, 0, 0);
+    mem_block = cuda_mem_pool_->tvm_allocators_[device_id]->GetObject()->Alloc(
+        nbytes, 512, 0, 0);
     ptr = cuda_mem_pool_->tvm_allocators_[device_id]->GetObject()->GetBasePtr() 
           + mem_block->addr_offset;
   } else if (mtype == MemType::kTrain) {
@@ -121,14 +122,6 @@ CUDAMemPool::Alloc(int device_id, std::size_t nbytes,
   } else {
     LOG(FATAL) << "Unknown mtype: " << static_cast<size_t>(mtype);
   }
-  // auto t1 = std::chrono::steady_clock::now();
-  // if (mtype == MemType::kTrain) {
-  //   cuda_mem_pool_->train_alloc_us_.fetch_add(
-  //       std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count(),
-  //       std::memory_order_relaxed);
-  // }
-  // DLOG(INFO) << "mtype = " << static_cast<size_t>(mtype) << ", alloc time = "
-  //            << std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() << ".";
 
   auto free = [&, mtype, device_id](CUDAMemPool::PoolEntry* entry) {
     std::unique_lock lock{mutex_};
