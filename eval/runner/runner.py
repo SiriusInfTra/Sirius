@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime
 import time
 import numpy as np
-import os
+import os, io
 from os import PathLike
 import pathlib
 import subprocess
@@ -12,8 +12,9 @@ from types import NoneType
 from dataclasses import dataclass
 import re
 
-from .hyper_workload import InferWorkloadBase, TrainWorkload, InferTraceDumper, InferModel, RandomInferWorkload
-from .config import get_global_seed
+from .hyper_workload import InferWorkloadBase, TrainWorkload, \
+    InferTraceDumper, InferModel, RandomInferWorkload
+from .config import get_global_seed, get_binary_dir
 
 
 class System:
@@ -66,7 +67,9 @@ class System:
                  port: str = "18080",
                  infer_model_config: List[InferModelConfig] | InferModelConfig = None,
                  mps: bool = True,
+                 skip_set_mps_thread_percent: bool = False,
                  use_xsched: bool = False,
+                 dynamic_sm_partition: bool = False,
                  infer_blob_alloc: bool = False,
                  train_mps_thread_percent: Optional[int] = None,
                  colocate_skip_malloc: bool = False,
@@ -84,6 +87,9 @@ class System:
                  dump_adjust_info: bool = False, # used for adjust break down
                  profiler_acquire_resource_lock: bool = False, # used for better profiling memory
                  enable_warm_cache_fallback: bool = True, # used for switch and colocate mode
+                 profile_gpu_smact: bool = True,
+                 profile_gpu_util: bool = True,
+                 profile_sm_partition: bool = True,
                  dummy_adjust: bool = False,
                  keep_last_time_stamp: bool = True,
                  max_live_minute: Optional[int] = None) -> None:
@@ -107,6 +113,8 @@ class System:
             self.infer_model_config = None
         self.infer_model_config_path = None
         self.mps = mps
+        self.skip_set_mps_thread_percent = skip_set_mps_thread_percent
+        self.dynamic_sm_partition = dynamic_sm_partition
         self.mps_server = None
         self.infer_blob_alloc = infer_blob_alloc
         self.train_mps_thread_percent = train_mps_thread_percent
@@ -133,10 +141,7 @@ class System:
             System._last_time_stamp = self.time_stamp
         else:
             self.time_stamp = System._last_time_stamp
-        if use_xsched and not (self.mode in {System.ServerMode.ColocateL1, System.ServerMode.TaskSwitchL1}):
-            raise RuntimeError('xsched is only available for ColocateL1 and TaskSwitchL1')
         self.use_xsched = use_xsched
-            
 
     def next_time_stamp(self):
         self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
@@ -163,7 +168,7 @@ class System:
         self.cmd_trace = []
         cmd = [
             # "compute-sanitizer", "--tool", "memcheck",
-            "./build/server/colserve", 
+            f"./{get_binary_dir()}/server/colserve", 
             "-p", self.port, 
             "--mode", self.mode, 
             "--use-sta", "1" if self.use_sta else "0", 
@@ -188,15 +193,23 @@ class System:
             cmd += ["--mps", "1"]
             self.cmd_trace.append(" ".join([
                 "sudo", "/opt/mps-control/launch-mps-daemon-private.sh",
-                "--device", os.environ['CUDA_VISIBLE_DEVICES'], "--mps-pipe", os.environ['CUDA_MPS_PIPE_DIRECTORY']
+                "--device", os.environ['CUDA_VISIBLE_DEVICES'], 
+                "--mps-pipe", os.environ['CUDA_MPS_PIPE_DIRECTORY']
             ]))
-            self.mps_server = subprocess.Popen(
-                ['sudo', '/opt/mps-control/launch-mps-daemon-private.sh',
-                 '--device', os.environ['CUDA_VISIBLE_DEVICES'], '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']],
-                stderr=subprocess.PIPE, stdout=subprocess.PIPE, env=os.environ.copy())
+            if not fake_launch:
+                self.mps_server = subprocess.Popen(
+                    ['sudo', '/opt/mps-control/launch-mps-daemon-private.sh',
+                    '--device', os.environ['CUDA_VISIBLE_DEVICES'], 
+                    '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']],
+                    stderr=subprocess.PIPE, stdout=subprocess.PIPE, env=os.environ.copy())
+            else:
+                self.mps_server is None
         else:
             cmd += ["--mps", "0"]
             self.mps_server = None
+
+        if self.skip_set_mps_thread_percent:
+            cmd += ["--skip-set-mps-thread-percent"]
 
         if self.infer_blob_alloc:
             cmd += ["--infer-blob-alloc"]
@@ -253,11 +266,15 @@ class System:
             cmd += ["--use-xsched", "1"]
         else:
             cmd += ["--use-xsched", "0"]
-        
+
+        if self.dynamic_sm_partition:
+            cmd += ["--dynamic-sm-partition", "1"]
+        else:
+            cmd += ["--dynamic-sm-partition", "0"]
+
         if self.max_live_minute is not None:
             cmd += ["--max-live-minute", str(self.max_live_minute)]
 
-        self.cmd_trace.append(" ".join(cmd))
         print("\n---------------------------\n")
         print(" ".join(cmd))
 
@@ -265,7 +282,7 @@ class System:
             print(f"  --> fake launch")
             return
 
-        print(f"  --> [server-log] {server_log}  |  [server-profile] {profile_log}\n")
+        print(f"  --> [server-log] {server_log}  |  [server-profile] {profile_log}")
 
         if dcgmi:
             with open(f"{self.log_dir}/dcgmi-monitor.log", "w") as log_file:
@@ -281,7 +298,20 @@ class System:
                      stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
 
         with open(server_log, "w") as log_file:
-            self.server = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
+            env_copy = os.environ.copy()
+            if self.mps and self.skip_set_mps_thread_percent:
+                print(f'  --> Skip set MPS pct')
+            if not self.skip_set_mps_thread_percent and '_CUDA_MPS_ACTIVE_THREAD_PERCENTAGE' in env_copy:
+                env_copy['CUDA_MPS_ACTIVE_THREAD_PERCENTAGE'] = env_copy['_CUDA_MPS_ACTIVE_THREAD_PERCENTAGE']
+                print(f"  --> MPS: {env_copy['CUDA_MPS_ACTIVE_THREAD_PERCENTAGE']}")
+                pass
+            self.cmd_trace.append(f"CUDA_ENV: "
+                    + f"CUDA_VISIBLE_DEVICES {env_copy.get('CUDA_VISIBLE_DEVICES')}"
+                    + f", CUDA_MPS_ACTIVE_THREAD_PERCENTAGE {env_copy.get('CUDA_MPS_ACTIVE_THREAD_PERCENTAGE')}")
+            self.cmd_trace.append(" ".join(cmd))
+            self.server = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=env_copy)
+
+        print('\n')
 
         while True:
             with open(server_log, "r") as log_file:
@@ -348,6 +378,11 @@ class System:
 
     def calcuate_train_thpt(self):
         cmd = f'python util/profile/throughput.py --log-dir {self.exit_log_dir} > {self.exit_log_dir}/train_thpt 2>&1'
+        print(f'execute {cmd}')
+        os.system(cmd)
+
+    def draw_infer_slo(self):
+        cmd = f'python util/profile/collect_infer_ltc.py -l {self.exit_log_dir}/workload-log --slo-output {self.exit_log_dir}'
         print(f'execute {cmd}')
         os.system(cmd)
 
@@ -426,7 +461,15 @@ class HyperWorkload:
             trace_cfg = pathlib.Path(server.log_dir) / self.trace_cfg
             InferTraceDumper(self.infer_workloads, trace_cfg).dump()
             infer_trace_args += ["--infer-trace", str(trace_cfg)]
-        
+
+            # record workload summary
+            with io.StringIO() as string_io:
+                print("WORKLOAD_SUMMARY:", file=string_io)
+                for workload in self.infer_workloads:
+                    print(f'{workload}', file=string_io)
+                    workload.summary_trace(string_io)
+                    server.cmd_trace.append(string_io.getvalue())
+
         self._launch(server, "workload_launcher", infer_trace_args, **kwargs)
 
     def launch_busy_loop(self, server: System, infer_models: List[InferModel] = None):
@@ -443,7 +486,7 @@ class HyperWorkload:
     def _launch(self, server: System, launcher: str, custom_args: List[str] = [], **kwargs):
         assert server is not None
         cmd = [
-            f"./build/{launcher}",
+            f"./{get_binary_dir()}/{launcher}",
             "-p", server.port,
             "-c", str(self.concurrency),
         ]

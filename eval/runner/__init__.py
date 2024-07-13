@@ -30,7 +30,9 @@ print('CUDA_VISIBLE_DEVICES={}, CUDA_MPS_PIPE_DIRECTORY={}'.format(
     os.environ['CUDA_VISIBLE_DEVICES'], os.environ['CUDA_MPS_PIPE_DIRECTORY']))
 
 
-from .config import get_global_seed, set_global_seed, set_mps_thread_percent, unset_mps_thread_percent, mps_thread_percent, um_mps
+from .config import get_global_seed, get_global_seed_by_hash, set_global_seed, \
+    set_mps_thread_percent, unset_mps_thread_percent, mps_thread_percent, um_mps, \
+    set_binary_dir, get_binary_dir
 from .runner import *
 from .hyper_workload import *
 

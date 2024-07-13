@@ -14,7 +14,7 @@ from typing import Optional
 
 def train(train_mode: TrainMode, hook_mode: HookMode, 
           num_epoch: int, batch_size: int, global_batch_size: Optional[int] = None):
-    if torch_col.use_shared_tensor():
+    if torch_col.is_enable_shared_tensor():
         torch_col.tag_model_start()
 
     torch_col.train_model = model = models.swin_b(weights=models.Swin_B_Weights.DEFAULT).cuda()
@@ -55,7 +55,10 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
     else:
         grad_accumulator = None
 
-    print(f'swin after initialize, allocated {torch_col.MemoryPool.get_allocated_memory()} cached {torch_col.MemoryPool.get_memory_usage()}')
+    print('swin after initialize, allocated {} cached {}'.format(
+        torch_col.MemoryPool.get_allocated_memory(), 
+        torch_col.MemoryPool.get_memory_usage()),
+        flush=True, file=sys.stderr)
 
     # print_opt(optimizer)
 
@@ -124,7 +127,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
                 train_valiation.record_completed_batch(train_dataset, epoch, i, len(images), loss)
                 train_dataset.next_batch()
                 if epoch == 0 and i == 0:
-                    if torch_col.use_shared_tensor():
+                    if torch_col.is_enable_shared_tensor():
                         torch_col.tag_model_end()
             if hook_mode.use_xsched():
                 from torch_col import xsched
@@ -159,23 +162,27 @@ def main():
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--global-batch-size', type=int, default=500)
     parser.add_argument('--num-epoch', type=int, default=15)
-    parser.add_argument('--train-mode', type=str, default=TrainMode.COLOCATE_L1.value, choices=[train_mode.value for train_mode in TrainMode])
+    parser.add_argument('--train-mode', type=str, default=TrainMode.COLOCATE_L1.value, 
+                        choices=[train_mode.value for train_mode in TrainMode])
     parser.add_argument('--train-profile', type=str, default='train-profile.csv')
-    parser.add_argument('--hook-mode', default=HookMode.XSCHED_SYNC.value, choices=[hook_mode.value for hook_mode in HookMode])
-    parser.add_argument('--use-xsched', type=bool) # not used args
+    # parser.add_argument('--hook-mode', default=HookMode.XSCHED_SYNC.value, 
+    #                     choices=[hook_mode.value for hook_mode in HookMode])
+    # parser.add_argument('--use-xsched', type=bool) # not used args
     args = parser.parse_args()
     
     batch_size = args.batch_size
     global_batch_size = args.global_batch_size
     num_epoch = args.num_epoch
     train_mode = [train_mode for train_mode in TrainMode if train_mode.value == args.train_mode][0]
-    hook_mode = [hook_mode for hook_mode in HookMode if hook_mode.value == args.hook_mode][0]
+    # hook_mode = [hook_mode for hook_mode in HookMode if hook_mode.value == args.hook_mode][0]
+    hook_mode = torch_col.get_hook_mode()
     
 
     print(f"Swin Transformer training, batch-size={batch_size}, num-epoch={num_epoch}, train-mode={train_mode}, hook-mode={hook_mode}.")
     train_valiation.val_begin()
     stream = torch.cuda.Stream()
-    if hook_mode.use_xsched():
+    # if hook_mode.use_xsched():
+    if torch_col.is_enable_xsched():
         from torch_col import xsched
         xsched.register_stream(stream)
         print("CUDA Stream create with xsched registered.")

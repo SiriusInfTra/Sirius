@@ -6,9 +6,18 @@ add_library(sta SHARED
   shape_helper.cc
   tensor_methods.cc
   tensor.cc
-  init.cc
+  device_manager.cc
+  sm_partition.cu
+  sm_partition.cc
 )
 
 target_include_directories(sta PUBLIC "../")
 # target_include_directories(sta PUBLIC "../" ${TORCH_INCLUDE_DIRS})
-target_link_libraries(sta PUBLIC pages_pool allocator glog::glog CUDA::cudart CUDA::cuda_driver ${TORCH_LIBRARIES})
+target_link_libraries(sta PUBLIC 
+  pages_pool 
+  allocator 
+  glog::glog 
+  CUDA::cudart 
+  CUDA::cuda_driver 
+  CUDA::nvml
+  ${TORCH_LIBRARIES})

@@ -8,22 +8,43 @@
 #include <atomic>
 #include <mutex>
 #include <fstream>
+#include <optional>
 #include <unordered_map>
+#include <dcgm_agent.h>
+#include <dcgm_structs.h>
+
 
 namespace colserve {
 
+#define DCGM_CALL(func) do{ \
+    auto error = func; \
+    if (error != DCGM_ST_OK) { \
+      LOG(FATAL) << #func << " " << errorString(error); \
+      exit(EXIT_FAILURE); \
+    } \
+  } while(0);
+
+
+using time_stamp_t = double;
 
 class Profiler {
  public:
+  struct ResourceInfo;
+  enum class EventItem;
+
   using time_point_t = std::chrono::time_point<std::chrono::steady_clock>;
+  using dcgmEntityStat = std::unordered_map<unsigned short, double>;
+
+  using resource_entity_t = std::tuple<time_stamp_t, ResourceInfo>;
+  using event_entity_t = std::tuple<time_stamp_t, EventItem>;
+  using perf_entity_t = std::tuple<time_stamp_t, double>;
 
   static std::pair<size_t, size_t> GetGPUMemInfo();
   static size_t GetLastInferMem();
   static size_t GetLastTrainMem();
-  static long GetTimeStamp() {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+  static time_stamp_t GetTimeStamp() {
+    return std::chrono::duration<double, std::milli>(std::chrono::system_clock::now().time_since_epoch()).count();
   }
-
 
   static void Init(const std::string &profile_log_path);
   static void Start();
@@ -48,12 +69,21 @@ class Profiler {
     double cold_cache_buffer_mb;
     double infer_mem_in_cold_cache_buffer_mb;
     double cold_cache_size_mb;
+
+    double gpu_util;
+    double gpu_mem_util;
+    double sm_activity;
+
+    int infer_required_tpc_num;
+    int train_avail_tpc_num;
   };
+
   struct InferInfo {
     size_t id;
     double recv_time;
     double finish_time;
   };
+
   enum class EventItem {
     // AddInferStart,
     TrainAdjustStart,
@@ -67,6 +97,7 @@ class Profiler {
     AddInfer,
     InferExit,
   };
+
   enum class PerfItem {
     // job level
     InferJobQueue,
@@ -120,33 +151,79 @@ class Profiler {
   }
 
   void SetWorkloadStartTimeStamp(long ts, double delay_before_profile);
-  
+  void SetWorkloadEndTimeStamp(long ts);
+
+
   friend std::ostream& operator<<(std::ostream &os, EventItem item);
   friend std::ostream& operator<<(std::ostream &os, PerfItem item);
 
  private:
-  double Passed();
-  void WriteLog();
   static std::unique_ptr<Profiler> profiler_;
-  time_point_t stp_;
+  
+  void WriteLog();
+  std::vector<std::vector<std::string>> FmtResourceInfos(
+      const std::vector<size_t> &field_offs,
+      std::optional<time_stamp_t> start, 
+      std::optional<time_stamp_t> end);
+  
+  template<typename field_type_t>
+  std::vector<field_type_t> SelectResourceInfo(
+      size_t field_off, 
+      std::optional<time_stamp_t> start,
+      std::optional<time_stamp_t> end,
+      std::optional<std::function<bool(field_type_t)>> filter = std::nullopt) {
+    std::vector<field_type_t> res;
+    for (const auto &r : resource_info_) {
+      if (start.has_value() && std::get<0>(r) < start.value()) {
+        continue;
+      }
+      if (end.has_value() && std::get<0>(r) > end.value()) {
+        continue;
+      }
+      auto field = reinterpret_cast<const char*>(&std::get<1>(r));
+      field += field_off;
+      auto value = *reinterpret_cast<const field_type_t*>(field);
+      if (filter.has_value() && !filter.value()(value)) {
+        continue;
+      }
+      res.push_back(value);
+    }
+    return res;
+  }
+
+  // std::template<template field_type_t...>
+  // void FmtResourceInfo(std::ostream &os,
+  //                      const std::vector<resource_entity_t> & resource_infos, 
+  //                      const std::vector<std::tuple<std::string, size_t, >> &fields);
+
+  // template<typename T>
+  //  filter()
+  
   std::atomic<bool> start_profile_;
   std::string profile_log_path_;
 
   std::vector<InferInfo> infer_info_;
-  std::vector<std::tuple<double, long, ResourceInfo>> resource_info_; // pass, time stamp, resource info
-  std::vector<std::tuple<double, long, EventItem>> event_info_; // pass, time stamp, event
-  std::unordered_map<int, std::vector<std::tuple<long, double>>> perf_info_; // item -> [time stamp, value]
+  std::vector<resource_entity_t> resource_info_; // pass, time stamp, resource info
+  std::vector<event_entity_t> event_info_; // pass, time stamp, event
+  std::unordered_map<int, std::vector<perf_entity_t>> perf_info_; // item -> [time stamp, value]
   std::mutex infer_info_mut_, event_info_mut_, perf_info_mut_;
 
   // pass, time stamp, infering model used memory
-  std::vector<std::tuple<double, long, size_t>> infering_memory_nbytes_; 
+  std::vector<std::tuple<time_stamp_t, size_t>> infering_memory_nbytes_; 
 
   size_t last_infer_mem_;
   size_t last_train_mem_;
 
-  long workload_start_time_stamp_{0};
+  time_stamp_t stp_;
+  time_stamp_t workload_start_time_stamp_{0};
+  time_stamp_t workload_end_time_stamp_{0};
   double delay_before_profile_{0};
 
+  dcgmHandle_t dcgm_handle_;
+  dcgmGpuGrp_t dcgm_gpu_grp_;
+  dcgmFieldGrp_t dcgm_field_grp_;
+
+  int monitor_interval_ms_{100};
   std::unique_ptr<std::thread> thread_;
 };
 

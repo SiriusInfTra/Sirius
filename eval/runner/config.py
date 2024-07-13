@@ -1,14 +1,31 @@
 import os
 import numpy as np
 import contextlib
+import hashlib
 
 __global_seed = None
+__binary_dir = 'build'
+
+def set_binary_dir(binary_dir):
+    global __binary_dir
+    __binary_dir = binary_dir
+
+def get_binary_dir():
+    global __binary_dir
+    return __binary_dir
 
 def get_global_seed():
     global __global_seed
     if __global_seed is None:
         __global_seed = np.random.randint(2<<31)
+        print(f'\x1b[33;1mWARNING: global seed is not set, set to {__global_seed}\x1b[0m')
     return __global_seed
+
+def get_global_seed_by_hash(s:str):
+    seed = get_global_seed()
+    seed = seed + eval('0x' + hashlib.md5(s.encode()).hexdigest()[:4])
+    # print(f'{s}, seed = {seed}, global_seed = {get_global_seed()}')
+    return seed
 
 def set_global_seed(seed):
     global __global_seed
@@ -16,21 +33,20 @@ def set_global_seed(seed):
 
 
 def set_mps_thread_percent(percent):
-    os.environ['CUDA_MPS_ACTIVE_THREAD_PERCENTAGE'] = str(percent)
+    os.environ['_CUDA_MPS_ACTIVE_THREAD_PERCENTAGE'] = str(percent)
 
 
 def unset_mps_thread_percent():
-    os.environ.pop('CUDA_MPS_ACTIVE_THREAD_PERCENTAGE', None)
+    os.environ.pop('_CUDA_MPS_ACTIVE_THREAD_PERCENTAGE', None)
 
 
 @contextlib.contextmanager
 def mps_thread_percent(percent, skip=False):
-    if skip:
+    if percent is None or skip:
         yield
         return
     else:
         set_mps_thread_percent(percent)
-        print('MPS: ', percent)
         yield
         unset_mps_thread_percent()
 
@@ -40,7 +56,6 @@ def um_mps(percent):
     set_mps_thread_percent(percent)
     os.environ['TORCH_UNIFIED_MEMORY'] = "1"
     os.environ['STA_RAW_ALLOC_UNIFIED_MEMORY'] = "1"
-    print('MPS: ', percent)
     yield
     unset_mps_thread_percent()
     os.environ.pop('TORCH_UNIFIED_MEMORY', None)

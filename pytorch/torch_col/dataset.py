@@ -61,9 +61,11 @@ class CustomeDynamicBatchDataset(IterableDataset):
                     'image': torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_inputs.npy')).pin_memory(),
                     'label': torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_targets.npy')).pin_memory()
                 }
-                assert num_class == torch.max(self.all_inputs['label']).item() + 1, f"expect num of class: {torch.max(self.all_inputs['label']).item() + 1}."
+                assert num_class == torch.max(self.all_inputs['label']).item() + 1, \
+                    f"expect num of class: {torch.max(self.all_inputs['label']).item() + 1}."
                 assert size == len(self.all_inputs['image']), f"expect size {len(self.all_inputs['image'])}."
-                assert input_shape == self.all_inputs['image'].shape[1:], f"expect input shape: {self.all_inputs['image'].shape[1:]}"
+                assert input_shape == self.all_inputs['image'].shape[1:], \
+                    f"expect input shape: {self.all_inputs['image'].shape[1:]}"
             else:
                 raise Exception("not support model")
             # self.all_inputs = torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_inputs.npy')).pin_memory()
@@ -84,7 +86,8 @@ class CustomeDynamicBatchDataset(IterableDataset):
         self.trace = trace
         self.trace_idx = 0
         if trace is not None:
-            assert hook.train_mode == TrainMode.NORMAL and hook.hook_mode == HookMode.NONE, 'only normal train can valid trace.'
+            assert hook.train_mode == TrainMode.NORMAL and hook.hook_mode == HookMode.NONE, \
+                'only normal train can valid trace.'
         self.empty_cache_at_larger_batch_size = empty_cache_at_larger_batch_size
         print(f'Create CustomeDynamicBatchDataset, hook={type(hook)}.')
         print(f'enable_accumulation={self.enable_accumulation}, checkpoint_micro_batch={self.checkpoint_micro_batch}.')
@@ -170,7 +173,8 @@ class CustomeDynamicBatchDataset(IterableDataset):
     def rollback_micro_batch(self):
         assert self.enable_accumulation and not self.checkpoint_micro_batch, \
             "only used for accumulation without checkpoint"
-        assert self.micro_batch_iter_idx >= self.global_batch_iter_idx, f"{self.micro_batch_iter_idx} vs {self.global_batch_iter_idx}"
+        assert self.micro_batch_iter_idx >= self.global_batch_iter_idx, \
+            f"{self.micro_batch_iter_idx} vs {self.global_batch_iter_idx}"
         self.num_rollback_samples_in_epoch += self.micro_batch_iter_idx - self.global_batch_iter_idx
         self.micro_batch_iter_idx = self.global_batch_iter_idx
         self.accumulate_iter_idx = 0
@@ -240,7 +244,8 @@ class CustomeDynamicBatchDataset(IterableDataset):
             while batch_size <= 0:
                 self.hook.report_batch_size(batch_size)
                 time.sleep(1e-3)
-                if self.hook._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1 or self.hook._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL2:
+                if (self.hook._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1
+                    or self.hook._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL2):
                     self.hook.release_and_reply()
                 # batch_size = min(self.batch_size, self.size - self.micro_batch_iter_idx)
                 batch_size = _get_batch_size()
@@ -252,7 +257,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
         elif self.trace is not None:
             trace_item = self.trace[self.trace_idx]
             assert batch_size == trace_item['batch_size'], f"{batch_size} vs {trace_item['batch_size']}"
-        if self.state != DatasetState.INIT and self.last_batch_size < batch_size and torch_col.use_shared_tensor():
+        if self.state != DatasetState.INIT and self.last_batch_size < batch_size and torch_col.is_enable_shared_tensor():
             if self.empty_cache_at_larger_batch_size:
                 MemoryPool.empty_cache()
         self.state = DatasetState.ITER

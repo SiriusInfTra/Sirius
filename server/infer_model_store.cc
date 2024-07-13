@@ -1,4 +1,5 @@
 #include <common/dtype_helper.h>
+#include <common/device_manager.h>
 #include <server/logging_as_glog.h>
 #include <server/infer_model_store.h>
 #include <server/infer_model.h>
@@ -93,7 +94,8 @@ std::unique_lock<std::mutex> WarmModelCache::OrderedReserveCache(
   // LOG(INFO) << "try ordered reserve " << model_name << " req_id " << infer_req_id;
 
 // #if 0
-//   // buggy
+//   // fifo may cause increasing latency
+//
 //   infer_model_cache_->fifo_cv_.wait(lock, [&lock, infer_req_id]() {
 //     std::unique_lock ims_lock{InferModelStore::Get()->mutex_};
 //     if (InferModelStore::Get()->queing_infer_reqs_.empty()) {
@@ -146,7 +148,7 @@ void WarmModelCache::ReserveCacheInternal(
   // 1. already cached
   if (infer_model_cache_->warm_cache_[model_name]->cached) {
     ss << " already cached";
-    LOG(INFO) << ss.str();
+    LOG_IF(INFO, Config::log_warm_cache) << ss.str();
     return ;
   }
 
@@ -176,7 +178,8 @@ void WarmModelCache::ReserveCacheInternal(
           if (cm == model) { continue; }
           auto &cm_name = cm->GetName();
           if (reclaimed_model.count(cm_name) > 0) { continue; }
-          std::unique_lock warm_cache_lock{infer_model_cache_->warm_cache_[cm_name]->mut, std::defer_lock}; /* slow */
+          std::unique_lock warm_cache_lock{infer_model_cache_->warm_cache_[cm_name]->mut, 
+                                           std::defer_lock}; /* slow */
           if (try_cnt == 0) {
             warm_cache_lock.try_lock();
             if (!warm_cache_lock.owns_lock()) { continue; }
@@ -202,7 +205,8 @@ void WarmModelCache::ReserveCacheInternal(
 
   infer_model_cache_->cached_nbytes_ = nbytes;
   infer_model_cache_->warm_cache_[model_name]->cached = true;
-  LOG(INFO) << ss.str() << " | now cached_nbytes=" << sta::ByteDisplay(nbytes);
+  LOG_IF(INFO, Config::log_warm_cache) 
+      << ss.str() << " | now cached_nbytes=" << sta::ByteDisplay(nbytes);
 }
 
 InferModelStore* InferModelStore::Get() {
@@ -267,6 +271,7 @@ void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
   }
 
   // mod.so, mod.json, mod.params should be in the model directory
+  int next_gpu = 0;
   for (auto &model : models) {
     auto model_path = infer_store_path / model.second["path"];
     CHECK(std::filesystem::exists(model_path)) << "InferModelStore: " << model_path << " not exist";
@@ -279,7 +284,7 @@ void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
       size_t batch_size = std::stoi(model.second["batch-size"]);
       DLDevice device;
       if (model_device == "cuda") {
-        device = DLDevice{kDLCUDA, 0};
+        device = DLDevice{kDLCUDA, next_gpu++};
       } else {
         LOG(FATAL) << model_name << " unsupport device type " << model_device;
       }
@@ -288,67 +293,16 @@ void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
                                   device, batch_size, 
                                   std::stoi(model.second["num-worker"]),
                                   std::stoi(model.second["max-worker"]));
+      if (Config::model_place_policy == ModelPlacePolicy::kRoundRobin) {
+        if (next_gpu >= sta::DeviceManager::GetNumVisibleGpu()) {
+          next_gpu = 0;
+        }
+      }
     }
-    LOG_IF(INFO, Config::log_model_init_info) 
+    LOG_IF(INFO, Config::log_infer_model_init) 
         << "[InferModelStore Init] "<< "Add " << model.first << ":" << model.second["device"]
         << ", batch-size=" << model.second["batch-size"];
   }
-
-  // if (Config::IsSwitchMode()) {
-  //   infer_model_store_->task_switch_control_.reset(new std::thread([&]() {
-  //     while (true) {
-  //       if (Controller::Get()->IsInferIdle()) {
-  //         // first ensure all not more infer workers
-  //         std::unique_lock lock{infer_model_store_->task_switch_mutex_};
-  //         InferModelStore::Get()->task_switch_cv.wait(lock, [&]() {
-  //           return infer_model_store_->task_switch_enter_cnt_ > 0 
-  //               && (infer_model_store_->task_switch_control_cnter_ == 
-  //                   static_cast<int>(InferModelStore::TaskSwitchStatus::kNotAddWorker));
-  //         });
-
-  //         pthread_barrier_init(&infer_model_store_->task_switch_barrier, nullptr, 
-  //             infer_model_store_->task_switch_enter_cnt_ + 1);
-  //         // enter task switch prepare exit stage
-  //         infer_model_store_->task_switch_control_cnter_ = static_cast<int>(InferModelStore::TaskSwitchStatus::kPrepareExit);
-  //         // LOG(INFO) << "[InferModelStore]: try task switch " << infer_model_store_->task_switch_enter_cnt_;
-  //         auto t0 = Profiler::Get()->Now();
-
-  //         // let all infer enter task switch prepare exit stage
-  //         pthread_barrier_wait(&infer_model_store_->task_switch_barrier);
-  //         auto wait_task_exit_ms = Profiler::Get()->MilliFrom(t0);
-  //         LOG(INFO) << "[InferModelStore] [Task Switch]: wait for inference threads " << wait_task_exit_ms << " ms "
-  //                   << " wait up to " << Config::task_switch_delay_ms << " ms";
-  //         if (wait_task_exit_ms < Config::task_switch_delay_ms) {
-  //           auto delay_us = static_cast<int>((Config::task_switch_delay_ms - wait_task_exit_ms) * 1000);
-  //           std::this_thread::sleep_for(std::chrono::microseconds(delay_us));
-  //         }
-  //         if (Controller::Get()->IsInferIdle()) {
-  //           infer_model_store_->task_switch_control_cnter_ = static_cast<int>(InferModelStore::TaskSwitchStatus::kExit);
-  //           Profiler::Get()->RecordPerf(Profiler::PerfItem::InferNumModelOnSwitch, infer_model_store_->task_switch_enter_cnt_);
-  //           // all infer know result
-  //           pthread_barrier_wait(&infer_model_store_->task_switch_barrier);
-  //           LOG(INFO) << "[InferModelStore] [Task Switch]: task switch to train | " << Controller::Get()->GetInferStatusStr();
-  //           // all infer do task switch
-  //           pthread_barrier_wait(&infer_model_store_->task_switch_barrier);
-  //           Controller::Get()->ResumeTrain();
-  //         } else {
-  //           infer_model_store_->task_switch_control_cnter_ = static_cast<int>(InferModelStore::TaskSwitchStatus::kCancelExit);
-  //           // all infer know result
-  //           pthread_barrier_wait(&infer_model_store_->task_switch_barrier);
-  //           // all infer cancel task switch
-  //           pthread_barrier_wait(&infer_model_store_->task_switch_barrier); 
-  //           LOG(INFO) << "[InferModelStore] [Task Switch]: task switch cancel exit | " << Controller::Get()->GetInferStatusStr();
-  //         }
-  //         infer_model_store_->task_switch_control_cnter_ = static_cast<int>(InferModelStore::TaskSwitchStatus::kNotAddWorker);
-  //         infer_model_store_->task_switch_cv.notify_all();
-  //         pthread_barrier_destroy(&infer_model_store_->task_switch_barrier);
-  //       } else {
-  //         // Controller::Get()->LogInferStatus();
-  //       }
-  //       std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  //     }
-  //   }));
-  // }
 
   if (Config::IsColocateMode()) {
     infer_model_store_->monitor_thread_.reset(
@@ -380,8 +334,14 @@ bool InferModelStore::Shutdown() {
 }
 
 void InferModelStore::WarmupDone() {
-  infer_model_store_->ClearWarmCache();
-  infer_model_store_->ClearColdCache();
+  // Reclaim all models for colcoation mode and switch mode,
+  // for static partition, we don't need to clear models.
+  // As cold cache is zero for static partition, 
+  // the result is same if we dnot clear cold cache for static partition.
+  if (Config::IsColocateMode() || Config::IsSwitchMode()) {
+    infer_model_store_->ClearWarmCache();
+    infer_model_store_->ClearColdCache();
+  }
   infer_model_store_->warmup_done_ = true;
   LOG(INFO) << "[InferModelStore] warmup done, num ready model "
             << Model::GetNumModel(Model::Status::kReady);
@@ -511,9 +471,10 @@ void InferModelStore::ColocateMonitor() {
         bool res = model->ReclaimMemory(rank, cold_cache_lock, model_lock, nullptr);
         if (res) {
           num_exit++;
-          LOG(INFO) << "[InferModelStore] " << model_name << " reclaim memory"
-                    << " cold cache nbytes " 
-                    << sta::ByteDisplay(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock));
+          LOG_IF(INFO, Config::log_infer_model_reclaim) 
+              << "[InferModelStore] reclaim " << model_name
+              << ", cold cache nbytes "
+              << sta::ByteDisplay(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock));
         }
       }
     }
@@ -576,9 +537,12 @@ void InferModelStore::TaskSwitchMonitor() {
 }
 
 std::tuple<ColdModelCache::group_id_list, ColdModelCache::evict_list, bool>
-ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<size_t> groups_nbytes, 
-                                size_t total_nbytes, std::unique_lock<std::mutex> &lock, Model *source_model) {
-  DLOG(INFO) << "PushCacheItem, name = " << name << ", rank = " << rank << ", groups_nbytes = " << groups_nbytes 
+ColdModelCache::PushCacheItem(
+    const std::string& name, size_t rank, std::vector<size_t> groups_nbytes, 
+    size_t total_nbytes, std::unique_lock<std::mutex> &lock, Model *source_model) {
+  DLOG(INFO) << "PushCacheItem, name = " << name 
+             << ", rank = " << rank 
+             << ", groups_nbytes = " << groups_nbytes 
              << ", total_nbytes = " << total_nbytes;
   if (cold_cache_.count(name) != 0) { return {{}, {}, false}; }
 
@@ -596,8 +560,10 @@ ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<
       break;
     }
   }
-  LOG(INFO) <<"[ColdModelCache] decide to cache " << name << " decide to cache group = [ "
-            << cache_item->cached_groups_id << " ]," << " total " << groups_nbytes.size() << ".";
+  LOG_IF(INFO, Config::log_cold_cache) 
+      <<"[ColdModelCache] decide to cache " << name 
+      << " decide to cache group = [ "<< cache_item->cached_groups_id << " ]," 
+      << " total " << groups_nbytes.size() << ".";
 
   std::vector<Model*> coldest_model;
   for (auto &&[name, cache_item] : cold_cache_) {
@@ -605,7 +571,8 @@ ColdModelCache::PushCacheItem(const std::string& name, size_t rank, std::vector<
   }
 
   DLOG(INFO) << "check whether should evict models.";
-  auto evict_models = GetEvictModels(Config::cold_cache_max_capability_nbytes, {cache_item->model, source_model}, lock);
+  auto evict_models = GetEvictModels(Config::cold_cache_max_capability_nbytes, 
+                                     {cache_item->model, source_model}, lock);
   current_cached_nbytes_ += cache_item->cached_group_nbytes;
   DLOG(INFO) << "put to cold_cache_.";
   CHECK(cold_cache_.emplace(std::make_pair(name, cache_item)).second == true) << name;
@@ -624,7 +591,10 @@ std::pair<std::vector<size_t>, bool> ColdModelCache::PopCacheItem(const std::str
   return {cached_groups_id, true};
 }
 
-ColdModelCache::evict_list ColdModelCache::GetEvictModels(long capacity, std::array<Model*, 2> ignore_models, std::unique_lock<std::mutex>& lock) {
+ColdModelCache::evict_list ColdModelCache::GetEvictModels(
+    long capacity, 
+    std::array<Model*, 2> ignore_models, 
+    std::unique_lock<std::mutex>& lock) {
   const size_t default_rank = 0;
   std::vector<Model*> coldest_model;
   for (auto&& [name, cache_item] : cold_cache_) {
@@ -647,7 +617,8 @@ ColdModelCache::evict_list ColdModelCache::GetEvictModels(long capacity, std::ar
 
     coldest_model.pop_back();
   }
-  CHECK_LE(current_cached_nbytes_, capacity) << "Unable to evict models to make sure current_cached_nbytes_ > capacity";
+  CHECK_LE(current_cached_nbytes_, capacity) 
+      << "Unable to evict models to make sure current_cached_nbytes_ > capacity";
   return evict_models;
 }
 

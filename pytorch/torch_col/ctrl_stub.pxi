@@ -193,11 +193,6 @@ cdef class PyColocateStub:
         del self._stub
 
 
-def is_kill_batch_on_recv():
-    global kill_batch_on_recv
-    return kill_batch_on_recv
-
-
 
 def get_adjust_request_time_stamp():
     return StubProfiler.GetAdjustRequestTimeStamp()

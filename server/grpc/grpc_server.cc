@@ -114,33 +114,34 @@ void CommonHandler::SetupCallData() {
 
 
   auto register_report_time_stamp_done = [this](
-      CommonData<TimeStampRequest, EmptyResult>* data) {
-    this->service_->RequestReportStartTimeStamp(
+      CommonData<InferenceWorkloadStartRequest, EmptyResult>* data) {
+    this->service_->RequestInferenceWorkloadStart(
         &data->ctx_, &data->request_, &data->responder_, 
         data->cq_, data->cq_, (void*)data);
   };
   auto exec_report_time_stamp_done = [this](
-      CommonData<TimeStampRequest, EmptyResult>* data) {
+      CommonData<InferenceWorkloadStartRequest, EmptyResult>* data) {
     Profiler::Get()->SetWorkloadStartTimeStamp(data->request_.time_stamp(), data->request_.delay_before_profile());
     data->responder_.Finish(data->response_, grpc::Status::OK, (void*)data);
   };
-  new CommonData<TimeStampRequest, EmptyResult>{0, "ReportTimeStampDone", service_, cq_,
+  new CommonData<InferenceWorkloadStartRequest, EmptyResult>{0, "InferenceWorkloadStart", service_, cq_,
                                             register_report_time_stamp_done,
                                             exec_report_time_stamp_done};
 
   auto register_inference_workload_done = [this](
-      CommonData<EmptyRequest, EmptyResult>* data) {
+      CommonData<InferWorkloadDoneRequest, EmptyResult>* data) {
     this->service_->RequestInferenceWorkloadDone(
         &data->ctx_, &data->request_, &data->responder_, 
         data->cq_, data->cq_, (void*)data);
   };
   auto exec_inference_workload_done = [this](
-      CommonData<EmptyRequest, EmptyResult>* data) {
+      CommonData<InferWorkloadDoneRequest, EmptyResult>* data) {
     LOG(INFO) << "[Common Data]: InferenceWorkloadDone";
+    Profiler::Get()->SetWorkloadEndTimeStamp(data->request_.time_stamp());
     Controller::Get()->InferenceWorkloadDone();
     data->responder_.Finish(data->response_, grpc::Status::OK, (void*)data);
   };
-  new CommonData<EmptyRequest, EmptyResult>{0, "InferenceWorkloadDone", service_, cq_,
+  new CommonData<InferWorkloadDoneRequest, EmptyResult>{0, "InferenceWorkloadDone", service_, cq_,
                                             register_inference_workload_done,
                                             exec_inference_workload_done};
 }

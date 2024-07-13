@@ -299,12 +299,14 @@ std::map<std::string, TVMArray> TVMGraph::LoadParamsAsTVMArray(const std::string
   return params_ret;
 }
 
-std::unique_ptr<Executor> TVMGraph::CreateGraphExecutor(size_t worker_id, const std::vector<DLDevice> &devs) {
+std::unique_ptr<Executor> TVMGraph::CreateGraphExecutor(
+    size_t worker_id, 
+    const std::vector<DLDevice> &devs) {
   return std::make_unique<Executor>(*this, worker_id, devs);
 }
 
 std::tuple<TVMGraph::ShapeInfo, TVMGraph::DtypeInfo>
-    TVMGraph::GetInputInfo() const {
+TVMGraph::GetInputInfo() const {
   ShapeInfo shape_info;
   DtypeInfo dtype_info;
   for (auto nid : input_nodes_) {
@@ -324,8 +326,8 @@ std::tuple<TVMGraph::ShapeInfo, TVMGraph::DtypeInfo>
   for (auto e : outputs_) {
     auto nid = e.node_id;
     auto eid = entry_id(e);
-    LOG(INFO) << nodes_[nid].name << " " << nid << " " << eid << ", " 
-              << attrs_.shape[eid] << " " << attrs_.dltype[eid];
+    DLOG(INFO) << nodes_[nid].name << " " << nid << " " << eid << ", " 
+               << attrs_.shape[eid] << " " << attrs_.dltype[eid];
     shape_info[nodes_[nid].name] = attrs_.shape[eid];
     dtype_info[nodes_[nid].name] = attrs_.dltype[eid];
   }

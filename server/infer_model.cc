@@ -1,23 +1,54 @@
-#include <pthread.h>
+#include <common/util.h>
+#include <common/sm_partition.h>
 #include <server/infer_model_store.h>
 #include <server/infer_model.h>
 #include <server/controller.h>
 #include <server/config.h>
 #include <server/resource_manager.h>
 #include <server/train_launcher.h>
+
 #include <algorithm>
 #include <chrono>
 #include <limits>
 #include <mutex>
 #include <vector>
-#include "common/util.h"
+#include <regex>
+#include <unordered_map>
+#include <pthread.h>
 
 constexpr bool SKIP_MULTI_OUTPUT = false;
 
 namespace colserve {
 
+std::string GetModelNameWithoutDuplicatedId(const std::string &model_name) {
+  std::regex r{"([a-zA-Z0-9_]+)(-[0-9]+)?"};
+  std::smatch match;
+  CHECK(std::regex_match(model_name, match, r)) << "model name " << model_name << " is not valid";
+  CHECK_EQ(match.size(), 3);
+  CHECK(!match[1].str().empty());
+  return match[1].str();
+}
+
 std::array<std::atomic<int>, static_cast<size_t>(Model::Status::kNumStatus)> 
 Model::model_stat_{0, 0, 0};
+
+std::mutex Model::estimate_tpc_mut_;
+std::condition_variable Model::estimate_tpc_cv_;
+bool Model::estimating_tpc_ = false;
+
+int Model::GetPreEstimatedTPC(const std::string &model_name) {
+  auto model_name_without_dup_id = GetModelNameWithoutDuplicatedId(model_name);
+  std::unordered_map<std::string, int> tpc_map = {
+    {"resnet152", 27},
+    {"densenet161", 13},
+    {"efficientvit_b2", 31},
+    {"efficientnet_v2_s", 31},
+    {"distilgpt2", 31},
+    {"distilbert_base", 33},
+  };
+  CHECK(tpc_map.count(model_name_without_dup_id) > 0) << "model " << model_name << " not found";
+  return tpc_map[model_name_without_dup_id];
+}
 
 Model::Model(const std::string &name, const std::filesystem::path &model_path,
              std::optional<const std::map<std::string, tvm::TVMArray>> params,
@@ -86,7 +117,7 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
   }
   infer_workers_.resize(max_num_worker_);
 
-  LOG_IF(INFO, Config::log_model_init_info)
+  LOG_IF(INFO, Config::log_infer_model_init)
       << "[Model Init] " << name << " initilized " << num_worker << " executor";
 
   // if (Config::colocate_config.skip_malloc || Config::colocate_config.skip_loading) {
@@ -108,10 +139,9 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
     pthread_barrier_destroy(&barrier);
   }
 
-
-  // if (Config::IsColocateMode() || Config::IsSwitchMode()) {
-  //   job_monitor_.reset(new std::thread{&Model::MonitorJob, this});
-  // }
+  if (!Config::estimate_infer_model_tpc) {
+    required_num_tpc_ = Model::GetPreEstimatedTPC(name);
+  }
 }
 
 void Model::InitMetaInfo() {
@@ -124,7 +154,7 @@ void Model::InitMetaInfo() {
     std::stringstream ss;
     for (size_t i = 0; i < shape.size(); i++) 
       ss << shape[i] << " ";
-    LOG_IF(INFO, Config::log_model_init_info) 
+    LOG_IF(INFO, Config::log_infer_model_init) 
         << "[Model Init] Input: " << name_ << " " << kv.first 
         << " shape [ " << ss.str()  << "] dtype " << dtype;
     CHECK_EQ(shape[0], batch_size_) << "batch size mismatch";
@@ -137,7 +167,7 @@ void Model::InitMetaInfo() {
     std::stringstream ss;
     for (size_t i = 0; i < shape.size(); i++)
       ss << shape[i] << " ";
-    LOG_IF(INFO, Config::log_model_init_info) 
+    LOG_IF(INFO, Config::log_infer_model_init) 
         << "[Model Init] Output: " << name_ << " " << kv.first 
         << " shape [ " << ss.str()  << "] dtype " << dtype;
     
@@ -234,7 +264,8 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
     PROFILE_END(InferWaitBeforeEnterAlloc);
   }
   double free_memory_MB = ResourceManager::GetFreeMemoryMB(true);
-  double cold_cache_free_memory_MB = ColdModelCache::Get().GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock);
+  double cold_cache_free_memory_MB = \
+      ColdModelCache::Get().GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock);
   double total_storage_MB = sta::ByteToMB(executors_[rank]->GetMissingStorageSizeAlign());
   if (total_storage_MB > cold_cache_free_memory_MB && !Controller::Get()->IsTrainIdle()) {
     auto wait_train_pid = TrainLauncher::Get()->GetTrainPid();
@@ -260,14 +291,15 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
         if (is_first_adjust) {
           Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, PROFILE_DURATRION(TrainAdjust));
         }
-        LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
-                  << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
-                  << " wait train pid " << wait_train_pid
-                  << " | before adjust: free memory " << free_memory_MB
-                  << " cold cache free memory " << cold_cache_free_memory_MB
-                  << " reserve memory " << adjust_reserve_mb
-                  << " adjust_batch_buffer_mb " << adjust_batch_buffer_mb
-                  << " delta batch size " << adjust_batch_size << ".";
+        LOG_IF(INFO, Config::log_memory_adjust) 
+            << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
+            << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
+            << " wait train pid " << wait_train_pid
+            << " | before adjust: free memory " << free_memory_MB
+            << " cold cache free memory " << cold_cache_free_memory_MB
+            << " reserve memory " << adjust_reserve_mb
+            << " adjust_batch_buffer_mb " << adjust_batch_buffer_mb
+            << " delta batch size " << adjust_batch_size << ".";
       } else {
         LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
                   << ", skip adjust due to negative target batch size (" << cur_target_bs << ")" ; 
@@ -275,13 +307,14 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
     } else {
       LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank << " , skip adjust";
     }
-    free_memory_MB = ResourceManager::GetFreeMemoryMB(true);
+    free_memory_MB = ResourceManager::GetFreeMemoryMB(Config::log_memory_adjust);
   }
-  LOG(INFO) << "[Model, Cold Cache Adjust] after adjust, "
-            << "free memory " << free_memory_MB
-            << " cold cache free memory " 
-            << ColdModelCache::Get().GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock)
-            << " model required " << total_storage_MB;
+  LOG_IF(INFO, Config::log_memory_adjust) 
+      << "[Model, Cold Cache Adjust] after adjust, "
+      << "free memory " << free_memory_MB
+      << " cold cache free memory " 
+      << ColdModelCache::Get().GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock)
+      << " model required " << total_storage_MB;
   if (total_storage_MB > free_memory_MB) {
     long capacity = static_cast<long>(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock)) 
                     - static_cast<long>((total_storage_MB - free_memory_MB) * 1024 * 1024);
@@ -289,10 +322,11 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
     for (auto &&[name, cached_groups_id] : evict_models) {
       InferModelStore::Get()->GetModel(name)->ClearColdCache(cached_groups_id, rank, cold_cache_lock);
     }
-    LOG(INFO) << "[Model, Cold Cache Adjust] after adjust, furthur evict model to make room for model "
-              << name_ << " rank " << rank
-              << " current cache nbytes " 
-              << sta::ByteDisplay(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock));
+    LOG_IF(INFO, Config::log_memory_adjust) 
+        << "[Model, Cold Cache Adjust] after adjust, furthur evict model to make room for model "
+        << name_ << " rank " << rank
+        << " current cache nbytes " 
+        << sta::ByteDisplay(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock));
   }
 
 #if 1
@@ -306,7 +340,9 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
 #endif
 }
 
-bool Model::SetupMemory(size_t rank, std::unique_lock<std::mutex> &cold_cache_lock, std::unique_lock<std::mutex> &model_lock) {
+bool Model::SetupMemory(size_t rank, 
+                        std::unique_lock<std::mutex> &cold_cache_lock, 
+                        std::unique_lock<std::mutex> &model_lock) {
   CHECK(status_[rank] == Status::kWithoutMemory);
   ColdModelCache::Get().PopCacheItem(name_, rank, cold_cache_lock);
   bool will_unlock_memory_changing = false;
@@ -340,14 +376,14 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
   while (!InferModelStore::Initialized()) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
-  LOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") start inference";
+  DLOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") start inference";
   {
     auto reserved_lock = WarmModelCache::ReserveCache(name_, rank);
     CHECK(status_[rank] == Status::kWithoutMemory);
     executors_[rank]->Init(true);
     ChangeStatus(rank, Status::kReady);
   }
-  LOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") Init Success";
+  DLOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") Init Success";
 
   // bool first_exec = true;
   
@@ -361,6 +397,10 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
       continue;
     }
 
+    // avoid interference
+    if (Config::dynamic_sm_partition) {
+      WaitEstimateTPC();
+    }
 
     // let cache serve models in a fifo manner
     auto reserve_cache_begin = Profiler::Now();
@@ -424,6 +464,12 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
       }
     }
 
+    // claim gpu sm
+    int recorded_required_tpc_num = required_num_tpc_;
+    if (Config::dynamic_sm_partition && recorded_required_tpc_num > 0) {
+      SMPartitioner::AddInferRequiredTpcNum(recorded_required_tpc_num);
+    }
+
     double infer_ms;
     bool pipeline_exec = false;
     {
@@ -443,6 +489,10 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
         PROFILE_END(InferExec);
         infer_ms = PROFILE_DURATRION(InferExec);
       }
+    }
+
+    if (Config::dynamic_sm_partition && recorded_required_tpc_num > 0) {
+      SMPartitioner::DecInferRequiredTpcNum(recorded_required_tpc_num);
     }
 
     double get_output_ms;
@@ -471,7 +521,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
 
     ss << " total_infer_ms=" << std::chrono::duration<double, std::milli>(infer_end - infer_begin).count();
     if (WarmModelCache::Enable()) { ss << " | reserve_cache_ms=" << reserve_cache_ms; }
-    LOG(INFO) << ss.str();
+    LOG_IF(INFO, Config::log_infer_time) << ss.str();
 
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferRealBatchSize, jobs.size());
     for (auto& job : jobs) {
@@ -482,30 +532,18 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     }
     InferModelStore::InferingDec(executors_[rank].get());
     Controller::Get()->InferResponseInc(jobs.size());
+
+    // estimate tpc after first infer
+    // to avoid interference w/ training, do this during infer warmup
+    if (Config::dynamic_sm_partition 
+        && Config::estimate_infer_model_tpc 
+        && required_num_tpc_ == -1) {
+      EstimateTPC(rank, *graph_executor);
+    }
   }
 
   std::stringstream exit_log_ss;
   exit_log_ss << "[Model Inference] model " << tvm_graph_->GetModelRank() << " worker " << rank << " exit";
-  // Profiler::Get()->RecordEvent(Profiler::EventItem::InferExit);
-  // GraphCache::Get()->DeInitGraphExecutor(name_, graph_executor);
-  // if (Config::IsColocateMode()) {
-  //   if (TrainLauncher::Get()->GetTrainPid() != -1) {
-  //     Controller::Get()->EnterInferChangeMemory(rank);
-  //     // double free_memory_mb = graph_executor->GetFreeMemoryMB();
-  //     Controller::Get()->InferExit(
-  //       graph_executor->GetFreeMemoryMB() / 145);
-  //     exit_log_ss << ", waited train " << waited_trains_[rank] << ", current train pid " << TrainLauncher::Get()->GetTrainPid();
-  //     Controller::Get()->ExitInferChangeMemory(rank);
-  //   }
-  // } else if (Config::IsSwitchMode()) {
-  //   InferModelStore::Get()->TaskSwitchExit();
-  //   // InferModelStore::Get()->task_switch_cv.notify_all();
-  //   // InferModelStore::Get()->task_switch_exit_cv.notify_one();
-  //   pthread_barrier_wait(&InferModelStore::Get()->task_switch_barrier); // do cancel exit
-  // }
-  // *worker_running_[rank] = false;
-  // waited_trains_[rank] = static_cast<pid_t>(-1);
-  // warmup_ = false;
 
   LOG(INFO) << exit_log_ss.str();
   return true;
@@ -588,6 +626,80 @@ bool Model::GetOutput(tvm::Executor &graph_executor,
     offset += output_nbytes;
   }
   return true;
+}
+
+void Model::EstimateTPC(uint32_t rank, tvm::Executor &graph_executor) {
+  CHECK(Config::dynamic_sm_partition);
+
+  if (required_num_tpc_ != -1) {
+    return; // skip already estimated
+  }
+
+  std::unique_lock lock{Model::estimate_tpc_mut_};
+
+  static std::unordered_map<std::string, int> tpc_map;
+  std::string model_name_without_dup_id = GetModelNameWithoutDuplicatedId(name_);
+  if (tpc_map.count(model_name_without_dup_id) > 0) {
+    required_num_tpc_ = tpc_map[model_name_without_dup_id];
+    return;
+  }
+
+  Model::estimating_tpc_ = true;
+  // LOG(INFO) << name_ << " begin estimate tpc " << Model::estimating_tpc_;
+  while (InferModelStore::GetNumInferingModel() > 1) {
+    // LOG(INFO) << "wait other model finish infering";
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+
+  CHECK(status_[rank] == Status::kReady);
+  
+  auto get_exec_ms = [&]() {
+    int repeat = 100;
+    auto t0 = Profiler::Now(); 
+    for (int i = 0; i < repeat; i++)
+      graph_executor.Run(); 
+    return Profiler::MilliFrom(t0) / repeat;
+  };
+
+  double std_exec_ms = get_exec_ms();
+  double target_exec_ms = std_exec_ms * Config::infer_exec_time_estimate_scale;
+
+  // auto num_tot_sm = GetGPUNumSM(0);
+  // auto num_tot_tpc = num_tot_sm >> 1;
+  auto num_tot_tpc = SMPartitioner::GetGPUNumTpc();
+  int left = 0, right = num_tot_tpc + 1;
+  while (left + 1 < right) {
+    int mid = left + (right - left) / 2;
+    uint64_t mask_64 = -1;
+    mask_64 = mask_64 << mid;
+    SMPartitioner::SetStreamTpcMask(static_cast<cudaStream_t>(graph_executor.GetExecStream()), mask_64);
+    DLOG(INFO) << SMPartitioner::CheckStreamSM(static_cast<cudaStream_t>(graph_executor.GetExecStream()));
+    double exec_ms = get_exec_ms();
+    if (exec_ms >= target_exec_ms) {
+      left = mid;
+    } else {
+      right = mid;
+    }
+    DLOG(INFO) << "[EstimateTPC] " <<  model_name_without_dup_id 
+              << " num_sm " << (mid << 1) << " exec_ms " << exec_ms << " / " << target_exec_ms;
+  }
+  required_num_tpc_ = left;
+  LOG(INFO) << "[Model TPC Estimate] " << name_ << " required num_tpc " << required_num_tpc_;
+  tpc_map[model_name_without_dup_id] = required_num_tpc_;
+  
+  Model::estimating_tpc_ = false;
+  // LOG(INFO) << name_ << " notify estimate tpc " << Model::estimating_tpc_;
+  Model::estimate_tpc_cv_.notify_all();
+}
+
+void Model::WaitEstimateTPC() {
+  if (Model::estimating_tpc_) {
+    // LOG(INFO) << name_ << " wait estimate tpc 1 " << Model::estimating_tpc_;
+    std::unique_lock<std::mutex> lock{Model::estimate_tpc_mut_};
+    // LOG(INFO) << name_ << " wait estimate tpc 2 " << Model::estimating_tpc_;
+    Model::estimate_tpc_cv_.wait(lock, [&]() { return !Model::estimating_tpc_; });
+    // LOG(INFO) << name_ << " wait estimate tpc done";
+  }
 }
 
 }

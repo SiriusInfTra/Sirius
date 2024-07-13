@@ -28,7 +28,7 @@ void DumpMempoolFreeList(std::string filename) {
   LOG(FATAL) << "removed, to be re-impl"; 
 }
 void DumpMempoolBlockList(std::string filename) {
-    LOG(FATAL) << "removed, to be re-impl"; 
+  LOG(FATAL) << "removed, to be re-impl"; 
 }
 
 TensorWeakRef::TensorWeakRef(PyObject* py_tensor) {

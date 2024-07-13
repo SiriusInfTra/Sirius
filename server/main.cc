@@ -15,7 +15,8 @@
 #include <CLI/CLI.hpp>
 
 #include <common/cuda_allocator.h>
-#include <common/init.h>
+#include <common/sm_partition.h>
+#include <common/device_manager.h>
 #include <common/util.h>
 
 #include "grpc/grpc_server.h"
@@ -66,6 +67,12 @@ void init_cli_options() {
       "infer model config path, default is config in models store");
   app.add_option("--profile-log", colserve::Config::profile_log_path, 
       "profile log path, default is server-profile");
+  app.add_option("--profile-gpu-smact", colserve::Config::profile_gpu_smact, 
+      "profile gpu smact, default is " + std::to_string(colserve::Config::profile_gpu_smact));
+  app.add_option("--profile-gpu-util", colserve::Config::profile_gpu_util, 
+      "profile gpu util, default is " + std::to_string(colserve::Config::profile_gpu_util));
+  app.add_option("--profile-sm-partition", colserve::Config::profile_sm_partition, 
+      "profile sm partition, default is " + std::to_string(colserve::Config::profile_sm_partition));
   app.add_option("--capture-train-log", colserve::Config::capture_train_log, 
       "capture train log, default is 1");
   app.add_flag("--infer-blob-alloc", colserve::Config::infer_raw_blob_alloc, 
@@ -78,6 +85,8 @@ void init_cli_options() {
       "colocate skip loading, default is false");
   app.add_option("--use-xsched", colserve::Config::use_xsched, 
       "use xsched, default is false");
+  app.add_option("--dynamic-sm-partition", colserve::Config::dynamic_sm_partition, 
+      "dynamic sm partition, default is false");
   app.add_option("--train-profile", colserve::Config::train_profile, 
     "train timeline path, default is train-timeline");
   app.add_option("--max-warm-cache-nbytes", colserve::Config::max_warm_cache_nbytes, 
@@ -106,6 +115,8 @@ void init_cli_options() {
       "profiler acquire resource lock during profiling, not use for performance eval");
   app.add_flag("--dummy-adjust", colserve::Config::dummy_adjust,
       "dummy adjust for eval, default is 0");
+  app.add_flag("--skip-set-mps-thread-percent", colserve::Config::skip_set_mps_thread_percent,
+      "skip set mps thread percent, default is 0");
 
   app.add_flag("--enable-warm-cache-fallback", colserve::Config::enable_warm_cache_fallback,
       "enable warm cache fallback, default is 1");
@@ -168,10 +179,32 @@ void init_config() {
               << colserve::sta::ByteDisplay(cfg::max_warm_cache_nbytes);
   }
 
+  auto *cuda_device_env = getenv("CUDA_VISIBLE_DEVICES");
+  auto *cuda_mps_thread_pct_env = getenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE");
+  if (cuda_device_env != nullptr) {
+    LOG(INFO) << "ENV::CUDA_VISIBLE_DEVICES: " << cuda_device_env;
+  }
+  if (cuda_mps_thread_pct_env != nullptr) {
+    LOG(INFO) << "ENV::CUDA_MPS_ACTIVE_THREAD_PERCENTAGE: " << cuda_mps_thread_pct_env;
+  }
+
+  if (cuda_mps_thread_pct_env == nullptr && cfg::train_mps_thread_percent == -1) {
+    LOG(INFO) << "no CUDA_MPS_ACTIVE_THREAD_PERCENTAGE set, skip set mps thread percent";
+    cfg::skip_set_mps_thread_percent = true;
+  }
+
+  if (!cfg::skip_set_mps_thread_percent && cfg::dynamic_sm_partition) {
+    LOG(FATAL) << "Dynamic partition SM may not work correctly with control of MPS thread percent";
+  }
+  if (cfg::dynamic_sm_partition && !cfg::use_xsched) {
+    LOG(FATAL) << "Dynamic partition SM must work with xsched";
+  }
+
   STREAM_OUTPUT(serve_mode);
   STREAM_OUTPUT(use_shared_tensor);
   STREAM_OUTPUT(use_shared_tensor_infer);
   STREAM_OUTPUT(use_shared_tensor_train);
+  STREAM_OUTPUT(use_xsched);
   STREAM_OUTPUT(cuda_memory_pool_gb);
   STREAM_OUTPUT(ondemand_adjust);
   STREAM_OUTPUT(better_alloc);
@@ -185,6 +218,7 @@ void init_config() {
   STREAM_OUTPUT(train_over_adjust_nbytes);
   STREAM_OUTPUT(cold_cache_ratio);
   STREAM_OUTPUT(infer_model_max_idle_ms);
+  STREAM_OUTPUT(dynamic_sm_partition);
   STREAM_OUTPUT(colocate_config.skip_malloc);
   STREAM_OUTPUT(colocate_config.skip_loading);
 
@@ -196,6 +230,7 @@ void Shutdown(int sig) {
   colserve::InferModelStore::Shutdown();
   colserve::TrainLauncher::Shutdown();
   colserve::Profiler::Shutdown();
+  NVML_CALL(nvmlShutdown());
   std::terminate();
 }
 
@@ -214,16 +249,21 @@ int main(int argc, char *argv[]) {
   });
 
   CHECK_EQ(cuInit(0), CUDA_SUCCESS);
+  NVML_CALL(nvmlInit());
+  colserve::sta::DeviceManager::Init();
   auto free_list_policy = colserve::sta::getFreeListPolicy(
       colserve::Config::mempool_freelist_policy);
   if (colserve::Config::use_shared_tensor) {
-    colserve::sta::InitMemoryPool(
+    colserve::sta::CUDAMemPool::Init(
       static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
       true, false, free_list_policy);
     colserve::sta::CUDAMemPool::Get()->RegisterOOMHandler([]() {
       LOG(INFO) << "train predict memory " 
                 <<  colserve::TrainLauncher::Get()->PredictMemUsageMB(true) << "."; 
       }, colserve::sta::MemType::kInfer);
+  }
+  if (colserve::Config::dynamic_sm_partition) {
+    colserve::SMPartitioner::Init(0, true, false);
   }
   colserve::ResourceManager::Init();
   colserve::Controller::Init();

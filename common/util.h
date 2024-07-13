@@ -11,6 +11,9 @@
 
 #include <cuda.h>
 #include <cuda_runtime_api.h>
+#include <nvml.h>
+
+namespace colserve {
 
 #define CUDA_CALL(func) do { \
   auto error = func; \
@@ -31,7 +34,19 @@
     } \
   } while (0);
 
-namespace colserve {
+#define NVML_CALL(func) do{ \
+    auto error = func; \
+    if (error != NVML_SUCCESS) { \
+      LOG(FATAL) << #func << " " << nvmlErrorString(error); \
+      exit(EXIT_FAILURE); \
+    } \
+  } while(0);
+
+#define MAX_DEVICE_NUM 8
+
+using memory_nbyte_t = size_t;
+using memory_mb_t = double;
+
 namespace literals {
 
 constexpr size_t operator ""_B(unsigned long long n) {
@@ -81,6 +96,8 @@ inline std::string ByteDisplay(size_t nbytes) {
 }
 
 }
+
+
 
 using namespace colserve::literals;
 

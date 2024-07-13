@@ -106,7 +106,7 @@ def uniform(rps, client_model_list, infer_only=True, rps_fn=None,
     if not infer_only:
         workload.set_train_workload(
             train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
-    workload.set_infer_workloads(MicrobenchmarkInferWorkload(
+    workload.set_infer_workloads(MicrobenchmarkInferWorkload_v1(
         model_list=client_model_list,
         interval_sec=UniformConfig.interval_sec, fix_request_sec=rps, rps_fn=rps_fn,
         duration=UniformConfig.duration + workload.infer_extra_infer_sec,
@@ -127,7 +127,7 @@ def skewed(rps, client_model_list, infer_only=True, rps_fn=None,
     if not infer_only:
         workload.set_train_workload(
             train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
-    workload.set_infer_workloads(MicrobenchmarkInferWorkload(
+    workload.set_infer_workloads(MicrobenchmarkInferWorkload_v1(
         model_list=client_model_list,
         interval_sec=SkewedConfig.interval_sec, fix_request_sec=rps, rps_fn=rps_fn,
         zipf_alpha=SkewedConfig.zipf_aplha,

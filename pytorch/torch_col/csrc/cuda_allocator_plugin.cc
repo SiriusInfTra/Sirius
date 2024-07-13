@@ -1,10 +1,10 @@
 #include <c10/core/Storage.h>
 #include <c10/core/TensorImpl.h>
-#include <common/util.h>
 
-#include "common/cuda_allocator.h"
-#include "cuda_allocator_plugin.h"
-#include "config.h"
+#include <common/cuda_allocator.h>
+#include <common/util.h>
+#include <torch_col/csrc/cuda_allocator_plugin.h>
+#include <torch_col/csrc/config.h>
 
 #include <glog/logging.h>
 #include <utility>
@@ -54,13 +54,16 @@ void CUDAColAllocator::init(int device_count) {
                                           "best-fit";
   // auto pool_freelist_policy = colserve::sta::getFreeListPolicy(pool_freelist_policy_str);
   sta::FreeListPolicyType policy;
-  size_t pool_nbytes = static_cast<size_t>(torch_col::shared_tensor_pool_gb * 1_GB); 
-  colserve::sta::InitMemoryPool(pool_nbytes, !torch_col::has_shared_tensor_server, 
-                                false, policy);
+  size_t pool_nbytes = static_cast<size_t>(torch_col::TorchColConfig::shared_tensor_pool_gb * 1_GB); 
+  // colserve::sta::InitMemoryPool(pool_nbytes, !torch_col::TorchColConfig::has_shared_tensor_server, 
+  //                               false, policy);
+  colserve::sta::CUDAMemPool::Init(
+      pool_nbytes, !torch_col::TorchColConfig::has_shared_tensor_server, 
+      false, policy);
 
   initialized_ = true;
   LOG(INFO) << "pytorch CUDAColAllocator Initialized, "
-            << " infer memory usage " << sta::ByteDisplay(sta::CUDAMemPool::InferMemUsage());
+            << " infer memory usage " << sta::ByteDisplay(sta::CUDAMemPool::InferMemUsage(0));
 }
 
 c10::DataPtr CUDAColAllocator::allocate(size_t nbytes) const {
@@ -76,7 +79,10 @@ c10::DeleterFnPtr CUDAColAllocator::raw_deleter() const {
 }
 
 void* CUDAColAllocator::raw_alloc(size_t nbytes) {
-  auto entry = sta::CUDAMemPool::Get()->Alloc(nbytes, colserve::sta::MemType::kTrain, false);
+  int device;
+  CUDA_CALL(cudaGetDevice(&device));
+  
+  auto entry = sta::CUDAMemPool::Get()->Alloc(device, nbytes, colserve::sta::MemType::kTrain, false);
   DLOG(INFO) << "CUDAColAllocator alloc " << sta::ByteDisplay(nbytes) 
             << " : addr " << entry->addr << " nbytes " << sta::ByteDisplay(entry->nbytes);
   
@@ -106,7 +112,9 @@ void CUDAColAllocator::raw_delete(void* ptr) {
 }
 
 void CUDAColAllocator::emptyCache() {
-  sta::CUDAMemPool::FreeTrainLocals();
+  int device;
+  CUDA_CALL(cudaGetDevice(&device));
+  sta::CUDAMemPool::FreeTrainLocals(device);
 }
 
 void CUDAColAllocator::setMemoryFraction(double fraction, int device) {

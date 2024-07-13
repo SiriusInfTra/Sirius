@@ -19,8 +19,12 @@ namespace colserve {
 
 class Job {
  public:
-  virtual network::InferHandler::InferData* GetInferData() { LOG(FATAL) << "not implemented"; return nullptr; }
-  virtual network::TrainHandler::TrainData* GetTrainData() { LOG(FATAL) << "not implemented"; return nullptr; }
+  virtual network::InferHandler::InferData* GetInferData() { 
+    LOG(FATAL) << "not implemented"; return nullptr; 
+  }
+  virtual network::TrainHandler::TrainData* GetTrainData() { 
+    LOG(FATAL) << "not implemented"; return nullptr; 
+  }
   virtual std::ostream& Print(std::ostream& os) const { LOG(FATAL) << "not implemented"; }
   inline void RecordEnqueued() { en_queue_time_ = std::chrono::steady_clock::now(); }
   inline void RecordDequeued() { de_queue_time_ = std::chrono::steady_clock::now(); }

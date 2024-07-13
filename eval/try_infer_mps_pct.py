@@ -7,7 +7,7 @@ def get_workload(rps, infer_only=False):
                              warmup=5, wait_warmup_done_sec=5,
                              wait_train_setup_sec=0)
     InferModel.reset_model_cnt()
-    workload.set_infer_workloads(MicrobenchmarkInferWorkload(
+    workload.set_infer_workloads(MicrobenchmarkInferWorkload_v1(
         model_list=InferModel.get_model_list("resnet152", 32),
         max_request_sec=rps, interval_sec=5, duration=60, 
     ))
@@ -35,7 +35,7 @@ def smooth(rps, infer_only=True):
     InferModel.reset_model_cnt()
     if not infer_only:
         workload.set_train_workload(train_workload=TrainWorkload('resnet', 15, 96))
-    workload.set_infer_workloads(MicrobenchmarkInferWorkload(
+    workload.set_infer_workloads(MicrobenchmarkInferWorkload_v1(
         model_list=InferModel.get_model_list("resnet152", 32),
         max_request_sec=rps, interval_sec=1, duration=60
     ))

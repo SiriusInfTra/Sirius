@@ -1,7 +1,7 @@
 #include "log_as_glog_sta.h"
-#include "tensor.h"
-#include "cuda_allocator.h"
-#include "shape_helper.h"
+#include <common/tensor.h>
+#include <common/cuda_allocator.h>
+#include <common/shape_helper.h>
 
 
 namespace colserve {
@@ -9,34 +9,36 @@ namespace sta {
 
 TensorContainer::TensorContainer() : tensor_{0}, mdata_{0}, stensor_version_{0} {}
 
-TensorContainer::TensorContainer(std::vector<int64_t> shape, DLDataType dltype) 
+TensorContainer::TensorContainer(std::vector<int64_t> shape, DLDevice device, DLDataType dltype) 
     : is_null_{true}, stensor_version_{0} {
-  SetTensor(nullptr, std::move(shape), dltype, 0);
+  SetTensor(nullptr, std::move(shape), device, dltype, 0);
 }
 
 TensorContainer::TensorContainer(
     std::vector<int64_t> shape, std::vector<int64_t> stride, 
-    DLDataType dtype, size_t storage_offset) 
+    DLDevice device, DLDataType dtype, size_t storage_offset) 
     : is_null_{true}, stensor_version_{0} {
-  SetTensor(nullptr, std::move(shape), std::move(stride), dtype, storage_offset);
+  SetTensor(nullptr, std::move(shape), std::move(stride), device, dtype, storage_offset);
 }
 
-TensorContainer::TensorContainer(memory_data_t mdata, std::vector<int64_t> shape, DLDataType dtype)
+TensorContainer::TensorContainer(memory_data_t mdata, std::vector<int64_t> shape, 
+                                 DLDevice device, DLDataType dtype)
     : stensor_version_{0} {
-  SetTensor(mdata, std::move(shape), dtype, 0);
+  SetTensor(mdata, std::move(shape), device, dtype, 0);
 }
 
-TensorContainer::TensorContainer(memory_data_t mdata, std::vector<int64_t> shape, at::MemoryFormat memory_format, 
-                  DLDataType dtype) {
+TensorContainer::TensorContainer(memory_data_t mdata, std::vector<int64_t> shape, 
+                                 at::MemoryFormat memory_format, 
+                                 DLDevice device, DLDataType dtype) {
   switch (memory_format) {
     case c10::MemoryFormat::Contiguous:
-      SetTensor(mdata, std::move(shape), dtype, 0);
+      SetTensor(mdata, std::move(shape), device, dtype, 0);
       break;
     case c10::MemoryFormat::ChannelsLast:
-      SetTensor(mdata, std::move(shape), c10::get_channels_last_strides_2d(shape), dtype, 0);
+      SetTensor(mdata, std::move(shape), c10::get_channels_last_strides_2d(shape), device, dtype, 0);
       break;
     case c10::MemoryFormat::ChannelsLast3d:
-      SetTensor(mdata, std::move(shape), c10::get_channels_last_strides_2d(shape), dtype, 0);
+      SetTensor(mdata, std::move(shape), c10::get_channels_last_strides_2d(shape), device, dtype, 0);
       break;
     default:
       LOG(FATAL) << "unknown memory_format: " << memory_format << ".";
@@ -47,17 +49,18 @@ TensorContainer::TensorContainer(memory_data_t mdata, std::vector<int64_t> shape
 
 TensorContainer::TensorContainer(
     memory_data_t mdata, std::vector<int64_t> shape, std::vector<int64_t> stride,
-    DLDataType dtype, size_t storage_offset)
+    DLDevice device, DLDataType dtype, size_t storage_offset)
     : stensor_version_{0} {
-  SetTensor(mdata, std::move(shape), std::move(stride), dtype, storage_offset);
+  SetTensor(mdata, std::move(shape), std::move(stride), device, dtype, storage_offset);
 }
 
 TensorContainer::~TensorContainer() {
   // CUDAMemPool::Get()->Free(mdata_);
 }
 
-void TensorContainer::SetTensor(TensorContainer::memory_data_t mdata, 
-    std::vector<int64_t> shape, DLDataType dtype, std::optional<size_t> storage_offset) {
+void TensorContainer::SetTensor(
+    TensorContainer::memory_data_t mdata, std::vector<int64_t> shape, 
+    DLDevice device, DLDataType dtype, std::optional<size_t> storage_offset) {
   std::vector<int64_t> stride(shape.size());
   if (shape.size() > 0) {
     stride.rbegin()[0] = 1;
@@ -65,12 +68,13 @@ void TensorContainer::SetTensor(TensorContainer::memory_data_t mdata,
       stride[i] = stride[i + 1] * shape[i + 1];
     }
   }
-  SetTensor(mdata, std::move(shape), std::move(stride), dtype, storage_offset);
+  SetTensor(mdata, std::move(shape), std::move(stride), device, dtype, storage_offset);
 }
 
 void TensorContainer::SetTensor(TensorContainer::memory_data_t mdata, 
     std::vector<int64_t> shape, std::vector<int64_t> stride, 
-    DLDataType dtype, std::optional<size_t> storage_offset) {
+    DLDevice device, DLDataType dtype, std::optional<size_t> storage_offset) {
+  CHECK(device.device_type == kDLCUDA);
   mdata_ = mdata;
   shape_ = std::move(shape);
   stride_ = std::move(stride);
@@ -78,7 +82,7 @@ void TensorContainer::SetTensor(TensorContainer::memory_data_t mdata,
   size_t old_byte_offset = tensor_.byte_offset;
   tensor_ = DLTensor{
     .data = mdata ? mdata->addr : nullptr,
-    .device = DLDevice{DLDeviceType::kDLCUDA, 0},
+    .device = device,
     .ndim = static_cast<int32_t>(shape_.size()),
     .dtype = dtype,
     .shape = shape_.data(),

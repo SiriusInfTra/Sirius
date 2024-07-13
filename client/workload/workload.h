@@ -150,14 +150,15 @@ class Workload {
   }
 
   bool Hello();
-  bool ReportTimeStampToServer();
+  bool InferenceWorkloadStart();
+  void InferenceWorkloadDone();
 
   void Run() {
     running_ = true;
     ready_promise_.set_value();
     run_btime_ = std::chrono::steady_clock::now();
     start_time_stamp_ = GetTimeStamp();
-    ReportTimeStampToServer();
+    InferenceWorkloadStart();
     LOG(INFO) << "Workload start at " << start_time_stamp_ 
               << " profiling will begin after " << delay_before_profile_
               << " sec from this time point";
@@ -169,6 +170,7 @@ class Workload {
       LOG(INFO) << "Infer Worker Thread " << std::hex << thread->get_id() << " joined";
       thread->join();
     }
+    end_time_stamp_ = GetTimeStamp();
     InferenceWorkloadDone();
     LOG(INFO) << "Inference Workload Done";
     for (auto &thread : train_threads_) {
@@ -181,7 +183,6 @@ class Workload {
 
   void WarmupModel(const std::string& model_name, int warmup);
   void WarmupDone();
-  void InferenceWorkloadDone();
   void InferBusyLoop(const std::string &model, size_t concurrency, 
                      std::function<double_ms_t(size_t)> interval_fn,
                      double delay_before_infer, int warmup,
@@ -226,6 +227,7 @@ class Workload {
 
   double delay_before_profile_;
   long start_time_stamp_;
+  long end_time_stamp_;
 
 
 

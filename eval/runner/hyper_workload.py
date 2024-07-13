@@ -1,4 +1,4 @@
-import os
+import os, sys
 import abc
 from dataclasses import dataclass
 from typing import List, Optional, NamedTuple, Dict
@@ -7,8 +7,10 @@ from types import NoneType
 import pandas as pd
 import numpy as np
 from numpy.random import RandomState, MT19937, SeedSequence
+from scipy.signal import correlate
 
 from .config import get_global_seed
+from . import distribution as dist
 
 class InferModel:
     ResNet152 = "resnet152"
@@ -94,6 +96,10 @@ class PoissonParam(NamedTuple):
 class InferWorkloadBase(abc.ABC):
     @abc.abstractmethod
     def get_trace(self) -> list[TraceRecord]:
+        pass
+
+    @abc.abstractmethod
+    def summary_trace(self, text_io=None, verbose=False):
         pass
 
 
@@ -369,8 +375,27 @@ class DynamicPoissonInferWorkload(RandomInferWorkload):
                 poisson_params, infer_model, self.rs))
         return trace_record
     
+    def summary_trace(self, text_io=None, verbose=False):
+        if text_io is None:
+            text_io = sys.stdout
+        poisson_param_arr = [poisson_param[1] for poisson_param in self.poisson_params]
+        poisson_param_arr = np.array(poisson_param_arr)[:, :, 1]
+
+        with np.printoptions(precision=1, suppress=True):
+            print('microbenchmark total #request: \n', 
+                  np.array(np.sum(poisson_param_arr, axis=0)), 
+                  file=text_io)
+            print('microbenchmark request #model : \n', 
+                  np.sum(poisson_param_arr > 0, axis=0), 
+                  file=text_io)
+            if verbose:
+                print('microbenchmark model #request: \n', 
+                      np.array(np.sum(poisson_param_arr, axis=1)), 
+                      file=text_io)
+
     @classmethod
-    def get_dynamic_poisson_params(cls, simple_poisson_params: dict[InferModel, list[tuple]]) -> list[tuple[InferModel, list[PoissonParam]]]:
+    def get_dynamic_poisson_params(cls, 
+                                   simple_poisson_params: dict[InferModel, list[tuple]]) -> list[tuple[InferModel, list[PoissonParam]]]:
         poisson_params = []
         for infer_model, req_dist in simple_poisson_params.items():
             if isinstance(infer_model, str):
@@ -385,7 +410,7 @@ class DynamicPoissonInferWorkload(RandomInferWorkload):
             poisson_params.append((infer_model, cur_poisson_param))
         return poisson_params
 
-class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
+class MicrobenchmarkInferWorkload_v1(DynamicPoissonInferWorkload):
     def __init__(self, 
                  model_list: List[InferModel],
                  interval_sec: float | int,
@@ -488,8 +513,8 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
                     if (j + 1) % 20 == 0: print_str += '\n'
                 print(print_str, '\n')
         with np.printoptions(precision=1, suppress=True):
-            print('microbenmark total #request: \n', np.array(np.sum(poisson_params_ndarray, axis=0)))
-            print('microbenmark request #model : \n', np.array(num_model_to_requests))
+            print('microbenchmark total #request: \n', np.array(np.sum(poisson_params_ndarray, axis=0)))
+            print('microbenchmark request #model : \n', np.array(num_model_to_requests))
             # print(poisson_params_ndarray)
 
     def _split_request(self, num_request, num_model, alpha=None):
@@ -500,6 +525,242 @@ class MicrobenchmarkInferWorkload(DynamicPoissonInferWorkload):
             alpha = 1 + np.round(alpha).astype(int)
         faction = self.rs.dirichlet(alpha)
         return num_request * faction
+
+
+# only abstract workload generating
+class MicrobenchmarkInferWorkloadBase(DynamicPoissonInferWorkload):
+    def __init__(self, 
+                 model_list: List[InferModel],
+                 interval_sec: float | int,
+                #  fix_request_sec: Optional[float | int] = None,
+                 duration: Optional[float | int] = None,
+                 period_num: Optional[int] = None,
+                #  num_request_model_fn = None, # Fn(i,) -> num_model
+                #  rps_fn = None, # post process rps, Fn(i, model_list) -> rps,
+                 max_request_sec: Optional[float | int] = None,
+                 equal_partition_rps: bool = False,
+                 sequential_choose_model: bool = False,
+                #  zipf_alpha: Optional[float] = None,
+                 model_hotness: Optional[List[float]] = None,
+                 verbose: bool = False,
+                 seed: Optional[int] = None) -> None:
+        super().__init__(None, None, seed)
+        if duration is None and period_num is None:
+            raise Exception("duration, period_num and interval_sec cannot be all None")
+        if duration is not None and period_num is not None:
+            raise Exception("duration and period_num cannot be both specified")
+        
+        if model_hotness is not None:
+            if len(model_list) != len(model_hotness):
+                raise Exception("model_list and model_hotness must have the same length")
+
+        self.model_list = model_list
+        self.interval_sec = interval_sec
+        if period_num is None:
+            period_num = int(duration / interval_sec + 0.5)
+            self.duration = duration
+            # self.duration = period_num * interval_sec
+        if duration is None:
+            self.duration = period_num * interval_sec
+
+        self.equal_partition_rps = equal_partition_rps
+        self.sequential_choose_model = sequential_choose_model
+
+        if model_hotness is not None:
+            self.model_hotness = np.array(model_hotness)
+        else:
+            self.model_hotness = None
+
+        self.num_request_model_arr = np.empty(period_num, dtype=np.int32)
+        self.poisson_param_arr = np.empty((len(model_list), period_num), dtype=np.float64)
+
+        self._gen_poission_params(self.num_request_model_arr, self.poisson_param_arr)
+        self._scale_poisson_param(self.poisson_param_arr, max_request_sec)
+
+        if verbose and model_hotness is not None:
+            for i in range(period_num):
+                print_str = f"[period {i}]:\n"
+                for j in range(len(model_list)):
+                    print_str += f'{self.poisson_param_arr[j, i]:>5.2f} '
+                    if (j + 1) % 20 == 0: print_str += '\n'
+                print(print_str, '\n')
+        self.summary_trace(verbose=verbose)
+        self._build_poisson_params(self.poisson_param_arr)
+
+    def summary_trace(self, text_io=None, verbose=False):
+        if text_io is None:
+            text_io = sys.stdout
+        with np.printoptions(precision=1, suppress=True):
+            print('microbenchmark total #request: \n', np.sum(self.poisson_param_arr, axis=0), file=text_io)
+            print('microbenchmark request #model : \n', self.num_request_model_arr, file=text_io)
+            if verbose:
+                print('microbenchmark model #request: \n', np.sum(self.poisson_param_arr, axis=1), file=text_io)
+
+    def total_num_model(self):
+        return len(self.model_list)
+    
+    def num_period(self):
+        return self.poisson_param_arr.shape[1]
+
+    def _split_request(self, num_request, num_model, alpha=None):
+        if self.equal_partition_rps:
+            return np.ones(num_model) * num_request / num_model
+        if alpha is None:
+            alpha = np.ones(num_model)
+        else:
+            alpha = alpha / np.sum(alpha) * num_model
+            alpha = 1 + np.round(alpha).astype(int)
+        faction = self.rs.dirichlet(alpha)
+        return num_request * faction
+    
+    def _choose_model(self, num_model):
+        if self.sequential_choose_model:
+            return np.arange(num_model)
+        if self.model_hotness is None:
+            return self.rs.choice(np.arange(len(self.model_list)), num_model, replace=False)
+        else:
+            # print(self.model_hotness, np.arange(len(self.model_list)), num_model)
+            return self.rs.choice(np.arange(len(self.model_list)), num_model, replace=False, 
+                                  p = self.model_hotness)
+
+    def _scale_poisson_param(self, poisson_param_arr: np.ndarray, 
+                             max_rps: float = None):
+        if max_rps is None:
+            return
+        interval_rps = np.sum(poisson_param_arr, axis=0)
+        scale_factor = max_rps / np.max(interval_rps)
+        poisson_param_arr *= scale_factor
+
+    def _build_poisson_params(self, poisson_param_arr: np.ndarray):
+        self.poisson_params = []
+        for i, poisson_param_values in enumerate(poisson_param_arr):
+            poisson_param = []
+            for j, num_request in enumerate(poisson_param_values):
+                poisson_param.append(PoissonParam(j * self.interval_sec, num_request))
+            self.poisson_params.append((self.model_list[i], poisson_param))
+
+    @abc.abstractmethod
+    def _gen_poission_params(self,
+                             num_request_model_arr: np.ndarray, 
+                             poisson_param_arr: np.ndarray[np.float64]) -> None:
+        pass
+
+
+class MicrobenchmarkInferWorkload_RpsMajor(MicrobenchmarkInferWorkloadBase):
+    def __init__(self,
+                 model_list: List[InferModel],
+                 rps_dist: dist.DistributionBase,
+                 acf: dist.AutoCorrelationGenerator,
+                 acf_mse_err: float,
+                 interval_sec: float | int,
+                 duration: Optional[float | int] = None,
+                 num_period: Optional[int] = None,
+                 **kargs) -> None:
+        self.rps_dist = rps_dist
+        self.acf = acf
+        self.acf_mse_err = acf_mse_err
+        super().__init__(model_list, interval_sec, 
+                         duration=duration,
+                         period_num=num_period, **kargs)
+        
+    def __repr__(self) -> str:
+        return f'''MicrobenchmarkInferWorkload_RpsMajor(
+    rps_dist={self.rps_dist}, 
+    acf={self.acf}, 
+    acf_mse_err={self.acf_mse_err}, 
+    interval={self.interval_sec}sec, 
+    duration={self.duration}sec,
+    ...)'''
+    
+    def _gen_poission_params(self,
+                             num_request_model_arr: np.ndarray,
+                             poisson_param_arr: np.ndarray):
+
+        tot_rps_arr = [self.rps_dist.get() for _ in range(self.num_period())]
+        acf = np.array([self.acf.get(x) for x in range(self.num_period())])
+
+        permute_rs = RandomState(MT19937(SeedSequence(self.rs.randint(1, self.seed+1))))
+        cur_rps_arr = np.array(tot_rps_arr)
+        while True:
+            cur_acf = dist.normalized_acf(cur_rps_arr)
+            mse = np.mean((cur_acf - acf) ** 2) / np.mean(acf ** 2)
+            if mse < self.acf_mse_err:
+                break
+            permute_rs.shuffle(cur_rps_arr)
+            
+
+        tot_rps_arr = cur_rps_arr
+
+        for i, rps in enumerate(tot_rps_arr):
+            model_rps = self._split_request(rps, self.total_num_model(), self.model_hotness)
+            poisson_param_arr[:, i] = model_rps
+            num_request_model_arr[i] = np.sum(model_rps > 0)
+
+
+class MicrobenchmarkInferWorkload_ModelMajor(MicrobenchmarkInferWorkloadBase):
+    def __init__(self,
+                 model_list: List[InferModel],
+                 request_model_dist: dist.DistributionBase,
+                 rps_dist: dist.DistributionBase,
+                 acf: dist.AutoCorrelationGenerator,
+                 acf_mse_err: float,
+                 interval_sec: float | int,
+                 duration: Optional[float | int] = None,
+                 num_period: Optional[int] = None,
+                 **kargs) -> None:
+        self.request_model_dist = request_model_dist
+        self.rps_dist = rps_dist
+        self.acf = acf
+        self.acf_mse_err = acf_mse_err
+        super().__init__(model_list, interval_sec,
+                        duration=duration,
+                        period_num=num_period, **kargs)
+        
+    def __repr__(self) -> str:
+        return f'''MicrobenchmarkInferWorkload_ModelMajor(
+    request_model_dist={self.request_model_dist},
+    rps_dist={self.rps_dist},
+    acf={self.acf},
+    acf_mse_err={self.acf_mse_err},
+    interval={self.interval_sec}sec,
+    duration={self.duration}sec,
+    ...)'''
+        
+    def _gen_poission_params(self,
+                             num_request_model_arr: np.ndarray,
+                             poisson_param_arr: np.ndarray):
+        for i in range(len(num_request_model_arr)):
+            num_request_model_arr[i] = min(len(self.model_list), int(self.request_model_dist.get() + 0.5))
+        acf = np.array([self.acf.get(x) for x in range(self.num_period())])
+
+        permute_rs = RandomState(MT19937(SeedSequence(self.rs.randint(1, self.seed+1))))
+        noise_rs = RandomState(MT19937(SeedSequence(self.rs.randint(1, self.seed+1))))
+        while True:
+            cur_acf = dist.normalized_acf(num_request_model_arr)
+            mse = np.mean((cur_acf - acf) ** 2) / np.mean(acf ** 2)
+            if mse < self.acf_mse_err:
+                break
+            permute_rs.shuffle(num_request_model_arr)
+
+        for i, num_request_model in enumerate(num_request_model_arr):
+            request_model = self._choose_model(num_request_model)
+            rps = self.rps_dist.get()
+            if self.model_hotness is None:
+                scale_factor = num_request_model / self.total_num_model()
+            else:
+                scale_factor = np.sum(self.model_hotness[request_model]) / np.sum(self.model_hotness)
+            rps = rps * scale_factor
+            noise = noise_rs.normal(0, 0.1 * rps)
+            rps += noise
+            rps = max(0, rps)
+
+            model_rps = np.zeros(len(self.model_list))
+            if self.model_hotness is None:
+                model_rps[request_model] = self._split_request(rps, num_request_model)
+            else:
+                model_rps[request_model] = self._split_request(rps, num_request_model, 
+                                                               self.model_hotness[request_model])
+            poisson_param_arr[:, i] = model_rps            
 
 
 class InferTraceDumper:
@@ -522,7 +783,8 @@ class InferTraceDumper:
             # check trace and update trace
             for index, model in enumerate(model_list_local):
                 # TODO support discontinuous sequence of model id
-                assert len(self.infer_workloads) == 1 or index == model.model_id, f"model {model} index {index} not match at {infer_workload}"
+                assert len(self.infer_workloads) == 1 or index == model.model_id, \
+                    f"model {model} index {index} not match at {infer_workload}"
                 model.model_id += len(trace_list)
             trace_list.extend(trace_list_local)
             model_list.extend(model_list_local)

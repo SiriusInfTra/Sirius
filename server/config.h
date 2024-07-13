@@ -7,14 +7,6 @@
 
 namespace colserve {
 
-#define NVML_CALL(func) do{ \
-    auto error = func; \
-    if (error != NVML_SUCCESS) { \
-      LOG(FATAL) << #func << " " << nvmlErrorString(error); \
-      exit(EXIT_FAILURE); \
-    } \
-  } while(0);
-
 enum class ServeMode {
   kNormal,        // infer/train contention
 
@@ -26,6 +18,12 @@ enum class ServeMode {
   kColocateL1,    // colocate infer/train, drop mini-batch -> adjust batch size -> relaunch
   kColocateL2,    // adjust batch at end of mini-batch
 };
+
+// used for multi-GPU serving
+enum class ModelPlacePolicy {
+  kRoundRobin,
+};
+
 
 inline std::ostream & operator<<(std::ostream &os, const ServeMode &mode) {
   switch (mode) {
@@ -64,6 +62,8 @@ struct ColocateConfig {
 class Config {
  public:
   static ServeMode serve_mode;
+  static ModelPlacePolicy model_place_policy;
+
   static std::filesystem::path binary_directory;
 
   static ColocateConfig colocate_config;
@@ -129,12 +129,33 @@ class Config {
 
   static bool profiler_acquire_resource_lock ;
 
+  static bool skip_set_mps_thread_percent;
+  static bool dynamic_sm_partition;
+  static bool estimate_infer_model_tpc;
+  static double infer_exec_time_estimate_scale;
+
   static bool dummy_adjust;
 
   static bool system_initialized;
 
-  static constexpr bool log_model_init_info = true;
+  static bool profile_gpu_smact;
+  static bool profile_gpu_util;
+  static bool profile_sm_partition;
+
   static constexpr bool log_grpc = false;
+  static constexpr bool log_train_init = false;
+  static constexpr bool log_warm_cache = false;
+  static constexpr bool log_cold_cache = false;
+
+  static constexpr bool log_infer_model_init = false;
+  static constexpr bool log_infer_model_reclaim = false;
+  static constexpr bool log_infer_time = false;
+  static constexpr bool log_infer_pipeline_exec = false;
+  static constexpr bool log_infer_load_param = false;
+
+  static constexpr bool log_memory_adjust = false;
+
+  static constexpr bool log_controller = false;
 
   inline static bool IsSwitchMode() {
     return Config::serve_mode == ServeMode::kTaskSwitchL1

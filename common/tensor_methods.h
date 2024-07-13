@@ -5,9 +5,9 @@
 #include <ATen/TensorUtils.h>
 #include <c10/core/MemoryFormat.h>
 
-#include "tensor.h"
-#include "dlpack.h"
-#include "dtype_helper.h"
+#include <common/tensor.h>
+#include <common/dlpack.h>
+#include <common/dtype_helper.h>
 
 #include <iostream>
 #include <vector>
@@ -16,13 +16,13 @@
 namespace colserve {
 namespace sta {
 
-STensor Null(at::IntArrayRef size, DLDataType dtype);
+STensor Null(at::IntArrayRef size, DLDevice device, DLDataType dtype);
 
 STensor Empty(at::IntArrayRef size, at::MemoryFormat memory_format, 
-              DLDataType dtype, MemType mtype);
+              DLDevice device, DLDataType dtype, MemType mtype);
 
 STensor EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride, 
-                     DLDataType dtype, MemType mtype);
+                     DLDevice device, DLDataType dtype, MemType mtype);
 
 STensor ViewDtype(uint64_t tensor, DLDataType dtype);
 

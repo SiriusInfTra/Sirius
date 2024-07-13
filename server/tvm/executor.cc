@@ -57,7 +57,11 @@ std::string GetModelNameWithoutDuplicatedId(const std::string &model_name) {
 }
 
 Executor::Executor(TVMGraph &factory, size_t worker_id, const std::vector<DLDevice> &devs)
-    : tvm_graph_(factory), infer_model_worker_id_(worker_id), devices_(devs), initialized_(false), cold_cached_nbytes_(0) {
+    : tvm_graph_(factory), infer_model_worker_id_(worker_id), devices_(devs), 
+      initialized_(false), cold_cached_nbytes_(0) {
+  // currently, we still assume that a model is only used in one device
+  // we will support multi-device inference in the future
+  
   using namespace ::tvm::runtime;
   auto t0 = std::chrono::steady_clock::now();
   SetupStorage(false);
@@ -164,8 +168,9 @@ void Executor::DeInit(const std::vector<size_t> &keep_cold_cached_group_id) {
     cold_cached_nbytes += storage_group_.at(k)->nbytes;
   }
 
-  LOG(INFO) << "[Executor] " << tvm_graph_.model_name_ << " deinit, cold_cached_nbytes = " 
-            << sta::ByteDisplay(cold_cached_nbytes) << ".";
+  LOG_IF(INFO, Config::log_infer_model_reclaim) 
+      << "[Executor] " << tvm_graph_.model_name_ 
+      << " deinit, cold_cached_nbytes = " << sta::ByteDisplay(cold_cached_nbytes) << ".";
   cold_cached_nbytes_.store(cold_cached_nbytes, std::memory_order_relaxed);
   if (!Config::colocate_config.skip_malloc) {
     ResetStorage();
@@ -252,10 +257,11 @@ void Executor::PipelineRun() {
     }
   }
   DeviceAPI::Get(devices_[0])->StreamSync(devices_[0], exec_stream_);
-  LOG(INFO) << "[Executor] [PipelineRun] " << tvm_graph_.model_name_
-            << " wait_load_ms " << wait_load_ms 
-            << " wait_ms " << wait_ms
-            << " tot " << Profiler::MilliFrom(begin);
+  LOG_IF(INFO, Config::log_infer_pipeline_exec) 
+      << "[Executor] [PipelineRun] " << tvm_graph_.model_name_
+      << " wait_load_ms " << wait_load_ms 
+      << " wait_ms " << wait_ms
+      << " tot " << Profiler::MilliFrom(begin);
 }
 
 // double Executor::ComputePipelineExecTime() {
@@ -372,7 +378,8 @@ void Executor::AllocStorage() {
         if (auto iter = cold_cached_group_.find(k); iter != cold_cached_group_.cend()) {
           mdata_group = iter->second;
         } else {
-          mdata_group = sta::CUDAMemPool::Get()->Alloc(group_nbytes, sta::MemType::kInfer, false);
+          mdata_group = sta::CUDAMemPool::Get()->Alloc(devices_[0].device_id, group_nbytes, 
+                                                       sta::MemType::kInfer, false);
         }
         size_t off = 0;
         for (; i < j; i++) {
@@ -397,7 +404,7 @@ void Executor::AllocStorage() {
     for (auto &s : storage_pool_) {
       total_nbytes += (GetDataSize(*s.operator->()) + align - 1) & (~(align - 1));
     }
-    blob_mem_ = sta::CUDAMemPool::RawAlloc(total_nbytes, sta::MemType::kInfer);
+    blob_mem_ = sta::CUDAMemPool::RawAlloc(devices_[0].device_id, total_nbytes, sta::MemType::kInfer);
     // blob_mem_ = sta::CUDAMemPool::Get()->Alloc(total_nbytes, sta::MemType::kInfer);
     for (auto &s : storage_pool_) {
       size_t nbytes = (GetDataSize(*s.operator->()) + align - 1) & (~(align - 1));
@@ -512,13 +519,14 @@ void Executor::LoadParams(bool pipeline, bool force) {
       param_ready_[p.first]->store(true);
   }
 
-  LOG(INFO) << "[Executor] [LoadParamas] "
-            << tvm_graph_.model_name_
-            << " call_api_ms " << call_api_ms
-            << " tot_ms " << Profiler::MilliFrom(load_param_t)
-            << " cold_cache_hit " << cold_cache_hit
-            << " total_nbytes " << GetParamStorageSize()
-            << " cached_nbytes " << cold_cached_nbytes_.load(std::memory_order_relaxed);
+  LOG_IF(INFO, Config::log_infer_load_param) 
+      << "[Executor] [LoadParamas] "
+      << tvm_graph_.model_name_
+      << " call_api_ms " << call_api_ms
+      << " tot_ms " << Profiler::MilliFrom(load_param_t)
+      << " cold_cache_hit " << cold_cache_hit
+      << " total_nbytes " << GetParamStorageSize()
+      << " cached_nbytes " << cold_cached_nbytes_.load(std::memory_order_relaxed);
 }
 
 void Executor::ReSetupDataEntry() {
@@ -605,12 +613,14 @@ void Executor::SetupStorage(bool alloc) {
     if (!pit.scope.empty()) {
       mem_scope = ::tvm::runtime::String(pit.scope);
     }
-    CHECK(dev.device_type == kDLCUDA && dev.device_id == 0);
+    // CHECK(dev.device_type == kDLCUDA && dev.device_id == 0);
+    CHECK(dev.device_type == kDLCUDA);
     sta::STensor last_tensor;
     if (!alloc) {
-      storage_pool_.push_back(sta::Null(shape, pit.dtype));
+      storage_pool_.push_back(sta::Null(shape, dev, pit.dtype));
     } else {
-      storage_pool_.push_back(sta::Empty(shape, at::MemoryFormat::Contiguous, pit.dtype, sta::MemType::kInfer));
+      storage_pool_.push_back(sta::Empty(shape, at::MemoryFormat::Contiguous, dev, 
+                                         pit.dtype, sta::MemType::kInfer));
     }
     last_tensor = storage_pool_.back();
     // op_node_storage_id_map_[sid] = storage_pool_.size() - 1;
@@ -626,7 +636,8 @@ void Executor::SetupStorage(bool alloc) {
   for (size_t i = 0; i < data_entry_.size(); i++) {
     int storage_id = tvm_graph_.attrs_.storage_id[i];
     
-    data_entry_[i] = sta::ViewShapeDtype(storage_pool_[storage_id], tvm_graph_.attrs_.shape[i], vtype[i]);
+    data_entry_[i] = sta::ViewShapeDtype(storage_pool_[storage_id], 
+                                         tvm_graph_.attrs_.shape[i], vtype[i]);
     data_alignment_[i] = details::GetDataAlignment(*data_entry_[i].operator->());
   }
 
@@ -772,10 +783,11 @@ void Executor::SetupStorageGroup() {
   auto model_name_without_dup_id = GetModelNameWithoutDuplicatedId(tvm_graph_.model_name_);
   if (!logged.count((model_name_without_dup_id))) {
     logged.insert(model_name_without_dup_id);
-    LOG(INFO) << "[Executor] " << tvm_graph_.model_name_ << " internal fragment: " 
-              << sta::ByteDisplay(fragment_nbytes) << " / " << sta::ByteDisplay(model_nbytes)
-              << " | model with group fragment "
-              << sta::ByteDisplay(model_nbytes_with_group_fragment_);
+    LOG_IF(INFO, Config::log_infer_model_init) 
+        << "[Executor] " << tvm_graph_.model_name_ << " internal fragment: " 
+        << sta::ByteDisplay(fragment_nbytes) << " / " << sta::ByteDisplay(model_nbytes)
+        << " | model with group fragment "
+        << sta::ByteDisplay(model_nbytes_with_group_fragment_);
   }
 }
 
@@ -783,7 +795,7 @@ void Executor::LoadParamGroupParti(const std::string &path) {
   std::ifstream handle(path);
   CHECK(handle.is_open()) << "Cannot open file " << path
                           << ", enable `group_param_dump` to generate it";
-  LOG(INFO) << "load from mod.group from " << path; 
+  LOG_IF(INFO, Config::log_infer_model_init) << "load from mod.group from " << path; 
   std::string buf;
   while (handle >> buf) {
     storage_group_parti_.push_back(std::stoul(buf));

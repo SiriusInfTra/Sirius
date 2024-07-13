@@ -1,3 +1,4 @@
+#include "logging_as_glog.h"
 #include <common/cuda_allocator.h>
 #include <common/util.h>
 
@@ -5,10 +6,17 @@
 #include <server/train_launcher.h>
 #include <server/config.h>
 
+#include <regex>
+#include <boost/algorithm/string.hpp>
+
 
 namespace colserve {
 
 std::unique_ptr<ResourceManager> ResourceManager::resource_manager_;
+
+ResourceManager::ResourceManager() {
+  
+}
 
 double ResourceManager::GetFreeMemoryMB(bool verbose) {
   using namespace sta;
@@ -19,7 +27,7 @@ double ResourceManager::GetFreeMemoryMB(bool verbose) {
   double train_predict_memory_mb = TrainLauncher::Get()->PredictMemUsageMB(verbose);
 
   if (Config::use_shared_tensor) {
-    free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::PoolNbytes());
+    free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::PoolNbytes(0));
     free_memory_mb -= infer_memory_mb;
     free_memory_mb -= std::max(train_memory_mb, train_predict_memory_mb);
     free_memory_mb -= Config::train_memory_over_predict_mb;
@@ -28,15 +36,19 @@ double ResourceManager::GetFreeMemoryMB(bool verbose) {
     free_memory_mb = ByteToMB(free);
     free_memory_mb = std::min(
         free_memory_mb, 
-        sta::ByteToMB(total) - infer_memory_mb - std::max(train_predict_memory_mb, train_memory_mb) - Config::train_memory_over_predict_mb
+        sta::ByteToMB(total) 
+        - infer_memory_mb 
+        - std::max(train_predict_memory_mb, train_memory_mb) 
+        - Config::train_memory_over_predict_mb
     );
   }
 
-  LOG_IF(INFO, verbose) << "[ResourceManager] "
-                        << " infer memory " << infer_memory_mb 
-                        << " train memory " << train_memory_mb 
-                        << " predict train memory " << train_predict_memory_mb
-                        << " free memory " << free_memory_mb;
+  LOG_IF(INFO, verbose && Config::log_memory_adjust) 
+      << "[ResourceManager] "
+      << " infer memory " << infer_memory_mb 
+      << " train memory " << train_memory_mb 
+      << " predict train memory " << train_predict_memory_mb
+      << " free memory " << free_memory_mb;
             
   return free_memory_mb;
 }
@@ -48,7 +60,7 @@ double ResourceManager::GetTrainAvailMemoryMB(bool verbose) {
 
   double free_memory_mb;
   if (Config::use_shared_tensor) {
-    free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::PoolNbytes());
+    free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::PoolNbytes(0));
     free_memory_mb -= infer_memory_mb;
     free_memory_mb -= Config::train_memory_over_predict_mb;
   } else {
@@ -60,11 +72,46 @@ double ResourceManager::GetTrainAvailMemoryMB(bool verbose) {
     );
   }
 
-    LOG_IF(INFO, verbose) << "[ResourceManager]"
-                          << " free memory " << free_memory_mb
-                          << " infer memory " << infer_memory_mb;
+  LOG_IF(INFO, verbose) << "[ResourceManager]"
+                        << " free memory " << free_memory_mb
+                        << " infer memory " << infer_memory_mb;
 
   return free_memory_mb;  
 }
+
+void ResourceManager::InferMemoryChangingLock() {
+  CHECK(resource_manager_ != nullptr);
+  resource_manager_->infer_memory_changing_mut_.lock();
+}
+
+void ResourceManager::InferMemoryChangingUnlock() {
+  CHECK(resource_manager_ != nullptr);
+  resource_manager_->infer_memory_changing_mut_.unlock();
+}
+
+bool ResourceManager::InferChangeMemoryTryLock() {
+  CHECK(resource_manager_ != nullptr);
+  return resource_manager_->infer_memory_changing_mut_.try_lock();
+}
+
+double ResourceManager::GetInferMemoryMB() {
+  using namespace sta;
+  if (Config::use_shared_tensor_infer) {
+    return ByteToMB(CUDAMemPool::InferMemUsage(0));
+  } else {
+    return ByteToMB(Profiler::GetLastInferMem());
+  }
+}
+
+double ResourceManager::GetTrainMemoryMB() {
+  using namespace sta;
+  if (Config::use_shared_tensor_train) {
+    return ByteToMB(CUDAMemPool::TrainAllMemUsage(0));
+  } else {
+    return ByteToMB(Profiler::GetLastTrainMem());
+  }
+}
+
+
 
 }
