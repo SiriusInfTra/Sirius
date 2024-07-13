@@ -1,6 +1,7 @@
 #include <server/logging_as_glog.h>
 #include <server/model_store/infer_model_store.h>
 #include <server/model_store/infer_model.h>
+#include <server/model_store/model_cache.h>
 #include <server/train_control/controller.h>
 #include <server/config.h>
 #include <server/resource_manager.h>

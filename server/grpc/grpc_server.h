@@ -203,6 +203,7 @@ class TrainHandler : public GRPCServer::Handler {
     
     enum class Status { kCreate, kFinish };
     friend class TrainHandler;
+    
    private:
     TrainRequest request_;
     TrainResult response_;

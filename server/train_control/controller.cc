@@ -2,6 +2,7 @@
 #include <server/train_launcher.h>
 #include <server/resource_manager.h>
 #include <server/model_store/infer_model_store.h>
+#include <server/model_store/model_cache.h>
 #include <server/train_control/controller.h>
 #include <server/config.h>
 

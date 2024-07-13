@@ -5,6 +5,7 @@ add_executable(${PROJECT_NAME}
   schedule/job_queue.cc
   model_store/infer_model_store.cc
   model_store/infer_model.cc
+  model_store/model_cache.cc
   train_launcher.cc
   train_control/controller.cc
   resource_manager.cc
