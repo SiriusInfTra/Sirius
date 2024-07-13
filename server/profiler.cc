@@ -273,14 +273,14 @@ Profiler::Profiler(const std::string &profile_log_path)
           train_all_mem = sta::CUDAMemPool::TrainAllMemUsage(0);
           total_mem = static_cast<size_t>(Config::cuda_memory_pool_gb * 1_GB);
           if (Config::cold_cache_max_capability_nbytes != 0) {
-            cold_cache_nbytes = ColdModelCache::Get().GetCachedNbytesUnsafe();
-            cold_cache_buffer_mb = ColdModelCache::Get().GetBufferMBUnsafe();
-            infer_mem_in_cold_cache_buffer_mb = ColdModelCache::Get().GetColdCacheReleasableMemoryMBUnsafe();
-            cold_cache_size_mb = ColdModelCache::Get().GetCacheSizeMBUnsafe();
+            cold_cache_nbytes = ColdModelCache::Get(0)->GetCachedNbytesUnsafe();
+            cold_cache_buffer_mb = ColdModelCache::Get(0)->GetBufferMBUnsafe();
+            infer_mem_in_cold_cache_buffer_mb = ColdModelCache::Get(0)->GetColdCacheReleasableMemoryMBUnsafe();
+            cold_cache_size_mb = ColdModelCache::Get(0)->GetCacheSizeMBUnsafe();
           }  
         };
         if (Config::profiler_acquire_resource_lock) {
-          auto cold_cache_lock = ColdModelCache::Get().Lock();
+          auto cold_cache_lock = ColdModelCache::Get(0)->Lock();
           ResourceManager::InferMemoryChangingLock();
           read_resource_info();
           ResourceManager::InferMemoryChangingUnlock();

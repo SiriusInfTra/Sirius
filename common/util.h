@@ -44,7 +44,8 @@ namespace colserve {
     } \
   } while(0);
 
-#define MAX_DEVICE_NUM 8
+
+constexpr int MAX_DEVICE_NUM = 8;
 
 using memory_nbyte_t = size_t;
 using memory_mb_t = double;

@@ -24,23 +24,45 @@ class InferModelStore;
  * 
  *   2. cold cache: cache idle model in gpu to avoid some
  *      cold start
+ * 
+ * [Note: Cache & Lock]
+ *   we want to maintain following properties:
+ *   1. one model can only be in warm cache or cold cache.
+ *   2. if a model is used, it should be in warm cache, and will
+ *      not be evicted util it is not used.
+ *   3. if a model is evicted from warm cache, it should first
+ *      be put into cold cache.
+ * 
+ *   Furthur, we need to lock the protect cache data structure when
+ *   model are add/delete from the cache. We need to avoid dead lock
+ *   during maintaining the cache.
+ *   There are involved locks:
+ *   1. model lock: protect the model itself
+ *   2. warm cache lock: protect the warm cache
+ *      per-model warm cache lock: to maintain the model in warm cache
+ *   3. cold cache lock: protect the cold cache
+ * 
+ *   Lock convention: warm cache -> cold cache -> model
+ *  
  */
 class WarmModelCache {
  public:
-  WarmModelCache() : cached_nbytes_(0) {};
-  static std::unique_lock<std::mutex> ReserveCache(const std::string &name, size_t rank);
-  static std::unique_lock<std::mutex> OrderedReserveCache(
+  static bool Enable() { return Config::max_warm_cache_nbytes != 0; }
+  static WarmModelCache* Get(int device_id);
+
+
+  WarmModelCache(int device_id) : cached_nbytes_{0}, device_id_{device_id} {};
+  std::unique_lock<std::mutex> ReserveCache(const std::string &name, size_t rank);
+  std::unique_lock<std::mutex> OrderedReserveCache(
       const std::string &name, size_t rank,
       const std::vector<std::shared_ptr<Job>> &jobs);
-  static std::unique_lock<std::mutex> Lock() {
+  std::unique_lock<std::mutex> Lock() {
     if (Enable()) {
-      return std::unique_lock{infer_model_cache_->mut_};
+      return std::unique_lock{mut_};
     } else {
       return std::unique_lock<std::mutex>{};
     }
   }
-  
-  static bool Enable() { return Config::max_warm_cache_nbytes != 0; }
 
   friend class InferModelStore;
 
@@ -51,25 +73,24 @@ class WarmModelCache {
     std::mutex mut;
   };
 
-  static void Init() {
-    infer_model_cache_ = std::make_unique<WarmModelCache>();
-  }
+  static void Init();
   void MaybeAddCacheItem(const std::string &name, Model *model);
   void ReserveCacheInternal(const std::string &name, size_t rank,
                             std::unique_lock<std::mutex> &reserved_lock);
 
-  static std::unique_ptr<WarmModelCache> infer_model_cache_;
+  static std::vector<std::unique_ptr<WarmModelCache>> warm_model_caches_;
 
   std::mutex mut_;
   std::condition_variable fifo_cv_;
   size_t cached_nbytes_;
-  std::unordered_map<std::string, std::unique_ptr<CacheItem>> warm_cache_;
+  int device_id_;
+  std::unordered_map<std::string, std::unique_ptr<CacheItem>> warm_cache_items_;
 
 };
 
 class ColdModelCache {
  private:
-  static std::unique_ptr<ColdModelCache> cold_model_cache_;
+  static std::vector<std::unique_ptr<ColdModelCache>> cold_model_caches_;
 
   struct CacheItem {
     Model *model;
@@ -77,9 +98,10 @@ class ColdModelCache {
     size_t cached_group_nbytes;
   };
 
+  int device_id_;
   size_t current_cached_nbytes_;
   std::mutex mut_;
-  std::unordered_map<std::string, std::unique_ptr<CacheItem>> cold_cache_;
+  std::unordered_map<std::string, std::unique_ptr<CacheItem>> cold_cache_items_;
 
  public:
   enum class ReservePolicy {
@@ -93,8 +115,8 @@ class ColdModelCache {
 
   using evict_list = std::vector<std::pair<std::string, std::vector<size_t>>>;
   using group_id_list = std::vector<size_t>;
-  
-  ColdModelCache(): current_cached_nbytes_(0) {}
+
+  ColdModelCache(int device_id): current_cached_nbytes_{0}, device_id_{device_id} {}
 
   friend class InferModelStore;
 
@@ -180,14 +202,8 @@ class ColdModelCache {
   double GetReleaseReserveMemoryMB(std::unique_lock<std::mutex> &lock);  
   double GetAdjustReserveMemoryMB(std::unique_lock<std::mutex> &lock);  
 
-  static void Init() {
-    cold_model_cache_ = std::make_unique<ColdModelCache>();
-  }
-
-  static ColdModelCache &Get() {
-    CHECK(cold_model_cache_ != nullptr);
-    return *cold_model_cache_;
-  }
+  static void Init();
+  static ColdModelCache * Get(int device_id);
 };
 
 

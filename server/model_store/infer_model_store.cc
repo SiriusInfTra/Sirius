@@ -262,14 +262,17 @@ size_t InferModelStore::NumJobs() {
 
 void InferModelStore::ClearColdCache() {
   LOG(INFO) << "ClearColdCache";
-  auto &cold_cache = ColdModelCache::Get();
-  auto cold_cache_lock = cold_cache.Lock();
-  int rank = 0;
-  for (auto &&[name, model]: models_) {
-    auto &&[evict_groups_id, succ] = cold_cache.PopCacheItem(name, rank, cold_cache_lock);
-    if (succ) { model->ClearColdCache(evict_groups_id, rank, cold_cache_lock); }
+  for (auto & cold_model_cache : ColdModelCache::cold_model_caches_) {
+    auto cold_cache_lock = cold_model_cache->Lock();
+    int rank = 0;
+    for (auto &&[name, model]: models_) {
+      auto &&[evict_groups_id, succ] = cold_model_cache->PopCacheItem(name, rank, cold_cache_lock);
+      if (succ) { 
+        model->ClearColdCache(evict_groups_id, rank, cold_cache_lock); 
+      }
+    }
+    CHECK_EQ(cold_model_cache->GetCachedNbytes(cold_cache_lock), 0);
   }
-  CHECK_EQ(cold_cache.GetCachedNbytes(cold_cache_lock), 0);
 }
 
 void InferModelStore::ClearWarmCache() {
@@ -277,19 +280,22 @@ void InferModelStore::ClearWarmCache() {
   if (!WarmModelCache::Enable()) {
     return ;
   }
-  auto warm_cache_lock = WarmModelCache::Lock();
-  for (auto &&[name, cache_item]: WarmModelCache::infer_model_cache_->warm_cache_) {
-    auto model = cache_item->model;
-    CHECK(model != nullptr);
-    CHECK_EQ(model->num_worker_, 1);
-    std::unique_lock warm_cache_model_lock{cache_item->mut};
-    auto cold_cache_lock = ColdModelCache::Get().Lock();
-    std::unique_lock model_lock{model->muts_[0]};
-    bool res = model->ReclaimMemory(0, cold_cache_lock, model_lock, model);
-    // force let cache = false
-    cache_item->cached = false;
+  for (auto & warm_model_cache : WarmModelCache::warm_model_caches_) {
+    CHECK(warm_model_cache != nullptr);
+    auto warm_cache_lock = warm_model_cache->Lock();
+    for (auto &&[name, cache_item]: warm_model_cache->warm_cache_items_) {
+      auto model = cache_item->model;
+      CHECK(model != nullptr);
+      CHECK_EQ(model->num_worker_, 1);
+      std::unique_lock warm_cache_model_lock{cache_item->mut};
+      auto cold_cache_lock = ColdModelCache::Get(warm_model_cache->device_id_)->Lock();
+      std::unique_lock model_lock{model->muts_[0]};
+      bool res = model->ReclaimMemory(0, cold_cache_lock, model_lock, model);
+      // force let cache = false
+      cache_item->cached = false;
+    }
+    warm_model_cache->cached_nbytes_ = 0;
   }
-  WarmModelCache::infer_model_cache_->cached_nbytes_ = 0;
 }
 
 void InferModelStore::ColocateMonitor() {
@@ -301,15 +307,17 @@ void InferModelStore::ColocateMonitor() {
       if (model_name == "dummy") continue;
       if (model->GetIdleMill(0) > GetMaxIdleMill()) {
         const int rank = 0;
-        auto cold_cache_lock = ColdModelCache::Get().Lock();
+        const int device_id = model->device_.device_id;
+        auto cold_cache_lock = ColdModelCache::Get(device_id)->Lock();
         std::unique_lock<std::mutex> model_lock{model->muts_[rank]};
         bool res = model->ReclaimMemory(rank, cold_cache_lock, model_lock, nullptr);
         if (res) {
           num_exit++;
+          auto cold_cache_nbytes = ColdModelCache::Get(device_id)->GetCachedNbytes(cold_cache_lock);          
           LOG_IF(INFO, Config::log_infer_model_reclaim) 
               << "[InferModelStore] reclaim " << model_name
               << ", cold cache nbytes "
-              << sta::ByteDisplay(ColdModelCache::Get().GetCachedNbytes(cold_cache_lock));
+              << sta::ByteDisplay(cold_cache_nbytes);
         }
       }
     }
@@ -342,12 +350,20 @@ void InferModelStore::TaskSwitchMonitor() {
     LOG(INFO) << "[InferModelStore] [Task Switch] start";
 
     int reclaim_cnt = 0;
-    auto cold_cache_lock = ColdModelCache::Get().Lock();
     const int rank = 0;
+
+    std::array<std::unique_lock<std::mutex>, MAX_DEVICE_NUM> cold_cache_locks;
+    for (auto &cold_model_cache : ColdModelCache::cold_model_caches_) {
+      cold_cache_locks[cold_model_cache->device_id_] = cold_model_cache->Lock();
+    }
+
+    // auto cold_cache_lock = ColdModelCache::Get()->Lock();
     for (auto &&[name, model] : this->models_) {
       if (name == "dummy") continue;
+      int device_id = model->device_.device_id;
       std::unique_lock<std::mutex> model_lock{model->muts_[rank]};
-      reclaim_cnt += model->ReclaimMemory(rank, cold_cache_lock, model_lock, nullptr);
+      reclaim_cnt += model->ReclaimMemory(rank, cold_cache_locks[device_id], 
+                                          model_lock, nullptr);
     }
     return reclaim_cnt;
   };
