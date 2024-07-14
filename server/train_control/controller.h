@@ -20,12 +20,12 @@ class Controller {
   Controller();
   uint64_t InterruptTrain();
   uint64_t ResumeTrain();
-  uint64_t ColocateAdjust(size_t model_rank, size_t batch_size);
+  uint64_t ColocateAdjust(size_t model_rank, int device_id, size_t batch_size);
   bool WaitTrainNotRunning();
   bool WaitInferIdle();
   bool WaitColocateAdjustDone(uint64_t cmd_id);
-  uint64_t InferExit();
-  uint64_t DummyInferExit(int target_batch_size);
+  uint64_t InferExit(int device_id);
+  uint64_t DummyInferExit(int device_id, int target_batch_size);
 
   void InferRequestInc(size_t inc=1);
   void InferResponseInc(size_t inc=1);
@@ -67,7 +67,10 @@ class Controller {
   TrainStatus train_status_;
 
   // std::unique_ptr<MemoryQueue<int>> , train_adjust_event_mq_;
-  std::unique_ptr<MemoryQueue<ctrl::CtrlMsgEntry>> train_status_event_mq_, train_cmd_event_mq_;
+  std::vector<std::unique_ptr<MemoryQueue<ctrl::CtrlMsgEntry>>> train_status_mqs_, 
+                                                                train_cmd_mqs_;
+
+
   
   // switch mode
   std::mutex wait_train_mutex_, wait_infer_mutex_;

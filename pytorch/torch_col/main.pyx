@@ -26,11 +26,19 @@ cdef extern from "<csrc/config.h>" namespace "torch_col":
         @staticmethod
         void SetReleaseIntermMemoryByGradFn(bint)
         @staticmethod
-        void IsReleaseIntermMemoryByTagging()
+        bint IsReleaseIntermMemoryByTagging()
         @staticmethod
         void SetReleaseIntermMemoryByTagging(bint)
         @staticmethod
-        void IsEnableFbwardHook()
+        bint IsEnableFbwardHook()
+        @staticmethod
+        int GetTrainRank()
+        @staticmethod
+        void SetTrainRank(int)
+        @staticmethod
+        int GetTrainWorldSize()
+        @staticmethod
+        void SetTrainWorldSize(int)
 
 
 cdef extern from "<common/device_manager.h>" namespace "colserve::sta":
@@ -44,7 +52,7 @@ cdef extern from "<csrc/xsched.h>" namespace "torch_col":
 
 
 cdef extern from "<csrc/init.h>" namespace "torch_col":
-    cpdef void TorchColInit()
+    cpdef void TorchColInit(int)
 
 
 class HookMode(Enum):
@@ -100,8 +108,29 @@ def is_enable_fbward_hook():
     return TorchColConfig.IsEnableFbwardHook()
 
 
-def torch_col_init():
-    TorchColInit()
+def torch_col_init(device_count):
+    TorchColInit(device_count)
+
+
+def get_train_rank():
+    return TorchColConfig.GetTrainRank()
+
+
+def set_train_rank(rank):
+    TorchColConfig.SetTrainRank(rank)
+
+
+def get_train_world_size():
+    return TorchColConfig.GetTrainWorldSize()
+
+
+def set_train_world_size(world_size):
+    TorchColConfig.SetTrainWorldSize(world_size)
+
+
+def set_train_rank_world_size(rank, world_size):
+    set_train_rank(rank)
+    set_train_world_size(world_size)
 
 
 #############################

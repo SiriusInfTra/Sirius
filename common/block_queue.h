@@ -64,8 +64,8 @@ class MemoryQueue {
   static constexpr auto to_memory = MQElement<T>::to_memory;
   static constexpr auto to_data = MQElement<T>::to_data;
   static constexpr auto elem_size = MQElement<T>::size;
-  MemoryQueue(const std::string &name, bool is_server) 
-      : is_server_(is_server), name_(name)  {
+  MemoryQueue(const std::string &name, int device_id, bool is_server) 
+      : is_server_(is_server), device_id_(device_id), name_(name)  {
     // std::string shm_name = "colserve-mq-" + name;
     auto shm_name = GetShmName(-1);
     if (is_server) {
@@ -244,10 +244,10 @@ class MemoryQueue {
     if (version == static_cast<size_t>(-1)) {
       // return boost::format("colserve_%d_%s_%s_mq") % getuid() % gpu_uuid % 
       // return "colserve-mq-" + std::to_string(getuid()) + "-" + name_ + "-" + gpu_id;
-      return str(boost::format("%s_mq_%s") % GetDefaultShmNamePrefix() % name_);
+      return str(boost::format("%s_mq_%s") % GetDefaultShmNamePrefix(device_id_) % name_);
 
     } else {
-      return str(boost::format("%s_mq_%s_%d") % GetDefaultShmNamePrefix() % name_ % version);
+      return str(boost::format("%s_mq_%s_%d") % GetDefaultShmNamePrefix(device_id_) % name_ % version);
       // return "colserve-mq-" + std::to_string(getuid()) + "-" + name_ + "-" + gpu_id + "-" + std::to_string(version);
     }
   }
@@ -292,6 +292,7 @@ class MemoryQueue {
   }
 
   bool is_server_;
+  int device_id_;
   std::string name_;
   MetaData* meta_data_;
   MemoryData* memory_data_;

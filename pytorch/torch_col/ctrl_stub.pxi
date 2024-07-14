@@ -12,8 +12,8 @@ cdef extern from "<csrc/util.h>" namespace "torch_col":
 cdef class PyMemoryQueue:
     cdef MemoryQueue[CtrlMsgEntry]* _queue
 
-    def __cinit__(self, str name, bint is_server = False):
-        self._queue = new MemoryQueue[CtrlMsgEntry](name.encode(), is_server)
+    def __cinit__(self, str name, int device_id, bint is_server = False):
+        self._queue = new MemoryQueue[CtrlMsgEntry](name.encode(), device_id, is_server)
       
     def put(self, PyCtrlMsgEntry entry):
         self._queue.Put(entry._entry)

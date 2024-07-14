@@ -302,7 +302,8 @@ void InferModelStore::ColocateMonitor() {
   LOG(INFO) << "Start ColocateMonitor";
   using namespace std::chrono_literals;
   while (true) {
-    int num_exit = 0;
+    // int num_exit = 0;
+    std::array<int, MAX_DEVICE_NUM> num_exits{0};
     for (auto& [model_name, model] : models_) {
       if (model_name == "dummy") continue;
       if (model->GetIdleMill(0) > GetMaxIdleMill()) {
@@ -312,7 +313,7 @@ void InferModelStore::ColocateMonitor() {
         std::unique_lock<std::mutex> model_lock{model->muts_[rank]};
         bool res = model->ReclaimMemory(rank, cold_cache_lock, model_lock, nullptr);
         if (res) {
-          num_exit++;
+          num_exits[device_id]++;
           auto cold_cache_nbytes = ColdModelCache::Get(device_id)->GetCachedNbytes(cold_cache_lock);          
           LOG_IF(INFO, Config::log_infer_model_reclaim) 
               << "[InferModelStore] reclaim " << model_name
@@ -321,7 +322,9 @@ void InferModelStore::ColocateMonitor() {
         }
       }
     }
-    if (num_exit > 0) Controller::Get()->InferExit();
+    for (int i = 0; i < sta::DeviceManager::GetNumVisibleGpu(); i++) {
+      if (num_exits[i] > 0) Controller::Get()->InferExit(i);
+    }
     std::this_thread::sleep_for(10ms);
   }
 }

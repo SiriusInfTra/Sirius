@@ -49,9 +49,9 @@ void CUDAColAllocator::init(int device_count) {
   }
   // init
   auto pool_freelist_policy_env = std::getenv("SHARED_TENSOR_POOL_FREELIST_POLICY");
-  std::string pool_freelist_policy_str = pool_freelist_policy_env ? 
-                                          std::string(pool_freelist_policy_env) :
-                                          "best-fit";
+  std::string pool_freelist_policy_str = pool_freelist_policy_env 
+                                         ? std::string(pool_freelist_policy_env) 
+                                         : "best-fit";
   // auto pool_freelist_policy = colserve::sta::getFreeListPolicy(pool_freelist_policy_str);
   sta::FreeListPolicyType policy;
   size_t pool_nbytes = static_cast<size_t>(torch_col::TorchColConfig::shared_tensor_pool_gb * 1_GB); 
@@ -63,7 +63,8 @@ void CUDAColAllocator::init(int device_count) {
 
   initialized_ = true;
   LOG(INFO) << "pytorch CUDAColAllocator Initialized, "
-            << " infer memory usage " << sta::ByteDisplay(sta::CUDAMemPool::InferMemUsage(0));
+            << " infer memory usage " 
+            << sta::ByteDisplay(sta::CUDAMemPool::InferMemUsage(0));
 }
 
 c10::DataPtr CUDAColAllocator::allocate(size_t nbytes) const {
@@ -236,7 +237,8 @@ void CUDAColAllocator::ReleaseIntermMemory() {
       if (auto tensor_ptr = weak_ptr.lock(); tensor_ptr != nullptr) {
         // since we hold lock, we should not release storage inplace
         plan_release_storage.emplace_back(tensor_ptr->storage());
-        DLOG(INFO) << "ReleaseIntermMemory " << ptr << "  release success, nbytes = " << tensor_ptr->storage().nbytes();
+        DLOG(INFO) << "ReleaseIntermMemory " << ptr 
+                    << "  release success, nbytes = " << tensor_ptr->storage().nbytes();
         break;
       } else {
         DLOG(INFO) << "ReleaseIntermMemory " << ptr << " already release.";

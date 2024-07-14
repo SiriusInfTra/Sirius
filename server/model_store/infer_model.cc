@@ -291,7 +291,7 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
         bool is_first_adjust = !Controller::Get()->HasFlyingColocateAdjust();
         auto adjust_batch_size = TrainLauncher::Get()->GetAdjustBatchSize(adjust_batch_buffer_mb);
         CHECK_GE(adjust_batch_size, 0);
-        int cmd_id = Controller::Get()->ColocateAdjust(0, adjust_batch_size);
+        int cmd_id = Controller::Get()->ColocateAdjust(0, device_.device_id, adjust_batch_size);
         // LOG(INFO) << "adjust model " << name_ << " cmd " << cmd_id;
         Controller::Get()->WaitColocateAdjustDone(cmd_id);
         PROFILE_END(TrainAdjust);

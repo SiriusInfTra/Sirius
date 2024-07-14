@@ -24,6 +24,9 @@ class TorchColConfig {
   static int release_interm_memory_by_tagging;
   static int use_fbward_hook;
 
+  static int train_rank;
+  static int train_world_size;
+
   static void InitConfig();
 
   static inline int IsEnableSharedTensor() { return use_shared_tensor; }
@@ -40,6 +43,11 @@ class TorchColConfig {
   }
   static inline int IsEnableFbwardHook() { return use_fbward_hook; }
   // static inline int GetKillBatchOnRecv() { return kill_batch_on_recv; }
+
+  static inline int GetTrainRank() { return train_rank; }
+  static inline void SetTrainRank(int rank) { train_rank = rank; }
+  static inline int GetTrainWorldSize() { return train_world_size; }
+  static inline void SetTrainWorldSize(int size) { train_world_size = size; }
 };
 
 

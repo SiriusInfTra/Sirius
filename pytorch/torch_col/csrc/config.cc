@@ -24,6 +24,9 @@ int TorchColConfig::release_interm_memory_by_grad_fn = false;
 int TorchColConfig::release_interm_memory_by_tagging = true;
 int TorchColConfig::use_fbward_hook = true;
 
+int TorchColConfig::train_rank = 0;
+int TorchColConfig::train_world_size = 1;
+
 
 void TorchColConfig::InitConfig() {
   static bool configured = false;

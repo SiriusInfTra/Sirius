@@ -931,8 +931,8 @@ void Executor::AllocStorageMaybeAdjust() {
       PROFILE_START(TrainAdjust);
       auto adjust_batch_size = TrainLauncher::Get()->
           GetAdjustBatchSize(first_adjust ? adjust_memory_mb : sta::ByteToMB(GetMissingStorageSizeAlign()));
-      auto cmd_id = Controller::Get()->
-          ColocateAdjust(this->tvm_graph_.model_rank_, adjust_batch_size);
+      auto cmd_id = Controller::Get()->ColocateAdjust(
+          this->tvm_graph_.model_rank_, this->devices_[0].device_id, adjust_batch_size);
       Controller::Get()->WaitColocateAdjustDone(cmd_id);
       PROFILE_END(TrainAdjust);
       if (first_adjust) {

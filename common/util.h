@@ -1,6 +1,7 @@
 #ifndef COLSERVE_COMMON_UTIL_H
 #define COLSERVE_COMMON_UTIL_H
 
+#include <common/log_as_glog_sta.h>
 #include <common/device_manager.h>
 
 #include <boost/format.hpp>
@@ -50,7 +51,7 @@ constexpr int MAX_DEVICE_NUM = 8;
 using memory_nbyte_t = size_t;
 using memory_mb_t = double;
 
-namespace literals {
+namespace memory_literals {
 
 constexpr size_t operator ""_B(unsigned long long n) {
   return static_cast<size_t>(n);
@@ -98,8 +99,9 @@ inline std::string ByteDisplay(size_t nbytes) {
 }
 }
 
-inline std::string GetDefaultShmNamePrefix() {
-  return (boost::format("colserve_%s_%s") % sta::DeviceManager::GetGpuSystemUuid(0) 
+inline std::string GetDefaultShmNamePrefix(int device_id) {
+  CHECK_LT(device_id, sta::DeviceManager::GetNumVisibleGpu());
+  return (boost::format("colserve_%s_%s") % sta::DeviceManager::GetGpuSystemUuid(device_id) 
                                           % getuid())
                                           .str();
 }
@@ -108,6 +110,6 @@ inline std::string GetDefaultShmNamePrefix() {
 
 
 
-using namespace colserve::literals;
+using namespace colserve::memory_literals;
 
 #endif

@@ -38,7 +38,7 @@ std::pair<double, double> TrainLauncher::GetModelMemParam() {
       */
       // NOTE: DID NOT consider grad checkpoint
       return {1150, 85};
-    } else if (cur_model_name_ == "swin_b") {
+    } else if (cur_model_name_ == "swin_b" || cur_model_name_ == "swin_b_ddp") {
       return {1700, 140};
     } else if (cur_model_name_ == "gpt2") {
       /*
@@ -425,9 +425,9 @@ void TrainLauncher::DummyAdjust() {
   while (Profiler::MilliFrom(start) < 30*1000 && this->train_pid_ != -1) {
     LOG(INFO) << "DummyAdjust at " << Profiler::GetTimeStamp();
     auto batch_size = 1;
-    auto cmd_id = Controller::Get()->ColocateAdjust(-1, batch_size);
+    auto cmd_id = Controller::Get()->ColocateAdjust(-1, 0, batch_size);
     Controller::Get()->WaitColocateAdjustDone(cmd_id);
-    Controller::Get()->DummyInferExit(ori_target_bs);
+    Controller::Get()->DummyInferExit(0, ori_target_bs);
     std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<>(200, 1000)(gen)));
   }
 }

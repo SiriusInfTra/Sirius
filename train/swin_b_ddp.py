@@ -1,24 +1,38 @@
 import torch
+from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.distributed as torch_dist
 from torch import nn
 from torchvision import models
 from torch.utils.data import DataLoader
 import argparse
-import sys
+import os, sys
 
 import torch_col
-torch_col.torch_col_init(0)
-
 from torch_col import MemoryPool, EventManager, TrainMode, HookMode
 from torch_col import ColocateAdjustL1Exception, SwitchL1Exception
 from torch_col import CustomeDynamicBatchDataset
 import train_valiation
 from typing import Optional
 
+
+def setup(rank, world_size):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = str(12345 + os.getpid() % 100)
+    torch_dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    torch_col.torch_col_init(torch.cuda.device_count())
+    torch_col.set_train_rank_world_size(rank, world_size)
+
+
+def cleanup():
+    torch_dist.destroy_process_group()
+
+
 def train(train_mode: TrainMode, hook_mode: HookMode, 
           num_epoch: int, batch_size: int, global_batch_size: Optional[int] = None):
     if torch_col.is_enable_shared_tensor():
         torch_col.tag_model_start()
 
+    setup()
     torch_col.train_model = model = models.swin_b(weights=models.Swin_B_Weights.DEFAULT).cuda()
 
     print(f"Train params memory usage: {torch_col.MemoryPool.get_memory_usage() * 1024:.2f}M")
@@ -92,19 +106,9 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
                     train_dataset.scale_loss(loss)
                 train_valiation.debug_print_loss(len(images), loss)
                 scaler.scale(loss).backward()
-                train_dataset.step_stage(hook, optimizer, scaler=scaler, grad_accumulator=grad_accumulator)
-                # if train_dataset.is_do_checkpoint_micro_batch():
-                #     with hook.steps_no_interrupt():
-                #         grad_accumulator.accumulate()
-                #         if train_dataset.is_do_step():
-                #             grad_accumulator.step(optimizer, scaler)
-                # else:
-                #     if train_dataset.is_do_step():
-                #         with hook.steps_no_interrupt():
-                #             step_event = EventManager.record_event('optimizer_step')
-                #             scaler.step(optimizer)
-                #             scaler.update()
-                #         EventManager.record_event('', step_event)
+                train_dataset.step_stage(hook, optimizer, scaler=scaler, 
+                                         grad_accumulator=grad_accumulator)
+
                 finished_batch += 1
                 total_finished_batch += 1
                 batch_cnt += 1
@@ -158,6 +162,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
 
     hook.train_end()
     hook.stop()
+    cleanup()
 
 def main():
     parser = argparse.ArgumentParser('Train Resnet')    
@@ -194,6 +199,7 @@ def main():
         train(train_mode, hook_mode, num_epoch, batch_size, global_batch_size=global_batch_size)
     train_valiation.val_end()
     EventManager.dump(args.train_profile, train_mode)
+
 
 if __name__ == '__main__':
     main()

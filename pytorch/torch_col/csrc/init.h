@@ -3,7 +3,7 @@
 
 namespace torch_col {
 
-void TorchColInit();
+void TorchColInit(int device_count);
 
 }
 

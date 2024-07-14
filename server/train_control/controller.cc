@@ -77,15 +77,30 @@ Controller* Controller::Get(){
 }
 
 Controller::Controller() {
-  train_cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("cmd-ctrl", true);
-  train_status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("status-ctrl", true);
-  // train_adjust_event_mq_ = std::make_unique<MemoryQueue<int>>("adjust-ctrl", true);
+  // train_cmd_mqs_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("cmd-ctrl", , true);
+  // train_status_mqs_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>("status-ctrl", true);
+  for (int i = 0; i < sta::DeviceManager::GetNumVisibleGpu(); i++) {
+    train_cmd_mqs_.push_back(std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
+        "cmd-ctrl", i, true));
+    train_status_mqs_.push_back(std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
+        "status-ctrl", i, true));
+  }
   monitor_train_thread_ = std::make_unique<std::thread>(&Controller::MonitorTrain, this);
 }
 
 void Controller::MonitorTrain() {
   while (true) {
-    auto entry = static_cast<ctrl::CtrlMsgEntry>(train_status_event_mq_->BlockGet());
+    // auto entry = static_cast<ctrl::CtrlMsgEntry>(train_status_mqs_->BlockGet());
+    // auto entry = train_status_mqs_[0]->BlockGet();
+    ctrl::CtrlMsgEntry entry;
+    while (true) {
+      bool succ = false;
+      for (auto & status_mq : train_status_mqs_) {
+        succ = status_mq->TryGet(entry);
+        if (succ) break;
+      }
+      if (succ) break;
+    }
     auto event = static_cast<ctrl::CtrlEvent>(entry.event);
     auto cur_status = train_status_;
     // LOG(INFO) << "[Controller] MonitorTrain: " << event;
@@ -112,7 +127,10 @@ void Controller::MonitorTrain() {
       CHECK(train_status_.status == TrainStatus::kRunning
           || train_status_.status == TrainStatus::kIdle);
       train_status_.status = TrainStatus::kIdle;
-      train_cmd_event_mq_->Clear();
+      // train_cmd_mqs_->Clear();
+      for (auto & cmd_mq : train_cmd_mqs_) {
+        cmd_mq->Clear();
+      }
       break;
     case ctrl::CtrlEvent::kReportBatchSize:
       CHECK(train_status_.status != TrainStatus::kIdle);
@@ -138,7 +156,10 @@ uint64_t Controller::InterruptTrain() {
   if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
     if (train_status_.status == TrainStatus::kRunning) {
       // LOG(INFO) << "Controller: Put InterruptTrain";
-      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kInterruptTrain)});
+      // train_cmd_mqs_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kInterruptTrain)});
+      for (auto & cmd_mq : train_cmd_mqs_) {
+        cmd_mq->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kInterruptTrain)});
+      }
     }
   } else if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
     if (TrainLauncher::Get()->GetTrainPid() != -1) {
@@ -155,12 +176,14 @@ uint64_t Controller::ResumeTrain() {
   auto cmd_id = resume_cmd_id.fetch_add(1, std::memory_order_relaxed);
   if (!IsTrainIdle()) {
     // LOG(INFO) << "Controller: Put ResumeTrain";
-    train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kResumeTrain)});
+    for (auto & cmd_mq : train_cmd_mqs_) {
+      train_cmd_mqs_[0]->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kResumeTrain)});
+    }
   }
   return cmd_id;
 }
 
-uint64_t Controller::ColocateAdjust(size_t model_rank, size_t batch_size) {
+uint64_t Controller::ColocateAdjust(size_t model_rank, int device_id, size_t batch_size) {
   static std::mutex adjust_batch_mutex; // for quick fix concurrency
 
   auto cmd_id = Controller::adjust_cmd_id.fetch_add(1, std::memory_order_relaxed);
@@ -170,11 +193,13 @@ uint64_t Controller::ColocateAdjust(size_t model_rank, size_t batch_size) {
 #endif
     TrainLauncher::Get()->AddTargetBatchSize(-batch_size);
     if (Config::serve_mode == ServeMode::kColocateL1) {
-      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1), 
-                                static_cast<int>(TrainLauncher::Get()->GetTargetBatchSize())});
+      train_cmd_mqs_[device_id]->Put({
+          cmd_id, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1), 
+          static_cast<int>(TrainLauncher::Get()->GetTargetBatchSize())});
     } else if (Config::serve_mode == ServeMode::kColocateL2) {
-      train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL2), 
-                                static_cast<int>(TrainLauncher::Get()->GetTargetBatchSize())});
+      train_cmd_mqs_[device_id]->Put({
+        cmd_id, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL2), 
+        static_cast<int>(TrainLauncher::Get()->GetTargetBatchSize())});
     }
   }
   LOG(INFO) << "[Controller] model " << model_rank 
@@ -184,7 +209,7 @@ uint64_t Controller::ColocateAdjust(size_t model_rank, size_t batch_size) {
   return cmd_id;
 }
 
-uint64_t Controller::InferExit() {
+uint64_t Controller::InferExit(int device_id) {
   static std::atomic<uint64_t> infer_exit_id = 1;
 
   auto cmd_id = infer_exit_id.fetch_add(1, std::memory_order_relaxed);
@@ -253,23 +278,23 @@ uint64_t Controller::InferExit() {
       //           << " (predict bs " << train_bs_predict_by_avail_memory << ")"
       //           << " free memory " << free_memory_MB
       //           << " target batch size " << cur_train_target_bs << " -> " << train_target_bs;
-      train_cmd_event_mq_->Put({cmd_id, 
-                                static_cast<int>(ctrl::CtrlEvent::kInferExit), 
-                                train_target_bs});
+      train_cmd_mqs_[device_id]->Put({
+          cmd_id, static_cast<int>(ctrl::CtrlEvent::kInferExit), 
+          train_target_bs});
     }
   }
   return cmd_id;
 }
 
-uint64_t Controller::DummyInferExit(int target_batch_size) {
+uint64_t Controller::DummyInferExit(int device_id, int target_batch_size) {
   CHECK(Config::dummy_adjust) << "only used for dummy adjust";
 
   static std::atomic<uint64_t> dummy_infer_exit_id = 1;
   auto cmd_id = dummy_infer_exit_id.fetch_add(1, std::memory_order_relaxed);
   if (!IsTrainIdle()) {
-    train_cmd_event_mq_->Put({cmd_id, 
-                              static_cast<int>(ctrl::CtrlEvent::kInferExit), 
-                              target_batch_size});
+    train_cmd_mqs_[device_id]->Put({
+        cmd_id, static_cast<int>(ctrl::CtrlEvent::kInferExit), 
+        target_batch_size});
   }
   return cmd_id;
 }
@@ -340,11 +365,11 @@ std::string Controller::GetInferStatusStr() {
 
 void Controller::TrainStart() {
   // LOG(INFO) << "Controller Put TrainStart";
-  train_status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainStart)});
+  train_status_mqs_[0]->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainStart)});
 }
 
 void Controller::TrainEnd() {
-  train_status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainEnd)});
+  train_status_mqs_[0]->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainEnd)});
 }
 
 bool Controller::IsTrainIdle() {
@@ -359,7 +384,10 @@ void Controller::InferenceWorkloadDone() {
   static std::atomic<uint64_t> infer_workload_done_id = 1;
 
   auto cmd_id = infer_workload_done_id.fetch_add(1, std::memory_order_relaxed);
-  train_cmd_event_mq_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kInferenceWorkloadDone)});
+  for (int i = 0; i < sta::DeviceManager::GetNumVisibleGpu(); i++) {
+    train_cmd_mqs_[i]->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kInferenceWorkloadDone)});
+  }
+  // train_cmd_mqs_->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kInferenceWorkloadDone)});
 
   LOG(INFO) << "[Controller] Inference workload done";
 }

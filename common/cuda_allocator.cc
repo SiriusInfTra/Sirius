@@ -44,13 +44,8 @@ void CUDAMemPool::Init(std::size_t nbytes, bool cleanup, bool observe,
 
 CUDAMemPool::CUDAMemPool(std::size_t nbytes, bool cleanup, bool observe,
                          FreeListPolicyType free_list_policy) {
-  //    remove("/dev/shm/gpu_colocation_mempool");
-  // std::string prefix =
-  //     "gpu_colocation_" + std::string(getenv("CUDA_VISIBLE_DEVICES"));
-  std::string prefix = GetDefaultShmNamePrefix();
-
-
   for (int i = 0; i < DeviceManager::GetNumVisibleGpu(); i++) {
+    std::string prefix = GetDefaultShmNamePrefix(i);
     mpool::PagesPoolConf pages_pool_config{
         .device_id = i,
         .page_nbytes = 32_MB,

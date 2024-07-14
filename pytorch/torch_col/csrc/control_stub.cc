@@ -34,9 +34,11 @@ bool __CanExitAfterInferWorkloadDone(long infer_workload_done_timestamp) {
 
 DummyStub::DummyStub() {
   cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
-      "cmd-ctrl", !TorchColConfig::has_colocated_infer_server);
+      "cmd-ctrl", TorchColConfig::GetTrainRank(), 
+      !TorchColConfig::has_colocated_infer_server);
   status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
-      "status-ctrl", !TorchColConfig::has_colocated_infer_server);
+      "status-ctrl", TorchColConfig::GetTrainRank(), 
+      !TorchColConfig::has_colocated_infer_server);
 
   thread_.reset(new std::thread([&]() {
     while (running_) {
@@ -71,9 +73,11 @@ void DummyStub::TrainEnd() {
 
 SwitchStub::SwitchStub() {
   cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
-      "cmd-ctrl", !TorchColConfig::has_colocated_infer_server);
+      "cmd-ctrl", TorchColConfig::GetTrainRank(), 
+      !TorchColConfig::has_colocated_infer_server);
   status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
-      "status-ctrl", !TorchColConfig::has_colocated_infer_server);
+      "status-ctrl", TorchColConfig::GetTrainRank(),
+      !TorchColConfig::has_colocated_infer_server);
 
   thread_.reset(new std::thread([&](){
     while (running_) {
@@ -174,9 +178,11 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
   // char *has_server_env = std::getenv("COL_HAS_INFER_SERVER");
   // bool has_server = has_server_env == nullptr ? true : (std::string(has_server_env) == "1");
   cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
-      "cmd-ctrl", !TorchColConfig::has_colocated_infer_server);
+      "cmd-ctrl", TorchColConfig::GetTrainRank(), 
+      !TorchColConfig::has_colocated_infer_server);
   status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
-      "status-ctrl", !TorchColConfig::has_colocated_infer_server);
+      "status-ctrl", TorchColConfig::GetTrainRank(),
+      !TorchColConfig::has_colocated_infer_server);
   // adjust_event_mq_ = std::make_unique<MemoryQueue<int>>("adjust-ctrl", false);
 
   thread_.reset(new std::thread([&]() {

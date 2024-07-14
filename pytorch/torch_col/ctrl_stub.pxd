@@ -6,7 +6,7 @@ from cpython.ref cimport PyObject
 
 cdef extern from "<common/block_queue.h>" namespace "colserve":
     cdef cppclass MemoryQueue[T]:
-        MemoryQueue(string, bint) except + 
+        MemoryQueue(string, int, bint) except + 
         void Put(T)
         T BlockGet()
         bint TimedGet(T&, size_t)
