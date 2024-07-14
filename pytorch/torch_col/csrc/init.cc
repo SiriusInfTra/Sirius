@@ -10,14 +10,15 @@
 
 namespace torch_col {
   
-void TorchColInit(int device_count) {
+void TorchColInit(int train_rank, int train_world_size) {
   NVML_CALL(nvmlInit());
-  TorchColConfig::InitConfig();
+  TorchColConfig::InitConfig(train_rank, train_world_size);
+
   colserve::sta::DeviceManager::Init();
-  CHECK(colserve::sta::DeviceManager::GetNumVisibleGpu() == device_count);
   torch::cuda::CUDAColAllocator::CUDAColAllocator::Init();
   if (TorchColConfig::IsEnableSharedTensor()) {
-    torch::cuda::CUDAColAllocator::CUDAColAllocator::Get()->init(device_count);
+    // we assume one training process one gpu 
+    torch::cuda::CUDAColAllocator::CUDAColAllocator::Get()->init(0);
     torch::cuda::CUDAColAllocator::CUDAColAllocator::SetCurrentAllocator();
   }
   LOG(INFO) << "TorchCol initialized.";

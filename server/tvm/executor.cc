@@ -378,8 +378,8 @@ void Executor::AllocStorage() {
         if (auto iter = cold_cached_group_.find(k); iter != cold_cached_group_.cend()) {
           mdata_group = iter->second;
         } else {
-          mdata_group = sta::CUDAMemPool::Get()->Alloc(devices_[0].device_id, group_nbytes, 
-                                                       sta::MemType::kInfer, false);
+          mdata_group = sta::CUDAMemPool::Get(devices_[0].device_id)->Alloc(
+              group_nbytes, sta::MemType::kInfer, false);
         }
         size_t off = 0;
         for (; i < j; i++) {
@@ -404,7 +404,8 @@ void Executor::AllocStorage() {
     for (auto &s : storage_pool_) {
       total_nbytes += (GetDataSize(*s.operator->()) + align - 1) & (~(align - 1));
     }
-    blob_mem_ = sta::CUDAMemPool::RawAlloc(devices_[0].device_id, total_nbytes, sta::MemType::kInfer);
+    blob_mem_ = sta::CUDAMemPool::Get(devices_[0].device_id)->RawAlloc(
+        total_nbytes, sta::MemType::kInfer);
     // blob_mem_ = sta::CUDAMemPool::Get()->Alloc(total_nbytes, sta::MemType::kInfer);
     for (auto &s : storage_pool_) {
       size_t nbytes = (GetDataSize(*s.operator->()) + align - 1) & (~(align - 1));

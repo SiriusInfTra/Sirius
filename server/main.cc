@@ -253,13 +253,15 @@ int main(int argc, char *argv[]) {
   auto free_list_policy = colserve::sta::getFreeListPolicy(
       colserve::Config::mempool_freelist_policy);
   if (colserve::Config::use_shared_tensor) {
-    colserve::sta::CUDAMemPool::Init(
-      static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
-      true, false, free_list_policy);
-    colserve::sta::CUDAMemPool::Get()->RegisterOOMHandler([]() {
-      LOG(INFO) << "train predict memory " 
-                <<  colserve::TrainLauncher::Get()->PredictMemUsageMB(true) << "."; 
-      }, colserve::sta::MemType::kInfer);
+    for (int device_id = 0; device_id < colserve::sta::DeviceManager::GetNumVisibleGpu(); device_id++) {
+      colserve::sta::CUDAMemPool::Init(device_id,
+        static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
+        true, false, free_list_policy);
+      colserve::sta::CUDAMemPool::Get(device_id)->RegisterOOMHandler([]() {
+        LOG(INFO) << "train predict memory " 
+                  <<  colserve::TrainLauncher::Get()->PredictMemUsageMB(true) << "."; 
+        }, colserve::sta::MemType::kInfer);
+    }
   }
   if (colserve::Config::dynamic_sm_partition) {
     colserve::SMPartitioner::Init(0, true, false);

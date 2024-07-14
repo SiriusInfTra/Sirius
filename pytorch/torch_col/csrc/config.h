@@ -26,8 +26,11 @@ class TorchColConfig {
 
   static int train_rank;
   static int train_world_size;
+  
+  static int configured;
 
-  static void InitConfig();
+  static void InitConfig(int train_rank, int train_world_size);
+  static inline int IsConfigured() { return configured; }
 
   static inline int IsEnableSharedTensor() { return use_shared_tensor; }
   static inline std::string GetHookMode() { return hook_mode; }
@@ -49,7 +52,6 @@ class TorchColConfig {
   static inline int GetTrainWorldSize() { return train_world_size; }
   static inline void SetTrainWorldSize(int size) { train_world_size = size; }
 };
-
 
 }
 

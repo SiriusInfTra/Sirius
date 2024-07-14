@@ -19,9 +19,10 @@ SMPartitioner::SMPartitioner(int device, bool cleanup, bool observe) : device_(d
     LOG(FATAL) << "[SMPartitioner] cleanup and observe can't be both true";
   }
 
-  auto *gpu_id = std::getenv("CUDA_VISIBLE_DEVICES");
-  CHECK(gpu_id != nullptr);
-  shm_name_ = "gpu-colocate-sm-partition-" + std::to_string(getuid()) + "-" + gpu_id;
+  // auto *gpu_id = std::getenv("CUDA_VISIBLE_DEVICES");
+  // CHECK(gpu_id != nullptr);
+  // shm_name_ = "gpu-colocate-sm-partition-" + std::to_string(getuid()) + "-" + gpu_id;
+  shm_name_ = GetDefaultShmNamePrefix(device) + "_sm_partition";
 
   LOG(INFO) << "[SM Partitioner] initialize, "
             << "train_tpc " << min_train_tpc_num_ << " - " << max_train_tpc_num_ << ", "

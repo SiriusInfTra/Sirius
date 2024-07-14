@@ -27,12 +27,15 @@ int TorchColConfig::use_fbward_hook = true;
 int TorchColConfig::train_rank = 0;
 int TorchColConfig::train_world_size = 1;
 
+int TorchColConfig::configured = false;
 
-void TorchColConfig::InitConfig() {
-  static bool configured = false;
-  if (configured) {
+void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
+  if (TorchColConfig::configured) {
     return;
   }
+
+  TorchColConfig::train_rank = train_rank_;
+  TorchColConfig::train_world_size = train_world_size_;
 
   auto use_shared_tensor_env = std::getenv("COL_USE_SHARED_TENSOR");
   auto colocate_use_xsched_env = std::getenv("COL_USE_XSCHED");
@@ -67,6 +70,8 @@ void TorchColConfig::InitConfig() {
     shared_tensor_pool_gb = std::stod(pool_size_env);
   }
 
+  LOG(INFO) << "TorchColConfig::rank=" << train_rank 
+            << "|world_size=" << train_world_size;
   LOG(INFO) << "TorchColConfig::use_shared_tensor=" << use_shared_tensor;
   LOG(INFO) << "TorchColConfig::colocate_use_xsched=" << colocate_use_xsched;
   LOG(INFO) << "TorchColConfig::kill_batch_on_recv=" << kill_batch_on_recv;
@@ -75,7 +80,7 @@ void TorchColConfig::InitConfig() {
   LOG(INFO) << "TorchColConfig::shared_tensor_pool_gb=" << shared_tensor_pool_gb;
   LOG(INFO) << "TorchColConfig::dynamic_sm_partition=" << dynamic_sm_partition;
   LOG(INFO) << "TorchColConfig::hook_mode=" << hook_mode;
-  configured = true;
+  TorchColConfig::configured = true;
 }
 
 }

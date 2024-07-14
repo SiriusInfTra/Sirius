@@ -21,9 +21,9 @@ STensor Empty(at::IntArrayRef size, at::MemoryFormat memory_format,
   auto storage_nbytes = ComputeStorageNbytes(size, dtype);
   std::shared_ptr<CUDAMemPool::PoolEntry> entry;
   if (CUDAMemPool::IsEnable()) {
-    entry = CUDAMemPool::Get()->Alloc(device.device_id, storage_nbytes, mtype, false);
+    entry = CUDAMemPool::Get(device.device_id)->Alloc(storage_nbytes, mtype, false);
   } else {
-    entry = CUDAMemPool::RawAlloc(device.device_id, storage_nbytes, mtype);
+    entry = CUDAMemPool::Get(device.device_id)->RawAlloc(storage_nbytes, mtype);
   }
   CHECK(entry != nullptr && entry->nbytes >= storage_nbytes);
   return STensor(entry, size.vec(), memory_format, device, dtype);
@@ -41,9 +41,9 @@ STensor EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride,
   auto storage_nbytes = ComputeStorageNbytes(size, stride, dtype);
   std::shared_ptr<CUDAMemPool::PoolEntry> entry;
   if (CUDAMemPool::IsEnable()) {
-    entry = CUDAMemPool::Get()->Alloc(device.device_id, storage_nbytes, mtype, false);
+    entry = CUDAMemPool::Get(device.device_id)->Alloc(storage_nbytes, mtype, false);
   } else {
-    entry = CUDAMemPool::Get()->RawAlloc(device.device_id, storage_nbytes, mtype);
+    entry = CUDAMemPool::Get(device.device_id)->RawAlloc(storage_nbytes, mtype);
   }
   CHECK(entry != nullptr && entry->nbytes >= storage_nbytes);
   return STensor(entry, size.vec(), stride.vec(), device, dtype, 0);
@@ -186,11 +186,11 @@ void STensor::AllocForNull(MemType mtype) {
       get()->shape_, get()->stride_, get()->tensor_.dtype, StorageOffset());
   TensorContainer::memory_data_t mdata;
   if (CUDAMemPool::IsEnable()) {
-    mdata = CUDAMemPool::Get()->Alloc(get()->tensor_.device.device_id, 
-                                      storage_nbytes, mtype, false);
+    mdata = CUDAMemPool::Get(get()->tensor_.device.device_id)
+        ->Alloc(storage_nbytes, mtype, false);
   } else {
-    mdata = CUDAMemPool::RawAlloc(get()->tensor_.device.device_id, 
-                                  storage_nbytes, mtype);
+    mdata = CUDAMemPool::Get(get()->tensor_.device.device_id)
+        ->RawAlloc( storage_nbytes, mtype);
   }
   if (storage_nbytes > 0 && mdata == nullptr) {
     LOG(FATAL) << "Tensor AllocForNull: tensor without memory";

@@ -73,7 +73,8 @@ class Event:
 # Note: EventManager use us as time unit to avoid time collision, but duration is ms
 class EventManager:
     event_list: list[Event] = []
-    event_log_path = 'event_record.csv'
+    # event_log_path = 'event_record.csv'
+    event_log_path = 'train-profile.csv'
 
     @classmethod
     def set_log_path(cls, path: str):

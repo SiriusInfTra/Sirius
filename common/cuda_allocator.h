@@ -61,30 +61,32 @@ class CUDAMemPool {
     MemType mtype;
     mpool::MemBlock *block;
   };
-  static void Init(std::size_t nbytes, bool cleanup, bool observe, 
+  static void Init(int device_id, std::size_t nbytes, 
+                   bool cleanup, bool observe, 
                    FreeListPolicyType free_list_policy);
-  static CUDAMemPool* Get();
+  static CUDAMemPool* Get(int device_id);
   static bool IsEnable();
-  static size_t InferMemUsage(int device_id);
-  static size_t TrainMemUsage(int device_id);
-  static size_t TrainPeakMemUsage(int device_id);
-  static size_t TrainAllMemUsage(int device_id);
-  static size_t FreeMemUsage(int device_id);
-  static size_t PoolNbytes(int device_id);
-  static void FreeTrainLocals(int device_id);
-  static void DumpDumpBlockList();
 
-  static double TrainAllocMs();
-  static void ResetTrainAllocMs();
+  CUDAMemPool(int device_id, std::size_t nbytes, 
+              bool cleanup, bool observe, 
+              FreeListPolicyType free_list_policy);
 
-
-  static std::shared_ptr<PoolEntry> RawAlloc(int device_id, size_t nbytes, MemType mtype);
-  static std::shared_ptr<PoolEntry> Alloc(int device_id, std::size_t nbytes, 
-                                          MemType mtype, bool allow_nullptr);
+  size_t InferMemUsage();
+  size_t TrainMemUsage();
+  size_t TrainPeakMemUsage();
+  size_t TrainAllMemUsage();
+  size_t FreeMemUsage();
+  size_t PoolNbytes();
+  void FreeTrainLocals();
+  void DumpDumpBlockList();
+  std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes, MemType mtype);
+  std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes, 
+                                   MemType mtype, bool allow_nullptr);
 
   void RegisterOOMHandler(std::function<void()> oom_handler, MemType mtype);
 
-  CUDAMemPool(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy);
+  static double TrainAllocMs();
+  static void ResetTrainAllocMs();
 
   inline bool CheckAddr(void *addr) {
     // return impl_->CheckAddr(addr);
@@ -96,11 +98,12 @@ class CUDAMemPool {
 
  private:
   static bool allocate_tensor_from_memory_pool_;
-  static std::unique_ptr<CUDAMemPool> cuda_mem_pool_;
+  static std::array<std::unique_ptr<CUDAMemPool>, MAX_DEVICE_NUM> cuda_mem_pools_;
 
-  std::vector<mpool::SharableObject<mpool::PagesPool> *> pages_pools_;
-  std::vector<mpool::SharableObject<mpool::CachingAllocator> *> torch_allocators_;
-  std::vector<mpool::SharableObject<mpool::DirectAllocator> *> tvm_allocators_;
+  int device_id_;
+  mpool::SharableObject<mpool::PagesPool>* pages_pool_;
+  mpool::SharableObject<mpool::CachingAllocator>* torch_allocator_;
+  mpool::SharableObject<mpool::DirectAllocator>* tvm_allocator_;
 
   // std::atomic<size_t> train_alloc_us_;
 };

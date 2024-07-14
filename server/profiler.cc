@@ -264,13 +264,13 @@ Profiler::Profiler(const std::string &profile_log_path)
         CUDA_CALL(cudaMemGetInfo(&free, &total));
         total_mem = total - free;
         if (Config::use_shared_tensor) {
-          infer_mem = sta::CUDAMemPool::InferMemUsage(0);
+          infer_mem = sta::CUDAMemPool::Get(0)->InferMemUsage();
         }
       } else {
         auto read_resource_info = [&]() {
-          infer_mem = sta::CUDAMemPool::InferMemUsage(0);
-          train_mem = sta::CUDAMemPool::TrainMemUsage(0);
-          train_all_mem = sta::CUDAMemPool::TrainAllMemUsage(0);
+          infer_mem = sta::CUDAMemPool::Get(0)->InferMemUsage();
+          train_mem = sta::CUDAMemPool::Get(0)->TrainMemUsage();
+          train_all_mem = sta::CUDAMemPool::Get(0)->TrainAllMemUsage();
           total_mem = static_cast<size_t>(Config::cuda_memory_pool_gb * 1_GB);
           if (Config::cold_cache_max_capability_nbytes != 0) {
             cold_cache_nbytes = ColdModelCache::Get(0)->GetCachedNbytesUnsafe();

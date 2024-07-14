@@ -3,7 +3,7 @@
 
 namespace torch_col {
 
-void TorchColInit(int device_count);
+void TorchColInit(int train_rank, int train_world_size);
 
 }
 

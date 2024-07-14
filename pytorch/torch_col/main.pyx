@@ -52,7 +52,7 @@ cdef extern from "<csrc/xsched.h>" namespace "torch_col":
 
 
 cdef extern from "<csrc/init.h>" namespace "torch_col":
-    cpdef void TorchColInit(int)
+    cpdef void TorchColInit(int, int)
 
 
 class HookMode(Enum):
@@ -108,8 +108,10 @@ def is_enable_fbward_hook():
     return TorchColConfig.IsEnableFbwardHook()
 
 
-def torch_col_init(device_count):
-    TorchColInit(device_count)
+def torch_col_init(train_rank = 0, train_world_size = 1):
+    assert train_rank >= 0 and train_world_size > 0
+    assert train_rank < train_world_size
+    TorchColInit(train_rank, train_world_size)
 
 
 def get_train_rank():
@@ -151,13 +153,15 @@ cdef extern from "<csrc/cuda_allocator_plugin.h>" namespace "torch::cuda::CUDACo
 cdef extern from "<common/cuda_allocator.h>" namespace "colserve::sta":
     cdef cppclass CUDAMemPool:
         @staticmethod
-        size_t InferMemUsage(int)
+        CUDAMemPool* Get(int)
         @staticmethod
-        size_t TrainMemUsage(int)
+        size_t InferMemUsage()
         @staticmethod
-        size_t TrainAllMemUsage(int)
+        size_t TrainMemUsage()
         @staticmethod
-        void FreeTrainLocals(int)
+        size_t TrainAllMemUsage()
+        @staticmethod
+        void FreeTrainLocals()
 
 
 # release activations by traversing grad_fn 
@@ -183,19 +187,19 @@ cdef extern from "<csrc/util.h>" namespace "torch_col":
 
 
 def cuda_memory_pool_infer_usage(device_id):
-    return CUDAMemPool.InferMemUsage(device_id)
+    return CUDAMemPool.Get(device_id).InferMemUsage()
 
 
 def cuda_memory_pool_train_usage(device_id):
-    return CUDAMemPool.TrainMemUsage(device_id)
+    return CUDAMemPool.Get(device_id).TrainMemUsage()
 
 
 def cuda_memory_pool_train_all_usage(device_id):
-    return CUDAMemPool.TrainAllMemUsage(device_id)
+    return CUDAMemPool.Get(device_id).TrainAllMemUsage()
 
 
 def cuda_memory_pool_free_train_local(device_id):
-    CUDAMemPool.FreeTrainLocals(device_id)
+    CUDAMemPool.Get(device_id).FreeTrainLocals()
 
 
 def release_grad_fn_saved_tensor(grad_fn):
