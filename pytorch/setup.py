@@ -46,8 +46,8 @@ def config_extension():
         ],
         language="c++",
         include_dirs=[
+            "./",
             "../",
-            "torch_col/",
             "../third_party/mpool/allocator/include/",
             "../third_party/mpool/pages_pool/include/",
             torch_include_path,

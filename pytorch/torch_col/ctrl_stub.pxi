@@ -4,7 +4,7 @@ from libcpp.string cimport string
 from cpython.ref cimport PyObject
 
 
-cdef extern from "<csrc/util.h>" namespace "torch_col":
+cdef extern from "<torch_col/csrc/util.h>" namespace "torch_col":
     cpdef long get_unix_timestamp()
     cpdef long get_unix_timestamp_us()
 

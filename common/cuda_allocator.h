@@ -23,6 +23,12 @@
 namespace colserve {
 namespace sta {
 
+/**
+ *  @brief CUDAMemPool is a wrapper of device memory pool.
+ *      It provides a unified interface for training and inference
+ *      memory allocation.
+ */
+
 enum class FreeListPolicyType {};
 inline FreeListPolicyType getFreeListPolicy(const std::string &s) {
   return static_cast<FreeListPolicyType>(0);
@@ -95,12 +101,16 @@ class CUDAMemPool {
 
   ~CUDAMemPool();
 
-
  private:
   static bool allocate_tensor_from_memory_pool_;
   static std::array<std::unique_ptr<CUDAMemPool>, MAX_DEVICE_NUM> cuda_mem_pools_;
 
+  // currently, we only allow one thread to allocate memory from
+  // one device memory pool, the allocation performance is fast enough.
+  std::mutex mut_; 
+
   int device_id_;
+  int raw_alloc_enable_unified_memory_{-1};
   mpool::SharableObject<mpool::PagesPool>* pages_pool_;
   mpool::SharableObject<mpool::CachingAllocator>* torch_allocator_;
   mpool::SharableObject<mpool::DirectAllocator>* tvm_allocator_;
@@ -108,9 +118,7 @@ class CUDAMemPool {
   // std::atomic<size_t> train_alloc_us_;
 };
 
-  // extern CUDAMemPoolImpl::MemPoolConfig mempool_config_template;
-
-}
-}
+} // namespace sta
+} // namespace colserve
 
 #endif

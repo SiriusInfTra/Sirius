@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD 17)
 find_package(Python REQUIRED COMPONENTS Development)
 
 add_library(new_torch_col SHARED 
-  torch_col/csrc/cuda_allocator_plugin.cc
+  torch_col/csrc/torch_allocator_plugin.cc
   torch_col/csrc/control_stub.cc
   torch_col/csrc/mem_tagging.cc
   torch_col/csrc/util.cc

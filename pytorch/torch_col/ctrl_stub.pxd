@@ -19,7 +19,7 @@ cdef extern from "<common/controlling.h>" namespace "colserve::ctrl":
         int value
 
 
-cdef extern from "<csrc/control_stub.h>" namespace "torch_col":
+cdef extern from "<torch_col/csrc/control_stub.h>" namespace "torch_col":
     cdef cppclass DummyStub:
         DummyStub() except +
         void Stop()

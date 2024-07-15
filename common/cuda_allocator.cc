@@ -102,9 +102,7 @@ CUDAMemPool::Alloc(std::size_t nbytes, MemType mtype, bool allow_nullptr) {
         new PoolEntry{.addr = nullptr, .nbytes = nbytes, .mtype = mtype}};
   }
 
-  static std::mutex mutex_;
-  std::unique_lock lock{mutex_};
-  // auto t0 = std::chrono::steady_clock::now();
+  std::unique_lock lock{mut_};
   mpool::MemBlock* mem_block;
   std::byte* ptr;
   if (mtype == MemType::kInfer) {
@@ -125,7 +123,7 @@ CUDAMemPool::Alloc(std::size_t nbytes, MemType mtype, bool allow_nullptr) {
   }
 
   auto free = [&, mtype](CUDAMemPool::PoolEntry* entry) {
-    std::unique_lock lock{mutex_};
+    std::unique_lock lock{mut_};
     if (mtype == MemType::kInfer) {
       this->tvm_allocator_->GetObject()->Free(entry->block, 0);
     } else if (mtype == MemType::kTrain) {
@@ -139,27 +137,28 @@ CUDAMemPool::Alloc(std::size_t nbytes, MemType mtype, bool allow_nullptr) {
   };
 
   return std::shared_ptr<CUDAMemPool::PoolEntry>{
-      new PoolEntry{.addr = ptr, .nbytes = nbytes, .mtype = mtype, .block = mem_block}, 
+      new PoolEntry{.addr = ptr, .nbytes = nbytes, 
+                    .mtype = mtype, .block = mem_block}, 
       free
     };
 }
 
 std::shared_ptr<CUDAMemPool::PoolEntry>
 CUDAMemPool::RawAlloc(size_t nbytes, MemType mtype) {
-  static bool initilized = false;
-  static bool unified_memory = false;
-  if (!initilized) {
+  // static bool unified_memory = false;
+  if (raw_alloc_enable_unified_memory_ == -1) {
     const char* env = getenv("STA_RAW_ALLOC_UNIFIED_MEMORY");
     if (env && atoi(env) != 0) {
-      unified_memory = true;
+      raw_alloc_enable_unified_memory_ = true;
       LOG(INFO) << "sta raw alloc using unified memory";
+    } else {
+      raw_alloc_enable_unified_memory_ = false;
     }
-    initilized = true;
   }
 
   void *ptr;
   CUDA_CALL(cudaSetDevice(device_id_));
-  if (!unified_memory) {
+  if (!raw_alloc_enable_unified_memory_) {
     CUDA_CALL(cudaMalloc(&ptr, nbytes));
   } else {
     CUDA_CALL(cudaMallocManaged(&ptr, nbytes));

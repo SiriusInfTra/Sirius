@@ -5,7 +5,7 @@
 
 #include <torch_col/csrc/init.h>
 #include <torch_col/csrc/config.h>
-#include <torch_col/csrc/cuda_allocator_plugin.h>
+#include <torch_col/csrc/torch_allocator_plugin.h>
 
 
 namespace torch_col {
@@ -18,7 +18,7 @@ void TorchColInit(int train_rank, int train_world_size) {
   torch::cuda::CUDAColAllocator::CUDAColAllocator::Init();
   if (TorchColConfig::IsEnableSharedTensor()) {
     // we assume one training process one gpu 
-    torch::cuda::CUDAColAllocator::CUDAColAllocator::Get()->init(0);
+    torch::cuda::CUDAColAllocator::CUDAColAllocator::Get()->init(train_world_size);
     torch::cuda::CUDAColAllocator::CUDAColAllocator::SetCurrentAllocator();
   }
   LOG(INFO) << "TorchCol initialized.";

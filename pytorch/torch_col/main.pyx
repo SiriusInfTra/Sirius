@@ -9,7 +9,7 @@ from enum import Enum
 #  MARK: Torch Col Config  #
 ############################
 
-cdef extern from "<csrc/config.h>" namespace "torch_col":
+cdef extern from "<torch_col/csrc/config.h>" namespace "torch_col":
     cdef cppclass TorchColConfig:
         @staticmethod
         void InitConfig()
@@ -47,11 +47,11 @@ cdef extern from "<common/device_manager.h>" namespace "colserve::sta":
         void Init()
 
 
-cdef extern from "<csrc/xsched.h>" namespace "torch_col":
+cdef extern from "<torch_col/csrc/xsched.h>" namespace "torch_col":
     cpdef void InitSMPartition()
 
 
-cdef extern from "<csrc/init.h>" namespace "torch_col":
+cdef extern from "<torch_col/csrc/init.h>" namespace "torch_col":
     cpdef void TorchColInit(int, int)
 
 
@@ -139,7 +139,7 @@ def set_train_rank_world_size(rank, world_size):
 #  MARK: Memory Management  #
 #############################
 
-cdef extern from "<csrc/cuda_allocator_plugin.h>" namespace "torch::cuda::CUDAColAllocator":
+cdef extern from "<torch_col/csrc/torch_allocator_plugin.h>" namespace "torch::cuda::CUDAColAllocator":
     cdef cppclass CUDAColAllocator:
         @staticmethod
         CUDAColAllocator* Get()
@@ -165,14 +165,14 @@ cdef extern from "<common/cuda_allocator.h>" namespace "colserve::sta":
 
 
 # release activations by traversing grad_fn 
-cdef extern from "<csrc/util.h>" namespace "torch_col":
+cdef extern from "<torch_col/csrc/util.h>" namespace "torch_col":
   cdef void ReleaseGradFnSavedTensor(PyObject* function)
   cdef void ReleaseUnderlyingStorage(PyObject* tensor)
 
 
 # release activations by tagging activations,
 # interactive with memory pool to release memory dirrectly 
-cdef extern from "<csrc/mem_tagging.h>" namespace "torch_col":
+cdef extern from "<torch_col/csrc/mem_tagging.h>" namespace "torch_col":
     cdef void TagModelParameterStart()
     cdef void TagModelParameterEnd()
     cdef void TagIntermMemory(PyObject* obj)
@@ -181,7 +181,7 @@ cdef extern from "<csrc/mem_tagging.h>" namespace "torch_col":
     cdef void RearrangeMemory()
 
 
-cdef extern from "<csrc/util.h>" namespace "torch_col":
+cdef extern from "<torch_col/csrc/util.h>" namespace "torch_col":
     cpdef void DumpMempoolFreeList(string filename)
     cpdef void DumpMempoolBlockList(string filename)
 
@@ -273,7 +273,7 @@ def monitor_sm_partition(interval: float):
 #  MARK: Utililty  #
 ####################
 
-cdef extern from "<csrc/util.h>" namespace "torch_col":
+cdef extern from "<torch_col/csrc/util.h>" namespace "torch_col":
     cdef cppclass TensorWeakRef:
         TensorWeakRef(PyObject *tensor) except +
         size_t Nbytes()

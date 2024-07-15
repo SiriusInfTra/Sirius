@@ -3,15 +3,21 @@
 
 #include <common/cuda_allocator.h>
 
-#include <ATen/core/TensorBody.h>
+#include <torch_col/csrc/config.h>
+
 #include <ATen/core/TensorBody.h>
 #include <c10/core/Allocator.h>
 #include <c10/core/Storage.h>
 #include <c10/cuda/CUDAStream.h>
 #include <c10/cuda/CUDACachingAllocator.h>
 
+#include <ATen/Tensor.h>
+#include <ATen/ATen.h>
+
 #include <mutex>
 #include <unordered_map>
+#include <thread>
+#include <chrono>
 
 
 namespace torch {

@@ -1,4 +1,4 @@
-#include <torch_col/csrc/cuda_allocator_plugin.h>
+#include <torch_col/csrc/torch_allocator_plugin.h>
 #include <torch_col/csrc/config.h>
 
 #include <common/cuda_allocator.h>
@@ -61,20 +61,36 @@ void CUDAColAllocator::init(int device_count) {
   // colserve::sta::InitMemoryPool(pool_nbytes, !torch_col::TorchColConfig::has_shared_tensor_server, 
   //                               false, policy);
   int device_id = torch_col::TorchColConfig::GetTrainRank();
+
+  // first init mast device.
   colserve::sta::CUDAMemPool::Init(
       device_id, pool_nbytes, 
       !torch_col::TorchColConfig::has_shared_tensor_server, 
       false, policy);
 
+  // then init other devices.
+  for (int i = 0; i < device_count; i++) {
+    if (i == device_id) continue;
+    colserve::sta::CUDAMemPool::Init(
+        i, pool_nbytes, 
+        false, false, 
+        policy);
+  }
+
   initialized_ = true;
-  LOG(INFO) << "pytorch CUDAColAllocator Initialized on device " << device_id
+  LOG(INFO) << "pytorch CUDAColAllocator Initialized"
             << ", infer memory usage " 
             << sta::ByteDisplay(sta::CUDAMemPool::Get(device_id)->InferMemUsage());
 }
 
 c10::DataPtr CUDAColAllocator::allocate(size_t nbytes) const {
-  auto addr = const_cast<CUDAColAllocator*>(this)->raw_alloc(nbytes);
-  return c10::DataPtr{addr, addr, raw_deleter(), c10::Device(c10::DeviceType::CUDA, 0)};
+  auto current_device = at::cuda::current_device();
+  auto current_stream = at::cuda::getCurrentCUDAStream().stream();
+  auto addr = const_cast<CUDAColAllocator*>(this)->raw_alloc_with_stream(
+      nbytes, current_stream);
+  return c10::DataPtr{
+      addr, addr, raw_deleter(), 
+      c10::Device(c10::DeviceType::CUDA, at::cuda::current_device())};
 }
 
 c10::DeleterFnPtr CUDAColAllocator::raw_deleter() const {
@@ -85,18 +101,23 @@ c10::DeleterFnPtr CUDAColAllocator::raw_deleter() const {
 }
 
 void* CUDAColAllocator::raw_alloc(size_t nbytes) {
-  int device;
-  CUDA_CALL(cudaGetDevice(&device));
-  
-  auto entry = sta::CUDAMemPool::Get(device)->Alloc(
+  auto current_stream = at::cuda::getCurrentCUDAStream().stream();
+  return raw_alloc_with_stream(nbytes, current_stream);
+}
+
+void* CUDAColAllocator::raw_alloc_with_stream(size_t nbytes, cudaStream_t stream) {
+  // assume single stream
+  auto current_device = at::cuda::current_device();
+  auto entry = sta::CUDAMemPool::Get(current_device)->Alloc(
       nbytes, colserve::sta::MemType::kTrain, false);
-  DLOG(INFO) << "CUDAColAllocator device " << device
+  DLOG(INFO) << "CUDAColAllocator device " << current_device
              << " alloc " << sta::ByteDisplay(nbytes) 
-             << " : addr " << entry->addr << " nbytes " << sta::ByteDisplay(entry->nbytes);
+             << " addr " << entry->addr 
+             << " nbytes " << sta::ByteDisplay(entry->nbytes);
   
   std::unique_lock<std::mutex> lock(entry_mutex_);
   auto res = entry_map_.insert(std::make_pair(entry->addr, entry)); 
-  CHECK(res.second == true || entry->addr == nullptr) 
+  CHECK(res.second == true || entry->addr == nullptr)
       << " addr " << entry->addr 
       << " nbytes " << sta::ByteDisplay(entry->nbytes) 
       << " abnormal raw alloc";
@@ -104,10 +125,6 @@ void* CUDAColAllocator::raw_alloc(size_t nbytes) {
     train_model_params_.insert(std::make_pair(entry->addr, entry));
   }
   return entry->addr;
-}
-
-void* CUDAColAllocator::raw_alloc_with_stream(size_t nbytes, cudaStream_t stream) {
-  return raw_alloc(nbytes); // assume single stream
 }
 
 void CUDAColAllocator::raw_delete(void* ptr) {

@@ -9,7 +9,7 @@
 
 #include <common/controlling.h>
 
-#include <torch_col/csrc/cuda_allocator_plugin.h>
+#include <torch_col/csrc/torch_allocator_plugin.h>
 #include <torch_col/csrc/mem_tagging.h>
 #include <torch_col/csrc/fake_engine.h>
 
