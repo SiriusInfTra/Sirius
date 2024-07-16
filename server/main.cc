@@ -229,7 +229,7 @@ void Shutdown(int sig) {
   colserve::InferModelStore::Shutdown();
   colserve::TrainLauncher::Shutdown();
   colserve::Profiler::Shutdown();
-  NVML_CALL(nvmlShutdown());
+  COL_NVML_CALL(nvmlShutdown());
   std::terminate();
 }
 
@@ -248,7 +248,7 @@ int main(int argc, char *argv[]) {
   });
 
   CHECK_EQ(cuInit(0), CUDA_SUCCESS);
-  NVML_CALL(nvmlInit());
+  COL_NVML_CALL(nvmlInit());
   colserve::sta::DeviceManager::Init();
   auto free_list_policy = colserve::sta::getFreeListPolicy(
       colserve::Config::mempool_freelist_policy);
@@ -275,7 +275,7 @@ int main(int argc, char *argv[]) {
 
   if (colserve::Config::memory_pressure_mb > 0) { 
     size_t nbytes = static_cast<size_t>(colserve::Config::memory_pressure_mb * 1_MB);
-    CUDA_CALL(cudaMalloc(&memory_pressure_ptr, nbytes));
+    COL_CUDA_CALL(cudaMalloc(&memory_pressure_ptr, nbytes));
   }
 
   std::string server_address("0.0.0.0:" + port);

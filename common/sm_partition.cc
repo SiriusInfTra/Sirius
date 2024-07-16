@@ -47,7 +47,7 @@ SMPartitioner::SMPartitioner(int device, bool cleanup, bool observe) : device_(d
   }
 
   cudaDeviceProp deviceProp;
-  CUDA_CALL(cudaGetDeviceProperties(&deviceProp, device));
+  COL_CUDA_CALL(cudaGetDeviceProperties(&deviceProp, device));
   deviceProp.multiProcessorCount;
 
   gpu_sm_num_ = deviceProp.multiProcessorCount;

@@ -1,8 +1,14 @@
+#include <ostream>
+#include <torch_col/csrc/config.h>
+
+#include <boost/format.hpp>
+
 #include <cstdlib>
+#include <iostream>
+#include <sstream>
 #include <string>
 
 #include <glog/logging.h>
-#include "config.h"
 
 
 namespace torch_col {
@@ -70,16 +76,27 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
     shared_tensor_pool_gb = std::stod(pool_size_env);
   }
 
-  LOG(INFO) << "TorchColConfig::rank=" << train_rank 
-            << "|world_size=" << train_world_size;
-  LOG(INFO) << "TorchColConfig::use_shared_tensor=" << use_shared_tensor;
-  LOG(INFO) << "TorchColConfig::colocate_use_xsched=" << colocate_use_xsched;
-  LOG(INFO) << "TorchColConfig::kill_batch_on_recv=" << kill_batch_on_recv;
-  LOG(INFO) << "TorchColConfig::has_colocated_infer_server=" << has_colocated_infer_server;
-  LOG(INFO) << "TorchColConfig::has_shared_tensor_server=" << has_shared_tensor_server;
-  LOG(INFO) << "TorchColConfig::shared_tensor_pool_gb=" << shared_tensor_pool_gb;
-  LOG(INFO) << "TorchColConfig::dynamic_sm_partition=" << dynamic_sm_partition;
-  LOG(INFO) << "TorchColConfig::hook_mode=" << hook_mode;
+  std::stringstream config_ss;
+
+  
+  auto config_head = (boost::format(
+      "================ TORCH_COL CONFIG [Rank %d] ================") % train_rank).str();
+
+  config_ss << config_head << std::endl;
+  config_ss << "TorchColConfig::rank=" << train_rank 
+            << "|world_size=" << train_world_size << std::endl;;
+  config_ss << "TorchColConfig::use_shared_tensor=" << use_shared_tensor << std::endl;
+  config_ss << "TorchColConfig::colocate_use_xsched=" << colocate_use_xsched << std::endl;
+  config_ss << "TorchColConfig::kill_batch_on_recv=" << kill_batch_on_recv << std::endl;
+  config_ss << "TorchColConfig::has_colocated_infer_server=" << has_colocated_infer_server << std::endl;
+  config_ss << "TorchColConfig::has_shared_tensor_server=" << has_shared_tensor_server << std::endl;
+  config_ss << "TorchColConfig::shared_tensor_pool_gb=" << shared_tensor_pool_gb << std::endl;
+  config_ss << "TorchColConfig::dynamic_sm_partition=" << dynamic_sm_partition << std::endl;
+  config_ss << "TorchColConfig::hook_mode=" << hook_mode << std::endl;
+  config_ss << std::string(config_head.size(), '=') << std::endl;
+
+  std::cerr << config_ss.str() << std::endl;
+
   TorchColConfig::configured = true;
 }
 

@@ -1,6 +1,12 @@
 #ifndef COLSERVE_PROFILER_H
 #define COLSERVE_PROFILER_H
 
+#include <common/device_manager.h>
+#include <common/util.h>
+
+#include <dcgm_agent.h>
+#include <dcgm_structs.h>
+
 #include <iostream>
 #include <chrono>
 #include <vector>
@@ -10,8 +16,7 @@
 #include <fstream>
 #include <optional>
 #include <unordered_map>
-#include <dcgm_agent.h>
-#include <dcgm_structs.h>
+#include <array>
 
 
 namespace colserve {
@@ -162,18 +167,21 @@ class Profiler {
   
   void WriteLog();
   std::vector<std::vector<std::string>> FmtResourceInfos(
+      int device_id,
       const std::vector<size_t> &field_offs,
       std::optional<time_stamp_t> start, 
       std::optional<time_stamp_t> end);
   
   template<typename field_type_t>
   std::vector<field_type_t> SelectResourceInfo(
+      int device_id,
       size_t field_off, 
       std::optional<time_stamp_t> start,
       std::optional<time_stamp_t> end,
       std::optional<std::function<bool(field_type_t)>> filter = std::nullopt) {
+    CHECK(device_id < sta::DeviceManager::GetNumVisibleGpu());
     std::vector<field_type_t> res;
-    for (const auto &r : resource_info_) {
+    for (const auto &r : resource_infos_[device_id]) {
       if (start.has_value() && std::get<0>(r) < start.value()) {
         continue;
       }
@@ -203,9 +211,12 @@ class Profiler {
   std::string profile_log_path_;
 
   std::vector<InferInfo> infer_info_;
-  std::vector<resource_entity_t> resource_info_; // pass, time stamp, resource info
-  std::vector<event_entity_t> event_info_; // pass, time stamp, event
-  std::unordered_map<int, std::vector<perf_entity_t>> perf_info_; // item -> [time stamp, value]
+  // [time stamp, resource info] of different device
+  std::array<std::vector<resource_entity_t>, MAX_DEVICE_NUM> resource_infos_; 
+  // time stamp, event, deprecated currently
+  std::vector<event_entity_t> event_info_; 
+  // item -> [time stamp, value]
+  std::unordered_map<int, std::vector<perf_entity_t>> perf_info_; 
   std::mutex infer_info_mut_, event_info_mut_, perf_info_mut_;
 
   // pass, time stamp, infering model used memory

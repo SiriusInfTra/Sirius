@@ -1,12 +1,12 @@
 #include <torch_col/csrc/torch_allocator_plugin.h>
 #include <torch_col/csrc/config.h>
 
+#include <common/device_manager.h>
 #include <common/cuda_allocator.h>
 #include <common/util.h>
 
 #include <c10/core/Storage.h>
 #include <c10/core/TensorImpl.h>
-
 
 #include <glog/logging.h>
 #include <utility>
@@ -84,20 +84,22 @@ void CUDAColAllocator::init(int device_count) {
 }
 
 c10::DataPtr CUDAColAllocator::allocate(size_t nbytes) const {
-  auto current_device = at::cuda::current_device();
+  auto current_device = colserve::sta::DeviceManager::GetCurrentDevice();
   auto current_stream = at::cuda::getCurrentCUDAStream().stream();
   auto addr = const_cast<CUDAColAllocator*>(this)->raw_alloc_with_stream(
       nbytes, current_stream);
   return c10::DataPtr{
       addr, addr, raw_deleter(), 
-      c10::Device(c10::DeviceType::CUDA, at::cuda::current_device())};
+      c10::Device(c10::DeviceType::CUDA, current_device)};
+}
+
+void raw_delete_fn(void* ptr) {
+  DLOG(INFO) << "CUDAColAllocator raw_deleter " << ptr;
+  CUDAColAllocator::Get()->raw_delete(ptr);
 }
 
 c10::DeleterFnPtr CUDAColAllocator::raw_deleter() const {
-  return [](void* ptr) {
-    DLOG(INFO) << "CUDAColAllocator raw_deleter " << ptr;
-    cuda_col_allocator_->raw_delete(ptr);
-  };
+  return &raw_delete_fn;  
 }
 
 void* CUDAColAllocator::raw_alloc(size_t nbytes) {
@@ -107,14 +109,25 @@ void* CUDAColAllocator::raw_alloc(size_t nbytes) {
 
 void* CUDAColAllocator::raw_alloc_with_stream(size_t nbytes, cudaStream_t stream) {
   // assume single stream
-  auto current_device = at::cuda::current_device();
-  auto entry = sta::CUDAMemPool::Get(current_device)->Alloc(
-      nbytes, colserve::sta::MemType::kTrain, false);
-  DLOG(INFO) << "CUDAColAllocator device " << current_device
+
+  // 0. before allocating, we first check if there existing 
+  // delayed delete
+  ProcessEvents();
+
+  // 1. first create a pool entry
+  auto current_device = sta::DeviceManager::GetCurrentDevice();
+  auto entry = sta::CUDAMemPool::Get(current_device)->AllocWithStream(
+      nbytes, sta::MemType::kTrain, stream, false);
+  DLOG(INFO) << "[CUDAColAllocator] device " << current_device
+             << " stream " << stream
              << " alloc " << sta::ByteDisplay(nbytes) 
              << " addr " << entry->addr 
              << " nbytes " << sta::ByteDisplay(entry->nbytes);
   
+  // 2. create extra data structure
+  entry->extra_data = new TorchMemBlockExtraData{};
+
+  // 3. record the entry in the allocator
   std::unique_lock<std::mutex> lock(entry_mutex_);
   auto res = entry_map_.insert(std::make_pair(entry->addr, entry)); 
   CHECK(res.second == true || entry->addr == nullptr)
@@ -130,16 +143,46 @@ void* CUDAColAllocator::raw_alloc_with_stream(size_t nbytes, cudaStream_t stream
 void CUDAColAllocator::raw_delete(void* ptr) {
   std::unique_lock<std::mutex> interm_lock{interm_memory_mutex_};
   std::unique_lock<std::mutex> lock(entry_mutex_);
-  DLOG(INFO) << "CUDAColAllocator raw_delete " << ptr;
-  entry_map_.erase(ptr);
-  interm_memories_.erase(ptr);
-  train_model_params_.erase(ptr);
+  DLOG(INFO) << "[CUDAColAllocator] raw_delete " << ptr;
+
+  auto it = entry_map_.find(ptr);
+  CHECK(it != entry_map_.end()) << "not found ptr " << ptr;
+
+  auto extra_data = GetMemBlockExtraData(it->second.get());
+  CHECK(extra_data != nullptr);
+
+  // if there are stream use this ptr, we need to delay the delete
+  if (!extra_data->stream_set.empty()) {
+    DLOG(INFO) << "[CUDAColAllocator] raw_delete " << ptr 
+               << " on device " << it->second->block->device_id
+               << " its own stream " << it->second->block->stream
+               << " stream_set (" << extra_data->stream_set.begin()->stream() << " ...)"
+               << " size " << extra_data->stream_set.size();
+
+    auto stream_set = std::move(extra_data->stream_set);
+    CHECK(extra_data->stream_set.empty());
+
+    colserve::sta::DeviceGuard device_guard{it->second->block->device_id};
+
+    cudaEvent_t event;
+    COL_CUDA_CALL(cudaEventCreateWithFlags(&event, cudaEventDisableTiming));
+    for (auto & stream : stream_set) {
+      COL_CUDA_CALL(cudaEventRecord(event, stream.stream()));
+      extra_data->event_count++;
+      cuda_stream_events_[stream.stream()].emplace_back(
+          it->second.get(), event);
+    }
+  } else {
+    // here the ptr can be safely free
+    DeleteEntry(it->second.get());
+  }
 }
 
 void CUDAColAllocator::emptyCache() {
-  int device;
-  CUDA_CALL(cudaGetDevice(&device));
-  sta::CUDAMemPool::Get(device)->FreeTrainLocals();
+  ProcessEvents();
+  for (int i = 0; i < sta::DeviceManager::GetNumGpu(); i++) {
+    colserve::sta::CUDAMemPool::Get(i)->FreeTrainLocals();
+  }
 }
 
 void CUDAColAllocator::setMemoryFraction(double fraction, int device) {
@@ -155,8 +198,31 @@ void* CUDAColAllocator::getBaseAllocation(void* ptr, size_t* size) {
   return nullptr;
 }
 
-void CUDAColAllocator::recordStream(const c10::DataPtr&, streamType stream) {
-  LOG(WARNING) << "do nothing, due to single stream assumption";
+void CUDAColAllocator::recordStream(const c10::DataPtr& ptr, streamType stream) {
+  // LOG(WARNING) << "do nothing, due to single stream assumption"
+  //              << " ptr " << ptr.get() << " stream " << stream.stream();
+  // return ;
+  if (!ptr.get()) {
+    return;
+  }
+
+  if (ptr.get_deleter() != &raw_delete_fn) {
+    return;
+  }
+
+  std::unique_lock lock{entry_mutex_};
+  auto it = entry_map_.find(ptr.get());
+  if (it == entry_map_.end()) {
+    // the ptr may not belong this allocator
+    return;
+  }
+
+  if (it->second->block->stream == stream.stream()) {
+    // keep same as pytorch, ignore the same stream
+    return;
+  }
+  auto extra_data = GetMemBlockExtraData(it->second.get());
+  extra_data->stream_set.insert(stream);
 }
 
 c10::cuda::CUDACachingAllocator::DeviceStats CUDAColAllocator::getDeviceStats(int device) {
@@ -285,6 +351,57 @@ void CUDAColAllocator::UntagIntermMemory() {
   interm_memories_.clear();
 }
 
+TorchMemBlockExtraData* 
+CUDAColAllocator::GetMemBlockExtraData(
+    colserve::sta::CUDAMemPool::PoolEntry* entry) {
+  return static_cast<TorchMemBlockExtraData*>(entry->extra_data);
 }
+
+void CUDAColAllocator::ProcessEvents() {
+  for (auto it = cuda_stream_events_.begin(); it != cuda_stream_events_.end(); ) {
+    while (!it->second.empty()) {
+      auto &e = it->second.front();
+      auto entry = e.first;
+      cudaEvent_t event = e.second;
+
+      cudaError_t err = cudaEventQuery(event);
+      if (err == cudaErrorNotReady) {
+        cudaGetLastError();
+        break;
+      } else if (err != cudaSuccess) {
+        COL_CUDA_CALL(err);
+      }
+
+      auto extra_data = GetMemBlockExtraData(entry);
+      extra_data->event_count--;
+      if (extra_data->event_count == 0) {
+        DeleteEntry(entry);
+      }
+      it->second.pop_front();
+    }
+
+    if (it->second.empty()) {
+      it = cuda_stream_events_.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
+
+void CUDAColAllocator::DeleteEntry(colserve::sta::CUDAMemPool::PoolEntry* entry) {
+  DLOG(INFO) << "CUDAColAllocator DeleteEntry " << entry->addr;
+  
+  auto extra_data = GetMemBlockExtraData(entry);
+  
+  // 1. clear attached extra data structure
+  delete extra_data;
+
+  // 2. remove the pool entry
+  entry_map_.erase(entry->addr);
+  interm_memories_.erase(entry->addr);
+  train_model_params_.erase(entry->addr);
 }
+
+} // namespace CUDAColAllocator
+} // namespace cuda
+} // namespace torch

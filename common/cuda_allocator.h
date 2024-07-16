@@ -65,7 +65,9 @@ class CUDAMemPool {
     void *addr;
     std::size_t nbytes;
     MemType mtype;
-    mpool::MemBlock *block;
+
+    mpool::MemBlock *block{nullptr};
+    void* extra_data{nullptr};
   };
   static void Init(int device_id, std::size_t nbytes, 
                    bool cleanup, bool observe, 
@@ -86,8 +88,12 @@ class CUDAMemPool {
   void FreeTrainLocals();
   void DumpDumpBlockList();
   std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes, MemType mtype);
-  std::shared_ptr<PoolEntry> Alloc(std::size_t nbytes, 
-                                   MemType mtype, bool allow_nullptr);
+
+  // Alloc memory and ignore the stream property.
+  std::shared_ptr<PoolEntry> Alloc(size_t nbytes, MemType mtype,
+                                   bool allow_nullptr);
+  std::shared_ptr<PoolEntry> AllocWithStream(std::size_t nbytes, MemType mtype, 
+                                             cudaStream_t stream, bool allow_nullptr);
 
   void RegisterOOMHandler(std::function<void()> oom_handler, MemType mtype);
 

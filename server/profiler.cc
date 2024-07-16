@@ -128,7 +128,7 @@ std::unique_ptr<Profiler> Profiler::profiler_;
 
 std::pair<size_t, size_t> Profiler::GetGPUMemInfo() {
   size_t free, total;
-  CUDA_CALL(cudaMemGetInfo(&free, &total));
+  COL_CUDA_CALL(cudaMemGetInfo(&free, &total));
   return {free, total};
 }
 
@@ -152,7 +152,9 @@ void Profiler::Start() {
   // std::unique_lock event_info_lock{profiler_->event_info_mut_};
   profiler_->infer_info_.clear();
   // profiler_->event_info_.clear();
-  profiler_->resource_info_.clear();
+  for (int i = 0; i < sta::DeviceManager::GetNumVisibleGpu(); i++) {
+    profiler_->resource_infos_[i].clear();
+  }
   profiler_->infering_memory_nbytes_.clear();
   profiler_->start_profile_ = true;
 }
@@ -180,12 +182,12 @@ Profiler::Profiler(const std::string &profile_log_path)
   stp_ = GetTimeStamp();
 
   uint32_t dev_cnt;
-  NVML_CALL(nvmlDeviceGetCount_v2(&dev_cnt));
+  COL_NVML_CALL(nvmlDeviceGetCount_v2(&dev_cnt));
   CHECK_GT(dev_cnt, 0);
 
   nvmlDevice_t device;
   auto gpu_uuid = sta::DeviceManager::GetGpuSystemUuid(0);
-  NVML_CALL(nvmlDeviceGetHandleByUUID(gpu_uuid.c_str(), &device));
+  COL_NVML_CALL(nvmlDeviceGetHandleByUUID(gpu_uuid.c_str(), &device));
 
   // CHECK MPS
   if (colserve::Config::check_mps) {
@@ -209,7 +211,7 @@ Profiler::Profiler(const std::string &profile_log_path)
     }
     LOG(INFO) << "start profiler thread";
     uint32_t pid = getpid();
-    CUDA_CALL(cudaSetDevice(0));
+    COL_CUDA_CALL(cudaSetDevice(0));
 
     if (Config::profile_gpu_smact || Config::profile_gpu_util) {
       char dcgm_group_name[128]; // = "dcgm_colserve";
@@ -251,7 +253,7 @@ Profiler::Profiler(const std::string &profile_log_path)
 
       if (!Config::use_shared_tensor || !Config::use_shared_tensor_train) {
         uint32_t info_cnt = max_info_cnt;
-        NVML_CALL(nvmlDeviceGetComputeRunningProcesses_v3(device, &info_cnt, infos));
+        COL_NVML_CALL(nvmlDeviceGetComputeRunningProcesses_v3(device, &info_cnt, infos));
         for (uint32_t i = 0; i < info_cnt; i++) {
           if (!Config::use_shared_tensor_train && infos[i].pid == pid) {
             infer_mem = infos[i].usedGpuMemory;
@@ -261,7 +263,7 @@ Profiler::Profiler(const std::string &profile_log_path)
           }
         }
         size_t free, total;
-        CUDA_CALL(cudaMemGetInfo(&free, &total));
+        COL_CUDA_CALL(cudaMemGetInfo(&free, &total));
         total_mem = total - free;
         if (Config::use_shared_tensor) {
           infer_mem = sta::CUDAMemPool::Get(0)->InferMemUsage();
@@ -321,7 +323,7 @@ Profiler::Profiler(const std::string &profile_log_path)
         }
       }
 
-      this->resource_info_.push_back({Profiler::GetTimeStamp(),
+      this->resource_infos_[0].push_back({Profiler::GetTimeStamp(),
           ResourceInfo{.infer_mem = infer_mem, .train_mem = train_mem, 
                        .train_all_mem = train_all_mem, .gpu_used_mem = total_mem, 
                        .cold_cache_nbytes = cold_cache_nbytes, 
@@ -392,7 +394,8 @@ void Profiler::WriteLog() {
       << " delay before profile " << delay_before_profile_ << " sec, " 
       << " workload end time stamp " << workload_end_time_stamp_ << std::endl;
 
-  long workload_profile_start_ts = workload_start_time_stamp_ + static_cast<long>(delay_before_profile_ * 1000);
+  long workload_profile_start_ts = workload_start_time_stamp_ 
+                                   + static_cast<long>(delay_before_profile_ * 1000);
   long workload_profile_end_ts = workload_end_time_stamp_;
 
 
@@ -453,11 +456,11 @@ void Profiler::WriteLog() {
     ofs << "[GPU Util Info]" << std::endl;
   
     auto gpu_utils = SelectResourceInfo<decltype(((ResourceInfo*)0)->gpu_util)>(
-        offsetof(ResourceInfo, gpu_util), 
+        0, offsetof(ResourceInfo, gpu_util), 
         workload_profile_start_ts, workload_profile_end_ts, 
         [](double v) { return !std::isnan(v); });
     auto gpu_smacts = SelectResourceInfo<decltype(((ResourceInfo*)0)->sm_activity)>(
-        offsetof(ResourceInfo, sm_activity), 
+        0, offsetof(ResourceInfo, sm_activity), 
         workload_profile_start_ts, workload_profile_end_ts,
         [](double v) { return !std::isnan(v); });
 
@@ -473,7 +476,7 @@ void Profiler::WriteLog() {
   }
   
   ofs << "[Memory Info]" << std::endl;  
-  auto memory_table = FmtResourceInfos({
+  auto memory_table = FmtResourceInfos(0, {
     offsetof(ResourceInfo, infer_mem),
     offsetof(ResourceInfo, train_mem),
     offsetof(ResourceInfo, train_all_mem),
@@ -531,7 +534,7 @@ void Profiler::WriteLog() {
 
   if (Config::dynamic_sm_partition && Config::profile_sm_partition) {
     ofs << "[SM Partition Info]" << std::endl;
-    auto sm_part_table = FmtResourceInfos({
+    auto sm_part_table = FmtResourceInfos(0, {
       offsetof(ResourceInfo, infer_required_tpc_num),
       offsetof(ResourceInfo, train_avail_tpc_num),
     }, std::nullopt, std::nullopt);
@@ -544,6 +547,7 @@ void Profiler::WriteLog() {
 
 std::vector<std::vector<std::string>>
 Profiler::FmtResourceInfos(
+    int device_id,
     const std::vector<size_t> &field_offs,
     std::optional<time_stamp_t> start, 
     std::optional<time_stamp_t> end) {
@@ -554,7 +558,7 @@ Profiler::FmtResourceInfos(
 
   table[0][0] = "TimeStamp";
 
-  for (auto &r : resource_info_) {
+  for (auto &r : resource_infos_[device_id]) {
     if (start.has_value() && std::get<0>(r) < start.value()) continue;
     if (end.has_value() && std::get<0>(r) > end.value()) continue;
 

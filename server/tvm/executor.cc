@@ -78,14 +78,14 @@ Executor::Executor(TVMGraph &factory, size_t worker_id, const std::vector<DLDevi
   param_ready_events_.resize(tvm_graph_.node_row_ptr_.back());
   param_ready_event_ids_.resize(tvm_graph_.node_row_ptr_.back(), static_cast<uint32_t>(-1));
   for (size_t i = 0; i < param_ready_events_.size(); i++) {
-    CUDA_CALL(cudaEventCreate(&param_ready_events_[i]));
+    COL_CUDA_CALL(cudaEventCreate(&param_ready_events_[i]));
   }
   // pipeline_op_exec_starts_.resize(op_execs_.size());
   // pipeline_op_exec_ends_.resize(op_execs_.size());
   // for (size_t i = 0; i < op_execs_.size(); i++) {
   //   if (op_execs_[i]) {
-  //     CUDA_CALL(cudaEventCreate(&pipeline_op_exec_starts_[i]));
-  //     CUDA_CALL(cudaEventCreate(&pipeline_op_exec_ends_[i]));
+  //     COL_CUDA_CALL(cudaEventCreate(&pipeline_op_exec_starts_[i]));
+  //     COL_CUDA_CALL(cudaEventCreate(&pipeline_op_exec_ends_[i]));
   //   }
   // }
 
@@ -234,7 +234,7 @@ void Executor::PipelineRun() {
       for (auto eid : input_param_eid_[i]) {
         auto event_id = param_ready_event_ids_[eid];
         CHECK(event_id != -1);
-        CUDA_CALL(cudaStreamWaitEvent((cudaStream_t)exec_stream_, param_ready_events_[event_id]));
+        COL_CUDA_CALL(cudaStreamWaitEvent((cudaStream_t)exec_stream_, param_ready_events_[event_id]));
       }
       wait_ms += Profiler::MilliFrom(t1);
 
@@ -269,7 +269,7 @@ void Executor::PipelineRun() {
 //   for (size_t i = 0; i < op_execs_.size(); i++) {
 //     if (op_execs_[i]) {
 //       float ms;
-//       CUDA_CALL(cudaEventElapsedTime(&ms, pipeline_op_exec_starts_[i], pipeline_op_exec_ends_[i]));
+//       COL_CUDA_CALL(cudaEventElapsedTime(&ms, pipeline_op_exec_starts_[i], pipeline_op_exec_ends_[i]));
 //       ret += ms;
 //     }
 //   }
@@ -447,7 +447,7 @@ void Executor::LoadParams(bool pipeline, bool force) {
           param_ready_[p.first]->store(true);
           pipeline_load_params_cv_.notify_all();
           CHECK(param_ready_event_ids_[p.first] == p.first);
-          CUDA_CALL(cudaEventRecord(param_ready_events_[p.first], (cudaStream_t)load_param_stream_));
+          COL_CUDA_CALL(cudaEventRecord(param_ready_events_[p.first], (cudaStream_t)load_param_stream_));
         }
       }
     }
@@ -465,9 +465,9 @@ void Executor::LoadParams(bool pipeline, bool force) {
       auto & param_ids = pg.second;
       for (size_t pg_off = 0; pg_off < param_group_nbytes; ) {
         auto load_nbytes = std::min(param_group_nbytes - pg_off, storage_group->nbytes - sg_off);
-        CUDA_CALL(cudaSetDevice(devices_[0].device_id));
+        COL_CUDA_CALL(cudaSetDevice(devices_[0].device_id));
         if (auto sg_it = cold_cached_group_.find(sg_id - 1); sg_it == cold_cached_group_.cend()) {
-          CUDA_CALL(cudaMemcpyAsync(
+          COL_CUDA_CALL(cudaMemcpyAsync(
               static_cast<char*>(storage_group->addr) + sg_off,
               static_cast<char*>(param_group->data) + pg_off,
               load_nbytes, cudaMemcpyDefault, (cudaStream_t)load_param_stream_));
@@ -496,7 +496,7 @@ void Executor::LoadParams(bool pipeline, bool force) {
       // because we iterate param group in out loop, 
       // we only need to record after param group transited
       CHECK(param_ready_event_ids_[param_ids[0]] == pg_id);
-      CUDA_CALL(cudaEventRecord(param_ready_events_[pg_id], (cudaStream_t)load_param_stream_));
+      COL_CUDA_CALL(cudaEventRecord(param_ready_events_[pg_id], (cudaStream_t)load_param_stream_));
       if (pipeline) {
         for (auto & pid : param_ids) {
           param_ready_[pid]->store(true);

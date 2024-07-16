@@ -1,6 +1,7 @@
 #ifndef COLSERVE_COMMON_UTIL_H
 #define COLSERVE_COMMON_UTIL_H
 
+#include <boost/format/format_fwd.hpp>
 #include <common/log_as_glog_sta.h>
 #include <common/device_manager.h>
 
@@ -18,7 +19,7 @@
 
 namespace colserve {
 
-#define CUDA_CALL(func) do { \
+#define COL_CUDA_CALL(func) do { \
   auto error = func; \
   if (error != cudaSuccess) { \
     LOG(FATAL) << #func << " " << cudaGetErrorString(error); \
@@ -26,7 +27,7 @@ namespace colserve {
   } \
   } while (0)
 
-#define CU_CALL(func) \
+#define COL_CU_CALL(func) \
   do { \
     auto err = func; \
     if (err != CUDA_SUCCESS) { \
@@ -37,7 +38,7 @@ namespace colserve {
     } \
   } while (0);
 
-#define NVML_CALL(func) do{ \
+#define COL_NVML_CALL(func) do{ \
     auto error = func; \
     if (error != NVML_SUCCESS) { \
       LOG(FATAL) << #func << " " << nvmlErrorString(error); \
@@ -92,10 +93,7 @@ inline double ByteToMB(size_t nbytes) {
 }
 
 inline std::string ByteDisplay(size_t nbytes) {
-  std::stringstream ss;
-  ss << std::fixed << std::setprecision(2)
-     << static_cast<double>(nbytes) / 1024 / 1024 << "MB (" << nbytes << " Bytes)";
-  return ss.str();
+  return str(boost::format("%.2fMB (%dB)") % ByteToMB(nbytes) % nbytes);
 }
 }
 

@@ -94,8 +94,14 @@ CUDAMemPool::CUDAMemPool(int device_id, std::size_t nbytes,
   // }
 }
 
+std::shared_ptr<CUDAMemPool::PoolEntry>
+CUDAMemPool::Alloc(size_t nbytes, MemType mtype, bool allow_nullptr) {
+  return AllocWithStream(nbytes, mtype, 0, allow_nullptr);
+}
+
 std::shared_ptr<CUDAMemPool::PoolEntry> 
-CUDAMemPool::Alloc(std::size_t nbytes, MemType mtype, bool allow_nullptr) {
+CUDAMemPool::AllocWithStream(std::size_t nbytes, MemType mtype, 
+                             cudaStream_t stream, bool allow_nullptr) {
   CHECK(!allow_nullptr) << "currently deprecated";
   if (nbytes == 0) {
     return std::shared_ptr<CUDAMemPool::PoolEntry>{
@@ -107,12 +113,12 @@ CUDAMemPool::Alloc(std::size_t nbytes, MemType mtype, bool allow_nullptr) {
   std::byte* ptr;
   if (mtype == MemType::kInfer) {
     mem_block = tvm_allocator_->GetObject()->Alloc(
-        nbytes, 512, 0, 0);
+        nbytes, 512, stream, 0);
     ptr = tvm_allocator_->GetObject()->GetBasePtr() 
           + mem_block->addr_offset;
   } else if (mtype == MemType::kTrain) {
     mem_block = torch_allocator_->GetObject()->Alloc(
-        nbytes, 512, 0, mpool::VMMAllocator::ALLOC_TRY_EXPAND_VA);
+        nbytes, 512, stream, mpool::VMMAllocator::ALLOC_TRY_EXPAND_VA);
     ptr = torch_allocator_->GetObject()->GetBasePtr() 
           + mem_block->addr_offset;
     DLOG(INFO) << "Torch Alloc: " << ptr 
@@ -137,8 +143,10 @@ CUDAMemPool::Alloc(std::size_t nbytes, MemType mtype, bool allow_nullptr) {
   };
 
   return std::shared_ptr<CUDAMemPool::PoolEntry>{
-      new PoolEntry{.addr = ptr, .nbytes = nbytes, 
-                    .mtype = mtype, .block = mem_block}, 
+      new PoolEntry{.addr = ptr, 
+                    .nbytes = nbytes, 
+                    .mtype = mtype, 
+                    .block = mem_block}, 
       free
     };
 }
@@ -157,16 +165,16 @@ CUDAMemPool::RawAlloc(size_t nbytes, MemType mtype) {
   }
 
   void *ptr;
-  CUDA_CALL(cudaSetDevice(device_id_));
+  COL_CUDA_CALL(cudaSetDevice(device_id_));
   if (!raw_alloc_enable_unified_memory_) {
-    CUDA_CALL(cudaMalloc(&ptr, nbytes));
+    COL_CUDA_CALL(cudaMalloc(&ptr, nbytes));
   } else {
-    CUDA_CALL(cudaMallocManaged(&ptr, nbytes));
+    COL_CUDA_CALL(cudaMallocManaged(&ptr, nbytes));
   }
   return std::shared_ptr<PoolEntry>(
       new PoolEntry{ptr, nbytes, mtype}, [this](PoolEntry *entry) {
-        CUDA_CALL(cudaSetDevice(this->device_id_));
-        CUDA_CALL(cudaFree(entry->addr));
+        COL_CUDA_CALL(cudaSetDevice(this->device_id_));
+        COL_CUDA_CALL(cudaFree(entry->addr));
         delete entry;
       });
 }

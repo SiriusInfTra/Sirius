@@ -11,7 +11,7 @@
 namespace torch_col {
   
 void TorchColInit(int train_rank, int train_world_size) {
-  NVML_CALL(nvmlInit());
+  COL_NVML_CALL(nvmlInit());
   TorchColConfig::InitConfig(train_rank, train_world_size);
 
   colserve::sta::DeviceManager::Init();

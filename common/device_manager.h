@@ -8,6 +8,17 @@
 
 namespace colserve::sta {
 
+class DeviceGuard {
+ public:
+  DeviceGuard(int device_id);
+  ~DeviceGuard();
+  
+ private:
+  int prev_device_id_;
+  int device_id_;
+};
+
+
 class DeviceManager {
  public:
   DeviceManager();
@@ -17,6 +28,7 @@ class DeviceManager {
   static int GetNumVisibleGpu();
   static int GetGpuSystemId(int gpu_id);
   static const std::string& GetGpuSystemUuid(int gpu_id);
+  static int GetCurrentDevice();
   
  private:
   static std::unique_ptr<DeviceManager> device_manager_;

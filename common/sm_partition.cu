@@ -345,10 +345,10 @@ __global__ void get_sm_mask(int* buffer) {
 
 std::string SMPartitioner::CheckStreamSM(CUstream s) {
   int* mask = nullptr;
-  CUDA_CALL(cudaMallocHost(&mask, 1024 * sizeof(int)));
+  COL_CUDA_CALL(cudaMallocHost(&mask, 1024 * sizeof(int)));
 
   get_sm_mask<<<1024, 1, 0, s>>>(mask);
-  CUDA_CALL(cudaStreamSynchronize(s));
+  COL_CUDA_CALL(cudaStreamSynchronize(s));
 
   std::set<int> used_sms;
   for (int i = 0; i < 1024; i++) {
@@ -360,7 +360,7 @@ std::string SMPartitioner::CheckStreamSM(CUstream s) {
     ss << sm << " ";
   }
 
-  CUDA_CALL(cudaFreeHost(mask));
+  COL_CUDA_CALL(cudaFreeHost(mask));
   return ss.str();
 }
 
