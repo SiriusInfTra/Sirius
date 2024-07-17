@@ -49,6 +49,7 @@ if (NOT grpc_POPULATED)
 endif()
 
 include(cmake/glog.cmake)
+
 # find_package(glog REQUIRED)
 # add_definitions(-DDMLC_USE_GLOG)
 
@@ -108,6 +109,7 @@ add_library(proto ${proto_srcs} ${proto_hdrs} ${grpc_srcs} ${grpc_hdrs})
 target_link_libraries(proto ${_REFLECTION} ${_GRPC_GRPCPP} ${_PROTOBUF_LIBPROTOBUF} )
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/mpool)
+include(cmake/xsched.cmake)
 
 add_subdirectory(common)
 add_subdirectory(server)
@@ -130,8 +132,6 @@ add_executable(busy_loop_launcher
 )
 target_link_libraries(busy_loop_launcher grpc++ proto glog::glog CLI11::CLI11)
 
-
-include(cmake/xsched.cmake)
 
 # add_subdirectory(python)
 add_subdirectory(pytorch)

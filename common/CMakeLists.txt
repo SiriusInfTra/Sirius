@@ -9,9 +9,13 @@ add_library(sta SHARED
   device_manager.cc
   sm_partition.cu
   sm_partition.cc
+  xsched_ctrl.cc
 )
 
-target_include_directories(sta PUBLIC "../")
+target_include_directories(sta PUBLIC 
+  "../"
+  ${XSCHED_INCLUDE_DIR})
+target_link_directories(sta PUBLIC ${XSCHED_LIBRARY_DIR})
 # target_include_directories(sta PUBLIC "../" ${TORCH_INCLUDE_DIRS})
 target_link_libraries(sta PUBLIC 
   pages_pool 
@@ -20,4 +24,6 @@ target_link_libraries(sta PUBLIC
   CUDA::cudart 
   CUDA::cuda_driver 
   CUDA::nvml
-  ${TORCH_LIBRARIES})
+  ${TORCH_LIBRARIES}
+  ${XSCHED_LIBRARIES})
+

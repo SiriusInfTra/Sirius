@@ -13,7 +13,6 @@ add_library(new_torch_col SHARED
   torch_col/csrc/util.cc
   torch_col/csrc/config.cc
   torch_col/csrc/fake_engine.cc
-  torch_col/csrc/xsched.cc
   torch_col/csrc/init.cc
 )
 
@@ -43,7 +42,6 @@ target_link_libraries(new_torch_col PRIVATE
   ${TORCH_LIBRARIES}
   ${torch_python_lib}
   Python::Python
-  PySched
 )
 
 set_target_properties(new_torch_col PROPERTIES BUILD_RPATH $ORIGIN)

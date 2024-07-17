@@ -1,12 +1,12 @@
 #include <common/log_as_glog_sta.h>
 #include <common/cuda_allocator.h>
+#include <common/xsched_ctrl.h>
 
 #include <torch_col/csrc/control_stub.h>
 #include <torch_col/csrc/config.h>
 #include <torch_col/csrc/util.h>
 #include <torch_col/csrc/fake_engine.h>
 
-#include <PySched.h>
 #include <cstddef>
 
 
@@ -216,9 +216,12 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
             // TODO: better cancel kernel launch
             std::unique_lock step_lock{step_mutex_};
             auto t1 = torch_col::get_unix_timestamp();
-            SetBlockCudaCalls_v2(true);
-            size_t remove = AbortStream();
-            cudaStream_t stream = reinterpret_cast<cudaStream_t>(GetRegisteredGlobalStream());
+            // SetBlockCudaCalls_v2(true);
+            // size_t remove = AbortStream();
+            colserve::sta::xsched::SetRejectCudaCalls(true);
+            size_t remove = colserve::sta::xsched::AbortStream();
+            cudaStream_t stream = reinterpret_cast<cudaStream_t>(
+                colserve::sta::xsched::GetRegisteredGlobalStream());
             CHECK(reinterpret_cast<uint64_t>(stream) != 0);
             auto err = cudaStreamSynchronize(stream);
             CHECK_EQ(err, cudaSuccess) << "cudaStreamSynchronize failed: " << cudaGetErrorString(err);
@@ -280,7 +283,8 @@ void ColocateStub::ColocateAdjustL1Done() {
     status_event_mq_->Put({cmd_id_, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1Done)});
     cmd_ = -1;
     cmd_id_ = 0;
-    SetBlockCudaCalls_v2(false);
+    // SetBlockCudaCalls_v2(false);
+    colserve::sta::xsched::SetRejectCudaCalls(false);
     // colserve::sta::CUDAMemPool::EnableTrainAlloc();
     StubProfiler::RecordAdjustDone();
     LOG(INFO) << "[ColocateStub] Adjust L1 done, timestamp: " << torch_col::get_unix_timestamp();

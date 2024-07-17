@@ -47,12 +47,9 @@ cdef extern from "<common/device_manager.h>" namespace "colserve::sta":
         void Init()
 
 
-cdef extern from "<torch_col/csrc/xsched.h>" namespace "torch_col":
-    cpdef void InitSMPartition()
-
-
 cdef extern from "<torch_col/csrc/init.h>" namespace "torch_col":
     cpdef void TorchColInit(int, int)
+    cpdef void InitSMPartition()
 
 
 class HookMode(Enum):
@@ -241,6 +238,10 @@ def rearrange_memory():
 #############################
 #  MARK: GPU SM Management  #
 #############################
+
+cdef extern from "<common/xsched_ctrl.h>" namespace "colserve::sta::xsched":
+    cpdef unsigned long RegisterStream(unsigned long stream)
+
 
 cdef extern from "<common/sm_partition.h>" namespace "colserve":
     cdef cppclass SMPartitioner:

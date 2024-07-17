@@ -80,13 +80,17 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
 
   
   auto config_head = (boost::format(
-      "================ TORCH_COL CONFIG [Rank %d] ================") % train_rank).str();
+      "================ TORCH_COL CONFIG [Rank %d PID %d] ================") 
+        % train_rank % getpid()).str();
 
   config_ss << config_head << std::endl;
   config_ss << "TorchColConfig::rank=" << train_rank 
             << "|world_size=" << train_world_size << std::endl;;
   config_ss << "TorchColConfig::use_shared_tensor=" << use_shared_tensor << std::endl;
-  config_ss << "TorchColConfig::colocate_use_xsched=" << colocate_use_xsched << std::endl;
+  config_ss << "TorchColConfig::colocate_use_xsched=" << colocate_use_xsched 
+            << "|LD_LIBRARY_PATh=" 
+            << (getenv("LD_LIBRARY_PATH") != nullptr ? getenv("LD_LIBRARY_PATH") : "")
+            << std::endl;
   config_ss << "TorchColConfig::kill_batch_on_recv=" << kill_batch_on_recv << std::endl;
   config_ss << "TorchColConfig::has_colocated_infer_server=" << has_colocated_infer_server << std::endl;
   config_ss << "TorchColConfig::has_shared_tensor_server=" << has_shared_tensor_server << std::endl;

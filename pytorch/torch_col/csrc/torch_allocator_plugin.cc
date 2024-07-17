@@ -19,6 +19,9 @@ namespace cuda {
 
 namespace CUDAColAllocator {
 
+// only aim for debug
+#define IGNORE_RECORD_STREAM 1
+
 using namespace colserve;
 
 std::shared_ptr<CUDAColAllocator> CUDAColAllocator::cuda_col_allocator_ = nullptr;
@@ -202,6 +205,10 @@ void CUDAColAllocator::recordStream(const c10::DataPtr& ptr, streamType stream) 
   // LOG(WARNING) << "do nothing, due to single stream assumption"
   //              << " ptr " << ptr.get() << " stream " << stream.stream();
   // return ;
+#if IGNORE_RECORD_STREAM
+  return;
+#endif
+
   if (!ptr.get()) {
     return;
   }
@@ -328,7 +335,7 @@ void CUDAColAllocator::ReleaseIntermMemory() {
         // since we hold lock, we should not release storage inplace
         plan_release_storage.emplace_back(tensor_ptr->storage());
         DLOG(INFO) << "ReleaseIntermMemory " << ptr 
-                    << "  release success, nbytes = " << tensor_ptr->storage().nbytes();
+                   << "  release success, nbytes = " << tensor_ptr->storage().nbytes();
         break;
       } else {
         DLOG(INFO) << "ReleaseIntermMemory " << ptr << " already release.";
