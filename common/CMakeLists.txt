@@ -15,8 +15,7 @@ add_library(sta SHARED
 target_include_directories(sta PUBLIC 
   "../"
   ${XSCHED_INCLUDE_DIR})
-target_link_directories(sta PUBLIC ${XSCHED_LIBRARY_DIR})
-# target_include_directories(sta PUBLIC "../" ${TORCH_INCLUDE_DIRS})
+  
 target_link_libraries(sta PUBLIC 
   pages_pool 
   allocator 

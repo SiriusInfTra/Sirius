@@ -3,6 +3,8 @@
 include "./ctrl_stub.pxi"
 
 from libcpp.string cimport string
+from libcpp.optional cimport optional, nullopt_t, make_optional
+from libc.stdint cimport uint64_t
 from enum import Enum
 
 ############################
@@ -240,7 +242,11 @@ def rearrange_memory():
 #############################
 
 cdef extern from "<common/xsched_ctrl.h>" namespace "colserve::sta::xsched":
-    cpdef unsigned long RegisterStream(unsigned long stream)
+    cpdef uint64_t RegisterStream(uint64_t stream)
+    cpdef void UnRegisterStream()
+    cdef uint64_t GetXQueueSize(optional[uint64_t] stream)
+    cpdef uint64_t AbortStream()
+    cpdef int SyncStream()
 
 
 cdef extern from "<common/sm_partition.h>" namespace "colserve":
@@ -252,7 +258,14 @@ cdef extern from "<common/sm_partition.h>" namespace "colserve":
         @staticmethod
         int GetTrainAvailTpcNum()
         @staticmethod
-        unsigned long long GetTrainAvailTpcMask()
+        uint64_t GetTrainAvailTpcMask()
+
+
+def GetXQueueSize_(stream):
+    cdef optional[uint64_t] stream_opt
+    if stream is not None:
+        stream_opt = make_optional[uint64_t](<uint64_t> stream)
+    return GetXQueueSize(stream_opt)
 
 
 def monitor_sm_partition(interval: float):

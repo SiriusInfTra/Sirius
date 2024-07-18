@@ -23,8 +23,9 @@ uint64_t RegisterStream(uint64_t stream) {
   global_stream = stream;
   global_stream_handle = CudaXQueueCreate(cuda_stream, 
       PREEMPT_MODE_STOP_SUBMISSION, 16, 8);
-  LOG(INFO) << "Xsched register stream " << stream 
-            << " with global handle: " << global_stream_handle;
+  LOG(INFO) << std::hex
+            << "Xsched register stream 0x" << stream 
+            << " with global handle: 0x" << global_stream_handle;
   return global_stream_handle;
 }
 
@@ -53,26 +54,27 @@ size_t AbortStream() {
   return xqueue->Clear(remove_filter);
 }
 
-bool SyncStream() {
+int SyncStream() {
   return CudaXQueueSync(global_stream_handle);
 }
 
-size_t GetXQueueSize() {
-  auto xqueue = CudaXQueueGet(global_stream_handle);
+size_t GetXQueueSize(std::optional<uint64_t> stream) {
+  auto stream_handle = stream.value_or(global_stream_handle);
+  auto xqueue = CudaXQueueGet(stream_handle);
   CHECK(xqueue != nullptr) << "Required xqueue is not NULL, global_stream_handle=" 
                            << global_stream_handle;
   return xqueue->GetSize();
 }
 
-bool QueryRejectCudaCalls() {
+int QueryRejectCudaCalls() {
   return CudaXQueueQueryReject();
 }
 
-void SetRejectCudaCalls(bool reject) {
+void SetRejectCudaCalls(int reject) {
   CudaXQueueSetReject(reject);
 }
 
-bool RegisterCudaKernelLaunchPreHook(std::function<void*()> fn) {
+int RegisterCudaKernelLaunchPreHook(std::function<void*()> fn) {
   using CudaKernelLaunchCommand = ::xsched::hal::cuda::CudaKernelLaunchCommand;
   return CudaKernelLaunchCommand::RegisterCudaKernelLaunchPreHook(fn);
 }

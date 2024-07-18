@@ -1,8 +1,7 @@
-# from contextlib import contextmanager
-# from typing import Optional
+from contextlib import contextmanager
+from typing import Optional
 import torch
 from torch.cuda import Stream
-# import ctypes
 import torch_col
 
 # __pysched_dll = ctypes.CDLL('libPySched.so', mode=ctypes.RTLD_LOCAL)
@@ -69,3 +68,35 @@ import torch_col
 
 def register_stream(stream: Stream):
     return torch_col.RegisterStream(stream.cuda_stream)
+
+
+def unregister_stream():
+    torch_col.UnRegisterStream()
+
+
+def get_xqueue_size(stream: Optional[Stream] = None) -> int:
+    cuda_stream = stream.cuda_stream if stream is not None else None
+    return torch_col.GetXQueueSize_(cuda_stream)
+
+
+def initial_kill_batch(epoch, batch, stream: Optional[Stream] = None):
+    if epoch == 0 and batch == 0:
+        t1 = torch_col.get_unix_timestamp()
+        if stream is None:
+            stream = torch.cuda.current_stream()
+        num_cmds = torch_col.AbortStream()
+        stream.synchronize()
+        t2 = torch_col.get_unix_timestamp()
+        print(f'initial_kill_batch cost {t2 - t1} ms, num_cmds={num_cmds}')
+
+
+def kill_batch(stream: Optional[Stream] = None):
+    # if torch_col.kill_batch_on_recv():
+    #     return
+    t1 = torch_col.get_unix_timestamp()
+    if stream is None:
+        stream = torch.cuda.current_stream()
+    num_cmds = torch_col.AbortStream()
+    stream.synchronize()
+    t2 = torch_col.get_unix_timestamp()
+    print(f'kill batch cost {t2 - t1} ms, num_cmds={num_cmds}')

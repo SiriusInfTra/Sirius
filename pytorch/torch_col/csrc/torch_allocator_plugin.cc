@@ -20,7 +20,7 @@ namespace cuda {
 namespace CUDAColAllocator {
 
 // only aim for debug
-#define IGNORE_RECORD_STREAM 1
+#define IGNORE_RECORD_STREAM 0
 
 using namespace colserve;
 

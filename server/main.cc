@@ -199,6 +199,11 @@ void init_config() {
     LOG(FATAL) << "Dynamic partition SM must work with xsched";
   }
 
+  std::string header = str(boost::format("%s COLSERVE CONFIG [PID %d] %s") 
+                           % std::string(16, '=')
+                           % getpid()
+                           % std::string(16, '='));
+  std::cerr << header << std::endl;
   STREAM_OUTPUT(serve_mode);
   STREAM_OUTPUT(use_shared_tensor);
   STREAM_OUTPUT(use_shared_tensor_infer);
@@ -220,7 +225,7 @@ void init_config() {
   STREAM_OUTPUT(dynamic_sm_partition);
   STREAM_OUTPUT(colocate_config.skip_malloc);
   STREAM_OUTPUT(colocate_config.skip_loading);
-
+  std::cerr << std::string(header.size(), '=') << std::endl;
 }
 
 void Shutdown(int sig) {
