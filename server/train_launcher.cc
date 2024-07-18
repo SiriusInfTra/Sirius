@@ -20,7 +20,6 @@
 #include <chrono>
 
 
-
 namespace colserve {
 
 std::unique_ptr<TrainLauncher> TrainLauncher::train_launcher_;

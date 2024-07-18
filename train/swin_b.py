@@ -1,18 +1,36 @@
 import torch
 from torch import nn
+import torch_col.xsched
 from torchvision import models
 from torch.utils.data import DataLoader
 import argparse
 import sys
 
 import torch_col
-torch_col.torch_col_init(0)
+torch_col.torch_col_init()
 
 from torch_col import MemoryPool, EventManager, TrainMode, HookMode
 from torch_col import ColocateAdjustL1Exception, SwitchL1Exception
 from torch_col import CustomeDynamicBatchDataset
 import train_valiation
 from typing import Optional
+
+
+def setup():
+    train_valiation.val_begin()
+    stream = torch.cuda.Stream()
+    if torch_col.is_enable_xsched():
+        torch_col.xsched.register_stream(stream)
+        print("CUDA Stream create with xsched registered.")
+    else:
+        print("CUDA Stream create without xsched.")
+    torch.cuda.set_stream(stream)
+
+def cleanup():
+    if torch_col.is_enable_xsched():
+        torch_col.xsched.unregister_stream()
+    train_valiation.val_end()
+
 
 def train(train_mode: TrainMode, hook_mode: HookMode, 
           num_epoch: int, batch_size: int, global_batch_size: Optional[int] = None):
@@ -115,7 +133,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
                     raise RuntimeError("micro batch 0 could not be interrupted.")
                 # for fast develop, should merge to hook.py
                 if isinstance(e, torch_col.EngineColocateAdjustL1Exception):
-                    xsched.kill_batch()
+                    torch_col.xsched.kill_batch()
                 killed_batch += 1
                 total_killed_batch += 1
                 train_dataset.cancel_micro_batch()
@@ -132,8 +150,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
                     if torch_col.is_enable_shared_tensor():
                         torch_col.tag_model_end()
             if hook_mode.use_xsched():
-                from torch_col import xsched
-                xsched.initial_kill_batch(epoch, i)
+                torch_col.xsched.initial_kill_batch(epoch, i)
         EventManager.record_event('', epoch_event)
 
         mem_info = f'mem {MemoryPool.get_memory_usage():.2f}Gb'
@@ -181,18 +198,10 @@ def main():
     
 
     print(f"Swin Transformer training, batch-size={batch_size}, num-epoch={num_epoch}, train-mode={train_mode}, hook-mode={hook_mode}.")
-    train_valiation.val_begin()
-    stream = torch.cuda.Stream()
-    # if hook_mode.use_xsched():
-    if torch_col.is_enable_xsched():
-        from torch_col import xsched
-        xsched.register_stream(stream)
-        print("CUDA Stream create with xsched registered.")
-    else:
-        print("CUDA Stream create without xsched.")
-    with torch.cuda.stream(stream):
-        train(train_mode, hook_mode, num_epoch, batch_size, global_batch_size=global_batch_size)
-    train_valiation.val_end()
+    
+    setup()
+    train(train_mode, hook_mode, num_epoch, batch_size, global_batch_size=global_batch_size)
+    cleanup()
     EventManager.dump(args.train_profile, train_mode)
 
 if __name__ == '__main__':
