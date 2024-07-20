@@ -70,8 +70,6 @@ class Controller {
   std::vector<std::unique_ptr<MemoryQueue<ctrl::CtrlMsgEntry>>> train_status_mqs_, 
                                                                 train_cmd_mqs_;
 
-
-  
   // switch mode
   std::mutex wait_train_mutex_, wait_infer_mutex_;
   std::condition_variable wait_train_cv_, wait_infer_cv_;

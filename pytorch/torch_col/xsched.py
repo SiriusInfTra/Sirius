@@ -67,7 +67,10 @@ import torch_col
 
 
 def register_stream(stream: Stream):
-    return torch_col.RegisterStream(stream.cuda_stream)
+    torch_col.RegisterStream(stream.cuda_stream)
+
+    if torch_col.is_enable_dynamic_sm_partition():
+        torch_col._C.InitSMPartition()
 
 
 def unregister_stream():

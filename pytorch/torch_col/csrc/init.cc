@@ -35,7 +35,8 @@ void InitSMPartition() {
     return ;
   }  
 
-  colserve::SMPartitioner::Init(0, !TorchColConfig::has_colocated_infer_server, false);
+  colserve::SMPartitioner::Init(
+      0, !TorchColConfig::has_colocated_infer_server, false);
 
   auto stream = reinterpret_cast<cudaStream_t>(
     colserve::sta::xsched::GetRegisteredGlobalStream());
@@ -57,7 +58,6 @@ void InitSMPartition() {
   }
   LOG(INFO) << "[PySched] init_sm_partition done";
 }
-
 
 
 } // namespace torch_col

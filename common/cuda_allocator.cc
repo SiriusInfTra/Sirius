@@ -1,7 +1,8 @@
-#include "log_as_glog_sta.h"
+#include <common/log_as_glog_sta.h>
 #include <common/cuda_allocator.h>
 #include <common/util.h>
 #include <common/device_manager.h>
+
 #include <mpool/mapping_region.h>
 #include <mpool/mem_block.h>
 #include <mpool/caching_allocator.h>
