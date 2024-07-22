@@ -104,6 +104,10 @@ inline std::string GetDefaultShmNamePrefix(int device_id) {
                                           .str();
 }
 
+inline std::string GetDefaultShmNamePrefix() {
+  return (boost::format("colserve_%s") % getuid()).str();
+}
+
 } // namespace colserve
 
 

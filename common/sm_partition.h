@@ -4,6 +4,7 @@
 #include <common/util.h>
 #include <boost/interprocess/managed_shared_memory.hpp>
 
+#include <atomic>
 #include <thread>
 
 namespace colserve {

@@ -486,7 +486,7 @@ class HyperWorkload:
     def _launch(self, server: System, launcher: str, custom_args: List[str] = [], **kwargs):
         assert server is not None
         cmd = [
-            f"./{get_binary_dir()}/{launcher}",
+            f"./{get_binary_dir()}/client/{launcher}",
             "-p", server.port,
             "-c", str(self.concurrency),
         ]
