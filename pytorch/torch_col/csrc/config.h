@@ -49,6 +49,7 @@ class TorchColConfig {
 
   static inline int GetTrainRank() { return train_rank; }
   static inline void SetTrainRank(int rank) { train_rank = rank; }
+  static inline int IsTrainMaster() { return train_rank == 0; }
   static inline int GetTrainWorldSize() { return train_world_size; }
   static inline void SetTrainWorldSize(int size) { train_world_size = size; }
 };

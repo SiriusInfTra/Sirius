@@ -15,6 +15,7 @@ struct InferInfo {
 };
 
 struct TrainInfo {
+  pid_t train_pid;
   int batch_size;
 
 };

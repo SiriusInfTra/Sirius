@@ -10,11 +10,41 @@
 namespace colserve {
 namespace ctrl {
 
+std::ostream& operator<<(std::ostream&os, ctrl::CtrlEvent event) {
+  switch (event) {
+  // status event
+  case ctrl::CtrlEvent::kTrainStart:
+    os << "ctrl::CtrlEvent::kTrainStart"; 
+    return os;
+  case ctrl::CtrlEvent::kTrainEnd:
+    os << "ctrl::CtrlEvent::kTrainEnd"; 
+    return os;
+  case ctrl::CtrlEvent::kInterruptTrainDone:
+    os << "ctrl::CtrlEvent::kInterruptTrainDone";
+    return os;
+  case ctrl::CtrlEvent::kResumeTrainDone:
+    os << "ctrl::CtrlEvent::kResumeTrainDone";
+    return os;
+
+  // cmd event
+  case ctrl::CtrlEvent::kInterruptTrain:
+    os << "ctrl::CtrlEvent::kInterruptTrain";
+    return os;
+  case ctrl::CtrlEvent::kResumeTrain:
+    os << "ctrl::CtrlEvent::kResumeTrain";
+    return os;
+  default:
+    LOG(FATAL) << "unknown ctrl::CtrlEvent";
+    return os;
+  }
+}
+
+
 InfTraMessageQueue::InfTraMessageQueue(bool is_server,
                                        int train_world_size, 
                                        bip::managed_shared_memory &bip_shm,
                                        bip::scoped_lock<bip_mutex> &lock) 
-    : bip_shm_(bip_shm) {
+    : message_queue_num_(train_world_size), bip_shm_(bip_shm) {
   if (is_server) {
     for (int i = 0; i < static_cast<int>(Direction::kNumDirection); i++) {
       for (int j = 0; j < train_world_size; j++) {
@@ -28,7 +58,12 @@ InfTraMessageQueue::InfTraMessageQueue(bool is_server,
         inf_tra_mq_conds_[i][j] = bip_shm_.find_or_construct<bip_cond>
             (GetMqCondName(static_cast<Direction>(i), j).c_str())();
       }
+      inf_tra_mq_group_muts_[i] = bip_shm_.find_or_construct<bip_mutex>
+          (GetMqGroupMutexName(static_cast<Direction>(i)).c_str())();
+      inf_tra_mq_group_conds_[i] = bip_shm_.find_or_construct<bip_cond>
+          (GetMqGroupCondName(static_cast<Direction>(i)).c_str())();
     }
+
   } else {
     for (int i = 0; i < static_cast<int>(Direction::kNumDirection); i++) {
       for (int j = 0; j < train_world_size; j++) {
@@ -41,6 +76,10 @@ InfTraMessageQueue::InfTraMessageQueue(bool is_server,
         inf_tra_mq_conds_[i][j] = bip_shm_.find<bip_cond>
             (GetMqCondName(static_cast<Direction>(i), j).c_str()).first;
       }
+      inf_tra_mq_group_muts_[i] = bip_shm_.find<bip_mutex>
+          (GetMqGroupMutexName(static_cast<Direction>(i)).c_str()).first;
+      inf_tra_mq_group_conds_[i] = bip_shm_.find<bip_cond>
+          (GetMqGroupCondName(static_cast<Direction>(i)).c_str()).first;
     }
   }
 }
@@ -50,6 +89,7 @@ CtrlMsgEntry InfTraMessageQueue::BlockGet(Direction direction, int id) {
       lock{*inf_tra_mq_muts_[static_cast<int>(direction)][id]};
 
   auto inf_tra_mq = inf_tra_mqs_[static_cast<int>(direction)][id];
+  CHECK(inf_tra_mq != nullptr); 
 
   inf_tra_mq_conds_[static_cast<int>(direction)][id]->wait(lock, 
       [=]() { return !inf_tra_mq->empty(); });
@@ -59,11 +99,14 @@ CtrlMsgEntry InfTraMessageQueue::BlockGet(Direction direction, int id) {
   return ret;
 }
 
-bool InfTraMessageQueue::TryGet(CtrlMsgEntry &msg, Direction direction, int id) {
+bool InfTraMessageQueue::TryGet(Direction direction, int id,
+                                CtrlMsgEntry &msg) {
   bip::scoped_lock<bip_mutex>
       lock{*inf_tra_mq_muts_[static_cast<int>(direction)][id]};
   
   auto inf_tra_mq = inf_tra_mqs_[static_cast<int>(direction)][id];
+  CHECK(inf_tra_mq != nullptr);
+
   if (inf_tra_mq->empty()) {
     return false;
   }
@@ -73,12 +116,15 @@ bool InfTraMessageQueue::TryGet(CtrlMsgEntry &msg, Direction direction, int id) 
   return true;
 }
 
-bool InfTraMessageQueue::TimedGet(CtrlMsgEntry &msg, uint32_t timeout_ms, 
-                                  Direction direction, int id) {
+bool InfTraMessageQueue::TimedGet(uint32_t timeout_ms, 
+                                  Direction direction, int id,
+                                  CtrlMsgEntry &msg) {
   bip::scoped_lock<bip_mutex>
       lock{*inf_tra_mq_muts_[static_cast<int>(direction)][id]};
   
   auto inf_tra_mq = inf_tra_mqs_[static_cast<int>(direction)][id];
+  CHECK(inf_tra_mq != nullptr);
+
   inf_tra_mq_conds_[static_cast<int>(direction)][id]->wait_for(lock, 
       std::chrono::milliseconds(timeout_ms),
       [=]() { return !inf_tra_mq->empty(); });
@@ -92,13 +138,73 @@ bool InfTraMessageQueue::TimedGet(CtrlMsgEntry &msg, uint32_t timeout_ms,
   return true;
 }
 
+std::pair<int, CtrlMsgEntry> 
+InfTraMessageQueue::BlockGetFromAny(Direction direction) {
+  bip::scoped_lock 
+      group_lock{*inf_tra_mq_group_muts_[static_cast<int>(direction)]};
+
+  inf_tra_mq_group_conds_[static_cast<int>(direction)]->wait(group_lock, 
+      [=]() {
+        for (int i = 0; i < this->message_queue_num_; i++) {
+          auto inf_tra_mq = inf_tra_mqs_[static_cast<int>(direction)][i];
+          CHECK(inf_tra_mq != nullptr);
+          if (!inf_tra_mq->empty()) { return true; }
+        }
+        return false;
+      });
+
+  for (int i = 0; i < this->message_queue_num_; i++) {
+    auto inf_tra_mq = inf_tra_mqs_[static_cast<int>(direction)][i];
+    CHECK(inf_tra_mq != nullptr);
+
+    bip::scoped_lock 
+        lock{*inf_tra_mq_muts_[static_cast<int>(direction)][i]};
+    if (!inf_tra_mq->empty()) {
+      auto ret = std::make_pair(i, inf_tra_mq->front());
+      inf_tra_mq->pop_front();
+      return ret;
+    }
+  }
+
+  LOG(FATAL) << "should not reach here";
+  return {};
+}
+
 void InfTraMessageQueue::Put(CtrlMsgEntry msg, Direction direction, int id) {
   bip::scoped_lock<bip_mutex>
       lock{*inf_tra_mq_muts_[static_cast<int>(direction)][id]};
 
   auto inf_tra_mq = inf_tra_mqs_[static_cast<int>(direction)][id];
+  CHECK(inf_tra_mq != nullptr);
+
   inf_tra_mq->push_back(msg);
   inf_tra_mq_conds_[static_cast<int>(direction)][id]->notify_one();
+  inf_tra_mq_group_conds_[static_cast<int>(direction)]->notify_one();
+}
+
+void InfTraMessageQueue::PutAll(CtrlMsgEntry msg, Direction direction) {
+  for (int i = 0; i < message_queue_num_; i++) {
+    bip::scoped_lock
+      lock{*inf_tra_mq_muts_[static_cast<int>(direction)][i]};
+
+    auto inf_tra_mq = inf_tra_mqs_[static_cast<int>(direction)][i];
+    CHECK(inf_tra_mq != nullptr);
+    inf_tra_mq->push_back(msg);
+    inf_tra_mq_conds_[static_cast<int>(direction)][i]->notify_one();
+  }
+  inf_tra_mq_group_conds_[static_cast<int>(direction)]->notify_one();
+}
+
+void InfTraMessageQueue::Clear() {
+  for (int i = 0; i < static_cast<int>(Direction::kNumDirection); i++) {
+    for (int j = 0; j < message_queue_num_; j++) {
+      bip::scoped_lock<bip_mutex>
+          lock{*inf_tra_mq_muts_[i][j]};
+      auto inf_tra_mq = inf_tra_mqs_[i][j];
+      CHECK(inf_tra_mq != nullptr);
+      inf_tra_mq->clear();
+    }
+  }
 }
 
 std::string InfTraMessageQueue::GetMqName(Direction direction, int id) {
@@ -134,6 +240,30 @@ std::string InfTraMessageQueue::GetMqCondName(Direction direction, int id) {
   default:
     LOG(FATAL) << "unknown Inf-Tra MQ direction " << static_cast<int>(direction);
     return ""; 
+  }
+}
+
+std::string InfTraMessageQueue::GetMqGroupMutexName(Direction direction) {
+  switch (direction) {
+  case Direction::kInf2Tra:
+    return "inf2tra-mq-group-mut";
+  case Direction::kTra2Inf:
+    return "tra2inf-mq-group-mut";
+  default:
+    LOG(FATAL) << "unknown Inf-Tra MQ direction " << static_cast<int>(direction);
+    return "";
+  }
+}
+
+std::string InfTraMessageQueue::GetMqGroupCondName(Direction direction) {
+  switch (direction) {
+  case Direction::kInf2Tra:
+    return "inf2tra-mq-group-cond";
+  case Direction::kTra2Inf:
+    return "tra2inf-mq-group-cond";
+  default:
+    LOG(FATAL) << "unknown Inf-Tra MQ direction " << static_cast<int>(direction);
+    return "";
   }
 }
 

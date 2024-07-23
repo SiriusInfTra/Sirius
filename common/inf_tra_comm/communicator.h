@@ -10,12 +10,12 @@ namespace ctrl {
 
 class InfTraCommunicator {
  public:
-  static void Init(bool is_server, bool cleanup, int training_world_size);
+  static void Init(bool is_server, bool cleanup, int train_world_size);
   static InfTraMessageQueue* GetMQ();
   static InfTraInfoBoard* GetIB();
 
   InfTraCommunicator(const std::string &shm_name, bool is_server, 
-                     bool cleanup, int training_world_size);
+                     bool cleanup, int train_world_size);
   ~InfTraCommunicator();
 
  private:
