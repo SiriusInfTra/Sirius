@@ -23,6 +23,13 @@ InfTraMessageQueue* InfTraCommunicator::GetMQ() {
   return communicator_->message_queue_.get();
 }
 
+InfTraInfoBoard* InfTraCommunicator::GetIB() {
+  if (communicator_ == nullptr) {
+    LOG(FATAL) << "InfTraCommunicator has not been initialized.";
+  }
+  return communicator_->info_board_.get();
+}
+
 InfTraCommunicator::InfTraCommunicator(const std::string &shm_name, 
                                        bool is_server, bool cleanup,
                                        int train_world_size)

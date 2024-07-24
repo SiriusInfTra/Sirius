@@ -229,7 +229,7 @@ class Profiler {
   // item -> [time stamp, value]
   std::unordered_map<int, std::vector<perf_entity_t>> perf_info_; 
 
-  InferStat infer_stat_;
+  InferStat infer_stat_{0};
 
   std::mutex infer_info_mut_, event_info_mut_, 
              perf_info_mut_, infer_stat_mut_;

@@ -4,8 +4,11 @@ include "./ctrl_stub.pxi"
 
 from libcpp.string cimport string
 from libcpp.optional cimport optional, nullopt_t, make_optional
+from libcpp.functional cimport function
+from posix.unistd cimport pid_t
 from libc.stdint cimport uint64_t
 from enum import Enum
+import os
 
 ############################
 #  MARK: Torch Col Config  #
@@ -15,6 +18,8 @@ cdef extern from "<torch_col/csrc/config.h>" namespace "torch_col":
     cdef cppclass TorchColConfig:
         @staticmethod
         void InitConfig()
+        @staticmethod
+        bint HasColocatedInferServer()
         @staticmethod
         bint IsEnableSharedTensor()
         @staticmethod
@@ -322,8 +327,11 @@ cdef extern from "<common/inf_tra_comm/communicator.h>" namespace "colserve::ctr
 
 
     cdef cppclass InfTraInfoBoard:
-        pass
-
+        void SetTrainInfo(int id, function fn)
+        void SetTrainInfo(int id, optional[pid_t] pid,
+                          optional[int] rank, optional[int] world_size,
+                          optional[int] init_batch_size, 
+                          optional[int] current_batch_size)
 
     cdef cppclass InfTraCommunicator:
         @staticmethod
@@ -356,7 +364,6 @@ cdef class PyCtrlMsgEntry:
         return "PyCtrlMsgEntry(id={}, event={}, value={})".format(self.id, str(self.event), self.value)
 
 
-
 cdef class PyInfTraCommunicator:
     initialzed = False
 
@@ -365,6 +372,38 @@ cdef class PyInfTraCommunicator:
         PyInfTraCommunicator.initialzed = True
 
 
+def init_train_info(init_batch_size, 
+                    current_batch_size,
+                    pid = None):
+    if not TorchColConfig.HasColocatedInferServer():
+        print("There not exist colocated infer server, skip init train info")
+        return
+
+    cdef optional[pid_t] pid_opt
+    if pid is not None:
+        pid_opt = make_optional[pid_t](<pid_t> pid)
+    else:
+        pid_opt = make_optional[pid_t](<pid_t> os.getpid())
+
+    InfTraCommunicator.GetIB().SetTrainInfo(
+        TorchColConfig.GetTrainRank(), pid_opt,
+        make_optional[int](TorchColConfig.GetTrainRank()), 
+        make_optional[int](TorchColConfig.GetTrainWorldSize()), 
+        make_optional[int](<int> init_batch_size), 
+        make_optional[int](<int> current_batch_size)
+    )
+
+
+def update_current_batch_size(current_batch_size):
+    if not TorchColConfig.HasColocatedInferServer():
+        return
+
+    InfTraCommunicator.GetIB().SetTrainInfo(
+        TorchColConfig.GetTrainRank(), 
+        optional[pid_t](), optional[int](), 
+        optional[int](), optional[int](), 
+        make_optional[int](<int> current_batch_size)
+    )
 
 ####################
 #  MARK: Utililty  #

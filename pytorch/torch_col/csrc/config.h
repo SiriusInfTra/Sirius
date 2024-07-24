@@ -32,6 +32,7 @@ class TorchColConfig {
   static void InitConfig(int train_rank, int train_world_size);
   static inline int IsConfigured() { return configured; }
 
+  static inline int HasColocatedInferServer() { return has_colocated_infer_server; }
   static inline int IsEnableSharedTensor() { return use_shared_tensor; }
   static inline std::string GetHookMode() { return hook_mode; }
   static inline int IsEnableXsched() { return colocate_use_xsched; }

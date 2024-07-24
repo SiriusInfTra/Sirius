@@ -49,6 +49,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
     print(f"Train after init memory pool usage: {MemoryPool.get_memory_usage() * 1024:.2f}M")
     
     hook = torch_col.get_hook(train_mode, hook_mode, num_epoch, batch_size)
+    torch_col.init_train_info(batch_size, batch_size)
     hook.register_pytorch_hook([model, criterion])
     checkpoint_micro_batch = hook.train_mode.is_kill_batch()
 

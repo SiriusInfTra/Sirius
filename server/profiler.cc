@@ -176,17 +176,19 @@ Profiler* Profiler::Get() {
 void Profiler::InferReqInc(uint64_t x) {
   CHECK(profiler_ != nullptr);
   std::unique_lock lock{profiler_->infer_stat_mut_};
-  profiler_->infer_stat_.num_requests++;
+  profiler_->infer_stat_.num_requests += x;
   ctrl::Controller::Get()->SetInferStatus(ctrl::InferStatus::kRunning);
 }
 
 void Profiler::InferRespInc(uint64_t x) {
   CHECK(profiler_ != nullptr);
   std::unique_lock lock{profiler_->infer_stat_mut_};
-  profiler_->infer_stat_.num_response++;
+  profiler_->infer_stat_.num_response += x;
   if (profiler_->infer_stat_.num_response == profiler_->infer_stat_.num_requests) {
     ctrl::Controller::Get()->SetInferStatus(ctrl::InferStatus::kIdle);
   }
+  // LOG(INFO) << "infer resp " << profiler_->infer_stat_.num_response
+  //           << " req " << profiler_->infer_stat_.num_requests;
 }
 
 Profiler::Profiler(const std::string &profile_log_path)
