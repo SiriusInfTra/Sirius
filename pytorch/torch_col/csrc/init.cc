@@ -56,7 +56,7 @@ void InitSMPartition() {
   if (!succ) {
     LOG(FATAL) << "[PySched] RegisterCudaKernelLaunchPreHook failed"; 
   }
-  LOG(INFO) << "[PySched] init_sm_partition done";
+  LOG(INFO) << "[TorchColInit] init_sm_partition done";
 }
 
 

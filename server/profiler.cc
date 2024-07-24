@@ -4,6 +4,7 @@
 #include <server/train_launcher.h>
 #include <server/profiler.h>
 #include <server/config.h>
+#include <server/control/controller.h>
 
 #include <common/cuda_allocator.h>
 #include <common/util.h>
@@ -172,6 +173,22 @@ Profiler* Profiler::Get() {
   return profiler_.get();
 }
 
+void Profiler::InferReqInc(uint64_t x) {
+  CHECK(profiler_ != nullptr);
+  std::unique_lock lock{profiler_->infer_stat_mut_};
+  profiler_->infer_stat_.num_requests++;
+  ctrl::Controller::Get()->SetInferStatus(ctrl::InferStatus::kRunning);
+}
+
+void Profiler::InferRespInc(uint64_t x) {
+  CHECK(profiler_ != nullptr);
+  std::unique_lock lock{profiler_->infer_stat_mut_};
+  profiler_->infer_stat_.num_response++;
+  if (profiler_->infer_stat_.num_response == profiler_->infer_stat_.num_requests) {
+    ctrl::Controller::Get()->SetInferStatus(ctrl::InferStatus::kIdle);
+  }
+}
+
 Profiler::Profiler(const std::string &profile_log_path)
     : profile_log_path_(profile_log_path), start_profile_(false) {
   if (Config::profile_gpu_smact) {
@@ -193,7 +210,8 @@ Profiler::Profiler(const std::string &profile_log_path)
   if (colserve::Config::check_mps) {
     uint32_t info_cnt = 0;
 #if !defined(USE_NVML_V3) || USE_NVML_V3 != 0
-    auto nvml_err = nvmlDeviceGetMPSComputeRunningProcesses_v3(device, &info_cnt, NULL);
+    auto nvml_err = nvmlDeviceGetMPSComputeRunningProcesses_v3(
+        device, &info_cnt, NULL);
     if (nvml_err == NVML_SUCCESS && info_cnt == 0) {
       LOG(FATAL) << "MPS is not enabled, please start MPS server by nvidia-cuda-mps-control";
     }
@@ -222,8 +240,8 @@ Profiler::Profiler(const std::string &profile_log_path)
       // DCGM_CALL(dcgmGroupGetInfo(this->dcgm_handle_, this->dcgm_gpu_grp_, &group_info));
       // LOG(INFO) << group_info.groupName << " " << group_info.count;
 
-      LOG(INFO) << sta::DeviceManager::GetGpuSystemId(0) 
-                << " " << sta::DeviceManager::GetGpuSystemUuid(0);
+      // LOG(INFO) << sta::DeviceManager::GetGpuSystemId(0) 
+      //           << " " << sta::DeviceManager::GetGpuSystemUuid(0);
       DCGM_CALL(dcgmGroupAddEntity(this->dcgm_handle_, this->dcgm_gpu_grp_, 
                                    DCGM_FE_GPU, sta::DeviceManager::GetGpuSystemId(0)));
       std::vector<uint16_t> field_ids;

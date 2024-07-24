@@ -3,7 +3,7 @@
 #include <server/model_store/infer_model.h>
 #include <server/model_store/model_cache.h>
 #include <server/train_launcher.h>
-#include <server/train_control/controller.h>
+#include <server/control/controller.h>
 #include <server/profiler.h>
 #include <server/config.h> 
 
@@ -195,13 +195,13 @@ bool InferModelStore::AddJob(const std::string &model_name,
     return false;
   }
 
-  Controller::Get()->InferRequestInc();
+  Profiler::InferReqInc();
   // InterruptTrain check whether to interrupt train
   if (Config::IsSwitchMode()) {
-    Controller::Get()->InterruptTrain();
+    ctrl::Controller::Get()->InterruptTrain();
     
     auto t0 = Profiler::Now();
-    Controller::Get()->WaitTrainNotRunning();
+    ctrl::Controller::Get()->WaitTrainNotRunning();
     auto wait_train_ms = Profiler::MilliFrom(t0);
     DLOG(INFO) << "[InferModelStore] [Task Switch] wait train " 
               << wait_train_ms << " ms";
@@ -323,7 +323,7 @@ void InferModelStore::ColocateMonitor() {
       }
     }
     for (int i = 0; i < sta::DeviceManager::GetNumVisibleGpu(); i++) {
-      if (num_exits[i] > 0) Controller::Get()->InferExit(i);
+      if (num_exits[i] > 0) ctrl::Controller::Get()->InferExit(i);
     }
     std::this_thread::sleep_for(10ms);
   }
@@ -335,10 +335,10 @@ void InferModelStore::TaskSwitchMonitor() {
   auto check_switch_unlock = [this](std::unique_lock<std::mutex> &lock) {
     DLOG(INFO) << "check switch " << this->task_switch_to_infer_
               << " " << this->num_infering_model_
-              << " " << Controller::Get()->IsInferIdle();
+              << " " << ctrl::Controller::Get()->IsInferIdle();
     return this->task_switch_to_infer_
         && this->num_infering_model_.load(std::memory_order_relaxed) == 0
-        && Controller::Get()->IsInferIdle();
+        && ctrl::Controller::Get()->IsInferIdle();
   };
 
   auto check_switch = [this, &check_switch_unlock]() {
@@ -382,7 +382,7 @@ void InferModelStore::TaskSwitchMonitor() {
       } else {
         LOG(INFO) << "[InferModelStore] [Task Switch] done, reclaim " << res << " models";
         Profiler::Get()->RecordPerf(Profiler::PerfItem::InferNumModelOnSwitch, res);
-        Controller::Get()->ResumeTrain();
+        ctrl::Controller::Get()->ResumeTrain();
         task_switch_to_infer_ = false;
       }
     }

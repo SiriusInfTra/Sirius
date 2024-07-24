@@ -39,7 +39,8 @@ enum class CtrlEvent {
   kNumEvent,
 };
 
-std::ostream& operator<<(std::ostream&os, ctrl::CtrlEvent event);
+std::ostream& operator<<(std::ostream &os, ctrl::CtrlEvent event);
+std::ostream& operator<<(std::ostream &os, ctrl::CtrlMsgEntry msg);
 
 
 class InfTraMessageQueue {
@@ -64,8 +65,8 @@ class InfTraMessageQueue {
   bool TimedGetFromAny(uint32_t timeout_ms, Direction direction, 
                        int &id, CtrlMsgEntry &msg);
 
-  void Put(CtrlMsgEntry msg, Direction direction, int id);
-  void PutAll(CtrlMsgEntry msg, Direction direction);
+  void Put(const CtrlMsgEntry &msg, Direction direction, int id);
+  void PutAll(const CtrlMsgEntry &msg, Direction direction);
 
   void Clear();
 

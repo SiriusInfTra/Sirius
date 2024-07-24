@@ -64,6 +64,9 @@ class Profiler {
     return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
   }
   static Profiler* Get();
+
+  static void InferReqInc(uint64_t x = 1);
+  static void InferRespInc(uint64_t x = 1);
   
   struct ResourceInfo {
     size_t infer_mem;
@@ -87,6 +90,11 @@ class Profiler {
     size_t id;
     double recv_time;
     double finish_time;
+  };
+
+  struct InferStat {
+    uint64_t num_requests;
+    uint64_t num_response;
   };
 
   enum class EventItem {
@@ -211,13 +219,20 @@ class Profiler {
   std::string profile_log_path_;
 
   std::vector<InferInfo> infer_info_;
+
   // [time stamp, resource info] of different device
   std::array<std::vector<resource_entity_t>, MAX_DEVICE_NUM> resource_infos_; 
+
   // time stamp, event, deprecated currently
   std::vector<event_entity_t> event_info_; 
+
   // item -> [time stamp, value]
   std::unordered_map<int, std::vector<perf_entity_t>> perf_info_; 
-  std::mutex infer_info_mut_, event_info_mut_, perf_info_mut_;
+
+  InferStat infer_stat_;
+
+  std::mutex infer_info_mut_, event_info_mut_, 
+             perf_info_mut_, infer_stat_mut_;
 
   // pass, time stamp, infering model used memory
   std::vector<std::tuple<time_stamp_t, size_t>> infering_memory_nbytes_; 

@@ -7,7 +7,7 @@ add_executable(${PROJECT_NAME}
   model_store/infer_model.cc
   model_store/model_cache.cc
   train_launcher.cc
-  train_control/controller.cc
+  control/controller.cc
   resource_manager.cc
   profiler.cc
   config.cc

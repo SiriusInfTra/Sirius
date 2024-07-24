@@ -12,7 +12,7 @@
 #include <server/train_launcher.h>
 #include <server/model_store/infer_model_store.h>
 #include <server/profiler.h>
-#include <server/train_control/controller.h>
+#include <server/control/controller.h>
 #include <server/resource_manager.h>
 #include <server/config.h>
 #include <server/tvm/executor.h>
@@ -903,7 +903,8 @@ std::pair<std::function<void()>, std::shared_ptr<OpArgs>> Executor::CreateTVMOp(
   
   auto fexec = [arg_ptr, pf]() {
     ::tvm::runtime::TVMRetValue rv;
-    ::tvm::runtime::TVMArgs targs(arg_ptr->arg_values.data(), arg_ptr->arg_tcodes.data(),
+    ::tvm::runtime::TVMArgs targs(arg_ptr->arg_values.data(), 
+                                  arg_ptr->arg_tcodes.data(),
                                   static_cast<int>(arg_ptr->arg_values.size()));
     pf.CallPacked(targs, &rv);
   };
@@ -919,27 +920,34 @@ void Executor::AllocStorageMaybeAdjust() {
 
   auto adjust_train_batch_size = [this, &adjusted](bool first_adjust) {
     if (adjusted) return;
-    if (!Controller::Get()->IsTrainIdle()) {
+    if (!ctrl::Controller::Get()->IsTrainIdle()) {
       auto wait_train_pid = TrainLauncher::Get()->GetTrainPid();
       // LOG(INFO) << "[Executor] AllocStorageMaybeAdjust: model " << this->tvm_graph_.model_rank_ 
       //           << " begin wait train pid " << wait_train_pid;
       // this->tvm_graph_.infer_model_->SetWaitTrainPid(this->infer_model_worker_id_, wait_train_pid);
 
-      auto adjust_memory_mb = sta::ByteToMB(GetMissingStorageSizeAlign()) - ResourceManager::GetFreeMemoryMB(true);
+      auto adjust_memory_mb = sta::ByteToMB(GetMissingStorageSizeAlign()) 
+                              - ResourceManager::GetFreeMemoryMB(true);
       adjust_memory_mb = std::max(0.0, adjust_memory_mb);
       if (adjust_memory_mb == 0) return;
 
       PROFILE_START(TrainAdjust);
-      auto adjust_batch_size = TrainLauncher::Get()->
-          GetAdjustBatchSize(first_adjust ? adjust_memory_mb : sta::ByteToMB(GetMissingStorageSizeAlign()));
-      auto cmd_id = Controller::Get()->ColocateAdjust(
-          this->tvm_graph_.model_rank_, this->devices_[0].device_id, adjust_batch_size);
-      Controller::Get()->WaitColocateAdjustDone(cmd_id);
+      auto adjust_batch_size = TrainLauncher::Get()->GetAdjustBatchSize(
+          first_adjust 
+          ? adjust_memory_mb 
+          : sta::ByteToMB(GetMissingStorageSizeAlign()));
+      auto cmd_id = ctrl::Controller::Get()->ColocateAdjust(
+          this->tvm_graph_.model_rank_, 
+          this->devices_[0].device_id, 
+          adjust_batch_size);
+      ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
       PROFILE_END(TrainAdjust);
       if (first_adjust) {
-        Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, PROFILE_DURATRION(TrainAdjust));        
+        Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, 
+                                    PROFILE_DURATRION(TrainAdjust));        
       }
-      LOG(INFO) << "[Executor] AllocStorageMaybeAdjust: model " << this->tvm_graph_.model_rank_ 
+      LOG(INFO) << "[Executor] AllocStorageMaybeAdjust:" 
+                << " model " << this->tvm_graph_.model_rank_ 
                 << " adjust memory mb " << adjust_memory_mb
                 << " adjust batch size " << adjust_batch_size
                 << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
@@ -954,7 +962,7 @@ void Executor::AllocStorageMaybeAdjust() {
 
   // ensure sequential inference allocation  
   if (!ResourceManager::InferChangeMemoryTryLock()) {
-    if (Controller::Get()->HasFlyingColocateAdjust()) {
+    if (ctrl::Controller::Get()->HasFlyingColocateAdjust()) {
       adjust_train_batch_size(false);
     }
     PROFILE_START(InferWaitBeforeEnterAlloc);

@@ -1,79 +1,54 @@
 # cython: c_string_type=unicode, c_string_encoding=utf8
-from .ctrl_stub cimport *
+# from .ctrl_stub cimport *
 from libcpp.string cimport string
+from libcpp.vector cimport vector
+from cpython cimport bool
 from cpython.ref cimport PyObject
 
 
-cdef extern from "<torch_col/csrc/util.h>" namespace "torch_col":
-    cpdef long get_unix_timestamp()
-    cpdef long get_unix_timestamp_us()
+cdef extern from "<torch_col/csrc/control_stub.h>" namespace "torch_col":
+    cdef cppclass DummyStub:
+        DummyStub() except +
+        void Stop()
+        void TrainStart()
+        void TrainEnd()
+        bint CanExitAfterInferWorkloadDone()
 
+    cdef cppclass SwitchStub:
+        SwitchStub() except +
+        int Cmd()
+        void Cmd(int)
+        void Stop()
+        void TrainStart()
+        void TrainEnd()
+        bint TryInterruptTrainDone()
+        void ReportBatchSize(int)
+        void StepsNoInteruptBegin()
+        void StepsNoInteruptEnd()
+        void EnableTorchColEngine()
+        bint CanExitAfterInferWorkloadDone()
 
-cdef class PyMemoryQueue:
-    cdef MemoryQueue[CtrlMsgEntry]* _queue
+    cdef cppclass ColocateStub:
+        ColocateStub(int) except +
+        void Stop()
+        int Cmd()
+        int TargetBatchSize()
+        void ColocateAdjustL1Done()
+        void ColocateAdjustL2Done()
+        void TrainStart()
+        void TrainEnd()
+        void ReportBatchSize(int)
+        void StepsNoInteruptBegin()
+        void StepsNoInteruptEnd()
+        void EnableTorchColEngine()
+        bint CanExitAfterInferWorkloadDone()
 
-    def __cinit__(self, str name, int device_id, bint is_server = False):
-        self._queue = new MemoryQueue[CtrlMsgEntry](name.encode(), device_id, is_server)
-      
-    def put(self, PyCtrlMsgEntry entry):
-        self._queue.Put(entry._entry)
+    cdef cppclass StubProfiler:
+        @staticmethod
+        vector[long] GetAdjustRequestTimeStamp()
+        @staticmethod
+        vector[long] GetAdjustDoneTimeStamp()
 
-    def timed_get(self, size_t timeout_ms):
-        x = PyCtrlMsgEntry(0, CtrlEvent.kNumEvent, -1)
-        if self._queue.TimedGet(x._entry, timeout_ms):
-            return x
-        else:
-            return None
-
-    def __dealloc__(self):
-        del self._queue
-
-
-cdef extern from "<common/controlling.h>" namespace "colserve::ctrl":
-    cpdef enum class CtrlEvent(int):
-        # status event
-        kTrainStart,
-        kTrainEnd,
-        kInterruptTrainDone,
-        kResumeTrainDone,
-        kColocateAdjustL1Done,
-        kColocateAdjustL2Done,
-        
-        kReportBatchSize,
-
-        # cmd event: switch mode
-        kInterruptTrain,
-        kResumeTrain,
-        # cmd event: colocate mode
-        kColocateAdjustL1,
-        kColocateAdjustL2,
-        kInferExit, # train adjust back
-
-        kInferenceWorkloadDone,
-
-        kNumEvent,
-
-
-cdef class PyCtrlMsgEntry:
-    cdef CtrlMsgEntry _entry
-    
-    def __cinit__(self, unsigned long long id, CtrlEvent cmd, int value):
-        self._entry = CtrlMsgEntry(id, int(cmd), value)
-
-    @property
-    def event(self):
-        return CtrlEvent(self._entry.event)
-
-    @property
-    def id(self):
-        return self._entry.id
-
-    @property
-    def value(self):
-        return self._entry.value
-
-    def __repr__(self):
-        return "PyCtrlMsgEntry(id={}, event={}, value={})".format(self.id, str(self.event), self.value)
 
 
 cdef class PyDummyStub:

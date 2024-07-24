@@ -7,8 +7,6 @@
 #include <torch/csrc/autograd/python_variable.h>
 #include <torch/csrc/utils/object_ptr.h>
 
-#include <common/controlling.h>
-
 #include <torch_col/csrc/torch_allocator_plugin.h>
 #include <torch_col/csrc/mem_tagging.h>
 #include <torch_col/csrc/fake_engine.h>

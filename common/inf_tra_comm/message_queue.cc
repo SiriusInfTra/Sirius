@@ -14,31 +14,36 @@ std::ostream& operator<<(std::ostream&os, ctrl::CtrlEvent event) {
   switch (event) {
   // status event
   case ctrl::CtrlEvent::kTrainStart:
-    os << "ctrl::CtrlEvent::kTrainStart"; 
+    os << "CtrlEvent::kTrainStart"; 
     return os;
   case ctrl::CtrlEvent::kTrainEnd:
-    os << "ctrl::CtrlEvent::kTrainEnd"; 
+    os << "CtrlEvent::kTrainEnd"; 
     return os;
   case ctrl::CtrlEvent::kInterruptTrainDone:
-    os << "ctrl::CtrlEvent::kInterruptTrainDone";
+    os << "CtrlEvent::kInterruptTrainDone";
     return os;
   case ctrl::CtrlEvent::kResumeTrainDone:
-    os << "ctrl::CtrlEvent::kResumeTrainDone";
+    os << "CtrlEvent::kResumeTrainDone";
     return os;
 
   // cmd event
   case ctrl::CtrlEvent::kInterruptTrain:
-    os << "ctrl::CtrlEvent::kInterruptTrain";
+    os << "CtrlEvent::kInterruptTrain";
     return os;
   case ctrl::CtrlEvent::kResumeTrain:
-    os << "ctrl::CtrlEvent::kResumeTrain";
+    os << "CtrlEvent::kResumeTrain";
     return os;
   default:
-    LOG(FATAL) << "unknown ctrl::CtrlEvent";
+    LOG(FATAL) << "unknown ctrl::CtrlEvent" << static_cast<int>(event);
     return os;
   }
 }
 
+std::ostream& operator<<(std::ostream& os, ctrl::CtrlMsgEntry msg) {
+  os << "CtrlMsgEntry{id=" << msg.id << ", event=" << msg.event 
+     << ", value=" << msg.value << "}";
+  return os;
+}
 
 InfTraMessageQueue::InfTraMessageQueue(bool is_server,
                                        int train_world_size, 
@@ -96,6 +101,8 @@ CtrlMsgEntry InfTraMessageQueue::BlockGet(Direction direction, int id) {
 
   auto ret = inf_tra_mq->front();
   inf_tra_mq->pop_front();
+  DLOG(INFO) << "[InfTra MQ] BlockGet " << ret << " from " 
+            << GetMqName(direction, id);
   return ret;
 }
 
@@ -113,6 +120,8 @@ bool InfTraMessageQueue::TryGet(Direction direction, int id,
 
   msg = inf_tra_mq->front();
   inf_tra_mq->pop_front();
+  DLOG(INFO) << "[InfTra MQ] TryGet " << msg << " from " 
+            << GetMqName(direction, id); 
   return true;
 }
 
@@ -135,6 +144,8 @@ bool InfTraMessageQueue::TimedGet(uint32_t timeout_ms,
 
   msg = inf_tra_mq->front();
   inf_tra_mq->pop_front();
+  DLOG(INFO) << "[InfTra MQ] TimedGet " << msg << " from " 
+            << GetMqName(direction, id);
   return true;
 }
 
@@ -162,6 +173,8 @@ InfTraMessageQueue::BlockGetFromAny(Direction direction) {
     if (!inf_tra_mq->empty()) {
       auto ret = std::make_pair(i, inf_tra_mq->front());
       inf_tra_mq->pop_front();
+      DLOG(INFO) << "[InfTra MQ] BlockGetFromAny " << ret.second << " from " 
+                << GetMqName(direction, i);
       return ret;
     }
   }
@@ -170,7 +183,7 @@ InfTraMessageQueue::BlockGetFromAny(Direction direction) {
   return {};
 }
 
-void InfTraMessageQueue::Put(CtrlMsgEntry msg, Direction direction, int id) {
+void InfTraMessageQueue::Put(const CtrlMsgEntry &msg, Direction direction, int id) {
   bip::scoped_lock<bip_mutex>
       lock{*inf_tra_mq_muts_[static_cast<int>(direction)][id]};
 
@@ -180,9 +193,12 @@ void InfTraMessageQueue::Put(CtrlMsgEntry msg, Direction direction, int id) {
   inf_tra_mq->push_back(msg);
   inf_tra_mq_conds_[static_cast<int>(direction)][id]->notify_one();
   inf_tra_mq_group_conds_[static_cast<int>(direction)]->notify_one();
+
+  DLOG(INFO) << "[InfTra MQ] Put " << msg << " to " 
+            << GetMqName(direction, id);
 }
 
-void InfTraMessageQueue::PutAll(CtrlMsgEntry msg, Direction direction) {
+void InfTraMessageQueue::PutAll(const CtrlMsgEntry &msg, Direction direction) {
   for (int i = 0; i < message_queue_num_; i++) {
     bip::scoped_lock
       lock{*inf_tra_mq_muts_[static_cast<int>(direction)][i]};

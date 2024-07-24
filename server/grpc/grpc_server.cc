@@ -3,7 +3,7 @@
 #include <server/model_store/infer_model_store.h>
 #include <server/model_store/infer_model.h>
 #include <server/train_launcher.h>
-#include <server/train_control/controller.h>
+#include <server/control/controller.h>
 #include <server/config.h>
 
 #include <thread>
@@ -137,7 +137,7 @@ void CommonHandler::SetupCallData() {
       CommonData<InferWorkloadDoneRequest, EmptyResult>* data) {
     LOG(INFO) << "[Common Data]: InferenceWorkloadDone";
     Profiler::Get()->SetWorkloadEndTimeStamp(data->request_.time_stamp());
-    Controller::Get()->InferenceWorkloadDone();
+    ctrl::Controller::Get()->InferenceWorkloadDone();
     data->responder_.Finish(data->response_, grpc::Status::OK, (void*)data);
   };
   new CommonData<InferWorkloadDoneRequest, EmptyResult>{0, "InferenceWorkloadDone", service_, cq_,

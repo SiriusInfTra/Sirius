@@ -23,7 +23,7 @@
 #include <server/model_store/infer_model_store.h>
 #include <server/train_launcher.h>
 #include <server/resource_manager.h>
-#include <server/train_control/controller.h>
+#include <server/control/controller.h>
 #include <server/profiler.h>
 #include <server/config.h>
 
@@ -240,7 +240,8 @@ void Shutdown(int sig) {
 
 int main(int argc, char *argv[]) {
   google::InitGoogleLogging(argv[0]);
-  colserve::Config::binary_directory = std::filesystem::path(argv[0]).parent_path().parent_path();
+  colserve::Config::binary_directory = 
+      std::filesystem::path(argv[0]).parent_path().parent_path();
   
   init_cli_options();
   CLI11_PARSE(app, argc, argv);
@@ -272,7 +273,7 @@ int main(int argc, char *argv[]) {
     colserve::SMPartitioner::Init(0, true, false);
   }
   colserve::ResourceManager::Init();
-  colserve::Controller::Init();
+  colserve::ctrl::Controller::Init();
   colserve::Profiler::Init(colserve::Config::profile_log_path);
   colserve::TrainLauncher::Init("train");
   colserve::InferModelStore::Init("server/models");

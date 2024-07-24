@@ -29,5 +29,6 @@ target_link_libraries(sta PUBLIC
   CUDA::nvml
   ${TORCH_LIBRARIES}
   ${XSCHED_LIBRARIES}
-  ${Boost_LIBRARIES})
+  ${Boost_LIBRARIES}
+)
 

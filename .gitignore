@@ -42,3 +42,5 @@ log_*/*
 mempool_dump*/*
 
 cifar-10-batches-py/*
+
+.clangd

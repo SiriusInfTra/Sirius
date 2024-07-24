@@ -282,10 +282,98 @@ def monitor_sm_partition(interval: float):
         time.sleep(interval)
 
 
+########################
+#  MARK: Inf-Tra-Comm  #
+########################
+
+cdef extern from "<common/inf_tra_comm/communicator.h>" namespace "colserve::ctrl":
+    cpdef enum class CtrlEvent(int):
+        # status event
+        kTrainStart,
+        kTrainEnd,
+        kInterruptTrainDone,
+        kResumeTrainDone,
+        kColocateAdjustL1Done,
+        kColocateAdjustL2Done,
+        
+        kReportBatchSize,
+
+        # cmd event: switch mode
+        kInterruptTrain,
+        kResumeTrain,
+        # cmd event: colocate mode
+        kColocateAdjustL1,
+        kColocateAdjustL2,
+        kInferExit, # train adjust back
+
+        kInferenceWorkloadDone,
+
+        kNumEvent,
+
+
+    cdef struct CtrlMsgEntry:
+        uint64_t id
+        int event
+        int value
+
+
+    cdef cppclass InfTraMessageQueue:
+        pass
+
+
+    cdef cppclass InfTraInfoBoard:
+        pass
+
+
+    cdef cppclass InfTraCommunicator:
+        @staticmethod
+        void Init(bool is_server, bool cleanup, int train_world_size)
+        @staticmethod
+        InfTraCommunicator* GetMQ()
+        @staticmethod
+        InfTraInfoBoard* GetIB()
+
+
+cdef class PyCtrlMsgEntry:
+    cdef CtrlMsgEntry _entry
+    
+    def __cinit__(self, uint64_t id, CtrlEvent cmd, int value):
+        self._entry = CtrlMsgEntry(id, int(cmd), value)
+
+    @property
+    def event(self):
+        return CtrlEvent(self._entry.event)
+
+    @property
+    def id(self):
+        return self._entry.id
+
+    @property
+    def value(self):
+        return self._entry.value
+
+    def __repr__(self):
+        return "PyCtrlMsgEntry(id={}, event={}, value={})".format(self.id, str(self.event), self.value)
+
+
+
+cdef class PyInfTraCommunicator:
+    initialzed = False
+
+    def __init__(self, is_server, cleanup, train_world_size):
+        InfTraCommunicator.Init(is_server, cleanup, train_world_size)
+        PyInfTraCommunicator.initialzed = True
+
+
 
 ####################
 #  MARK: Utililty  #
 ####################
+
+cdef extern from "<torch_col/csrc/util.h>" namespace "torch_col":
+    cpdef long get_unix_timestamp()
+    cpdef long get_unix_timestamp_us()
+
 
 cdef extern from "<torch_col/csrc/util.h>" namespace "torch_col":
     cdef cppclass TensorWeakRef:

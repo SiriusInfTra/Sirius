@@ -5,8 +5,8 @@
 #include <thread>
 #include <mutex>
 
-#include <common/block_queue.h>
-#include <common/controlling.h>
+// #include <common/block_queue.h>
+#include <common/inf_tra_comm/communicator.h>
 
 
 namespace torch_col {
@@ -16,6 +16,8 @@ bool __CanExitAfterInferWorkloadDone(long infer_workload_done_timestamp);
 
 class StubBase {
  public:
+  StubBase();
+
   virtual int Cmd() = 0;
   virtual ~StubBase() = default;
   void EnableTorchColEngine();
@@ -37,8 +39,7 @@ class DummyStub {
   }
  private:
   long infer_workload_done_timestamp_{0};
-  std::unique_ptr<MemoryQueue<ctrl::CtrlMsgEntry>> cmd_event_mq_, status_event_mq_;
-  bool running_{true};
+  bool running_{false};
   std::mutex mutex_;
   std::unique_ptr<std::thread> thread_;
 };
@@ -67,7 +68,6 @@ class SwitchStub: public StubBase {
   uint64_t cmd_id_{0};
   uint64_t last_reply_cmd_id_{0};
   bool exec_step_{false};
-  std::unique_ptr<MemoryQueue<ctrl::CtrlMsgEntry>> cmd_event_mq_, status_event_mq_;
   // std::mutex cmd_mutex_; TODO: avoid concurrent cmd access
   std::mutex mutex_;
   std::unique_ptr<std::thread> thread_;
@@ -102,7 +102,6 @@ class ColocateStub: public StubBase {
   bool exec_step_{false};
 
   std::chrono::time_point<std::chrono::steady_clock> set_cmd_time_;
-  std::unique_ptr<MemoryQueue<ctrl::CtrlMsgEntry>> cmd_event_mq_, status_event_mq_; // adjust_event_mq_;
   std::unique_ptr<std::thread> thread_;
 };
 

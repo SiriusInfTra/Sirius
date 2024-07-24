@@ -32,57 +32,85 @@ bool __CanExitAfterInferWorkloadDone(long infer_workload_done_timestamp) {
   }
 }
 
-DummyStub::DummyStub() {
-  cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
-      "cmd-ctrl", TorchColConfig::GetTrainRank(), 
-      !TorchColConfig::has_colocated_infer_server);
-  status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
-      "status-ctrl", TorchColConfig::GetTrainRank(), 
-      !TorchColConfig::has_colocated_infer_server);
+StubBase::StubBase() {
 
-  thread_.reset(new std::thread([&]() {
-    while (running_) {
-      ctrl::CtrlMsgEntry data;
-      bool succ = cmd_event_mq_->TimedGet(data, 1000);
-      if (succ) {
-        std::unique_lock locker{mutex_};
-        if (data.event == static_cast<int>(ctrl::CtrlEvent::kInferenceWorkloadDone)) {
-          infer_workload_done_timestamp_ = torch_col::get_unix_timestamp();
-          LOG(INFO) << "[DummyStub] inference workload done";
-        } else {
-          LOG(FATAL) << "[DummyStub] Unknown command: " << data.event;
+}
+
+void StubBase::EnableTorchColEngine() {
+  torch_col::SetUpTorchColEngine(this);
+}
+
+DummyStub::DummyStub() {
+  if (TorchColConfig::has_colocated_infer_server) {
+    ctrl::InfTraCommunicator::Init(false, false, 
+                                   TorchColConfig::GetTrainWorldSize());
+
+    thread_.reset(new std::thread([&]() {
+      running_ = true;
+      while (running_) {
+        ctrl::CtrlMsgEntry msg;
+        bool succ = ctrl::InfTraCommunicator::GetMQ()
+            ->TimedGet(1000, 
+                      ctrl::InfTraMessageQueue::Direction::kInf2Tra, 
+                      TorchColConfig::GetTrainRank(), msg);
+        if (succ) {
+          std::unique_lock locker{mutex_};
+          if (msg.event == static_cast<int>(ctrl::CtrlEvent::kInferenceWorkloadDone)) {
+            infer_workload_done_timestamp_ = torch_col::get_unix_timestamp();
+            LOG(INFO) << "[DummyStub] inference workload done";
+          } else {
+            LOG(FATAL) << "[DummyStub] Unknown command: " << msg.event;
+          }
         }
       }
-    }
-    LOG(INFO) << "[DummyStub] control thread exit";
-  }));
+      LOG(INFO) << "[DummyStub] control thread exit";
+    }));
+  }
 }
 
 void DummyStub::Stop() {
   running_ = false;
-  thread_->join();
+  if (TorchColConfig::has_colocated_infer_server) {
+    thread_->join();
+  }
 }
 
 void DummyStub::TrainStart() {
-  status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainStart)});
+  if (TorchColConfig::has_colocated_infer_server
+      && TorchColConfig::IsTrainMaster()) {
+    // status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainStart)});
+    ctrl::InfTraCommunicator::GetMQ()
+        ->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainStart)},
+              ctrl::InfTraMessageQueue::Direction::kTra2Inf,
+              TorchColConfig::GetTrainRank());
+  }
 }
 
 void DummyStub::TrainEnd() {
-  status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainEnd)});
+  if (TorchColConfig::has_colocated_infer_server
+      && TorchColConfig::IsTrainMaster()) {
+    // status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainEnd)});
+    ctrl::InfTraCommunicator::GetMQ()
+        ->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainStart)}, 
+              ctrl::InfTraMessageQueue::Direction::kTra2Inf,
+              TorchColConfig::GetTrainRank());
+  }
 }
 
 SwitchStub::SwitchStub() {
-  cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
-      "cmd-ctrl", TorchColConfig::GetTrainRank(), 
-      !TorchColConfig::has_colocated_infer_server);
-  status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
-      "status-ctrl", TorchColConfig::GetTrainRank(),
-      !TorchColConfig::has_colocated_infer_server);
+  if (!TorchColConfig::has_colocated_infer_server) {
+    return ;
+  }
+
+  ctrl::InfTraCommunicator::Init(false, false, 
+                                 TorchColConfig::GetTrainWorldSize());
 
   thread_.reset(new std::thread([&](){
     while (running_) {
       ctrl::CtrlMsgEntry data;
-      bool succ = cmd_event_mq_->TimedGet(data, 1000);
+      bool succ = ctrl::InfTraCommunicator::GetMQ()->TimedGet(
+          1000, ctrl::InfTraMessageQueue::Direction::kInf2Tra, 
+          TorchColConfig::GetTrainRank(), data);
       if (succ) {
         std::unique_lock locker{mutex_};
         if (data.event == static_cast<int>(ctrl::CtrlEvent::kInterruptTrain)) {
@@ -90,7 +118,10 @@ SwitchStub::SwitchStub() {
             // already interrupting train
             cmd_id_ = data.id;
             last_reply_cmd_id_ = cmd_id_;
-            status_event_mq_->Put({cmd_id_, static_cast<int>(ctrl::CtrlEvent::kInterruptTrainDone)});
+            ctrl::InfTraCommunicator::GetMQ()
+                ->Put({cmd_id_, static_cast<int>(ctrl::CtrlEvent::kInterruptTrainDone)},
+                      ctrl::InfTraMessageQueue::Direction::kTra2Inf,
+                      TorchColConfig::GetTrainRank());
             cmd_id_ = 0;
             LOG(INFO) << "[SwitchStub] already interrupting train, done";
           } else {
@@ -104,7 +135,10 @@ SwitchStub::SwitchStub() {
             // already interrupting train
             cmd_ = static_cast<int>(ctrl::CtrlEvent::kResumeTrain);
             LOG(INFO) << "[SwitchStub] Resume train";
-            status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kResumeTrainDone)});
+            ctrl::InfTraCommunicator::GetMQ()
+                ->Put({0, static_cast<int>(ctrl::CtrlEvent::kResumeTrainDone)},
+                      ctrl::InfTraMessageQueue::Direction::kTra2Inf,
+                      TorchColConfig::GetTrainRank());
           } else {
               LOG(INFO) << "[SwitchStub] Ignore resume train";
             }
@@ -128,11 +162,23 @@ void SwitchStub::Stop() {
 }
 
 void SwitchStub::TrainStart() {
-  status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainStart)});
+  if (TorchColConfig::has_colocated_infer_server
+      && TorchColConfig::IsTrainMaster()) {
+    ctrl::InfTraCommunicator::GetMQ()
+        ->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainStart)},
+              ctrl::InfTraMessageQueue::Direction::kTra2Inf,
+              TorchColConfig::GetTrainRank());
+  }
 }
 
 void SwitchStub::TrainEnd() {
-  status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainEnd)});
+  if (TorchColConfig::has_colocated_infer_server
+      && TorchColConfig::IsTrainMaster()) {
+    ctrl::InfTraCommunicator::GetMQ()
+        ->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainEnd)},
+              ctrl::InfTraMessageQueue::Direction::kTra2Inf,
+              TorchColConfig::GetTrainRank());
+  }
 }
 
 bool SwitchStub::TryInterruptTrainDone() {
@@ -140,7 +186,10 @@ bool SwitchStub::TryInterruptTrainDone() {
   // LOG(INFO) << "TryInterruptTrainDone " << cmd_id_ << " " << last_reply_cmd_id_; 
   if (cmd_id_ > last_reply_cmd_id_) {
     last_reply_cmd_id_ = cmd_id_;
-    status_event_mq_->Put({cmd_id_, static_cast<int>(ctrl::CtrlEvent::kInterruptTrainDone)});
+    ctrl::InfTraCommunicator::GetMQ()
+        ->Put({cmd_id_, static_cast<int>(ctrl::CtrlEvent::kInterruptTrainDone)},
+              ctrl::InfTraMessageQueue::Direction::kTra2Inf,
+              TorchColConfig::GetTrainRank());
     cmd_id_ = 0;
     LOG(INFO) << "[SwitchStub] Interrupt train done";
     return true;
@@ -159,7 +208,14 @@ void SwitchStub::Cmd(int cmd) {
 
 void SwitchStub::ReportBatchSize(int batch_size) {
   if (TorchColConfig::has_colocated_infer_server) { 
-    status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kReportBatchSize), batch_size});
+    ctrl::InfTraCommunicator::GetMQ()
+        ->Put({
+                  .id = 0, 
+                  .event = static_cast<int>(ctrl::CtrlEvent::kReportBatchSize), 
+                  .value = batch_size
+              },
+              ctrl::InfTraMessageQueue::Direction::kTra2Inf,
+              TorchColConfig::GetTrainRank());
   }
 }
 
@@ -175,20 +231,19 @@ void SwitchStub::StepsNoInteruptEnd() {
 
 
 ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_(batch_size) {
-  // char *has_server_env = std::getenv("COL_HAS_INFER_SERVER");
-  // bool has_server = has_server_env == nullptr ? true : (std::string(has_server_env) == "1");
-  cmd_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
-      "cmd-ctrl", TorchColConfig::GetTrainRank(), 
-      !TorchColConfig::has_colocated_infer_server);
-  status_event_mq_ = std::make_unique<MemoryQueue<ctrl::CtrlMsgEntry>>(
-      "status-ctrl", TorchColConfig::GetTrainRank(),
-      !TorchColConfig::has_colocated_infer_server);
-  // adjust_event_mq_ = std::make_unique<MemoryQueue<int>>("adjust-ctrl", false);
+  if (!TorchColConfig::has_colocated_infer_server) {
+    return ;
+  }
+
+  ctrl::InfTraCommunicator::Init(false, false, 
+                                 TorchColConfig::GetTrainWorldSize());
 
   thread_.reset(new std::thread([&]() {
     while (running_) {
       ctrl::CtrlMsgEntry data;
-      bool succ = cmd_event_mq_->TimedGet(data, 1000);
+      bool succ = ctrl::InfTraCommunicator::GetMQ()->TimedGet(
+          1000, ctrl::InfTraMessageQueue::Direction::kInf2Tra, 
+          TorchColConfig::GetTrainRank(), data);
       if (succ) {
         if (data.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)
             || data.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL2)) {
@@ -201,11 +256,14 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
           // CHECK_LT(this->target_bs_, this->current_bs_);
           if (data.value >= this->target_bs_) {
             LOG(INFO) << "[ColocateStub] skip satisfied adjust, reply adjust immediately";
-            if (data.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)) {
-              status_event_mq_->Put({data.id, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1Done)});
-            } else if (data.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL2)) {
-              status_event_mq_->Put({data.id, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL2Done)});
-            }
+            ctrl::InfTraCommunicator::GetMQ()
+                ->Put({.id = data.id,
+                       .event = data.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1) 
+                                ? static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1Done)
+                                : static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL2Done)
+                      },
+                      ctrl::InfTraMessageQueue::Direction::kTra2Inf,
+                      TorchColConfig::GetTrainRank());
             continue;
           }
           this->target_bs_ = data.value;
@@ -263,8 +321,10 @@ ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_
 }
 
 void ColocateStub::Stop() {
-  running_ = false;
-  thread_->join();
+  if (TorchColConfig::has_colocated_infer_server) {
+    running_ = false;
+    thread_->join();
+  }
 }
 
 int ColocateStub::Cmd() {
@@ -280,7 +340,10 @@ int ColocateStub::TargetBatchSize() {
 void ColocateStub::ColocateAdjustL1Done() {
   std::unique_lock locker{mutex_};
   if (cmd_ == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)) {
-    status_event_mq_->Put({cmd_id_, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1Done)});
+    ctrl::InfTraCommunicator::GetMQ()
+        ->Put({cmd_id_, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1Done)},
+              ctrl::InfTraMessageQueue::Direction::kTra2Inf,
+              TorchColConfig::GetTrainRank());
     cmd_ = -1;
     cmd_id_ = 0;
     // SetBlockCudaCalls_v2(false);
@@ -295,7 +358,10 @@ void ColocateStub::ColocateAdjustL1Done() {
 void ColocateStub::ColocateAdjustL2Done() {
   std::unique_lock locker{mutex_};
   if (cmd_ == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL2)) {
-    status_event_mq_->Put({cmd_id_, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL2Done)});
+    ctrl::InfTraCommunicator::GetMQ()
+        ->Put({cmd_id_, static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL2Done)},
+              ctrl::InfTraMessageQueue::Direction::kTra2Inf,
+              TorchColConfig::GetTrainRank());
     cmd_ = -1;
     cmd_id_ = 0;
     StubProfiler::RecordAdjustDone();
@@ -304,11 +370,25 @@ void ColocateStub::ColocateAdjustL2Done() {
 }
 
 void ColocateStub::TrainStart() {
-  status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainStart)});
+  if (TorchColConfig::has_colocated_infer_server
+      && TorchColConfig::IsTrainMaster()) {
+    ctrl::InfTraCommunicator::GetMQ()
+        ->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainStart)},
+              ctrl::InfTraMessageQueue::Direction::kTra2Inf,
+              TorchColConfig::GetTrainRank());
+    LOG(INFO) << "[ColocateStub] Train start";
+    // status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainStart)});
+  }
 }
 
 void ColocateStub::TrainEnd() {
-  status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainEnd)});
+  if (TorchColConfig::IsTrainMaster()) {
+    // status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainEnd)});
+    ctrl::InfTraCommunicator::GetMQ()
+        ->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainEnd)},
+              ctrl::InfTraMessageQueue::Direction::kTra2Inf,
+              TorchColConfig::GetTrainRank());
+  }
 }
 
 double ColocateStub::PassedTimeFromSetCmd() {
@@ -321,7 +401,14 @@ void ColocateStub::ReportBatchSize(int batch_size) {
   current_bs_ = batch_size;
   // bool has_server = has_server_env == nullptr ? true : (std::string(has_server_env) == "1");
   if (TorchColConfig::has_colocated_infer_server) {
-    status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kReportBatchSize), batch_size});
+    ctrl::InfTraCommunicator::GetMQ()
+        ->Put({
+                  .id = 0, 
+                  .event = static_cast<int>(ctrl::CtrlEvent::kReportBatchSize), 
+                  .value = batch_size
+              },
+              ctrl::InfTraMessageQueue::Direction::kTra2Inf,
+              TorchColConfig::GetTrainRank());
   }
  
 }
@@ -349,7 +436,4 @@ void StubProfiler::RecordAdjustDone() {
   StubProfiler::adjsut_done_time_stamp_.push_back(torch_col::get_unix_timestamp_us());
 }
 
-void StubBase::EnableTorchColEngine() {
-  torch_col::SetUpTorchColEngine(this);
-}
 }  // namespace torch_col
