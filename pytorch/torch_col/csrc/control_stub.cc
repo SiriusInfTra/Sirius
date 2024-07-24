@@ -42,8 +42,9 @@ void StubBase::EnableTorchColEngine() {
 
 DummyStub::DummyStub() {
   if (TorchColConfig::has_colocated_infer_server) {
-    ctrl::InfTraCommunicator::Init(false, false, 
-                                   TorchColConfig::GetTrainWorldSize());
+    // ctrl::InfTraCommunicator::Init(false, false, 
+    //                                TorchColConfig::GetTrainWorldSize());
+    CHECK(ctrl::InfTraCommunicator::IsInitialized());
 
     thread_.reset(new std::thread([&]() {
       running_ = true;
@@ -100,8 +101,9 @@ SwitchStub::SwitchStub() {
     return ;
   }
 
-  ctrl::InfTraCommunicator::Init(false, false, 
-                                 TorchColConfig::GetTrainWorldSize());
+  // ctrl::InfTraCommunicator::Init(false, false, 
+  //                                TorchColConfig::GetTrainWorldSize());
+  CHECK(ctrl::InfTraCommunicator::IsInitialized());
 
   thread_.reset(new std::thread([&](){
     while (running_) {
@@ -227,13 +229,15 @@ void SwitchStub::StepsNoInteruptEnd() {
 }
 
 
-ColocateStub::ColocateStub(int batch_size) : target_bs_(batch_size), current_bs_(batch_size) {
+ColocateStub::ColocateStub(int batch_size) 
+    : target_bs_(batch_size), current_bs_(batch_size) {
   if (!TorchColConfig::has_colocated_infer_server) {
     return ;
   }
 
-  ctrl::InfTraCommunicator::Init(false, false, 
-                                 TorchColConfig::GetTrainWorldSize());
+  // ctrl::InfTraCommunicator::Init(false, false, 
+  //                                TorchColConfig::GetTrainWorldSize());
+  CHECK(ctrl::InfTraCommunicator::IsInitialized());
 
   thread_.reset(new std::thread([&]() {
     while (running_) {

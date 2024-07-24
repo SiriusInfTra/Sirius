@@ -314,8 +314,8 @@ Profiler::Profiler(const std::string &profile_log_path)
       this->last_train_mem_ = train_mem;
 
       if (Config::dynamic_sm_partition && Config::profile_sm_partition) {
-        infer_required_tpc_num = SMPartitioner::GetInferRequiredTpcNum();
-        train_avail_tpc_num = SMPartitioner::GetTrainAvailTpcNum();
+        infer_required_tpc_num = SMPartitioner::Get(0)->GetInferRequiredTpcNum();
+        train_avail_tpc_num = SMPartitioner::Get(0)->GetTrainAvailTpcNum();
       }
 
       if (Config::profile_gpu_util || Config::profile_gpu_smact) {

@@ -96,7 +96,8 @@ STensor ViewShapeDtype(const STensor tensor, at::IntArrayRef size, DLDataType dt
   CHECK_EQ(bytes_offset % new_elem_size, 0);
   auto new_storage_offset = bytes_offset / new_elem_size;
   if (!tensor.IsNull()) {
-    CheckMemoryBound(tensor.Shape(), new_stride, dtype, new_storage_offset, tensor.MData());
+    CheckMemoryBound(tensor.Shape(), new_stride, dtype, 
+                     new_storage_offset, tensor.MData());
     return STensor(tensor.MData(), size.vec(), std::move(new_stride), 
                    tensor->device, dtype, new_storage_offset);
   } else {
@@ -131,10 +132,12 @@ void AsStrided_(STensor tensor, at::IntArrayRef size,
   if (!tensor.IsNull()) {
     CheckMemoryBound(size, stride, tensor->dtype, 
         storage_offset.value_or(tensor.StorageOffset()), tensor.MData());
-    tensor.get()->SetTensor(tensor.MData(), size.vec(), stride.vec(), tensor->device, tensor->dtype, 
+    tensor.get()->SetTensor(tensor.MData(), size.vec(), 
+                            stride.vec(), tensor->device, tensor->dtype, 
         storage_offset.value_or(tensor.StorageOffset()));
   } else {
-    tensor.get()->SetTensor(nullptr, size.vec(), stride.vec(), tensor->device, tensor->dtype, 
+    tensor.get()->SetTensor(nullptr, size.vec(), 
+                            stride.vec(), tensor->device, tensor->dtype, 
         storage_offset.value_or(tensor.StorageOffset()));
   }
   tensor.UpdateVersion();
@@ -204,7 +207,8 @@ void STensor::AllocForNull(MemType mtype) {
 void STensor::SetMDataForNull(TensorContainer::memory_data_t mdata, bool check_memory_bound) {
   CHECK(IsNull());
   if (check_memory_bound) {
-    CheckMemoryBound(get()->shape_, get()->stride_, get()->tensor_.dtype, StorageOffset(), mdata);
+    CheckMemoryBound(get()->shape_, get()->stride_, 
+                     get()->tensor_.dtype, StorageOffset(), mdata);
   }
   CHECK(mdata != nullptr);
   get()->mdata_ = mdata;

@@ -4,6 +4,7 @@
 #include <common/cuda_allocator.h>
 #include <common/sm_partition.h>
 #include <common/xsched_ctrl.h>
+#include <common/inf_tra_comm/communicator.h>
 
 #include <torch_col/csrc/init.h>
 #include <torch_col/csrc/config.h>
@@ -24,6 +25,12 @@ void TorchColInit(int train_rank, int train_world_size) {
     torch::cuda::CUDAColAllocator::CUDAColAllocator::Get()->init(train_world_size);
     torch::cuda::CUDAColAllocator::CUDAColAllocator::SetCurrentAllocator();
   }
+
+  if (TorchColConfig::HasColocatedInferServer()) {
+    colserve::ctrl::InfTraCommunicator::Init(false, false, 
+                                             train_world_size);
+  }
+
   LOG(INFO) << "TorchCol initialized.";
 
   CUDA_CALL(cudaSetDevice(TorchColConfig::GetTrainRank()));
@@ -35,8 +42,7 @@ void InitSMPartition() {
     return ;
   }  
 
-  colserve::SMPartitioner::Init(
-      0, !TorchColConfig::has_colocated_infer_server, false);
+  colserve::SMPartitioner::Init(TorchColConfig::GetTrainRank());
 
   auto stream = reinterpret_cast<cudaStream_t>(
     colserve::sta::xsched::GetRegisteredGlobalStream());
@@ -47,7 +53,8 @@ void InitSMPartition() {
   auto hook = [stream]() -> void*{
     // colserve::SetGlobalTPCMask(0x1);
     // colserve::SetStreamTpcMask(stream, 0x1);
-    auto mask = colserve::SMPartitioner::SetTrainStreamTpcMask(stream);
+    auto mask = colserve::SMPartitioner
+        ::Get(TorchColConfig::GetTrainRank())->SetTrainStreamTpcMask(stream);
     // LOG(INFO) << "set train stream tpc mask " << std::hex << mask;
     return nullptr;
   };

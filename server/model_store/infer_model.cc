@@ -487,7 +487,8 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     // claim gpu sm
     int recorded_required_tpc_num = required_num_tpc_;
     if (Config::dynamic_sm_partition && recorded_required_tpc_num > 0) {
-      SMPartitioner::AddInferRequiredTpcNum(recorded_required_tpc_num);
+      SMPartitioner::Get(device_.device_id)
+          ->AddInferRequiredTpcNum(recorded_required_tpc_num);
     }
 
     double infer_ms;
@@ -512,7 +513,8 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     }
 
     if (Config::dynamic_sm_partition && recorded_required_tpc_num > 0) {
-      SMPartitioner::DecInferRequiredTpcNum(recorded_required_tpc_num);
+      SMPartitioner::Get(device_.device_id)
+          ->DecInferRequiredTpcNum(recorded_required_tpc_num);
     }
 
     double get_output_ms;
@@ -696,14 +698,16 @@ void Model::EstimateTPC(uint32_t rank, tvm::Executor &graph_executor) {
 
   // auto num_tot_sm = GetGPUNumSM(0);
   // auto num_tot_tpc = num_tot_sm >> 1;
-  auto num_tot_tpc = SMPartitioner::GetGPUNumTpc();
+  auto num_tot_tpc = SMPartitioner::Get(device_.device_id)->GetGPUNumTpc();
   int left = 0, right = num_tot_tpc + 1;
   while (left + 1 < right) {
     int mid = left + (right - left) / 2;
     uint64_t mask_64 = -1;
     mask_64 = mask_64 << mid;
-    SMPartitioner::SetStreamTpcMask(static_cast<cudaStream_t>(graph_executor.GetExecStream()), mask_64);
-    DLOG(INFO) << SMPartitioner::CheckStreamSM(static_cast<cudaStream_t>(graph_executor.GetExecStream()));
+    SMPartitioner::Get(device_.device_id)
+        ->SetStreamTpcMask(static_cast<cudaStream_t>(graph_executor.GetExecStream()), mask_64);
+    DLOG(INFO) << SMPartitioner::Get(device_.device_id)
+                      ->CheckStreamSM(static_cast<cudaStream_t>(graph_executor.GetExecStream()));
     double exec_ms = get_exec_ms();
     if (exec_ms >= target_exec_ms) {
       left = mid;

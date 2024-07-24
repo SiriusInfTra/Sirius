@@ -257,12 +257,12 @@ cdef extern from "<common/xsched_ctrl.h>" namespace "colserve::sta::xsched":
 cdef extern from "<common/sm_partition.h>" namespace "colserve":
     cdef cppclass SMPartitioner:
         @staticmethod
-        void Init(int device, int cleanup, int observe)
+        void Init(int device_id)
         @staticmethod
+        SMPartitioner* Get(int device_id)
+
         int GetInferRequiredTpcNum()
-        @staticmethod
         int GetTrainAvailTpcNum()
-        @staticmethod
         uint64_t GetTrainAvailTpcMask()
 
 
@@ -275,14 +275,19 @@ def GetXQueueSize_(stream):
 
 def monitor_sm_partition(interval: float):
     import sys, time
-    SMPartitioner.Init(0, 0, 1)
+
+    if not TorchColConfig.HasColocatedInferServer():
+        print("There not exist colocated infer server")
+        return
+
+    SMPartitioner.Init(0)
 
     fmt = "Infer TPC Num: {}, Train TPC Num: {}, Train Avail TPC Mask: {}"
     while True:
         print(fmt.format(
-            SMPartitioner.GetInferRequiredTpcNum(),
-            SMPartitioner.GetTrainAvailTpcNum(),
-            hex(SMPartitioner.GetTrainAvailTpcMask())
+            SMPartitioner.Get(0).GetInferRequiredTpcNum(),
+            SMPartitioner.Get(0).GetTrainAvailTpcNum(),
+            hex(SMPartitioner.Get(0).GetTrainAvailTpcMask())
         ))
         time.sleep(interval)
 
@@ -337,6 +342,8 @@ cdef extern from "<common/inf_tra_comm/communicator.h>" namespace "colserve::ctr
         @staticmethod
         void Init(bool is_server, bool cleanup, int train_world_size)
         @staticmethod
+        bool IsInitialized()
+        @staticmethod
         InfTraCommunicator* GetMQ()
         @staticmethod
         InfTraInfoBoard* GetIB()
@@ -365,11 +372,16 @@ cdef class PyCtrlMsgEntry:
 
 
 cdef class PyInfTraCommunicator:
-    initialzed = False
-
-    def __init__(self, is_server, cleanup, train_world_size):
-        InfTraCommunicator.Init(is_server, cleanup, train_world_size)
-        PyInfTraCommunicator.initialzed = True
+    def __init__(self, is_server = None, cleanup = None, train_world_size = None):
+        if InfTraCommunicator.IsInitialized():
+            return
+        if (
+            is_server is None 
+            or cleanup is None
+            or train_world_size is None
+        ):
+            raise Exception("Invalid InfTraCommunicator init args")
+        InfTraCommunicator.Init(<bool> is_server, <bool> cleanup, <int> train_world_size)
 
 
 def init_train_info(init_batch_size, 

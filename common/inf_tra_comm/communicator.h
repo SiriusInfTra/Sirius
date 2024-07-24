@@ -11,6 +11,7 @@ namespace ctrl {
 class InfTraCommunicator {
  public:
   static void Init(bool is_server, bool cleanup, int train_world_size);
+  static bool IsInitialized() { return communicator_ != nullptr; }
   static InfTraMessageQueue* GetMQ();
   static InfTraInfoBoard* GetIB();
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <common/sm_partition.h>
 #include <common/inf_tra_comm/bip_helper.h>
 #include <common/util.h>
 
@@ -11,7 +12,7 @@ namespace colserve {
 namespace ctrl {
 
 struct InferInfo {
-  std::atomic<int> required_tpc_num;
+  std::array<SMPartitioner::TpcData, MAX_DEVICE_NUM> tpc_datas;
 
 };
 
@@ -50,7 +51,7 @@ class InfTraInfoBoard {
     bip::scoped_lock lock{*train_info_muts_[id]};
     train_infos_[id]->train_pid = -1;
   }
-  
+
   bool IsTrainInfoValid(int id) {
     bip::scoped_lock lock{*train_info_muts_[id]};
     return train_infos_[id]->train_pid != -1;

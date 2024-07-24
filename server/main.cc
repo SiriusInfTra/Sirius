@@ -259,7 +259,9 @@ int main(int argc, char *argv[]) {
   auto free_list_policy = colserve::sta::getFreeListPolicy(
       colserve::Config::mempool_freelist_policy);
   if (colserve::Config::use_shared_tensor) {
-    for (int device_id = 0; device_id < colserve::sta::DeviceManager::GetNumVisibleGpu(); device_id++) {
+    for (int device_id = 0; 
+         device_id < colserve::sta::DeviceManager::GetNumVisibleGpu(); 
+         device_id++) {
       colserve::sta::CUDAMemPool::Init(device_id,
         static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
         true, false, free_list_policy);
@@ -269,11 +271,15 @@ int main(int argc, char *argv[]) {
         }, colserve::sta::MemType::kInfer);
     }
   }
+  colserve::ctrl::Controller::Init();
   if (colserve::Config::dynamic_sm_partition) {
-    colserve::SMPartitioner::Init(0, true, false);
+    for (int device_id = 0; 
+         device_id < colserve::sta::DeviceManager::GetNumVisibleGpu(); 
+         device_id++) {
+      colserve::SMPartitioner::Init(device_id);
+    }
   }
   colserve::ResourceManager::Init();
-  colserve::ctrl::Controller::Init();
   colserve::Profiler::Init(colserve::Config::profile_log_path);
   colserve::TrainLauncher::Init("train");
   colserve::InferModelStore::Init("server/models");
