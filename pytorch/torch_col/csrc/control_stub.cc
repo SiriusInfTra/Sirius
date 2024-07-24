@@ -78,7 +78,6 @@ void DummyStub::Stop() {
 void DummyStub::TrainStart() {
   if (TorchColConfig::has_colocated_infer_server
       && TorchColConfig::IsTrainMaster()) {
-    // status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainStart)});
     ctrl::InfTraCommunicator::GetMQ()
         ->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainStart)},
               ctrl::InfTraMessageQueue::Direction::kTra2Inf,
@@ -89,9 +88,8 @@ void DummyStub::TrainStart() {
 void DummyStub::TrainEnd() {
   if (TorchColConfig::has_colocated_infer_server
       && TorchColConfig::IsTrainMaster()) {
-    // status_event_mq_->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainEnd)});
     ctrl::InfTraCommunicator::GetMQ()
-        ->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainStart)}, 
+        ->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainEnd)}, 
               ctrl::InfTraMessageQueue::Direction::kTra2Inf,
               TorchColConfig::GetTrainRank());
   }
@@ -183,7 +181,6 @@ void SwitchStub::TrainEnd() {
 
 bool SwitchStub::TryInterruptTrainDone() {
   std::unique_lock locker{mutex_};
-  // LOG(INFO) << "TryInterruptTrainDone " << cmd_id_ << " " << last_reply_cmd_id_; 
   if (cmd_id_ > last_reply_cmd_id_) {
     last_reply_cmd_id_ = cmd_id_;
     ctrl::InfTraCommunicator::GetMQ()

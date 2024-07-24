@@ -388,7 +388,7 @@ void Controller::TrainStart() {
   // train_status_mqs_[0]->Put({0, static_cast<int>(ctrl::CtrlEvent::kTrainStart)});
   InfTraCommunicator::GetMQ()->Put(
       {0, static_cast<int>(ctrl::CtrlEvent::kTrainStart)}, 
-      InfTraMessageQueue::Direction::kInf2Tra,
+      InfTraMessageQueue::Direction::kTra2Inf,
       0);
 }
 
@@ -397,7 +397,7 @@ void Controller::TrainEnd() {
   //     {0, static_cast<int>(ctrl::CtrlEvent::kTrainEnd)});
   InfTraCommunicator::GetMQ()->Put(
       {0, static_cast<int>(ctrl::CtrlEvent::kTrainEnd)}, 
-      InfTraMessageQueue::Direction::kInf2Tra,
+      InfTraMessageQueue::Direction::kTra2Inf,
       0);
 }
 

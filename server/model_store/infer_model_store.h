@@ -26,58 +26,6 @@
 
 namespace colserve {
 
-// class InferAllocProxy {
-//  public:
-//   InferAllocProxy() {}
-//   static InferAllocProxy &Get() {
-//     return *batch_adjust_proxy_;
-//   }
-
-//   static void Init() {
-//     batch_adjust_proxy_ = std::make_unique<InferAllocProxy>();
-//   }
-
-//   void Lock() {
-
-//   }
-
-//   void AllocInfer(tvm::Executor &executor) {
-//     std::unique_lock lock{mutex_};
-//     CHECK_LE(executor.GetMissingStorageSizeAlign(), Config::infer_alloc_buffer_nbytes);
-//     if (executor.GetMissingStorageSizeAlign() > proxy_nbytes_) {
-//       size_t alloc_nbytes = Config::infer_alloc_buffer_nbytes - proxy_nbytes_ + executor.GetMissingStorageSizeAlign();
-//       proxy_nbytes_ = Config::infer_alloc_buffer_nbytes;
-//     }
-//     if (cold_cache_buffer_nbytes_ > proxy_nbytes_) {
-//       size_t evict_cold_cache_nbytes = cold_cache_buffer_nbytes_ - proxy_nbytes_;
-//     }
-//   }
-
-//   bool AllocCache(size_t nbytes) {
-//     std::unique_lock lock{mutex_};
-//     CHECK_LE(nbytes, Config::infer_alloc_buffer_nbytes);
-//     if (cold_cache_buffer_nbytes_ + nbytes > proxy_nbytes_) {
-//       return false;
-//     }
-//     cold_cache_buffer_nbytes_ += nbytes;
-//     return true;
-//   }
-
-//   void FreeCache(size_t nbytes) {
-//     std::unique_lock lock{mutex_};
-//     CHECK_LE(nbytes, cold_cache_buffer_nbytes_);
-//     cold_cache_buffer_nbytes_ -= nbytes;
-//   }
-
-
-//  private:
-//   size_t cold_cache_buffer_nbytes_;
-//   size_t proxy_nbytes_;
-//   std::mutex mutex_;
-//   static std::unique_ptr<InferAllocProxy> batch_adjust_proxy_;
-// };
-
-
 class InferModelStore {
  public:
   static InferModelStore* Get();
