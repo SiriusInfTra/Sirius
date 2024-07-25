@@ -243,6 +243,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
             assert self.hook is not None
             while batch_size <= 0:
                 self.hook.report_batch_size(batch_size)
+                torch_col.update_current_batch_size(batch_size)
                 time.sleep(1e-3)
                 if (self.hook._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1
                     or self.hook._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL2):
@@ -271,6 +272,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
         # targets = self.all_targets[self.micro_batch_iter_idx:self.micro_batch_iter_idx+batch_size]
         if self.hook is not None:
             self.hook.report_batch_size(batch_size)
+            torch_col.update_current_batch_size(batch_size)
         # print(f'micro batch iter {self.micro_batch_iter_idx} acc iter {self.accumulate_iter_idx}', file=sys.stderr, flush=True)
         # return inputs, targets
         return inputs
