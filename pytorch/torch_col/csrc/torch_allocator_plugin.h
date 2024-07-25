@@ -3,15 +3,23 @@
 
 #include <common/cuda_allocator.h>
 
-#include <ATen/core/TensorBody.h>
+#include <torch_col/csrc/config.h>
+
 #include <ATen/core/TensorBody.h>
 #include <c10/core/Allocator.h>
 #include <c10/core/Storage.h>
 #include <c10/cuda/CUDAStream.h>
 #include <c10/cuda/CUDACachingAllocator.h>
 
+#include <ATen/Tensor.h>
+#include <ATen/ATen.h>
+
 #include <mutex>
 #include <unordered_map>
+#include <thread>
+#include <chrono>
+#include <unordered_set>
+#include <queue>
 
 
 namespace torch {
@@ -20,6 +28,11 @@ namespace cuda {
 namespace CUDAColAllocator {
 
 using streamType = c10::cuda::CUDAStream;
+
+struct TorchMemBlockExtraData {
+  int event_count{0};
+  std::unordered_set<streamType> stream_set;
+};
 
 class CUDAColAllocator : public c10::cuda::CUDACachingAllocator::CUDAAllocator {
  public:
@@ -73,10 +86,18 @@ class CUDAColAllocator : public c10::cuda::CUDACachingAllocator::CUDAAllocator {
 
   std::string name() override;
 
+
   void SetTrainModelAllocating(bool v) { train_model_allocating_ = v; }
   void TagIntermMemory(at::Tensor tensor);
   void ReleaseIntermMemory();
   void UntagIntermMemory();
+
+  void ProcessEvents();
+  void DeleteEntry(colserve::sta::CUDAMemPool::PoolEntry* entry);
+
+  TorchMemBlockExtraData* 
+  GetMemBlockExtraData(colserve::sta::CUDAMemPool::PoolEntry* entry);
+
 
  private:
   static std::shared_ptr<CUDAColAllocator> cuda_col_allocator_;
@@ -88,11 +109,17 @@ class CUDAColAllocator : public c10::cuda::CUDACachingAllocator::CUDAAllocator {
   std::mutex entry_mutex_;
   std::mutex interm_memory_mutex_;
 
-  std::unordered_map<void*, std::shared_ptr<colserve::sta::CUDAMemPool::PoolEntry>> entry_map_;
-  std::unordered_map<void*, std::shared_ptr<colserve::sta::CUDAMemPool::PoolEntry>> train_model_params_;
-  std::unordered_map<void*, std::vector<c10::weak_intrusive_ptr<at::TensorImpl>>> interm_memories_;
-  
+  std::unordered_map<
+      void*, std::shared_ptr<colserve::sta::CUDAMemPool::PoolEntry>
+  > entry_map_, train_model_params_;
 
+  std::unordered_map<
+      void*, std::vector<c10::weak_intrusive_ptr<at::TensorImpl>>
+  > interm_memories_;
+  
+  std::unordered_map<void*, std::deque<
+    std::pair<colserve::sta::CUDAMemPool::PoolEntry *, cudaEvent_t>
+  >> cuda_stream_events_;
 };
 
 }

@@ -1,4 +1,4 @@
-#include "log_as_glog_sta.h"
+#include <common/log_as_glog_sta.h>
 #include <common/device_manager.h>
 #include <common/util.h>
 
@@ -9,15 +9,26 @@ namespace colserve::sta {
 
 std::unique_ptr<DeviceManager> DeviceManager::device_manager_ = nullptr;
 
+DeviceGuard::DeviceGuard(int device_id) {
+  prev_device_id_ = DeviceManager::GetCurrentDevice();
+  device_id_ = device_id;
+  
+  COL_CUDA_CALL(cudaSetDevice(device_id));
+}
+
+DeviceGuard::~DeviceGuard() {
+  COL_CUDA_CALL(cudaSetDevice(prev_device_id_));
+}
+
 DeviceManager::DeviceManager() {
   auto visible_gpu_env = std::getenv("CUDA_VISIBLE_DEVICES");
   uint32_t num_gpus;
-  NVML_CALL(nvmlDeviceGetCount(&num_gpus));
+  COL_NVML_CALL(nvmlDeviceGetCount(&num_gpus));
   for (int i = 0; i < num_gpus; i++) {
     nvmlDevice_t device;
-    NVML_CALL(nvmlDeviceGetHandleByIndex(i, &device));
+   COL_NVML_CALL(nvmlDeviceGetHandleByIndex(i, &device));
     char uuid[128];
-    NVML_CALL(nvmlDeviceGetUUID(device, uuid, 128));
+   COL_NVML_CALL(nvmlDeviceGetUUID(device, uuid, 128));
     system_gpu_uuids_.push_back(uuid);
   }
   if (visible_gpu_env) {
@@ -83,6 +94,12 @@ const std::string& DeviceManager::GetGpuSystemUuid(int gpu_id) {
   auto iter = device_manager_->gpu_id_map_.find(gpu_id);
   CHECK(iter != device_manager_->gpu_id_map_.end());
   return iter->second.second;
+}
+
+int DeviceManager::GetCurrentDevice() {
+  int device_id;
+  COL_CUDA_CALL(cudaGetDevice(&device_id));
+  return device_id;
 }
 
 } // namespace colserve::sta

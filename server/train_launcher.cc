@@ -1,8 +1,11 @@
-#include "logging_as_glog.h"
-#include <pthread.h>
-#include <unistd.h>
-#include <sys/wait.h>
-#include <chrono>
+#include <server/logging_as_glog.h>
+#include <server/resource_manager.h>
+#include <server/model_store/infer_model_store.h>
+#include <server/train_launcher.h>
+#include <server/control/controller.h>
+#include <server/profiler.h>
+#include <server/config.h>
+
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/c_runtime_api.h>
 #include <tvm/runtime/packed_func.h>
@@ -11,13 +14,10 @@
 #include <tvm/runtime/logging.h>
 #include <glog/logging.h>
 #include <random>
-
-#include <server/resource_manager.h>
-#include <server/infer_model_store.h>
-#include <server/train_launcher.h>
-#include <server/controller.h>
-#include <server/profiler.h>
-#include <server/config.h>
+#include <pthread.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <chrono>
 
 
 namespace colserve {
@@ -37,7 +37,7 @@ std::pair<double, double> TrainLauncher::GetModelMemParam() {
       */
       // NOTE: DID NOT consider grad checkpoint
       return {1150, 85};
-    } else if (cur_model_name_ == "swin_b") {
+    } else if (cur_model_name_ == "swin_b" || cur_model_name_ == "swin_b_ddp") {
       return {1700, 140};
     } else if (cur_model_name_ == "gpt2") {
       /*
@@ -76,6 +76,7 @@ std::pair<double, double> TrainLauncher::GetModelMemParam() {
       LOG(FATAL) << "Unsupported model: " << cur_model_name_;
     }
   }
+  return {};
 }
 
 void TrainLauncher::Init(const std::filesystem::path &train_store_path) {
@@ -268,7 +269,7 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
 
   if (Config::IsSwitchMode()) {
     LOG(INFO) << "[TrainLauncher]: train wait infer idle in switch mode";
-    Controller::Get()->WaitInferIdle();
+    ctrl::Controller::Get()->WaitInferIdle();
   }
   LOG(INFO) << "fork train, batch size " << job_batch_size_;
 
@@ -306,8 +307,10 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
     if (Config::use_shared_tensor_train) {
       CHECK_NE(setenv("COL_USE_SHARED_TENSOR", "1", 1), -1);
       CHECK_NE(setenv("COL_HAS_SHARED_TENSOR_SERVER", "1", 1), -1);
-      CHECK_NE(setenv("COL_SHARED_TENSOR_POOL_GB", std::to_string(Config::cuda_memory_pool_gb).c_str(), 1), -1);
-      CHECK_NE(setenv("SHARED_TENSOR_POOL_FREELIST_POLICY", Config::mempool_freelist_policy.c_str(), 1), -1);
+      CHECK_NE(setenv("COL_SHARED_TENSOR_POOL_GB", 
+                      std::to_string(Config::cuda_memory_pool_gb).c_str(), 1), -1);
+      CHECK_NE(setenv("SHARED_TENSOR_POOL_FREELIST_POLICY", 
+                      Config::mempool_freelist_policy.c_str(), 1), -1);
       extra_env_ss << "COL_USE_SHARED_TENSOR=1"
                    << " COL_HAS_SHARED_TENSOR_SERVER=1"
                    << " COL_SHARED_TENSOR_POOL_GB=" << Config::cuda_memory_pool_gb
@@ -381,7 +384,7 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
   batch_start_ = false;
   // target_batch_size_ = -1;
   // cur_batch_size_ = -1;
-  Controller::Get()->TrainEnd(); // double check train end
+  ctrl::Controller::Get()->TrainEnd(); // double check train end
   
   // LOG(INFO) << "signaled " << WIFSIGNALED(status) << " " << WTERMSIG(status);
   if (WIFSIGNALED(status)) {
@@ -422,9 +425,9 @@ void TrainLauncher::DummyAdjust() {
   while (Profiler::MilliFrom(start) < 30*1000 && this->train_pid_ != -1) {
     LOG(INFO) << "DummyAdjust at " << Profiler::GetTimeStamp();
     auto batch_size = 1;
-    auto cmd_id = Controller::Get()->ColocateAdjust(-1, batch_size);
-    Controller::Get()->WaitColocateAdjustDone(cmd_id);
-    Controller::Get()->DummyInferExit(ori_target_bs);
+    auto cmd_id = ctrl::Controller::Get()->ColocateAdjust(-1, 0, batch_size);
+    ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
+    ctrl::Controller::Get()->DummyInferExit(0, ori_target_bs);
     std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<>(200, 1000)(gen)));
   }
 }

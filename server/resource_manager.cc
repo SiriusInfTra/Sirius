@@ -1,10 +1,10 @@
-#include "logging_as_glog.h"
-#include <common/cuda_allocator.h>
-#include <common/util.h>
-
+#include <server/logging_as_glog.h>
 #include <server/resource_manager.h>
 #include <server/train_launcher.h>
 #include <server/config.h>
+
+#include <common/cuda_allocator.h>
+#include <common/util.h>
 
 #include <regex>
 #include <boost/algorithm/string.hpp>
@@ -27,7 +27,7 @@ double ResourceManager::GetFreeMemoryMB(bool verbose) {
   double train_predict_memory_mb = TrainLauncher::Get()->PredictMemUsageMB(verbose);
 
   if (Config::use_shared_tensor) {
-    free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::PoolNbytes(0));
+    free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::Get(0)->PoolNbytes());
     free_memory_mb -= infer_memory_mb;
     free_memory_mb -= std::max(train_memory_mb, train_predict_memory_mb);
     free_memory_mb -= Config::train_memory_over_predict_mb;
@@ -60,7 +60,7 @@ double ResourceManager::GetTrainAvailMemoryMB(bool verbose) {
 
   double free_memory_mb;
   if (Config::use_shared_tensor) {
-    free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::PoolNbytes(0));
+    free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::Get(0)->PoolNbytes());
     free_memory_mb -= infer_memory_mb;
     free_memory_mb -= Config::train_memory_over_predict_mb;
   } else {
@@ -97,7 +97,7 @@ bool ResourceManager::InferChangeMemoryTryLock() {
 double ResourceManager::GetInferMemoryMB() {
   using namespace sta;
   if (Config::use_shared_tensor_infer) {
-    return ByteToMB(CUDAMemPool::InferMemUsage(0));
+    return ByteToMB(CUDAMemPool::Get(0)->InferMemUsage());
   } else {
     return ByteToMB(Profiler::GetLastInferMem());
   }
@@ -106,7 +106,7 @@ double ResourceManager::GetInferMemoryMB() {
 double ResourceManager::GetTrainMemoryMB() {
   using namespace sta;
   if (Config::use_shared_tensor_train) {
-    return ByteToMB(CUDAMemPool::TrainAllMemUsage(0));
+    return ByteToMB(CUDAMemPool::Get(0)->TrainAllMemUsage());
   } else {
     return ByteToMB(Profiler::GetLastTrainMem());
   }

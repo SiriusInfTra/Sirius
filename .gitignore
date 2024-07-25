@@ -1,7 +1,8 @@
 .vscode
 bin/
 bin-*/
-build/
+build
+build/*
 bin/
 build_*/
 /cmake-*
@@ -42,3 +43,5 @@ log_*/*
 mempool_dump*/*
 
 cifar-10-batches-py/*
+
+.clangd

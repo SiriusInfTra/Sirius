@@ -34,7 +34,8 @@ inline void CheckMemoryBound(at::IntArrayRef size,
   CHECK_LE(nbytes, mdata->nbytes) << "CheckMemoryBound: Out of memory bound";
 }
 
-inline std::vector<int64_t> ComputeStridesForViewDtypeDownsize(at::IntArrayRef old_strides, int64_t size_ratio, 
+inline std::vector<int64_t> 
+ComputeStridesForViewDtypeDownsize(at::IntArrayRef old_strides, int64_t size_ratio, 
     DLDataType old_dtype, DLDataType new_dtype) {
   const int64_t ndim = old_strides.size();
 
@@ -49,7 +50,8 @@ inline std::vector<int64_t> ComputeStridesForViewDtypeDownsize(at::IntArrayRef o
   return new_strides;
 }
 
-inline std::vector<int64_t> ComputeStridesForViewDtypeUpsize(at::IntArrayRef old_strides, int64_t size_ratio, 
+inline std::vector<int64_t> 
+ComputeStridesForViewDtypeUpsize(at::IntArrayRef old_strides, int64_t size_ratio, 
     DLDataType old_dtype, DLDataType new_dtype) {
   const int64_t ndim = old_strides.size();
   CHECK_EQ(old_strides[ndim - 1], 1) << "stride[-1] must be 1 to view " 

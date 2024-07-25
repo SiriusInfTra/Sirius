@@ -2,13 +2,12 @@
 #define COLSERVE_SM_PARTITION_H
 
 #include <common/util.h>
-#include <boost/interprocess/managed_shared_memory.hpp>
 
+#include <atomic>
 #include <thread>
 
 namespace colserve {
 
-namespace bip = boost::interprocess;
 
 class SMPartitioner {
  public:
@@ -20,42 +19,45 @@ class SMPartitioner {
     kSeperateTpc,
   };
 
-  static void Init(int device, bool cleanup, bool observe);
-  static int GetGPUNumSM();
-  static int GetGPUNumTpc();
-  static void SetGlobalTpcMask(uint64_t mask_64);
-  static void SetStreamTpcMask(CUstream s, uint64_t mask_64);
-  static std::string CheckStreamSM(CUstream s);
-
-  static void SetInferRequiredTpcNum(int tpc_num);
-  static int GetInferRequiredTpcNum();
-  static void AddInferRequiredTpcNum(int tpc_num);
-  static void DecInferRequiredTpcNum(int tpc_num);
-  static uint64_t GetTrainAvailTpcMask();
-  static int GetTrainAvailTpcNum();
-
-  static uint64_t SetTrainStreamTpcMask(CUstream s);
-
-  SMPartitioner(int device, bool cleanup, bool observe);
-  ~SMPartitioner();
-
- private:
-  static std::unique_ptr<SMPartitioner> sm_partitioner_;
-
   struct TpcData {
     std::atomic<int> infer_required_tpc_num;
     uint64_t infer_tpc_mask; // not used 
   };
 
-  int device_;
+  static void Init(int device_id);
+  static SMPartitioner* Get(int device_id);
+
+  int GetGPUNumSM();
+  int GetGPUNumTpc();
+  void SetGlobalTpcMask(uint64_t mask_64);
+  void SetStreamTpcMask(CUstream s, uint64_t mask_64);
+  std::string CheckStreamSM(CUstream s);
+
+  void SetInferRequiredTpcNum(int tpc_num);
+  int GetInferRequiredTpcNum();
+  void AddInferRequiredTpcNum(int tpc_num);
+  void DecInferRequiredTpcNum(int tpc_num);
+  uint64_t GetTrainAvailTpcMask();
+  int GetTrainAvailTpcNum();
+
+  uint64_t SetTrainStreamTpcMask(CUstream s);
+
+  SMPartitioner(int device_id);
+  ~SMPartitioner();
+
+ private:
+  static std::array<std::unique_ptr<SMPartitioner>, MAX_DEVICE_NUM> sm_partitioners_;
+
+  int device_id_;
   int gpu_sm_num_;
   int gpu_tpc_num_;
   int sm_num_per_tpc_;
 
+  // TpcData* tpc_data_;
+  // std::atomic<int>* ref_cnt_;
+  // std::string shm_name_;
+  // bip::managed_shared_memory shm_;
   TpcData* tpc_data_;
-  std::atomic<int>* ref_cnt_;
-  std::string shm_name_;
-  bip::managed_shared_memory shm_;
 
   int min_train_tpc_num_ = 5;
   int max_train_tpc_num_ = 40;

@@ -1,10 +1,9 @@
-#include "logging_as_glog.h"
-
+#include <server/logging_as_glog.h>
 #include <server/grpc/grpc_server.h>
-#include <server/infer_model_store.h>
-#include <server/infer_model.h>
+#include <server/model_store/infer_model_store.h>
+#include <server/model_store/infer_model.h>
 #include <server/train_launcher.h>
-#include <server/controller.h>
+#include <server/control/controller.h>
 #include <server/config.h>
 
 #include <thread>
@@ -89,9 +88,11 @@ void CommonHandler::SetupCallData() {
     data->response_.set_status("healthy");
     data->responder_.Finish(data->response_, grpc::Status::OK, (void*)data);
   };
-  new CommonData<EmptyRequest, ServerStatus>{0, "GetServerStatus", service_, cq_,
-                                             register_get_server_status,
-                                             exec_get_server_status};
+  new CommonData<EmptyRequest, ServerStatus>{
+      0, "GetServerStatus", service_, cq_,
+      register_get_server_status,
+      exec_get_server_status
+  };
 
 
   auto register_warmup_done = [this](
@@ -108,9 +109,11 @@ void CommonHandler::SetupCallData() {
     InferModelStore::WarmupDone();
     data->responder_.Finish(data->response_, grpc::Status::OK, (void*)data);
   };
-  new CommonData<EmptyRequest, EmptyResult>{0, "WarmupDone", service_, cq_,
-                                            register_warmup_done,
-                                            exec_warmpup_done};
+  new CommonData<EmptyRequest, EmptyResult>{
+      0, "WarmupDone", service_, cq_,
+      register_warmup_done,
+      exec_warmpup_done
+  };
 
 
   auto register_report_time_stamp_done = [this](
@@ -121,12 +124,15 @@ void CommonHandler::SetupCallData() {
   };
   auto exec_report_time_stamp_done = [this](
       CommonData<InferenceWorkloadStartRequest, EmptyResult>* data) {
-    Profiler::Get()->SetWorkloadStartTimeStamp(data->request_.time_stamp(), data->request_.delay_before_profile());
+    Profiler::Get()->SetWorkloadStartTimeStamp(data->request_.time_stamp(), 
+                                               data->request_.delay_before_profile());
     data->responder_.Finish(data->response_, grpc::Status::OK, (void*)data);
   };
-  new CommonData<InferenceWorkloadStartRequest, EmptyResult>{0, "InferenceWorkloadStart", service_, cq_,
-                                            register_report_time_stamp_done,
-                                            exec_report_time_stamp_done};
+  new CommonData<InferenceWorkloadStartRequest, EmptyResult>{
+      0, "InferenceWorkloadStart", service_, cq_,
+      register_report_time_stamp_done,
+      exec_report_time_stamp_done
+  };
 
   auto register_inference_workload_done = [this](
       CommonData<InferWorkloadDoneRequest, EmptyResult>* data) {
@@ -138,12 +144,14 @@ void CommonHandler::SetupCallData() {
       CommonData<InferWorkloadDoneRequest, EmptyResult>* data) {
     LOG(INFO) << "[Common Data]: InferenceWorkloadDone";
     Profiler::Get()->SetWorkloadEndTimeStamp(data->request_.time_stamp());
-    Controller::Get()->InferenceWorkloadDone();
+    ctrl::Controller::Get()->InferenceWorkloadDone();
     data->responder_.Finish(data->response_, grpc::Status::OK, (void*)data);
   };
-  new CommonData<InferWorkloadDoneRequest, EmptyResult>{0, "InferenceWorkloadDone", service_, cq_,
-                                            register_inference_workload_done,
-                                            exec_inference_workload_done};
+  new CommonData<InferWorkloadDoneRequest, EmptyResult>{
+      0, "InferenceWorkloadDone", service_, cq_,
+      register_inference_workload_done,
+      exec_inference_workload_done
+  };
 }
 
 void InferHandler::Start() {
@@ -151,7 +159,8 @@ void InferHandler::Start() {
   pthread_barrier_init(&barrier, NULL, 2);
   thread_.reset(new std::thread([this, &barrier]() {
     pthread_barrier_wait(&barrier);
-    InferData* infer_data = new InferData{0, "InferRequest", service_, cq_};
+    InferData* infer_data = new InferData{0, "InferRequest", 
+                                          service_, cq_};
 
     void* tag;
     bool ok;
@@ -182,7 +191,7 @@ DLDataType InferHandler::InferData::GetInputDType(size_t i) {
   } else if (request_.inputs(i).dtype() == "int64") {
     return DLDataType{kDLInt, 64, 1};
   } else {
-    LOG(FATAL) << "InferData: " << "Unknown input dtype " << request_.inputs(i).dtype();
+    LOG(FATAL) << "InferData: Unknown input dtype " << request_.inputs(i).dtype();
   }
 }
 
@@ -254,7 +263,8 @@ void TrainHandler::Start() {
   pthread_barrier_init(&barrier, NULL, 2);
   thread_.reset(new std::thread([this, &barrier]() {
     pthread_barrier_wait(&barrier);
-    TrainData* train_data = new TrainData{0, "TrainRequest", service_, cq_};
+    TrainData* train_data = new TrainData{0, "TrainRequest", 
+                                          service_, cq_};
 
     void* tag;
     bool ok;

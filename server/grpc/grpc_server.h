@@ -2,15 +2,13 @@
 #define COLSERVE_GRPC_SERVER_H
 
 // #include <dlpack/dlpack.h>
-#include "logging_as_glog.h"
-#include <grpc++/grpc++.h>
-#include <glog/logging.h>
-#include <thread>
-
-#include <common/dlpack.h>
-
 #include "colserve.grpc.pb.h"
 
+#include <server/logging_as_glog.h>
+#include <common/dlpack.h>
+
+#include <grpc++/grpc++.h>
+#include <thread>
 
 namespace colserve {
 namespace network {
@@ -205,6 +203,7 @@ class TrainHandler : public GRPCServer::Handler {
     
     enum class Status { kCreate, kFinish };
     friend class TrainHandler;
+    
    private:
     TrainRequest request_;
     TrainResult response_;

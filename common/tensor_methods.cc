@@ -21,9 +21,9 @@ STensor Empty(at::IntArrayRef size, at::MemoryFormat memory_format,
   auto storage_nbytes = ComputeStorageNbytes(size, dtype);
   std::shared_ptr<CUDAMemPool::PoolEntry> entry;
   if (CUDAMemPool::IsEnable()) {
-    entry = CUDAMemPool::Get()->Alloc(device.device_id, storage_nbytes, mtype, false);
+    entry = CUDAMemPool::Get(device.device_id)->Alloc(storage_nbytes, mtype, false);
   } else {
-    entry = CUDAMemPool::RawAlloc(device.device_id, storage_nbytes, mtype);
+    entry = CUDAMemPool::Get(device.device_id)->RawAlloc(storage_nbytes, mtype);
   }
   CHECK(entry != nullptr && entry->nbytes >= storage_nbytes);
   return STensor(entry, size.vec(), memory_format, device, dtype);
@@ -41,9 +41,9 @@ STensor EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride,
   auto storage_nbytes = ComputeStorageNbytes(size, stride, dtype);
   std::shared_ptr<CUDAMemPool::PoolEntry> entry;
   if (CUDAMemPool::IsEnable()) {
-    entry = CUDAMemPool::Get()->Alloc(device.device_id, storage_nbytes, mtype, false);
+    entry = CUDAMemPool::Get(device.device_id)->Alloc(storage_nbytes, mtype, false);
   } else {
-    entry = CUDAMemPool::Get()->RawAlloc(device.device_id, storage_nbytes, mtype);
+    entry = CUDAMemPool::Get(device.device_id)->RawAlloc(storage_nbytes, mtype);
   }
   CHECK(entry != nullptr && entry->nbytes >= storage_nbytes);
   return STensor(entry, size.vec(), stride.vec(), device, dtype, 0);
@@ -96,7 +96,8 @@ STensor ViewShapeDtype(const STensor tensor, at::IntArrayRef size, DLDataType dt
   CHECK_EQ(bytes_offset % new_elem_size, 0);
   auto new_storage_offset = bytes_offset / new_elem_size;
   if (!tensor.IsNull()) {
-    CheckMemoryBound(tensor.Shape(), new_stride, dtype, new_storage_offset, tensor.MData());
+    CheckMemoryBound(tensor.Shape(), new_stride, dtype, 
+                     new_storage_offset, tensor.MData());
     return STensor(tensor.MData(), size.vec(), std::move(new_stride), 
                    tensor->device, dtype, new_storage_offset);
   } else {
@@ -131,10 +132,12 @@ void AsStrided_(STensor tensor, at::IntArrayRef size,
   if (!tensor.IsNull()) {
     CheckMemoryBound(size, stride, tensor->dtype, 
         storage_offset.value_or(tensor.StorageOffset()), tensor.MData());
-    tensor.get()->SetTensor(tensor.MData(), size.vec(), stride.vec(), tensor->device, tensor->dtype, 
+    tensor.get()->SetTensor(tensor.MData(), size.vec(), 
+                            stride.vec(), tensor->device, tensor->dtype, 
         storage_offset.value_or(tensor.StorageOffset()));
   } else {
-    tensor.get()->SetTensor(nullptr, size.vec(), stride.vec(), tensor->device, tensor->dtype, 
+    tensor.get()->SetTensor(nullptr, size.vec(), 
+                            stride.vec(), tensor->device, tensor->dtype, 
         storage_offset.value_or(tensor.StorageOffset()));
   }
   tensor.UpdateVersion();
@@ -186,11 +189,11 @@ void STensor::AllocForNull(MemType mtype) {
       get()->shape_, get()->stride_, get()->tensor_.dtype, StorageOffset());
   TensorContainer::memory_data_t mdata;
   if (CUDAMemPool::IsEnable()) {
-    mdata = CUDAMemPool::Get()->Alloc(get()->tensor_.device.device_id, 
-                                      storage_nbytes, mtype, false);
+    mdata = CUDAMemPool::Get(get()->tensor_.device.device_id)
+        ->Alloc(storage_nbytes, mtype, false);
   } else {
-    mdata = CUDAMemPool::RawAlloc(get()->tensor_.device.device_id, 
-                                  storage_nbytes, mtype);
+    mdata = CUDAMemPool::Get(get()->tensor_.device.device_id)
+        ->RawAlloc( storage_nbytes, mtype);
   }
   if (storage_nbytes > 0 && mdata == nullptr) {
     LOG(FATAL) << "Tensor AllocForNull: tensor without memory";
@@ -204,7 +207,8 @@ void STensor::AllocForNull(MemType mtype) {
 void STensor::SetMDataForNull(TensorContainer::memory_data_t mdata, bool check_memory_bound) {
   CHECK(IsNull());
   if (check_memory_bound) {
-    CheckMemoryBound(get()->shape_, get()->stride_, get()->tensor_.dtype, StorageOffset(), mdata);
+    CheckMemoryBound(get()->shape_, get()->stride_, 
+                     get()->tensor_.dtype, StorageOffset(), mdata);
   }
   CHECK(mdata != nullptr);
   get()->mdata_ = mdata;

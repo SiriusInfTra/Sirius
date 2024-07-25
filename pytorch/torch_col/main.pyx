@@ -3,16 +3,23 @@
 include "./ctrl_stub.pxi"
 
 from libcpp.string cimport string
+from libcpp.optional cimport optional, nullopt_t, make_optional
+from libcpp.functional cimport function
+from posix.unistd cimport pid_t
+from libc.stdint cimport uint64_t
 from enum import Enum
+import os
 
 ############################
 #  MARK: Torch Col Config  #
 ############################
 
-cdef extern from "<csrc/config.h>" namespace "torch_col":
+cdef extern from "<torch_col/csrc/config.h>" namespace "torch_col":
     cdef cppclass TorchColConfig:
         @staticmethod
         void InitConfig()
+        @staticmethod
+        bint HasColocatedInferServer()
         @staticmethod
         bint IsEnableSharedTensor()
         @staticmethod
@@ -26,11 +33,19 @@ cdef extern from "<csrc/config.h>" namespace "torch_col":
         @staticmethod
         void SetReleaseIntermMemoryByGradFn(bint)
         @staticmethod
-        void IsReleaseIntermMemoryByTagging()
+        bint IsReleaseIntermMemoryByTagging()
         @staticmethod
         void SetReleaseIntermMemoryByTagging(bint)
         @staticmethod
-        void IsEnableFbwardHook()
+        bint IsEnableFbwardHook()
+        @staticmethod
+        int GetTrainRank()
+        @staticmethod
+        void SetTrainRank(int)
+        @staticmethod
+        int GetTrainWorldSize()
+        @staticmethod
+        void SetTrainWorldSize(int)
 
 
 cdef extern from "<common/device_manager.h>" namespace "colserve::sta":
@@ -39,12 +54,9 @@ cdef extern from "<common/device_manager.h>" namespace "colserve::sta":
         void Init()
 
 
-cdef extern from "<csrc/xsched.h>" namespace "torch_col":
+cdef extern from "<torch_col/csrc/init.h>" namespace "torch_col":
+    cpdef void TorchColInit(int, int)
     cpdef void InitSMPartition()
-
-
-cdef extern from "<csrc/init.h>" namespace "torch_col":
-    cpdef void TorchColInit()
 
 
 class HookMode(Enum):
@@ -100,15 +112,38 @@ def is_enable_fbward_hook():
     return TorchColConfig.IsEnableFbwardHook()
 
 
-def torch_col_init():
-    TorchColInit()
+def torch_col_init(train_rank = 0, train_world_size = 1):
+    assert train_rank >= 0 and train_world_size > 0
+    assert train_rank < train_world_size
+    TorchColInit(train_rank, train_world_size)
+
+
+def get_train_rank():
+    return TorchColConfig.GetTrainRank()
+
+
+def set_train_rank(rank):
+    TorchColConfig.SetTrainRank(rank)
+
+
+def get_train_world_size():
+    return TorchColConfig.GetTrainWorldSize()
+
+
+def set_train_world_size(world_size):
+    TorchColConfig.SetTrainWorldSize(world_size)
+
+
+def set_train_rank_world_size(rank, world_size):
+    set_train_rank(rank)
+    set_train_world_size(world_size)
 
 
 #############################
 #  MARK: Memory Management  #
 #############################
 
-cdef extern from "<csrc/cuda_allocator_plugin.h>" namespace "torch::cuda::CUDAColAllocator":
+cdef extern from "<torch_col/csrc/torch_allocator_plugin.h>" namespace "torch::cuda::CUDAColAllocator":
     cdef cppclass CUDAColAllocator:
         @staticmethod
         CUDAColAllocator* Get()
@@ -122,24 +157,26 @@ cdef extern from "<csrc/cuda_allocator_plugin.h>" namespace "torch::cuda::CUDACo
 cdef extern from "<common/cuda_allocator.h>" namespace "colserve::sta":
     cdef cppclass CUDAMemPool:
         @staticmethod
-        size_t InferMemUsage(int)
+        CUDAMemPool* Get(int)
         @staticmethod
-        size_t TrainMemUsage(int)
+        size_t InferMemUsage()
         @staticmethod
-        size_t TrainAllMemUsage(int)
+        size_t TrainMemUsage()
         @staticmethod
-        void FreeTrainLocals(int)
+        size_t TrainAllMemUsage()
+        @staticmethod
+        void FreeTrainLocals()
 
 
 # release activations by traversing grad_fn 
-cdef extern from "<csrc/util.h>" namespace "torch_col":
+cdef extern from "<torch_col/csrc/util.h>" namespace "torch_col":
   cdef void ReleaseGradFnSavedTensor(PyObject* function)
   cdef void ReleaseUnderlyingStorage(PyObject* tensor)
 
 
 # release activations by tagging activations,
 # interactive with memory pool to release memory dirrectly 
-cdef extern from "<csrc/mem_tagging.h>" namespace "torch_col":
+cdef extern from "<torch_col/csrc/mem_tagging.h>" namespace "torch_col":
     cdef void TagModelParameterStart()
     cdef void TagModelParameterEnd()
     cdef void TagIntermMemory(PyObject* obj)
@@ -148,25 +185,25 @@ cdef extern from "<csrc/mem_tagging.h>" namespace "torch_col":
     cdef void RearrangeMemory()
 
 
-cdef extern from "<csrc/util.h>" namespace "torch_col":
+cdef extern from "<torch_col/csrc/util.h>" namespace "torch_col":
     cpdef void DumpMempoolFreeList(string filename)
     cpdef void DumpMempoolBlockList(string filename)
 
 
 def cuda_memory_pool_infer_usage(device_id):
-    return CUDAMemPool.InferMemUsage(device_id)
+    return CUDAMemPool.Get(device_id).InferMemUsage()
 
 
 def cuda_memory_pool_train_usage(device_id):
-    return CUDAMemPool.TrainMemUsage(device_id)
+    return CUDAMemPool.Get(device_id).TrainMemUsage()
 
 
 def cuda_memory_pool_train_all_usage(device_id):
-    return CUDAMemPool.TrainAllMemUsage(device_id)
+    return CUDAMemPool.Get(device_id).TrainAllMemUsage()
 
 
 def cuda_memory_pool_free_train_local(device_id):
-    CUDAMemPool.FreeTrainLocals(device_id)
+    CUDAMemPool.Get(device_id).FreeTrainLocals()
 
 
 def release_grad_fn_saved_tensor(grad_fn):
@@ -209,38 +246,187 @@ def rearrange_memory():
 #  MARK: GPU SM Management  #
 #############################
 
+cdef extern from "<common/xsched_ctrl.h>" namespace "colserve::sta::xsched":
+    cpdef uint64_t RegisterStream(uint64_t stream)
+    cpdef void UnRegisterStream()
+    cdef uint64_t GetXQueueSize(optional[uint64_t] stream)
+    cpdef uint64_t AbortStream()
+    cpdef int SyncStream()
+
+
 cdef extern from "<common/sm_partition.h>" namespace "colserve":
     cdef cppclass SMPartitioner:
         @staticmethod
-        void Init(int device, int cleanup, int observe)
+        void Init(int device_id)
         @staticmethod
+        SMPartitioner* Get(int device_id)
+
         int GetInferRequiredTpcNum()
-        @staticmethod
         int GetTrainAvailTpcNum()
-        @staticmethod
-        unsigned long long GetTrainAvailTpcMask()
+        uint64_t GetTrainAvailTpcMask()
+
+
+def GetXQueueSize_(stream):
+    cdef optional[uint64_t] stream_opt
+    if stream is not None:
+        stream_opt = make_optional[uint64_t](<uint64_t> stream)
+    return GetXQueueSize(stream_opt)
 
 
 def monitor_sm_partition(interval: float):
     import sys, time
-    SMPartitioner.Init(0, 0, 1)
+
+    if not TorchColConfig.HasColocatedInferServer():
+        print("There not exist colocated infer server")
+        return
+
+    SMPartitioner.Init(0)
 
     fmt = "Infer TPC Num: {}, Train TPC Num: {}, Train Avail TPC Mask: {}"
     while True:
         print(fmt.format(
-            SMPartitioner.GetInferRequiredTpcNum(),
-            SMPartitioner.GetTrainAvailTpcNum(),
-            hex(SMPartitioner.GetTrainAvailTpcMask())
+            SMPartitioner.Get(0).GetInferRequiredTpcNum(),
+            SMPartitioner.Get(0).GetTrainAvailTpcNum(),
+            hex(SMPartitioner.Get(0).GetTrainAvailTpcMask())
         ))
         time.sleep(interval)
 
 
+########################
+#  MARK: Inf-Tra-Comm  #
+########################
+
+cdef extern from "<common/inf_tra_comm/communicator.h>" namespace "colserve::ctrl":
+    cpdef enum class CtrlEvent(int):
+        # status event
+        kTrainStart,
+        kTrainEnd,
+        kInterruptTrainDone,
+        kResumeTrainDone,
+        kColocateAdjustL1Done,
+        kColocateAdjustL2Done,
+        
+        kReportBatchSize,
+
+        # cmd event: switch mode
+        kInterruptTrain,
+        kResumeTrain,
+        # cmd event: colocate mode
+        kColocateAdjustL1,
+        kColocateAdjustL2,
+        kInferExit, # train adjust back
+
+        kInferenceWorkloadDone,
+
+        kNumEvent,
+
+
+    cdef struct CtrlMsgEntry:
+        uint64_t id
+        int event
+        int value
+
+
+    cdef cppclass InfTraMessageQueue:
+        pass
+
+
+    cdef cppclass InfTraInfoBoard:
+        void SetTrainInfo(int id, function fn)
+        void SetTrainInfo(int id, optional[pid_t] pid,
+                          optional[int] rank, optional[int] world_size,
+                          optional[int] init_batch_size, 
+                          optional[int] current_batch_size)
+
+    cdef cppclass InfTraCommunicator:
+        @staticmethod
+        void Init(bool is_server, bool cleanup, int train_world_size)
+        @staticmethod
+        bool IsInitialized()
+        @staticmethod
+        InfTraCommunicator* GetMQ()
+        @staticmethod
+        InfTraInfoBoard* GetIB()
+
+
+cdef class PyCtrlMsgEntry:
+    cdef CtrlMsgEntry _entry
+    
+    def __cinit__(self, uint64_t id, CtrlEvent cmd, int value):
+        self._entry = CtrlMsgEntry(id, int(cmd), value)
+
+    @property
+    def event(self):
+        return CtrlEvent(self._entry.event)
+
+    @property
+    def id(self):
+        return self._entry.id
+
+    @property
+    def value(self):
+        return self._entry.value
+
+    def __repr__(self):
+        return "PyCtrlMsgEntry(id={}, event={}, value={})".format(self.id, str(self.event), self.value)
+
+
+cdef class PyInfTraCommunicator:
+    def __init__(self, is_server = None, cleanup = None, train_world_size = None):
+        if InfTraCommunicator.IsInitialized():
+            return
+        if (
+            is_server is None 
+            or cleanup is None
+            or train_world_size is None
+        ):
+            raise Exception("Invalid InfTraCommunicator init args")
+        InfTraCommunicator.Init(<bool> is_server, <bool> cleanup, <int> train_world_size)
+
+
+def init_train_info(init_batch_size, 
+                    current_batch_size,
+                    pid = None):
+    if not TorchColConfig.HasColocatedInferServer():
+        print("There not exist colocated infer server, skip init train info")
+        return
+
+    cdef optional[pid_t] pid_opt
+    if pid is not None:
+        pid_opt = make_optional[pid_t](<pid_t> pid)
+    else:
+        pid_opt = make_optional[pid_t](<pid_t> os.getpid())
+
+    InfTraCommunicator.GetIB().SetTrainInfo(
+        TorchColConfig.GetTrainRank(), pid_opt,
+        make_optional[int](TorchColConfig.GetTrainRank()), 
+        make_optional[int](TorchColConfig.GetTrainWorldSize()), 
+        make_optional[int](<int> init_batch_size), 
+        make_optional[int](<int> current_batch_size)
+    )
+
+
+def update_current_batch_size(current_batch_size):
+    if not TorchColConfig.HasColocatedInferServer():
+        return
+
+    InfTraCommunicator.GetIB().SetTrainInfo(
+        TorchColConfig.GetTrainRank(), 
+        optional[pid_t](), optional[int](), 
+        optional[int](), optional[int](), 
+        make_optional[int](<int> current_batch_size)
+    )
 
 ####################
 #  MARK: Utililty  #
 ####################
 
-cdef extern from "<csrc/util.h>" namespace "torch_col":
+cdef extern from "<torch_col/csrc/util.h>" namespace "torch_col":
+    cpdef long get_unix_timestamp()
+    cpdef long get_unix_timestamp_us()
+
+
+cdef extern from "<torch_col/csrc/util.h>" namespace "torch_col":
     cdef cppclass TensorWeakRef:
         TensorWeakRef(PyObject *tensor) except +
         size_t Nbytes()

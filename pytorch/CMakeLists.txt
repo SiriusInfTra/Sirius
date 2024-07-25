@@ -7,13 +7,12 @@ set(CMAKE_CXX_STANDARD 17)
 find_package(Python REQUIRED COMPONENTS Development)
 
 add_library(new_torch_col SHARED 
-  torch_col/csrc/cuda_allocator_plugin.cc
+  torch_col/csrc/torch_allocator_plugin.cc
   torch_col/csrc/control_stub.cc
   torch_col/csrc/mem_tagging.cc
   torch_col/csrc/util.cc
   torch_col/csrc/config.cc
   torch_col/csrc/fake_engine.cc
-  torch_col/csrc/xsched.cc
   torch_col/csrc/init.cc
 )
 
@@ -43,7 +42,6 @@ target_link_libraries(new_torch_col PRIVATE
   ${TORCH_LIBRARIES}
   ${torch_python_lib}
   Python::Python
-  PySched
 )
 
 set_target_properties(new_torch_col PROPERTIES BUILD_RPATH $ORIGIN)
@@ -70,10 +68,7 @@ add_custom_command(
   DEPENDS 
     new_torch_col sta
     "${CMAKE_CURRENT_SOURCE_DIR}/setup.py"
-    # "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/memory.pxi"
-    # "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/sm.pxi"
     "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/ctrl_stub.pxi"
-    "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/ctrl_stub.pxd"
     "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/main.pyx"
     ${TORCH_COL_PYTHON_FILES}
 )

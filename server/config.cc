@@ -1,6 +1,6 @@
 #include <common/util.h>
 
-#include "config.h"
+#include <server/config.h>
 
 namespace colserve {
 
@@ -76,7 +76,7 @@ bool Config::profiler_acquire_resource_lock = false;
 
 bool Config::skip_set_mps_thread_percent = false;
 bool Config::dynamic_sm_partition = false;
-bool Config::estimate_infer_model_tpc = true;
+bool Config::estimate_infer_model_tpc = false;
 double Config::infer_exec_time_estimate_scale = 1.1;
 
 bool Config::dummy_adjust = false;

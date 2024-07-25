@@ -1,7 +1,7 @@
-#include "logging_as_glog.h"
+#include <server/logging_as_glog.h>
 
 #include <server/grpc/grpc_server.h>
-#include <server/job_queue.h>
+#include <server/schedule/job_queue.h>
 
 #include <chrono> 
 

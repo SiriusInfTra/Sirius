@@ -1,21 +1,25 @@
 #ifndef COLSERVE_COMMON_UTIL_H
 #define COLSERVE_COMMON_UTIL_H
 
+#include <boost/format/format_fwd.hpp>
+#include <common/log_as_glog_sta.h>
+#include <common/device_manager.h>
+
+#include <boost/format.hpp>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
+#include <nvml.h>
+#include <sys/unistd.h>
 
 #include <iostream>
 #include <iomanip>
 #include <cstdint>
 #include <sstream>
 
-#include <cuda.h>
-#include <cuda_runtime_api.h>
-#include <nvml.h>
 
 namespace colserve {
 
-#define CUDA_CALL(func) do { \
+#define COL_CUDA_CALL(func) do { \
   auto error = func; \
   if (error != cudaSuccess) { \
     LOG(FATAL) << #func << " " << cudaGetErrorString(error); \
@@ -23,7 +27,7 @@ namespace colserve {
   } \
   } while (0)
 
-#define CU_CALL(func) \
+#define COL_CU_CALL(func) \
   do { \
     auto err = func; \
     if (err != CUDA_SUCCESS) { \
@@ -34,7 +38,7 @@ namespace colserve {
     } \
   } while (0);
 
-#define NVML_CALL(func) do{ \
+#define COL_NVML_CALL(func) do{ \
     auto error = func; \
     if (error != NVML_SUCCESS) { \
       LOG(FATAL) << #func << " " << nvmlErrorString(error); \
@@ -42,12 +46,13 @@ namespace colserve {
     } \
   } while(0);
 
-#define MAX_DEVICE_NUM 8
+
+constexpr int MAX_DEVICE_NUM = 8;
 
 using memory_nbyte_t = size_t;
 using memory_mb_t = double;
 
-namespace literals {
+namespace memory_literals {
 
 constexpr size_t operator ""_B(unsigned long long n) {
   return static_cast<size_t>(n);
@@ -88,17 +93,25 @@ inline double ByteToMB(size_t nbytes) {
 }
 
 inline std::string ByteDisplay(size_t nbytes) {
-  std::stringstream ss;
-  ss << std::fixed << std::setprecision(2)
-     << static_cast<double>(nbytes) / 1024 / 1024 << "MB (" << nbytes << " Bytes)";
-  return ss.str();
+  return str(boost::format("%.2fMB (%dB)") % ByteToMB(nbytes) % nbytes);
 }
 }
 
+inline std::string GetDefaultShmNamePrefix(int device_id) {
+  CHECK_LT(device_id, sta::DeviceManager::GetNumVisibleGpu());
+  return (boost::format("colserve_%s_%s") % sta::DeviceManager::GetGpuSystemUuid(device_id) 
+                                          % getuid())
+                                          .str();
 }
 
+inline std::string GetDefaultShmNamePrefix() {
+  return (boost::format("colserve_%s") % getuid()).str();
+}
+
+} // namespace colserve
 
 
-using namespace colserve::literals;
+
+using namespace colserve::memory_literals;
 
 #endif

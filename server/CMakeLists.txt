@@ -2,11 +2,12 @@ cmake_minimum_required(VERSION 3.20)
 
 add_executable(${PROJECT_NAME}
   main.cc
-  job_queue.cc
-  infer_model_store.cc
-  infer_model.cc
+  schedule/job_queue.cc
+  model_store/infer_model_store.cc
+  model_store/infer_model.cc
+  model_store/model_cache.cc
   train_launcher.cc
-  controller.cc
+  control/controller.cc
   resource_manager.cc
   profiler.cc
   config.cc

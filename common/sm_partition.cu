@@ -310,7 +310,7 @@ void SMPartitioner::SetGlobalTpcMask(uint64_t mask_64) {
 }
 
 void SMPartitioner::SetStreamTpcMask(CUstream s, uint64_t mask_64) {
-	auto &stream_last_tpc_mask_map = sm_partitioner_->stream_last_tpc_mask_map_;
+	auto &stream_last_tpc_mask_map = stream_last_tpc_mask_map_;
 	auto it = stream_last_tpc_mask_map.find(s);
 	if (it == stream_last_tpc_mask_map.end()) {
 		stream_last_tpc_mask_map.insert({s, mask_64});
@@ -321,6 +321,9 @@ void SMPartitioner::SetStreamTpcMask(CUstream s, uint64_t mask_64) {
 			it->second = mask_64;
 		}
 	}
+
+	// LOG(INFO) << std::hex << "Set Train Stream (" 
+  //           << s << ") TPC Mask " << std::hex << mask_64;
 
 	uint128_t mask_128 = -1;
 	mask_128 <<= 64;
@@ -345,10 +348,10 @@ __global__ void get_sm_mask(int* buffer) {
 
 std::string SMPartitioner::CheckStreamSM(CUstream s) {
   int* mask = nullptr;
-  CUDA_CALL(cudaMallocHost(&mask, 1024 * sizeof(int)));
+  COL_CUDA_CALL(cudaMallocHost(&mask, 1024 * sizeof(int)));
 
   get_sm_mask<<<1024, 1, 0, s>>>(mask);
-  CUDA_CALL(cudaStreamSynchronize(s));
+  COL_CUDA_CALL(cudaStreamSynchronize(s));
 
   std::set<int> used_sms;
   for (int i = 0; i < 1024; i++) {
@@ -360,7 +363,7 @@ std::string SMPartitioner::CheckStreamSM(CUstream s) {
     ss << sm << " ";
   }
 
-  CUDA_CALL(cudaFreeHost(mask));
+  COL_CUDA_CALL(cudaFreeHost(mask));
   return ss.str();
 }
 

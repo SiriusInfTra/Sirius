@@ -6,7 +6,8 @@
 //   static_assert(false, "tvm/runtime/logging.h should be included after this file");
 // #endif
 
-#include "../sta/dlpack.h"
+#include <common/dlpack.h>
+
 #include <dmlc/json.h>
 #include <dmlc/memory_io.h>
 

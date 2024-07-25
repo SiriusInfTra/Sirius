@@ -10,9 +10,9 @@
 #include <common/shape_helper.h>
 #include <common/util.h>
 #include <server/train_launcher.h>
-#include <server/infer_model_store.h>
+#include <server/model_store/infer_model_store.h>
 #include <server/profiler.h>
-#include <server/controller.h>
+#include <server/control/controller.h>
 #include <server/resource_manager.h>
 #include <server/config.h>
 #include <server/tvm/executor.h>
@@ -78,14 +78,14 @@ Executor::Executor(TVMGraph &factory, size_t worker_id, const std::vector<DLDevi
   param_ready_events_.resize(tvm_graph_.node_row_ptr_.back());
   param_ready_event_ids_.resize(tvm_graph_.node_row_ptr_.back(), static_cast<uint32_t>(-1));
   for (size_t i = 0; i < param_ready_events_.size(); i++) {
-    CUDA_CALL(cudaEventCreate(&param_ready_events_[i]));
+    COL_CUDA_CALL(cudaEventCreate(&param_ready_events_[i]));
   }
   // pipeline_op_exec_starts_.resize(op_execs_.size());
   // pipeline_op_exec_ends_.resize(op_execs_.size());
   // for (size_t i = 0; i < op_execs_.size(); i++) {
   //   if (op_execs_[i]) {
-  //     CUDA_CALL(cudaEventCreate(&pipeline_op_exec_starts_[i]));
-  //     CUDA_CALL(cudaEventCreate(&pipeline_op_exec_ends_[i]));
+  //     COL_CUDA_CALL(cudaEventCreate(&pipeline_op_exec_starts_[i]));
+  //     COL_CUDA_CALL(cudaEventCreate(&pipeline_op_exec_ends_[i]));
   //   }
   // }
 
@@ -234,7 +234,7 @@ void Executor::PipelineRun() {
       for (auto eid : input_param_eid_[i]) {
         auto event_id = param_ready_event_ids_[eid];
         CHECK(event_id != -1);
-        CUDA_CALL(cudaStreamWaitEvent((cudaStream_t)exec_stream_, param_ready_events_[event_id]));
+        COL_CUDA_CALL(cudaStreamWaitEvent((cudaStream_t)exec_stream_, param_ready_events_[event_id]));
       }
       wait_ms += Profiler::MilliFrom(t1);
 
@@ -269,7 +269,7 @@ void Executor::PipelineRun() {
 //   for (size_t i = 0; i < op_execs_.size(); i++) {
 //     if (op_execs_[i]) {
 //       float ms;
-//       CUDA_CALL(cudaEventElapsedTime(&ms, pipeline_op_exec_starts_[i], pipeline_op_exec_ends_[i]));
+//       COL_CUDA_CALL(cudaEventElapsedTime(&ms, pipeline_op_exec_starts_[i], pipeline_op_exec_ends_[i]));
 //       ret += ms;
 //     }
 //   }
@@ -378,8 +378,8 @@ void Executor::AllocStorage() {
         if (auto iter = cold_cached_group_.find(k); iter != cold_cached_group_.cend()) {
           mdata_group = iter->second;
         } else {
-          mdata_group = sta::CUDAMemPool::Get()->Alloc(devices_[0].device_id, group_nbytes, 
-                                                       sta::MemType::kInfer, false);
+          mdata_group = sta::CUDAMemPool::Get(devices_[0].device_id)->Alloc(
+              group_nbytes, sta::MemType::kInfer, false);
         }
         size_t off = 0;
         for (; i < j; i++) {
@@ -404,7 +404,8 @@ void Executor::AllocStorage() {
     for (auto &s : storage_pool_) {
       total_nbytes += (GetDataSize(*s.operator->()) + align - 1) & (~(align - 1));
     }
-    blob_mem_ = sta::CUDAMemPool::RawAlloc(devices_[0].device_id, total_nbytes, sta::MemType::kInfer);
+    blob_mem_ = sta::CUDAMemPool::Get(devices_[0].device_id)->RawAlloc(
+        total_nbytes, sta::MemType::kInfer);
     // blob_mem_ = sta::CUDAMemPool::Get()->Alloc(total_nbytes, sta::MemType::kInfer);
     for (auto &s : storage_pool_) {
       size_t nbytes = (GetDataSize(*s.operator->()) + align - 1) & (~(align - 1));
@@ -446,7 +447,7 @@ void Executor::LoadParams(bool pipeline, bool force) {
           param_ready_[p.first]->store(true);
           pipeline_load_params_cv_.notify_all();
           CHECK(param_ready_event_ids_[p.first] == p.first);
-          CUDA_CALL(cudaEventRecord(param_ready_events_[p.first], (cudaStream_t)load_param_stream_));
+          COL_CUDA_CALL(cudaEventRecord(param_ready_events_[p.first], (cudaStream_t)load_param_stream_));
         }
       }
     }
@@ -464,9 +465,9 @@ void Executor::LoadParams(bool pipeline, bool force) {
       auto & param_ids = pg.second;
       for (size_t pg_off = 0; pg_off < param_group_nbytes; ) {
         auto load_nbytes = std::min(param_group_nbytes - pg_off, storage_group->nbytes - sg_off);
-        CUDA_CALL(cudaSetDevice(devices_[0].device_id));
+        COL_CUDA_CALL(cudaSetDevice(devices_[0].device_id));
         if (auto sg_it = cold_cached_group_.find(sg_id - 1); sg_it == cold_cached_group_.cend()) {
-          CUDA_CALL(cudaMemcpyAsync(
+          COL_CUDA_CALL(cudaMemcpyAsync(
               static_cast<char*>(storage_group->addr) + sg_off,
               static_cast<char*>(param_group->data) + pg_off,
               load_nbytes, cudaMemcpyDefault, (cudaStream_t)load_param_stream_));
@@ -495,7 +496,7 @@ void Executor::LoadParams(bool pipeline, bool force) {
       // because we iterate param group in out loop, 
       // we only need to record after param group transited
       CHECK(param_ready_event_ids_[param_ids[0]] == pg_id);
-      CUDA_CALL(cudaEventRecord(param_ready_events_[pg_id], (cudaStream_t)load_param_stream_));
+      COL_CUDA_CALL(cudaEventRecord(param_ready_events_[pg_id], (cudaStream_t)load_param_stream_));
       if (pipeline) {
         for (auto & pid : param_ids) {
           param_ready_[pid]->store(true);
@@ -902,7 +903,8 @@ std::pair<std::function<void()>, std::shared_ptr<OpArgs>> Executor::CreateTVMOp(
   
   auto fexec = [arg_ptr, pf]() {
     ::tvm::runtime::TVMRetValue rv;
-    ::tvm::runtime::TVMArgs targs(arg_ptr->arg_values.data(), arg_ptr->arg_tcodes.data(),
+    ::tvm::runtime::TVMArgs targs(arg_ptr->arg_values.data(), 
+                                  arg_ptr->arg_tcodes.data(),
                                   static_cast<int>(arg_ptr->arg_values.size()));
     pf.CallPacked(targs, &rv);
   };
@@ -918,27 +920,34 @@ void Executor::AllocStorageMaybeAdjust() {
 
   auto adjust_train_batch_size = [this, &adjusted](bool first_adjust) {
     if (adjusted) return;
-    if (!Controller::Get()->IsTrainIdle()) {
+    if (!ctrl::Controller::Get()->IsTrainIdle()) {
       auto wait_train_pid = TrainLauncher::Get()->GetTrainPid();
       // LOG(INFO) << "[Executor] AllocStorageMaybeAdjust: model " << this->tvm_graph_.model_rank_ 
       //           << " begin wait train pid " << wait_train_pid;
       // this->tvm_graph_.infer_model_->SetWaitTrainPid(this->infer_model_worker_id_, wait_train_pid);
 
-      auto adjust_memory_mb = sta::ByteToMB(GetMissingStorageSizeAlign()) - ResourceManager::GetFreeMemoryMB(true);
+      auto adjust_memory_mb = sta::ByteToMB(GetMissingStorageSizeAlign()) 
+                              - ResourceManager::GetFreeMemoryMB(true);
       adjust_memory_mb = std::max(0.0, adjust_memory_mb);
       if (adjust_memory_mb == 0) return;
 
       PROFILE_START(TrainAdjust);
-      auto adjust_batch_size = TrainLauncher::Get()->
-          GetAdjustBatchSize(first_adjust ? adjust_memory_mb : sta::ByteToMB(GetMissingStorageSizeAlign()));
-      auto cmd_id = Controller::Get()->
-          ColocateAdjust(this->tvm_graph_.model_rank_, adjust_batch_size);
-      Controller::Get()->WaitColocateAdjustDone(cmd_id);
+      auto adjust_batch_size = TrainLauncher::Get()->GetAdjustBatchSize(
+          first_adjust 
+          ? adjust_memory_mb 
+          : sta::ByteToMB(GetMissingStorageSizeAlign()));
+      auto cmd_id = ctrl::Controller::Get()->ColocateAdjust(
+          this->tvm_graph_.model_rank_, 
+          this->devices_[0].device_id, 
+          adjust_batch_size);
+      ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
       PROFILE_END(TrainAdjust);
       if (first_adjust) {
-        Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, PROFILE_DURATRION(TrainAdjust));        
+        Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, 
+                                    PROFILE_DURATRION(TrainAdjust));        
       }
-      LOG(INFO) << "[Executor] AllocStorageMaybeAdjust: model " << this->tvm_graph_.model_rank_ 
+      LOG(INFO) << "[Executor] AllocStorageMaybeAdjust:" 
+                << " model " << this->tvm_graph_.model_rank_ 
                 << " adjust memory mb " << adjust_memory_mb
                 << " adjust batch size " << adjust_batch_size
                 << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
@@ -953,7 +962,7 @@ void Executor::AllocStorageMaybeAdjust() {
 
   // ensure sequential inference allocation  
   if (!ResourceManager::InferChangeMemoryTryLock()) {
-    if (Controller::Get()->HasFlyingColocateAdjust()) {
+    if (ctrl::Controller::Get()->HasFlyingColocateAdjust()) {
       adjust_train_batch_size(false);
     }
     PROFILE_START(InferWaitBeforeEnterAlloc);

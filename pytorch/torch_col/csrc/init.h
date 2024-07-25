@@ -3,7 +3,9 @@
 
 namespace torch_col {
 
-void TorchColInit();
+void TorchColInit(int train_rank, int train_world_size);
+
+void InitSMPartition();
 
 }
 

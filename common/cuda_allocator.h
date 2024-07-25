@@ -23,6 +23,12 @@
 namespace colserve {
 namespace sta {
 
+/**
+ *  @brief CUDAMemPool is a wrapper of device memory pool.
+ *      It provides a unified interface for training and inference
+ *      memory allocation.
+ */
+
 enum class FreeListPolicyType {};
 inline FreeListPolicyType getFreeListPolicy(const std::string &s) {
   return static_cast<FreeListPolicyType>(0);
@@ -59,32 +65,40 @@ class CUDAMemPool {
     void *addr;
     std::size_t nbytes;
     MemType mtype;
-    mpool::MemBlock *block;
+
+    mpool::MemBlock *block{nullptr};
+    void* extra_data{nullptr};
   };
-  static void Init(std::size_t nbytes, bool cleanup, bool observe, 
+  static void Init(int device_id, std::size_t nbytes, 
+                   bool cleanup, bool observe, 
                    FreeListPolicyType free_list_policy);
-  static CUDAMemPool* Get();
+  static CUDAMemPool* Get(int device_id);
   static bool IsEnable();
-  static size_t InferMemUsage(int device_id);
-  static size_t TrainMemUsage(int device_id);
-  static size_t TrainPeakMemUsage(int device_id);
-  static size_t TrainAllMemUsage(int device_id);
-  static size_t FreeMemUsage(int device_id);
-  static size_t PoolNbytes(int device_id);
-  static void FreeTrainLocals(int device_id);
-  static void DumpDumpBlockList();
 
-  static double TrainAllocMs();
-  static void ResetTrainAllocMs();
+  CUDAMemPool(int device_id, std::size_t nbytes, 
+              bool cleanup, bool observe, 
+              FreeListPolicyType free_list_policy);
 
+  size_t InferMemUsage();
+  size_t TrainMemUsage();
+  size_t TrainPeakMemUsage();
+  size_t TrainAllMemUsage();
+  size_t FreeMemUsage();
+  size_t PoolNbytes();
+  void FreeTrainLocals();
+  void DumpDumpBlockList();
+  std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes, MemType mtype);
 
-  static std::shared_ptr<PoolEntry> RawAlloc(int device_id, size_t nbytes, MemType mtype);
-  static std::shared_ptr<PoolEntry> Alloc(int device_id, std::size_t nbytes, 
-                                          MemType mtype, bool allow_nullptr);
+  // Alloc memory and ignore the stream property.
+  std::shared_ptr<PoolEntry> Alloc(size_t nbytes, MemType mtype,
+                                   bool allow_nullptr);
+  std::shared_ptr<PoolEntry> AllocWithStream(std::size_t nbytes, MemType mtype, 
+                                             cudaStream_t stream, bool allow_nullptr);
 
   void RegisterOOMHandler(std::function<void()> oom_handler, MemType mtype);
 
-  CUDAMemPool(std::size_t nbytes, bool cleanup, bool observe, FreeListPolicyType free_list_policy);
+  static double TrainAllocMs();
+  static void ResetTrainAllocMs();
 
   inline bool CheckAddr(void *addr) {
     // return impl_->CheckAddr(addr);
@@ -93,21 +107,24 @@ class CUDAMemPool {
 
   ~CUDAMemPool();
 
-
  private:
   static bool allocate_tensor_from_memory_pool_;
-  static std::unique_ptr<CUDAMemPool> cuda_mem_pool_;
+  static std::array<std::unique_ptr<CUDAMemPool>, MAX_DEVICE_NUM> cuda_mem_pools_;
 
-  std::vector<mpool::SharableObject<mpool::PagesPool> *> pages_pools_;
-  std::vector<mpool::SharableObject<mpool::CachingAllocator> *> torch_allocators_;
-  std::vector<mpool::SharableObject<mpool::DirectAllocator> *> tvm_allocators_;
+  // currently, we only allow one thread to allocate memory from
+  // one device memory pool, the allocation performance is fast enough.
+  std::mutex mut_; 
+
+  int device_id_;
+  int raw_alloc_enable_unified_memory_{-1};
+  mpool::SharableObject<mpool::PagesPool>* pages_pool_;
+  mpool::SharableObject<mpool::CachingAllocator>* torch_allocator_;
+  mpool::SharableObject<mpool::DirectAllocator>* tvm_allocator_;
 
   // std::atomic<size_t> train_alloc_us_;
 };
 
-  // extern CUDAMemPoolImpl::MemPoolConfig mempool_config_template;
-
-}
-}
+} // namespace sta
+} // namespace colserve
 
 #endif

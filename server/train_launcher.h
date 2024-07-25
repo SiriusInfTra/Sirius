@@ -2,7 +2,7 @@
 #define COLSERVE_TRAIN_LAUNCHER_H
 
 #include <server/grpc/grpc_server.h>
-#include <server/job_queue.h>
+#include <server/schedule/job_queue.h>
 
 #include <iostream>
 #include <memory>

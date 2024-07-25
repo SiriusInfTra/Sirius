@@ -3,11 +3,12 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#include "logging_as_glog.h"
+#include <server/logging_as_glog.h>
+#include <server/model_store/infer_model_store.h>
+
 #include "executor.h"
 #include "graph.h"
 #include "texture.h"
-#include "../infer_model_store.h"
 
 namespace colserve {
 namespace tvm {

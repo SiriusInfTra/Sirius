@@ -1,4 +1,4 @@
-#include "logging_as_glog.h"
+#include <server/logging_as_glog.h>
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/c_runtime_api.h>
 #include <tvm/runtime/packed_func.h>
@@ -19,14 +19,13 @@
 #include <common/device_manager.h>
 #include <common/util.h>
 
-#include "grpc/grpc_server.h"
-#include "colserve.grpc.pb.h"
-#include "infer_model_store.h"
-#include "train_launcher.h"
-#include "resource_manager.h"
-#include "controller.h"
-#include "profiler.h"
-#include "config.h"
+#include <server/grpc/grpc_server.h>
+#include <server/model_store/infer_model_store.h>
+#include <server/train_launcher.h>
+#include <server/resource_manager.h>
+#include <server/control/controller.h>
+#include <server/profiler.h>
+#include <server/config.h>
 
 #define STREAM_OUTPUT(field) std::cerr << "cfg::" #field "=" << cfg::field << std::endl
 
@@ -200,6 +199,11 @@ void init_config() {
     LOG(FATAL) << "Dynamic partition SM must work with xsched";
   }
 
+  std::string header = str(boost::format("%s COLSERVE CONFIG [PID %d] %s") 
+                           % std::string(16, '=')
+                           % getpid()
+                           % std::string(16, '='));
+  std::cerr << header << std::endl;
   STREAM_OUTPUT(serve_mode);
   STREAM_OUTPUT(use_shared_tensor);
   STREAM_OUTPUT(use_shared_tensor_infer);
@@ -221,7 +225,7 @@ void init_config() {
   STREAM_OUTPUT(dynamic_sm_partition);
   STREAM_OUTPUT(colocate_config.skip_malloc);
   STREAM_OUTPUT(colocate_config.skip_loading);
-
+  std::cerr << std::string(header.size(), '=') << std::endl;
 }
 
 void Shutdown(int sig) {
@@ -230,13 +234,14 @@ void Shutdown(int sig) {
   colserve::InferModelStore::Shutdown();
   colserve::TrainLauncher::Shutdown();
   colserve::Profiler::Shutdown();
-  NVML_CALL(nvmlShutdown());
+  COL_NVML_CALL(nvmlShutdown());
   std::terminate();
 }
 
 int main(int argc, char *argv[]) {
   google::InitGoogleLogging(argv[0]);
-  colserve::Config::binary_directory = std::filesystem::path(argv[0]).parent_path().parent_path();
+  colserve::Config::binary_directory = 
+      std::filesystem::path(argv[0]).parent_path().parent_path();
   
   init_cli_options();
   CLI11_PARSE(app, argc, argv);
@@ -249,24 +254,32 @@ int main(int argc, char *argv[]) {
   });
 
   CHECK_EQ(cuInit(0), CUDA_SUCCESS);
-  NVML_CALL(nvmlInit());
+  COL_NVML_CALL(nvmlInit());
   colserve::sta::DeviceManager::Init();
   auto free_list_policy = colserve::sta::getFreeListPolicy(
       colserve::Config::mempool_freelist_policy);
   if (colserve::Config::use_shared_tensor) {
-    colserve::sta::CUDAMemPool::Init(
-      static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
-      true, false, free_list_policy);
-    colserve::sta::CUDAMemPool::Get()->RegisterOOMHandler([]() {
-      LOG(INFO) << "train predict memory " 
-                <<  colserve::TrainLauncher::Get()->PredictMemUsageMB(true) << "."; 
-      }, colserve::sta::MemType::kInfer);
+    for (int device_id = 0; 
+         device_id < colserve::sta::DeviceManager::GetNumVisibleGpu(); 
+         device_id++) {
+      colserve::sta::CUDAMemPool::Init(device_id,
+        static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
+        true, false, free_list_policy);
+      colserve::sta::CUDAMemPool::Get(device_id)->RegisterOOMHandler([]() {
+        LOG(INFO) << "train predict memory " 
+                  <<  colserve::TrainLauncher::Get()->PredictMemUsageMB(true) << "."; 
+        }, colserve::sta::MemType::kInfer);
+    }
   }
+  colserve::ctrl::Controller::Init();
   if (colserve::Config::dynamic_sm_partition) {
-    colserve::SMPartitioner::Init(0, true, false);
+    for (int device_id = 0; 
+         device_id < colserve::sta::DeviceManager::GetNumVisibleGpu(); 
+         device_id++) {
+      colserve::SMPartitioner::Init(device_id);
+    }
   }
   colserve::ResourceManager::Init();
-  colserve::Controller::Init();
   colserve::Profiler::Init(colserve::Config::profile_log_path);
   colserve::TrainLauncher::Init("train");
   colserve::InferModelStore::Init("server/models");
@@ -274,7 +287,7 @@ int main(int argc, char *argv[]) {
 
   if (colserve::Config::memory_pressure_mb > 0) { 
     size_t nbytes = static_cast<size_t>(colserve::Config::memory_pressure_mb * 1_MB);
-    CUDA_CALL(cudaMalloc(&memory_pressure_ptr, nbytes));
+    COL_CUDA_CALL(cudaMalloc(&memory_pressure_ptr, nbytes));
   }
 
   std::string server_address("0.0.0.0:" + port);

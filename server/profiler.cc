@@ -1,13 +1,15 @@
-#include "logging_as_glog.h"
+#include <server/logging_as_glog.h>
+#include <server/model_store/infer_model_store.h>
+#include <server/model_store/model_cache.h>
+#include <server/train_launcher.h>
+#include <server/profiler.h>
+#include <server/config.h>
+#include <server/control/controller.h>
+
 #include <common/cuda_allocator.h>
 #include <common/util.h>
 #include <common/device_manager.h>
 #include <common/sm_partition.h>
-
-#include <server/infer_model_store.h>
-#include <server/train_launcher.h>
-#include <server/profiler.h>
-#include <server/config.h>
 
 #include <boost/format.hpp>
 #include <numeric>
@@ -127,7 +129,7 @@ std::unique_ptr<Profiler> Profiler::profiler_;
 
 std::pair<size_t, size_t> Profiler::GetGPUMemInfo() {
   size_t free, total;
-  CUDA_CALL(cudaMemGetInfo(&free, &total));
+  COL_CUDA_CALL(cudaMemGetInfo(&free, &total));
   return {free, total};
 }
 
@@ -151,7 +153,9 @@ void Profiler::Start() {
   // std::unique_lock event_info_lock{profiler_->event_info_mut_};
   profiler_->infer_info_.clear();
   // profiler_->event_info_.clear();
-  profiler_->resource_info_.clear();
+  for (int i = 0; i < sta::DeviceManager::GetNumVisibleGpu(); i++) {
+    profiler_->resource_infos_[i].clear();
+  }
   profiler_->infering_memory_nbytes_.clear();
   profiler_->start_profile_ = true;
 }
@@ -169,6 +173,24 @@ Profiler* Profiler::Get() {
   return profiler_.get();
 }
 
+void Profiler::InferReqInc(uint64_t x) {
+  CHECK(profiler_ != nullptr);
+  std::unique_lock lock{profiler_->infer_stat_mut_};
+  profiler_->infer_stat_.num_requests += x;
+  ctrl::Controller::Get()->SetInferStatus(ctrl::InferStatus::kRunning);
+}
+
+void Profiler::InferRespInc(uint64_t x) {
+  CHECK(profiler_ != nullptr);
+  std::unique_lock lock{profiler_->infer_stat_mut_};
+  profiler_->infer_stat_.num_response += x;
+  if (profiler_->infer_stat_.num_response == profiler_->infer_stat_.num_requests) {
+    ctrl::Controller::Get()->SetInferStatus(ctrl::InferStatus::kIdle);
+  }
+  // LOG(INFO) << "infer resp " << profiler_->infer_stat_.num_response
+  //           << " req " << profiler_->infer_stat_.num_requests;
+}
+
 Profiler::Profiler(const std::string &profile_log_path)
     : profile_log_path_(profile_log_path), start_profile_(false) {
   if (Config::profile_gpu_smact) {
@@ -179,18 +201,19 @@ Profiler::Profiler(const std::string &profile_log_path)
   stp_ = GetTimeStamp();
 
   uint32_t dev_cnt;
-  NVML_CALL(nvmlDeviceGetCount_v2(&dev_cnt));
+  COL_NVML_CALL(nvmlDeviceGetCount_v2(&dev_cnt));
   CHECK_GT(dev_cnt, 0);
 
   nvmlDevice_t device;
   auto gpu_uuid = sta::DeviceManager::GetGpuSystemUuid(0);
-  NVML_CALL(nvmlDeviceGetHandleByUUID(gpu_uuid.c_str(), &device));
+  COL_NVML_CALL(nvmlDeviceGetHandleByUUID(gpu_uuid.c_str(), &device));
 
   // CHECK MPS
   if (colserve::Config::check_mps) {
     uint32_t info_cnt = 0;
 #if !defined(USE_NVML_V3) || USE_NVML_V3 != 0
-    auto nvml_err = nvmlDeviceGetMPSComputeRunningProcesses_v3(device, &info_cnt, NULL);
+    auto nvml_err = nvmlDeviceGetMPSComputeRunningProcesses_v3(
+        device, &info_cnt, NULL);
     if (nvml_err == NVML_SUCCESS && info_cnt == 0) {
       LOG(FATAL) << "MPS is not enabled, please start MPS server by nvidia-cuda-mps-control";
     }
@@ -208,7 +231,7 @@ Profiler::Profiler(const std::string &profile_log_path)
     }
     LOG(INFO) << "start profiler thread";
     uint32_t pid = getpid();
-    CUDA_CALL(cudaSetDevice(0));
+    COL_CUDA_CALL(cudaSetDevice(0));
 
     if (Config::profile_gpu_smact || Config::profile_gpu_util) {
       char dcgm_group_name[128]; // = "dcgm_colserve";
@@ -219,8 +242,8 @@ Profiler::Profiler(const std::string &profile_log_path)
       // DCGM_CALL(dcgmGroupGetInfo(this->dcgm_handle_, this->dcgm_gpu_grp_, &group_info));
       // LOG(INFO) << group_info.groupName << " " << group_info.count;
 
-      LOG(INFO) << sta::DeviceManager::GetGpuSystemId(0) 
-                << " " << sta::DeviceManager::GetGpuSystemUuid(0);
+      // LOG(INFO) << sta::DeviceManager::GetGpuSystemId(0) 
+      //           << " " << sta::DeviceManager::GetGpuSystemUuid(0);
       DCGM_CALL(dcgmGroupAddEntity(this->dcgm_handle_, this->dcgm_gpu_grp_, 
                                    DCGM_FE_GPU, sta::DeviceManager::GetGpuSystemId(0)));
       std::vector<uint16_t> field_ids;
@@ -250,7 +273,7 @@ Profiler::Profiler(const std::string &profile_log_path)
 
       if (!Config::use_shared_tensor || !Config::use_shared_tensor_train) {
         uint32_t info_cnt = max_info_cnt;
-        NVML_CALL(nvmlDeviceGetComputeRunningProcesses_v3(device, &info_cnt, infos));
+        COL_NVML_CALL(nvmlDeviceGetComputeRunningProcesses_v3(device, &info_cnt, infos));
         for (uint32_t i = 0; i < info_cnt; i++) {
           if (!Config::use_shared_tensor_train && infos[i].pid == pid) {
             infer_mem = infos[i].usedGpuMemory;
@@ -260,26 +283,26 @@ Profiler::Profiler(const std::string &profile_log_path)
           }
         }
         size_t free, total;
-        CUDA_CALL(cudaMemGetInfo(&free, &total));
+        COL_CUDA_CALL(cudaMemGetInfo(&free, &total));
         total_mem = total - free;
         if (Config::use_shared_tensor) {
-          infer_mem = sta::CUDAMemPool::InferMemUsage(0);
+          infer_mem = sta::CUDAMemPool::Get(0)->InferMemUsage();
         }
       } else {
         auto read_resource_info = [&]() {
-          infer_mem = sta::CUDAMemPool::InferMemUsage(0);
-          train_mem = sta::CUDAMemPool::TrainMemUsage(0);
-          train_all_mem = sta::CUDAMemPool::TrainAllMemUsage(0);
+          infer_mem = sta::CUDAMemPool::Get(0)->InferMemUsage();
+          train_mem = sta::CUDAMemPool::Get(0)->TrainMemUsage();
+          train_all_mem = sta::CUDAMemPool::Get(0)->TrainAllMemUsage();
           total_mem = static_cast<size_t>(Config::cuda_memory_pool_gb * 1_GB);
           if (Config::cold_cache_max_capability_nbytes != 0) {
-            cold_cache_nbytes = ColdModelCache::Get().GetCachedNbytesUnsafe();
-            cold_cache_buffer_mb = ColdModelCache::Get().GetBufferMBUnsafe();
-            infer_mem_in_cold_cache_buffer_mb = ColdModelCache::Get().GetColdCacheReleasableMemoryMBUnsafe();
-            cold_cache_size_mb = ColdModelCache::Get().GetCacheSizeMBUnsafe();
+            cold_cache_nbytes = ColdModelCache::Get(0)->GetCachedNbytesUnsafe();
+            cold_cache_buffer_mb = ColdModelCache::Get(0)->GetBufferMBUnsafe();
+            infer_mem_in_cold_cache_buffer_mb = ColdModelCache::Get(0)->GetColdCacheReleasableMemoryMBUnsafe();
+            cold_cache_size_mb = ColdModelCache::Get(0)->GetCacheSizeMBUnsafe();
           }  
         };
         if (Config::profiler_acquire_resource_lock) {
-          auto cold_cache_lock = ColdModelCache::Get().Lock();
+          auto cold_cache_lock = ColdModelCache::Get(0)->Lock();
           ResourceManager::InferMemoryChangingLock();
           read_resource_info();
           ResourceManager::InferMemoryChangingUnlock();
@@ -291,8 +314,8 @@ Profiler::Profiler(const std::string &profile_log_path)
       this->last_train_mem_ = train_mem;
 
       if (Config::dynamic_sm_partition && Config::profile_sm_partition) {
-        infer_required_tpc_num = SMPartitioner::GetInferRequiredTpcNum();
-        train_avail_tpc_num = SMPartitioner::GetTrainAvailTpcNum();
+        infer_required_tpc_num = SMPartitioner::Get(0)->GetInferRequiredTpcNum();
+        train_avail_tpc_num = SMPartitioner::Get(0)->GetTrainAvailTpcNum();
       }
 
       if (Config::profile_gpu_util || Config::profile_gpu_smact) {
@@ -320,7 +343,7 @@ Profiler::Profiler(const std::string &profile_log_path)
         }
       }
 
-      this->resource_info_.push_back({Profiler::GetTimeStamp(),
+      this->resource_infos_[0].push_back({Profiler::GetTimeStamp(),
           ResourceInfo{.infer_mem = infer_mem, .train_mem = train_mem, 
                        .train_all_mem = train_all_mem, .gpu_used_mem = total_mem, 
                        .cold_cache_nbytes = cold_cache_nbytes, 
@@ -391,7 +414,8 @@ void Profiler::WriteLog() {
       << " delay before profile " << delay_before_profile_ << " sec, " 
       << " workload end time stamp " << workload_end_time_stamp_ << std::endl;
 
-  long workload_profile_start_ts = workload_start_time_stamp_ + static_cast<long>(delay_before_profile_ * 1000);
+  long workload_profile_start_ts = workload_start_time_stamp_ 
+                                   + static_cast<long>(delay_before_profile_ * 1000);
   long workload_profile_end_ts = workload_end_time_stamp_;
 
 
@@ -452,11 +476,11 @@ void Profiler::WriteLog() {
     ofs << "[GPU Util Info]" << std::endl;
   
     auto gpu_utils = SelectResourceInfo<decltype(((ResourceInfo*)0)->gpu_util)>(
-        offsetof(ResourceInfo, gpu_util), 
+        0, offsetof(ResourceInfo, gpu_util), 
         workload_profile_start_ts, workload_profile_end_ts, 
         [](double v) { return !std::isnan(v); });
     auto gpu_smacts = SelectResourceInfo<decltype(((ResourceInfo*)0)->sm_activity)>(
-        offsetof(ResourceInfo, sm_activity), 
+        0, offsetof(ResourceInfo, sm_activity), 
         workload_profile_start_ts, workload_profile_end_ts,
         [](double v) { return !std::isnan(v); });
 
@@ -472,7 +496,7 @@ void Profiler::WriteLog() {
   }
   
   ofs << "[Memory Info]" << std::endl;  
-  auto memory_table = FmtResourceInfos({
+  auto memory_table = FmtResourceInfos(0, {
     offsetof(ResourceInfo, infer_mem),
     offsetof(ResourceInfo, train_mem),
     offsetof(ResourceInfo, train_all_mem),
@@ -530,7 +554,7 @@ void Profiler::WriteLog() {
 
   if (Config::dynamic_sm_partition && Config::profile_sm_partition) {
     ofs << "[SM Partition Info]" << std::endl;
-    auto sm_part_table = FmtResourceInfos({
+    auto sm_part_table = FmtResourceInfos(0, {
       offsetof(ResourceInfo, infer_required_tpc_num),
       offsetof(ResourceInfo, train_avail_tpc_num),
     }, std::nullopt, std::nullopt);
@@ -543,6 +567,7 @@ void Profiler::WriteLog() {
 
 std::vector<std::vector<std::string>>
 Profiler::FmtResourceInfos(
+    int device_id,
     const std::vector<size_t> &field_offs,
     std::optional<time_stamp_t> start, 
     std::optional<time_stamp_t> end) {
@@ -553,7 +578,7 @@ Profiler::FmtResourceInfos(
 
   table[0][0] = "TimeStamp";
 
-  for (auto &r : resource_info_) {
+  for (auto &r : resource_infos_[device_id]) {
     if (start.has_value() && std::get<0>(r) < start.value()) continue;
     if (end.has_value() && std::get<0>(r) > end.value()) continue;
 

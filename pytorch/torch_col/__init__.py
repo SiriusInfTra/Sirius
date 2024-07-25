@@ -13,4 +13,4 @@ class EngineColocateAdjustL1Exception(Exception):
     pass
 
 
-torch_col_init()
+# torch_col_init()

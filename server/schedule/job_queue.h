@@ -1,7 +1,7 @@
 #ifndef COLSERVE_JOB_QUEUE_H
 #define COLSERVE_JOB_QUEUE_H
 
-#include "logging_as_glog.h"
+#include <server/logging_as_glog.h>
 #include <server/grpc/grpc_server.h>
 #include <server/profiler.h>
 
