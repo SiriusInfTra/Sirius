@@ -5,8 +5,10 @@
 
 namespace colserve {
 
-std::array<std::unique_ptr<SMPartitioner>, MAX_DEVICE_NUM> SMPartitioner::sm_partitioners_{nullptr};
-thread_local std::unordered_map<CUstream, uint64_t> SMPartitioner::stream_last_tpc_mask_map_;
+std::array<std::unique_ptr<SMPartitioner>, MAX_DEVICE_NUM> 
+    SMPartitioner::sm_partitioners_{nullptr};
+thread_local std::unordered_map<CUstream, uint64_t> 
+    SMPartitioner::stream_last_tpc_mask_map_;
 
 void SMPartitioner::Init(int device_id) {
   // DLOG(INFO) << "[SM Partitioner] Init";

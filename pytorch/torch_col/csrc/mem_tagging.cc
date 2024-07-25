@@ -48,14 +48,14 @@ void RearrangeMemory() {
 void TorchColSavedVariableHooks::call_pack_hook(const at::Tensor& tensor) {
   CUDAColAllocator::Get()->TagIntermMemory(tensor);
   data_ = tensor;
-  if (static_cast<ctrl::CtrlEvent>(GetColocateStub().Cmd()) == ctrl::CtrlEvent::kColocateAdjustL1) {
+  if (static_cast<ctrl::CtrlEvent>(GetColocateStub().GetCmd()) == ctrl::CtrlEvent::kColocateAdjustL1) {
     pybind11::gil_scoped_acquire gil;
     throw EngineColocateAdjustL1Exception("TorchColEngine");
   }
 }
 
 at::Tensor TorchColSavedVariableHooks::call_unpack_hook() {
-  if (static_cast<ctrl::CtrlEvent>(GetColocateStub().Cmd()) == ctrl::CtrlEvent::kColocateAdjustL1) {
+  if (static_cast<ctrl::CtrlEvent>(GetColocateStub().GetCmd()) == ctrl::CtrlEvent::kColocateAdjustL1) {
     pybind11::gil_scoped_acquire gil;
     LOG(INFO) << "throw python exception!";
     throw EngineColocateAdjustL1Exception("TorchColEngine");

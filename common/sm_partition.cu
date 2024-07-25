@@ -322,6 +322,9 @@ void SMPartitioner::SetStreamTpcMask(CUstream s, uint64_t mask_64) {
 		}
 	}
 
+	// LOG(INFO) << std::hex << "Set Train Stream (" 
+  //           << s << ") TPC Mask " << std::hex << mask_64;
+
 	uint128_t mask_128 = -1;
 	mask_128 <<= 64;
 	mask_128 |= mask_64;

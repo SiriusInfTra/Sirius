@@ -16,8 +16,8 @@ cdef extern from "<torch_col/csrc/control_stub.h>" namespace "torch_col":
 
     cdef cppclass SwitchStub:
         SwitchStub() except +
-        int Cmd()
-        void Cmd(int)
+        int GetCmd()
+        void SetCmd(int)
         void Stop()
         void TrainStart()
         void TrainEnd()
@@ -31,8 +31,9 @@ cdef extern from "<torch_col/csrc/control_stub.h>" namespace "torch_col":
     cdef cppclass ColocateStub:
         ColocateStub(int) except +
         void Stop()
-        int Cmd()
-        int TargetBatchSize()
+        int GetCmd()
+        void SetCmd(int)
+        int GetTargetBatchSize()
         void ColocateAdjustL1Done()
         void ColocateAdjustL2Done()
         void TrainStart()
@@ -102,13 +103,13 @@ cdef class PySwitchStub:
 
     @property
     def cmd(self):
-        return self._stub.Cmd()
+        return self._stub.GetCmd()
     @cmd.setter
     def cmd(self, cmd):
         if cmd is None:
-            self._stub.Cmd(-1)
+            self._stub.SetCmd(-1)
         else:
-            self._stub.Cmd(cmd)
+            self._stub.SetCmd(cmd)
     
     def EnableTorchColEngine(self):
         self._stub.EnableTorchColEngine()
@@ -131,11 +132,11 @@ cdef class PyColocateStub:
 
     @property
     def cmd(self):
-        return self._stub.Cmd()
+        return self._stub.GetCmd()
 
     @property
     def target_batch_size(self):
-        return self._stub.TargetBatchSize()
+        return self._stub.GetTargetBatchSize()
 
     def adjust_l1_done(self):
         self._stub.ColocateAdjustL1Done()
