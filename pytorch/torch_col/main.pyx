@@ -6,7 +6,7 @@ from libcpp.string cimport string
 from libcpp.optional cimport optional, nullopt_t, make_optional
 from libcpp.functional cimport function
 from posix.unistd cimport pid_t
-from libc.stdint cimport uint64_t
+from libc.stdint cimport uint64_t, uint32_t
 from enum import Enum
 import os
 
@@ -328,8 +328,12 @@ cdef extern from "<common/inf_tra_comm/communicator.h>" namespace "colserve::ctr
 
 
     cdef cppclass InfTraMessageQueue:
-        pass
-
+        CtrlMsgEntry BlockGet(Direction direction, int id)
+        bool TimedGet(uint32_t timeout_ms, Direction direction, int id,
+                      CtrlMsgEntry &msg)
+        void Put(const CtrlMsgEntry &entry, Direction direction, int id)
+        void PutAll(const CtrlMsgEntry &entry, Direction direction)
+    
 
     cdef cppclass InfTraInfoBoard:
         void SetTrainInfo(int id, function fn)
@@ -344,9 +348,16 @@ cdef extern from "<common/inf_tra_comm/communicator.h>" namespace "colserve::ctr
         @staticmethod
         bool IsInitialized()
         @staticmethod
-        InfTraCommunicator* GetMQ()
+        InfTraMessageQueue* GetMQ()
         @staticmethod
         InfTraInfoBoard* GetIB()
+
+
+cdef extern from "<common/inf_tra_comm/communicator.h>" namespace "colserve::ctrl::InfTraMessageQueue":
+    cdef enum class Direction:
+        kInf2Tra,
+        kTra2Inf,
+        kNumDirection
 
 
 cdef class PyCtrlMsgEntry:
@@ -382,6 +393,27 @@ cdef class PyInfTraCommunicator:
         ):
             raise Exception("Invalid InfTraCommunicator init args")
         InfTraCommunicator.Init(<bool> is_server, <bool> cleanup, <int> train_world_size)
+
+    def put_inf2tra(self, PyCtrlMsgEntry entry, int id):
+        InfTraCommunicator.GetMQ().Put(
+            entry, InfTraMessageQueue.Direction.kInf2Tra, id)
+
+    def put_all_inf2tra(self, PyCtrlMsgEntry entry):
+        InfTraCommunicator.GetMQ().PutAll(
+            entry, InfTraMessageQueue.Direction.kInf2Tra)
+
+    def block_get_inf2tra(self, int id):
+        return InfTraCommunicator.GetMQ().BlockGet(
+            InfTraMessageQueue.Direction.kInf2Tra, id)
+
+    def timed_get_inf2tra(self, int timeout_ms, int id):
+        cdef CtrlMsgEntry msg
+        if InfTraCommunicator.GetMQ().TimedGet(
+            <uint32_t> timeout_ms, InfTraMessageQueue.Direction.kInf2Tra, 
+            id, msg
+        ):
+            return PyCtrlMsgEntry(msg.id, CtrlEvent(msg.event), msg.value)
+        return None
 
 
 def init_train_info(init_batch_size, 
