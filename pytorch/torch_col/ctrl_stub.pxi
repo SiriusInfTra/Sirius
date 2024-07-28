@@ -2,7 +2,8 @@
 # from .ctrl_stub cimport *
 from libcpp.string cimport string
 from libcpp.vector cimport vector
-from cpython cimport bool
+from libcpp cimport bool
+
 from cpython.ref cimport PyObject
 
 

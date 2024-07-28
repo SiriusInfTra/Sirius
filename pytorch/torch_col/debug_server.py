@@ -21,7 +21,9 @@ class DebugServer:
 
         msg = torch_col.PyCtrlMsgEntry(
             cmd_id, torch_col.CtrlEvent.kColocateAdjustL1, batch_size)
-        self._inf_tra_comm.put_inf2tra(msg, 0)
+        
+        self._inf_tra_comm.put_all_inf2tra(msg)
+        # self._inf_tra_comm.put_inf2tra(msg, 0)
 
     def colocate_l2(self, batch_size: int):
         if torch_col.CtrlEvent.kColocateAdjustL2 not in self._cmd_ids:
@@ -47,7 +49,8 @@ class DebugServer:
 
     def _recv_status(self):
         while self._running:
-            msg = self._status_mq.timed_get_inf_tra(1, 0)
+            # msg = self._status_mq.timed_get_inf_tra(1, 0)
+            msg = self._inf_tra_comm.timed_get_inf2tra(10, 0)
             if msg is None:
                 continue
             if msg.event != torch_col.CtrlEvent.kReportBatchSize:

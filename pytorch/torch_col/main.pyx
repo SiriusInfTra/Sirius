@@ -5,6 +5,8 @@ include "./ctrl_stub.pxi"
 from libcpp.string cimport string
 from libcpp.optional cimport optional, nullopt_t, make_optional
 from libcpp.functional cimport function
+from libcpp cimport bool
+
 from posix.unistd cimport pid_t
 from libc.stdint cimport uint64_t, uint32_t
 from enum import Enum
@@ -391,7 +393,7 @@ cdef class PyCtrlMsgEntry:
         return "PyCtrlMsgEntry(id={}, event={}, value={})".format(self.id, str(self.event), self.value)
 
 
-cdef class PyInfTraCommunicator:
+class PyInfTraCommunicator:
     def __init__(self, is_server = None, cleanup = None, train_world_size = None):
         if InfTraCommunicator.IsInitialized():
             return
@@ -401,7 +403,8 @@ cdef class PyInfTraCommunicator:
             or train_world_size is None
         ):
             raise Exception("Invalid InfTraCommunicator init args")
-        InfTraCommunicator.Init(<bool> is_server, <bool> cleanup, <int> train_world_size)
+        InfTraCommunicator.Init(<bool> is_server, <bool> cleanup, 
+                                <int> train_world_size)
 
     def put_inf2tra(self, PyCtrlMsgEntry entry, int id):
         InfTraCommunicator.GetMQ().Put(

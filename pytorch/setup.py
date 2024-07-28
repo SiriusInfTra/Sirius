@@ -58,7 +58,7 @@ def config_extension():
         extra_compile_args=["-std=c++17", "-DMPOOL_VERBOSE_LEVEL=0", "-DMPOOL_CHECK_LEVEL=0"],
         extra_link_args=["-Wl,-rpath,$ORIGIN/lib"],
     )
-    return cythonize([ext]) 
+    return cythonize([ext], language_level=3) 
 
 setup(
     name="torch_col",
