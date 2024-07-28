@@ -229,13 +229,15 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
         std::unique_lock step_lock{step_mutex_};
         auto t1 = torch_col::get_unix_timestamp();
         sta::xsched::SetRejectCudaCalls(true);
-        size_t remove = sta::xsched::AbortStream();
-        cudaStream_t stream = reinterpret_cast<cudaStream_t>(
-            sta::xsched::GetRegisteredGlobalStream());
-        CHECK(reinterpret_cast<uint64_t>(stream) != 0);
-        auto err = cudaStreamSynchronize(stream);
-        CHECK_EQ(err, cudaSuccess) << "cudaStreamSynchronize failed: " 
-                                        << cudaGetErrorString(err);
+        // size_t remove = sta::xsched::AbortStream();
+        size_t remove = sta::xsched::AbortAllStreams();
+        // cudaStream_t stream = reinterpret_cast<cudaStream_t>(
+        //     sta::xsched::GetRegisteredGlobalStream());
+        // CHECK(reinterpret_cast<uint64_t>(stream) != 0);
+        // auto err = cudaStreamSynchronize(stream);
+        // CHECK_EQ(err, cudaSuccess) << "cudaStreamSynchronize failed: " 
+        //                                 << cudaGetErrorString(err);
+        sta::xsched::SyncAllStreams();
         auto t2 = torch_col::get_unix_timestamp();
         LOG(INFO) << "Receive adjust request, cancel calls first, "
                   << " cost " << t2 - t1 << "ms, remove " << remove 

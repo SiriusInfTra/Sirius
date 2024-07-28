@@ -66,29 +66,47 @@ import torch_col
 #     __pysched_dll.CritialSectionEnd(stream.__pysched_handle)
 
 
-def register_stream(stream: Stream):
-    torch_col.RegisterStream(stream.cuda_stream)
+def register_stream(stream: Stream | int):
+    if isinstance(stream, Stream):
+        stream = stream.cuda_stream
+    torch_col.RegisterStream(stream)
 
-    if torch_col.is_enable_dynamic_sm_partition():
-        torch_col._C.InitSMPartition()
-
-
-def unregister_stream():
-    torch_col.UnRegisterStream()
-
-
-def get_xqueue_size(stream: Optional[Stream] = None) -> int:
-    cuda_stream = stream.cuda_stream if stream is not None else None
-    return torch_col.GetXQueueSize_(cuda_stream)
+    if (
+        torch_col.has_colocated_infer_server()
+        and torch_col.is_enable_dynamic_sm_partition()
+    ):
+        torch_col._C.InitSMPartition(stream)
 
 
-def initial_kill_batch(epoch, batch, stream: Optional[Stream] = None):
+def unregister_stream(stream: Stream | int):
+    if isinstance(stream, Stream):
+        stream = stream.cuda
+    torch_col.UnRegisterStream(stream)
+
+
+def get_xqueue_size(stream: Optional[Stream | int] = None) -> int:
+    if stream is None:
+        stream = torch.cuda.current_stream()
+    if isinstance(stream, Stream):
+        stream = stream.cuda_stream
+    return torch_col.GetXQueueSize(stream)
+
+
+def initial_kill_batch(epoch, batch, 
+                       stream: Optional[Stream | int] = None):
     if epoch == 0 and batch == 0:
         t1 = torch_col.get_unix_timestamp()
+        # if stream is None:
+        #     stream = torch.cuda.current_stream()
+        # num_cmds = torch_col.AbortStream(stream.cuda_stream)
         if stream is None:
-            stream = torch.cuda.current_stream()
-        num_cmds = torch_col.AbortStream()
-        stream.synchronize()
+            num_cmds = torch_col.AbortAllStreams()
+            torch_col.SyncAllStreams()
+        else:
+            if isinstance(stream, Stream):
+                stream = stream.cuda_stream
+            num_cmds = torch_col.AbortStream(stream)
+            stream.synchronize()
         t2 = torch_col.get_unix_timestamp()
         print(f'initial_kill_batch cost {t2 - t1} ms, num_cmds={num_cmds}')
 
@@ -98,8 +116,24 @@ def kill_batch(stream: Optional[Stream] = None):
     #     return
     t1 = torch_col.get_unix_timestamp()
     if stream is None:
-        stream = torch.cuda.current_stream()
-    num_cmds = torch_col.AbortStream()
-    stream.synchronize()
+        num_cmds = torch_col.AbortAllStreams()
+        torch_col.SyncAllStreams()
+    else:
+        if isinstance(stream, Stream):
+            stream = stream.cuda_stream
+        num_cmds = torch_col.AbortStream(stream)
+        stream.synchronize()
     t2 = torch_col.get_unix_timestamp()
     print(f'kill batch cost {t2 - t1} ms, num_cmds={num_cmds}')
+
+
+def guess_nccl_begin():
+    torch_col.GuessNcclBegin()
+
+
+def guess_nccl_end():
+    torch_col.GuessNcclEnd()
+
+
+def get_nccl_steams():
+    return torch_col.GetNcclStreams()

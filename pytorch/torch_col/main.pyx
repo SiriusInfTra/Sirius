@@ -56,7 +56,7 @@ cdef extern from "<common/device_manager.h>" namespace "colserve::sta":
 
 cdef extern from "<torch_col/csrc/init.h>" namespace "torch_col":
     cpdef void TorchColInit(int, int)
-    cpdef void InitSMPartition()
+    cpdef void InitSMPartition(uint64_t stream)
 
 
 class HookMode(Enum):
@@ -138,6 +138,9 @@ def set_train_rank_world_size(rank, world_size):
     set_train_rank(rank)
     set_train_world_size(world_size)
 
+
+def has_colocated_infer_server():
+    return TorchColConfig.HasColocatedInferServer()
 
 #############################
 #  MARK: Memory Management  #
@@ -248,10 +251,16 @@ def rearrange_memory():
 
 cdef extern from "<common/xsched_ctrl.h>" namespace "colserve::sta::xsched":
     cpdef uint64_t RegisterStream(uint64_t stream)
-    cpdef void UnRegisterStream()
-    cdef uint64_t GetXQueueSize(optional[uint64_t] stream)
-    cpdef uint64_t AbortStream()
-    cpdef int SyncStream()
+    cpdef void UnRegisterStream(uint64_t stream)
+    cpdef void UnRegisterAllStreams()
+    cpdef uint64_t GetXQueueSize(uint64_t stream)
+    cpdef uint64_t AbortStream(uint64_t stream)
+    cpdef uint64_t AbortAllStreams()
+    cpdef int SyncStream(uint64_t stream)
+    cpdef int SyncAllStreams()
+    cpdef void GuessNcclBegin()
+    cpdef void GuessNcclEnd()
+    cpdef vector[uint64_t] GetNcclStreams()
 
 
 cdef extern from "<common/sm_partition.h>" namespace "colserve":
@@ -266,11 +275,11 @@ cdef extern from "<common/sm_partition.h>" namespace "colserve":
         uint64_t GetTrainAvailTpcMask()
 
 
-def GetXQueueSize_(stream):
-    cdef optional[uint64_t] stream_opt
-    if stream is not None:
-        stream_opt = make_optional[uint64_t](<uint64_t> stream)
-    return GetXQueueSize(stream_opt)
+# def GetXQueueSize_(stream):
+#     cdef optional[uint64_t] stream_opt
+#     if stream is not None:
+#         stream_opt = make_optional[uint64_t](<uint64_t> stream)
+#     return GetXQueueSize(stream_opt)
 
 
 def monitor_sm_partition(interval: float):
