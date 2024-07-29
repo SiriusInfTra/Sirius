@@ -7,7 +7,9 @@ namespace torch_col {
 
 void TorchColInit(int train_rank, int train_world_size);
 
-void InitSMPartition(uint64_t stream);
+void SMPartitionInit(uint64_t stream);
+
+void TorchExtInit();
 
 }
 

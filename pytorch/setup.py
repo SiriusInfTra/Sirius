@@ -27,7 +27,11 @@ def copy_lib():
 
 def config_extension():
     torch_install_path = pathlib.Path(torch.__file__).parent
-    torch_include_path = str(torch_install_path / "include")
+    torch_include_path = [
+        str(torch_install_path / "include"),
+        str(torch_install_path / "include" / "torch" / "csrc" / "api" / "include")
+    ]
+
 
     cmake_cache_path = pathlib.Path(f'{get_build_path()}/CMakeCache.txt')
     assert cmake_cache_path.exists()
@@ -42,7 +46,7 @@ def config_extension():
     ext = Extension(
         name="torch_col._C",
         sources=[
-            "torch_col/main.pyx",
+            "torch_col/cython/main.pyx",
         ],
         language="c++",
         include_dirs=[
@@ -50,7 +54,7 @@ def config_extension():
             "../",
             "../third_party/mpool/allocator/include/",
             "../third_party/mpool/pages_pool/include/",
-            torch_include_path,
+            *torch_include_path,
             f"{cuda_root_path}/include"
         ],
         libraries=["new_torch_col"],

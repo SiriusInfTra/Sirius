@@ -2,6 +2,7 @@
 #define TORCH_COL_UTIL_H
 
 #include <c10/core/TensorImpl.h>
+#include <pybind11/pytypes.h>
 #include <Python.h>
 #include <chrono>
 #include <string>
@@ -36,6 +37,8 @@ class TensorWeakRef {
  private:
   std::optional<c10::weak_intrusive_ptr<at::TensorImpl>> tensor_weak_ref_;
 };
+
+
 
 }
 

@@ -10,7 +10,7 @@ import torch_col
 #     handle: ctypes.c_uint64 = __pysched_dll.RegisterStream(ctypes.c_uint64(stream.cuda_stream))
 #     __pysched_handle_dict[stream.cuda_stream] = handle
 
-#     torch_col._C.InitSMPartition()
+#     torch_col._C.SMPartitionInit()
     
 
 # def initial_kill_batch(epoch, batch, stream: Optional[Stream] = None):
@@ -76,7 +76,7 @@ def register_stream(stream: Stream | int, is_enable_dynamic_sm_partition: bool =
         and torch_col.is_enable_dynamic_sm_partition()
         and is_enable_dynamic_sm_partition
     ):
-        torch_col._C.InitSMPartition(stream)
+        torch_col._C.SMPartitionInit(stream)
 
 
 def unregister_stream(stream: Stream | int):

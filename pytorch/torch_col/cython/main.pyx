@@ -13,7 +13,7 @@ from enum import Enum
 import os
 
 ############################
-#  MARK: Torch Col Config  #
+#  MARK: Torch Col Init    #
 ############################
 
 cdef extern from "<torch_col/csrc/config.h>" namespace "torch_col":
@@ -58,7 +58,8 @@ cdef extern from "<common/device_manager.h>" namespace "colserve::sta":
 
 cdef extern from "<torch_col/csrc/init.h>" namespace "torch_col":
     cpdef void TorchColInit(int, int)
-    cpdef void InitSMPartition(uint64_t stream)
+    cpdef void SMPartitionInit(uint64_t stream)
+    cpdef void TorchExtInit()
 
 
 class HookMode(Enum):
@@ -509,8 +510,5 @@ cdef class PyTensorWeakRef:
 
     def __dealloc__(self):
         del self._cppclass
-
-
-
 
 
