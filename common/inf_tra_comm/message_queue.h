@@ -96,5 +96,7 @@ class InfTraMessageQueue {
   bip::managed_shared_memory &bip_shm_;
 };
 
+std::ostream &operator<<(std::ostream &os, InfTraMessageQueue::Direction direction);
+
 }
 }

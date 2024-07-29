@@ -54,120 +54,120 @@ cdef extern from "<torch_col/csrc/control_stub.h>" namespace "torch_col":
 
 
 cdef class PyDummyStub:
-    cdef DummyStub* _stub
+    cdef DummyStub* _cppclass
 
     def __cinit__(self):
-        self._stub = new DummyStub()
+        self._cppclass = new DummyStub()
 
     def train_start(self):
-        self._stub.TrainStart()
+        self._cppclass.TrainStart()
 
     def train_end(self):
-        self._stub.TrainEnd()
+        self._cppclass.TrainEnd()
 
     def stop(self):
-        self._stub.Stop()
+        self._cppclass.Stop()
 
     def can_exit_after_infer_worklaod_done(self):
-        return self._stub.CanExitAfterInferWorkloadDone()
+        return self._cppclass.CanExitAfterInferWorkloadDone()
     
     def __dealloc__(self):
-        del self._stub
+        del self._cppclass
 
 
 cdef class PySwitchStub:
-    cdef SwitchStub* _stub
+    cdef SwitchStub* _cppclass
 
     def __cinit__(self):
-        self._stub = new SwitchStub()
+        self._cppclass = new SwitchStub()
 
     def train_start(self):
-        self._stub.TrainStart()
+        self._cppclass.TrainStart()
 
     def train_end(self):
-        self._stub.TrainEnd()
+        self._cppclass.TrainEnd()
 
     def stop(self):
-        self._stub.Stop()
+        self._cppclass.Stop()
 
     def try_interrupt_train_done(self):
-        return self._stub.TryInterruptTrainDone()
+        return self._cppclass.TryInterruptTrainDone()
 
     def report_batch_size(self, batch_size):
-        self._stub.ReportBatchSize(batch_size)
+        self._cppclass.ReportBatchSize(batch_size)
     
     def StepsNoInteruptBegin(self):
-        self._stub.StepsNoInteruptBegin()
+        self._cppclass.StepsNoInteruptBegin()
 
     def StepsNoInteruptEnd(self):
-        self._stub.StepsNoInteruptEnd()
+        self._cppclass.StepsNoInteruptEnd()
 
     @property
     def cmd(self):
-        return self._stub.GetCmd()
+        return self._cppclass.GetCmd()
     @cmd.setter
     def cmd(self, cmd):
         if cmd is None:
-            self._stub.SetCmd(-1)
+            self._cppclass.SetCmd(-1)
         else:
-            self._stub.SetCmd(cmd)
+            self._cppclass.SetCmd(cmd)
     
     def EnableTorchColEngine(self):
-        self._stub.EnableTorchColEngine()
+        self._cppclass.EnableTorchColEngine()
 
     def can_exit_after_infer_worklaod_done(self):
-        return self._stub.CanExitAfterInferWorkloadDone()
+        return self._cppclass.CanExitAfterInferWorkloadDone()
 
     def __dealloc__(self):
-        del self._stub
+        del self._cppclass
 
 
 cdef class PyColocateStub:
-    cdef ColocateStub* _stub
+    cdef ColocateStub* _cppclass
 
     def __cinit__(self, batch_size):
-        self._stub = new ColocateStub(batch_size)
+        self._cppclass = new ColocateStub(batch_size)
 
     def stop(self):
-        self._stub.Stop()
+        self._cppclass.Stop()
 
     @property
     def cmd(self):
-        return self._stub.GetCmd()
+        return self._cppclass.GetCmd()
 
     @property
     def target_batch_size(self):
-        return self._stub.GetTargetBatchSize()
+        return self._cppclass.GetTargetBatchSize()
 
     def adjust_l1_done(self):
-        self._stub.ColocateAdjustL1Done()
+        self._cppclass.ColocateAdjustL1Done()
 
     def adjust_l2_done(self):
-        self._stub.ColocateAdjustL2Done()
+        self._cppclass.ColocateAdjustL2Done()
 
     def train_start(self):
-        self._stub.TrainStart()
+        self._cppclass.TrainStart()
 
     def train_end(self):
-        self._stub.TrainEnd()
+        self._cppclass.TrainEnd()
 
     def report_batch_size(self, batch_size):
-        self._stub.ReportBatchSize(batch_size)
+        self._cppclass.ReportBatchSize(batch_size)
 
     def StepsNoInteruptBegin(self):
-        self._stub.StepsNoInteruptBegin()
+        self._cppclass.StepsNoInteruptBegin()
 
     def StepsNoInteruptEnd(self):
-        self._stub.StepsNoInteruptEnd()
+        self._cppclass.StepsNoInteruptEnd()
     
     def can_exit_after_infer_worklaod_done(self):
-        return self._stub.CanExitAfterInferWorkloadDone()
+        return self._cppclass.CanExitAfterInferWorkloadDone()
 
     def EnableTorchColEngine(self):
-        self._stub.EnableTorchColEngine()
+        self._cppclass.EnableTorchColEngine()
 
     def __dealloc__(self):
-        del self._stub
+        del self._cppclass
 
 
 

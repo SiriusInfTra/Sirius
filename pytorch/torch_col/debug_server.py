@@ -9,7 +9,7 @@ class DebugServer:
             True, True, train_world_size)
         
         self._running = True
-        self._thread = threading.Thread(target=self._recv_status)
+        self._thread = threading.Thread(target=self._recv_from_train)
         self._thread.start()
 
     def colocate_l1(self, batch_size: int):
@@ -47,10 +47,10 @@ class DebugServer:
             cmd_id, torch_col.CtrlEvent.kInferExit, batch_size)
         self._cmd_mq.put_inf2_tra(msg, 0)
 
-    def _recv_status(self):
+    def _recv_from_train(self):
         while self._running:
             # msg = self._status_mq.timed_get_inf_tra(1, 0)
-            msg = self._inf_tra_comm.timed_get_inf2tra(10, 0)
+            msg = self._inf_tra_comm.timed_get_tra2inf(10, 0)
             if msg is None:
                 continue
             if msg.event != torch_col.CtrlEvent.kReportBatchSize:

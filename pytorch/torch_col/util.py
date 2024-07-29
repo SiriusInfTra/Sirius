@@ -36,23 +36,25 @@ class MemoryPool:
     @classmethod
     def get_memory_usage(cls):
         if torch_col.is_enable_shared_tensor():
-            return torch_col.cuda_memory_pool_train_all_usage(0) / 1024 / 1024 / 1024
+            nbytes = torch_col.cuda_memory_pool_train_all_usage(torch_col.get_train_rank())
+            return nbytes / 1024 / 1024 / 1024
         else:
-            free, total = torch.cuda.mem_get_info(0)
+            free, total = torch.cuda.mem_get_info(torch_col.get_train_rank())
             return (total - free) / 1024 / 1024 / 1024
     
     @classmethod
     def get_allocated_memory(cls):
         if torch_col.is_enable_shared_tensor():
-            return torch_col.cuda_memory_pool_train_usage(0) / 1024 / 1024 / 1024
+            nbytes = torch_col.cuda_memory_pool_train_usage(torch_col.get_train_rank())
+            return nbytes / 1024 / 1024 / 1024
         else:
-            free, total = torch.cuda.mem_get_info(0)
+            free, total = torch.cuda.mem_get_info(torch_col.get_train_rank())
             return (total - free) / 1024 / 1024 / 1024
     
     @classmethod
     def empty_cache(cls):
         if torch_col.is_enable_shared_tensor():
-            torch_col.cuda_memory_pool_free_train_local(0)
+            torch_col.cuda_memory_pool_free_train_local(torch_col.get_train_rank())
         else:
             torch.cuda.empty_cache()
 

@@ -66,7 +66,7 @@ import torch_col
 #     __pysched_dll.CritialSectionEnd(stream.__pysched_handle)
 
 
-def register_stream(stream: Stream | int):
+def register_stream(stream: Stream | int, is_enable_dynamic_sm_partition: bool = True):
     if isinstance(stream, Stream):
         stream = stream.cuda_stream
     torch_col.RegisterStream(stream)
@@ -74,6 +74,7 @@ def register_stream(stream: Stream | int):
     if (
         torch_col.has_colocated_infer_server()
         and torch_col.is_enable_dynamic_sm_partition()
+        and is_enable_dynamic_sm_partition
     ):
         torch_col._C.InitSMPartition(stream)
 

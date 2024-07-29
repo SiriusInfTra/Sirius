@@ -372,22 +372,22 @@ cdef extern from "<common/inf_tra_comm/communicator.h>" namespace "colserve::ctr
 
 
 cdef class PyCtrlMsgEntry:
-    cdef CtrlMsgEntry _entry
+    cdef CtrlMsgEntry _cppclass
     
     def __cinit__(self, uint64_t id, CtrlEvent cmd, int value):
-        self._entry = CtrlMsgEntry(id, int(cmd), value)
+        self._cppclass = CtrlMsgEntry(id, int(cmd), value)
 
     @property
     def event(self):
-        return CtrlEvent(self._entry.event)
+        return CtrlEvent(self._cppclass.event)
 
     @property
     def id(self):
-        return self._entry.id
+        return self._cppclass.id
 
     @property
     def value(self):
-        return self._entry.value
+        return self._cppclass.value
 
     def __repr__(self):
         return "PyCtrlMsgEntry(id={}, event={}, value={})".format(self.id, str(self.event), self.value)
@@ -408,24 +408,37 @@ class PyInfTraCommunicator:
 
     def put_inf2tra(self, PyCtrlMsgEntry entry, int id):
         InfTraCommunicator.GetMQ().Put(
-            entry, InfTraMessageQueue.Direction.kInf2Tra, id)
+            entry._cppclass, InfTraMessageQueue.Direction.kInf2Tra, id)
 
     def put_all_inf2tra(self, PyCtrlMsgEntry entry):
         InfTraCommunicator.GetMQ().PutAll(
-            entry, InfTraMessageQueue.Direction.kInf2Tra)
+            entry._cppclass, InfTraMessageQueue.Direction.kInf2Tra)
 
     def block_get_inf2tra(self, int id):
         return InfTraCommunicator.GetMQ().BlockGet(
             InfTraMessageQueue.Direction.kInf2Tra, id)
 
-    def timed_get_inf2tra(self, int timeout_ms, int id):
+    def block_get_tra2inf(self, int id):
+        return InfTraCommunicator.GetMQ().BlockGet(
+            InfTraMessageQueue.Direction.kTra2Inf, id)
+
+    def timed_get_inf2tra(self, uint32_t timeout_ms, int id):
         cdef CtrlMsgEntry msg
         if InfTraCommunicator.GetMQ().TimedGet(
-            <uint32_t> timeout_ms, InfTraMessageQueue.Direction.kInf2Tra, 
+            timeout_ms, InfTraMessageQueue.Direction.kInf2Tra, 
             id, msg
         ):
             return PyCtrlMsgEntry(msg.id, CtrlEvent(msg.event), msg.value)
         return None
+
+    def timed_get_tra2inf(self, uint32_t timeout_ms, int id):
+        cdef CtrlMsgEntry msg
+        if InfTraCommunicator.GetMQ().TimedGet(
+            timeout_ms, InfTraMessageQueue.Direction.kTra2Inf, 
+            id, msg
+        ):
+            return PyCtrlMsgEntry(msg.id, CtrlEvent(msg.event), msg.value)
+        return None 
 
 
 def init_train_info(init_batch_size, 
@@ -479,23 +492,23 @@ cdef extern from "<torch_col/csrc/util.h>" namespace "torch_col":
 
 
 cdef class PyTensorWeakRef:
-    cdef TensorWeakRef* _tensor_weak_ref
+    cdef TensorWeakRef* _cppclass
     
     def __cinit__(self, tensor):
         cdef PyObject* obj = <PyObject*> tensor
-        self._tensor_weak_ref = new TensorWeakRef(obj)
+        self._cppclass = new TensorWeakRef(obj)
 
     def nbytes(self):
-        return self._tensor_weak_ref.Nbytes()
+        return self._cppclass.Nbytes()
 
     def storage_nbytes(self):
-        return self._tensor_weak_ref.StorageNbytes()
+        return self._cppclass.StorageNbytes()
 
     def data_ptr(self):
-        return <size_t>self._tensor_weak_ref.DataPtr()
+        return <size_t>self._cppclass.DataPtr()
 
     def __dealloc__(self):
-        del self._tensor_weak_ref
+        del self._cppclass
 
 
 
