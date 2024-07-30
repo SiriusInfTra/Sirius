@@ -45,7 +45,8 @@ class DebugServer:
 
         msg = torch_col.PyCtrlMsgEntry(
             cmd_id, torch_col.CtrlEvent.kInferExit, batch_size)
-        self._cmd_mq.put_inf2_tra(msg, 0)
+        # self._cmd_mq.put_inf2_tra(msg, 0)
+        self._cmd_mq.put_all_inf2tra(msg)
 
     def _recv_from_train(self):
         while self._running:

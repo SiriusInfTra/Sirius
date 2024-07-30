@@ -32,7 +32,6 @@ def config_extension():
         str(torch_install_path / "include" / "torch" / "csrc" / "api" / "include")
     ]
 
-
     cmake_cache_path = pathlib.Path(f'{get_build_path()}/CMakeCache.txt')
     assert cmake_cache_path.exists()
 
