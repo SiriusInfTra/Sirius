@@ -412,7 +412,7 @@ void TrainLauncher::DummyAdjust() {
   while (this->train_pid_ == -1) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
-  size_t delay_before_dummy_adjust = 30;
+  size_t delay_before_dummy_adjust = 60;
   LOG(INFO) << "DummyAdjust: train pid " << this->train_pid_ 
             << " start after " << delay_before_dummy_adjust << "s";
   std::this_thread::sleep_for(std::chrono::seconds(delay_before_dummy_adjust));

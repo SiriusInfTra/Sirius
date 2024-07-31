@@ -90,7 +90,7 @@ size_t AbortStreamHandleWithLock(uint64_t stream_handle,
   using namespace ::xsched::hal::cuda;
   using namespace ::xsched::preempt;
   auto xqueue = CudaXQueueGet(stream_handle);
-  CHECK(xqueue != nullptr) << "Required xqueue is not NULL, stream_handle=" 
+  CHECK(xqueue != nullptr) << "XQueue is NULL, stream_handle=" 
                            << stream_handle;
   auto remove_filter = [](std::shared_ptr<XCommand> hal_command) -> bool {
     return std::dynamic_pointer_cast<CudaMemoryCommand>(hal_command) != nullptr 
@@ -139,9 +139,21 @@ size_t GetXQueueSize(uint64_t stream) {
   auto stream_handle = GetRegisteredHandleWithLock(stream, lock);
 
   auto xqueue = CudaXQueueGet(stream_handle);
-  CHECK(xqueue != nullptr) << "Required xqueue is not NULL, stream_handle=" 
+  CHECK(xqueue != nullptr) << "XQueue is NULL, stream_handle=" 
                            << stream_handle;
   return xqueue->GetSize();
+}
+
+size_t GetTotalXQueueSize() {
+  std::unique_lock lock{stream_mut};
+  size_t total = 0;
+  for (auto &kv : stream_map) {
+    auto xqueue = CudaXQueueGet(kv.second);
+    CHECK(xqueue != nullptr) << "XQueue is NULL, stream_handle=" 
+                             << kv.second;
+    total += xqueue->GetSize();
+  }
+  return total;
 }
 
 int QueryRejectCudaCalls() {
@@ -155,6 +167,13 @@ void SetRejectCudaCalls(int reject) {
 int RegisterCudaKernelLaunchPreHook(std::function<void*()> fn) {
   using CudaKernelLaunchCommand = ::xsched::hal::cuda::CudaKernelLaunchCommand;
   return CudaKernelLaunchCommand::RegisterCudaKernelLaunchPreHook(fn);
+}
+
+void StreamApply(std::function<void(uint64_t stream)> fn) {
+  std::unique_lock lock{stream_mut};
+  for (auto &kv : stream_map) {
+    fn(kv.first);
+  }
 }
 
 void GuessNcclBegin() {

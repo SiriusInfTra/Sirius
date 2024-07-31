@@ -21,9 +21,12 @@ size_t AbortAllStreams();
 int SyncStream(uint64_t stream);
 int SyncAllStreams();
 size_t GetXQueueSize(uint64_t stream);
+size_t GetTotalXQueueSize();
 int QueryRejectCudaCalls();
 void SetRejectCudaCalls(int reject);
 int RegisterCudaKernelLaunchPreHook(std::function<void*()> fn);
+
+void StreamApply(std::function<void(uint64_t stream)> fn);
 
 void GuessNcclBegin();
 void GuessNcclEnd();
