@@ -8,6 +8,8 @@
 #include <torch/csrc/distributed/c10d/debug.h>
 #include <torch/csrc/utils/pybind.h>
 
+#include <boost/format.hpp>
+
 #include <Python.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/chrono.h>
@@ -68,7 +70,8 @@ void ProcessGroupNCCL::RestartNcclComm(
       for(auto & device : devices) {
         ss << device << " ";
       }
-      LOG(INFO) << "[RestartNcclComm] device " << ss.str()
+      LOG(INFO) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
+                << " device " << ss.str()
                 << " device_key " << device_key
                 << " not found, valid keys: { "
                 << std::accumulate(devNCCLCommMap_.begin(), devNCCLCommMap_.end(),
@@ -82,7 +85,8 @@ void ProcessGroupNCCL::RestartNcclComm(
     nccl_comms = it->second;
   }
 
-  LOG(INFO) << "[RestartNcclComm] find device_key " << device_key
+  LOG(INFO) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
+            << " find device_key " << device_key
             << " nccl_comms.size() " << nccl_comms.size();
 
   auto old_ncclId = nccl_comms[0]->getNcclId();
@@ -112,10 +116,14 @@ void ProcessGroupNCCL::RestartNcclComm(
 
   // re-create NCCL comms, we DO NOT want nccl streams to be changed,
   // thus, we manually create the new nccl comms
-  ncclUniqueId ncclId;
+  ncclUniqueId ncclId{0};
   if (getRank() == 0) {
     ncclGetUniqueId(&ncclId);
   }
+  broadcastUniqueNCCLID(&ncclId, false, device_key, 0);
+  LOG(INFO) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
+            << " new ncclId " << buildNcclUniqueIdStr(ncclId);
+
   COL_NCCL_CALL(ncclGroupStart());
   for (auto & comm : nccl_comms) {
     comm = ::c10d::NCCLComm::create(size_, rank_, ncclId);
@@ -125,7 +133,8 @@ void ProcessGroupNCCL::RestartNcclComm(
   ncclIdToCommMap_.emplace(buildNcclUniqueIdStr(ncclId), nccl_comms);
   devNCCLCommMap_[device_key] = nccl_comms;
 
-  LOG(INFO) << "[RestartNcclComm] device_key " << device_key
+  LOG(INFO) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
+            << " device_key " << device_key
             << " re-create NCCL comms done";
 
   // re-create NCCL comms
