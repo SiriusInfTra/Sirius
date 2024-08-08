@@ -1,4 +1,5 @@
 #include <common/log_as_glog_sta.h>
+#include <common/util.h>
 
 #include <torch_col/csrc/dist_ext.h>
 
@@ -63,26 +64,73 @@ void ProcessGroupNCCL::RestartNcclComm(
   {
     auto it = devNCCLCommMap_.find(device_key);
     if (it == devNCCLCommMap_.end()) {
+      std::stringstream ss;
+      for(auto & device : devices) {
+        ss << device << " ";
+      }
+      LOG(INFO) << "[RestartNcclComm] device " << ss.str()
+                << " device_key " << device_key
+                << " not found, valid keys: { "
+                << std::accumulate(devNCCLCommMap_.begin(), devNCCLCommMap_.end(),
+                    std::string{},
+                    [](std::string &acc, auto &kv) {
+                      return acc.empty() ? kv.first : acc + ", " + kv.first;
+                    })
+                << " }";
       return;
     }
     nccl_comms = it->second;
   }
 
+  LOG(INFO) << "[RestartNcclComm] find device_key " << device_key
+            << " nccl_comms.size() " << nccl_comms.size();
+
+  auto old_ncclId = nccl_comms[0]->getNcclId();
   
   // lock the nccl work to avoid watch dog detecting the error
   // during the restart nccl comm
-  std::unique_lock<std::mutex> work_meta_list_lock(workMetaListMutex_);
+  {
+    std::unique_lock<std::mutex> work_meta_list_lock(workMetaListMutex_);
 
-  // destroyNCCLComms()
-  for (auto & comm : nccl_comms) {
-    comm->ncclCommAbort();
+    // destroyNCCLComms()
+    for (auto & comm : nccl_comms) {
+      comm->ncclCommAbort();
+    }
+    
+    // remove work in list, rely on cuda stream to ensure the work is done
+    workMetaList_.clear();
   }
-  devNCCLCommMap_.erase(device_key);
 
-  // remove work in list
-  workMetaList_.clear();
+  // devNCCLCommMap_.erase(device_key);
 
-  
+  // sync the nccl stream to ensure all the nccl work is completed
+  auto nccl_streams_it = ncclStreams_.find(device_key);
+  CHECK(nccl_streams_it != ncclStreams_.end());
+  for (auto & stream : nccl_streams_it->second) {
+    COL_CUDA_CALL(cudaStreamSynchronize(stream));
+  }
+
+  // re-create NCCL comms, we DO NOT want nccl streams to be changed,
+  // thus, we manually create the new nccl comms
+  ncclUniqueId ncclId;
+  if (getRank() == 0) {
+    ncclGetUniqueId(&ncclId);
+  }
+  COL_NCCL_CALL(ncclGroupStart());
+  for (auto & comm : nccl_comms) {
+    comm = ::c10d::NCCLComm::create(size_, rank_, ncclId);
+  }
+  COL_NCCL_CALL(ncclGroupEnd());
+
+  ncclIdToCommMap_.emplace(buildNcclUniqueIdStr(ncclId), nccl_comms);
+  devNCCLCommMap_[device_key] = nccl_comms;
+
+  LOG(INFO) << "[RestartNcclComm] device_key " << device_key
+            << " re-create NCCL comms done";
+
+  // re-create NCCL comms
+  // getNCCLComm(device_key, devices, c10d::OpType::ALLREDUCE);
+
   // for (auto & comm : nccl_comms) {
   //   ncclComm_t nccl_comm = comm->getNcclComm();
   //   ncclCommAbort(nccl_comm);

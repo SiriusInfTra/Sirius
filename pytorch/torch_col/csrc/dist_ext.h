@@ -53,6 +53,8 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
       const std::vector<at::Device> &devices);
 
  private:
+  // from torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp,
+  // but as the static methods
   static std::string getKeyFromDevices(const std::vector<at::Device>& devices) {
     std::string deviceList;
     for (auto& device : devices) {
@@ -63,7 +65,18 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
       }
     }
     return deviceList;
-}
+  }
+
+  // Given a ncclUniqueId, convert it to a string representation that can be put
+  // in the store.
+  static std::string buildNcclUniqueIdStr(const ncclUniqueId& ncclID) {
+    const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&ncclID);
+    std::ostringstream oss;
+    for (const auto i : c10::irange(NCCL_UNIQUE_ID_BYTES)) {
+      oss << std::hex << static_cast<int>(bytes[i]);
+    }
+    return oss.str();
+  }
 };
 
 }

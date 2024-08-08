@@ -46,6 +46,13 @@ namespace colserve {
     } \
   } while(0);
 
+#define COL_NCCL_CALL(func) do { \
+  auto error = func; \
+  if (error != ncclSuccess) { \
+    LOG(FATAL) << #func << " " << ncclGetErrorString(error); \
+    exit(EXIT_FAILURE); \
+  } \
+  } while (0)
 
 constexpr int MAX_DEVICE_NUM = 8;
 
