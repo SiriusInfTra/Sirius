@@ -64,25 +64,38 @@ class CUDAColAllocator : public c10::cuda::CUDACachingAllocator::CUDAAllocator {
   void resetAccumulatedStats(int device) override;
   void resetPeakStats(int device) override;
   c10::cuda::CUDACachingAllocator::SnapshotInfo snapshot() override;
-  void notifyCaptureBegin(
+  void beginAllocateStreamToPool(
       int device,
-      c10::cuda::CaptureId_t graph_id,
+      cudaStream_t stream,
       c10::cuda::MempoolId_t mempool_id) override;
-  void notifyCaptureAboutToEnd(
-      int device,
-      c10::cuda::CaptureId_t graph_id) override;
-  void notifyCaptureEnded(int device, c10::cuda::CaptureId_t graph_id)
-      override;
-  void notifyCaptureDestroy(int device, c10::cuda::MempoolId_t mempool_id) override;
+  void endAllocateStreamToPool(int device, cudaStream_t stream) override;
+  void releasePool(int device, c10::cuda::MempoolId_t mempool_id) override;
+
   std::shared_ptr<void> getIpcDevPtr(std::string handle) override;
+
   void recordHistory(
       bool enabled,
       c10::cuda::CUDACachingAllocator::CreateContextFn context_recorder,
       size_t alloc_trace_max_entries,
-      bool alloc_trace_record_context) override;
+      c10::cuda::CUDACachingAllocator::RecordContext when) override;
   void attachOutOfMemoryObserver(
       c10::cuda::CUDACachingAllocator::OutOfMemoryObserver observer) override;
-  bool needsPoolSpecificPeerAccess() override;
+  void enablePeerAccess(int dev, int dev_to_access) override;
+
+  virtual cudaError_t memcpyAsync(
+      void* dst,
+      int dstDevice,
+      const void* src,
+      int srcDevice,
+      size_t count,
+      cudaStream_t stream,
+      bool p2p_enabled) override;
+  virtual std::shared_ptr<c10::cuda::CUDACachingAllocator::AllocatorState> getCheckpointState(
+      int device,
+      c10::cuda::MempoolId_t id) override;
+  virtual c10::cuda::CUDACachingAllocator::CheckpointDelta setCheckpointPoolState(
+      int device,
+      std::shared_ptr<c10::cuda::CUDACachingAllocator::AllocatorState> pps) override;
 
   std::string name() override;
 
