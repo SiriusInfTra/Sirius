@@ -32,7 +32,7 @@ class TensorWeakRef {
   TensorWeakRef(PyObject* tensor);
   size_t Nbytes() const;
   size_t StorageNbytes() const;
-  void* DataPtr() const;
+  const void* DataPtr() const;
 
  private:
   std::optional<c10::weak_intrusive_ptr<at::TensorImpl>> tensor_weak_ref_;

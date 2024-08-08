@@ -54,7 +54,7 @@ size_t TensorWeakRef::StorageNbytes() const {
   return 0;
 }
 
-void* TensorWeakRef::DataPtr() const {
+const void* TensorWeakRef::DataPtr() const {
   if (tensor_weak_ref_.has_value()) {
     if (auto tensor = tensor_weak_ref_.value().lock()) {
       return tensor->data();
