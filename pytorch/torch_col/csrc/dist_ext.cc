@@ -17,6 +17,8 @@
 
 namespace torch_col {
 
+::c10::intrusive_ptr<ProcessGroupNCCL> ProcessGroupNCCL::default_pg_ = nullptr;
+
 void Reducer::finalize_dropped_batch() {
   // ::c10d::Reducer::finalize_backward();
   LOG(INFO) << "Reducer::finalize_dropped_batch() begin";
@@ -49,13 +51,28 @@ std::vector<ncclComm_t> ProcessGroupNCCL::GetNcclComm(
   return comms;
 }
 
+::c10::intrusive_ptr<ProcessGroupNCCL> 
+ProcessGroupNCCL::GetDefaultProcessGroupNCCL() {
+  return default_pg_;
+}
+
+void ProcessGroupNCCL::SetDefaultProcessGroupNCCL(
+      ProcessGroupNCCL *pg) {
+  default_pg_ = 
+      ::c10::intrusive_ptr<ProcessGroupNCCL>::unsafe_steal_from_new(pg);
+}
+
+void ProcessGroupNCCL::SetDefaultProcessGroupNCCL(
+    const ::c10::intrusive_ptr<ProcessGroupNCCL> &pg) {
+  default_pg_ = pg;
+}
+
 ProcessGroupNCCL::ProcessGroupNCCL(
     const c10::intrusive_ptr<::c10d::Store>& store,
     int rank,
     int size,
     c10::intrusive_ptr<Options> options)
   : ::c10d::ProcessGroupNCCL(store, rank, size, options) {}
-
 
 void ProcessGroupNCCL::RestartNcclComm(
     const std::vector<at::Device> &devices) {
@@ -73,13 +90,8 @@ void ProcessGroupNCCL::RestartNcclComm(
       LOG(INFO) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
                 << " device " << ss.str()
                 << " device_key " << device_key
-                << " not found, valid keys: { "
-                << std::accumulate(devNCCLCommMap_.begin(), devNCCLCommMap_.end(),
-                    std::string{},
-                    [](std::string &acc, auto &kv) {
-                      return acc.empty() ? kv.first : acc + ", " + kv.first;
-                    })
-                << " }";
+                << " not found, valid keys: "
+                << GetDevNcclCommMapKeySetStrsUnlocked();
       return;
     }
     nccl_comms = it->second;
@@ -89,6 +101,33 @@ void ProcessGroupNCCL::RestartNcclComm(
             << " find device_key " << device_key
             << " nccl_comms.size() " << nccl_comms.size();
 
+  std::vector<std::pair<uint32_t, uint32_t>> abort_flags(nccl_comms.size());
+  for (int i = 0; i < nccl_comms.size(); i++) {
+    auto & comm = nccl_comms[i];
+    abort_flags[i] = _GetNcclCommAbortFlag(comm->getNcclComm());
+  }
+
+
+  bool is_abort_flag_setted = (abort_flags[0].first || abort_flags[0].second);
+  for (int i = 1; i < abort_flags.size(); i++) {
+    auto & flag = abort_flags[i];
+    if ((flag.first || flag.second) != is_abort_flag_setted) {
+      LOG(FATAL) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
+                << " device_key " << device_key
+                << " abort flags are not the same";
+      break;
+    }
+  }
+
+  if (is_abort_flag_setted) {
+    RestartNcclCommByReSettingAbortFlag(devices, device_key, nccl_comms, lock);
+  } else {
+    RestartNcclCommByRecreating(devices, device_key, nccl_comms, lock);
+  }
+  return ;
+
+  ///////
+
   auto old_ncclId = nccl_comms[0]->getNcclId();
   
   // lock the nccl work to avoid watch dog detecting the error
@@ -97,6 +136,128 @@ void ProcessGroupNCCL::RestartNcclComm(
     std::unique_lock<std::mutex> work_meta_list_lock(workMetaListMutex_);
 
     // destroyNCCLComms()
+    // for (auto & comm : nccl_comms) {
+    //   comm->ncclCommAbort();
+    // }
+    for (auto & comm : nccl_comms) {
+      _SetNcclCommAbortFlag(comm->getNcclComm(), 0);
+      // comm->ncclCommAbort();
+    }
+    
+    // remove work in list, rely on cuda stream to ensure the work is done
+    workMetaList_.clear();
+  }
+
+  // devNCCLCommMap_.erase(device_key);
+
+  // sync the nccl stream to ensure all the nccl work is completed
+  auto nccl_streams_it = ncclStreams_.find(device_key);
+  CHECK(nccl_streams_it != ncclStreams_.end());
+  for (auto & stream : nccl_streams_it->second) {
+    COL_CUDA_CALL(cudaStreamSynchronize(stream));
+  }
+
+  return;
+  // RestartNcclCommByRecreating(devices, device_key, nccl_comms, lock);
+
+
+  // // re-create NCCL comms, we DO NOT want nccl streams to be changed,
+  // // thus, we manually create the new nccl comms
+  // ncclUniqueId ncclId{0};
+  // if (getRank() == 0) {
+  //   ncclGetUniqueId(&ncclId);
+  // }
+  // broadcastUniqueNCCLID(&ncclId, false, device_key, 0);
+  // LOG(INFO) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
+  //           << " new ncclId " << buildNcclUniqueIdStr(ncclId);
+
+  // COL_NCCL_CALL(ncclGroupStart());
+  // for (auto & comm : nccl_comms) {
+  //   comm = ::c10d::NCCLComm::create(size_, rank_, ncclId);
+  // }
+  // COL_NCCL_CALL(ncclGroupEnd());
+
+  // ncclIdToCommMap_.emplace(buildNcclUniqueIdStr(ncclId), nccl_comms);
+  // devNCCLCommMap_[device_key] = nccl_comms;
+
+  // LOG(INFO) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
+  //           << " device_key " << device_key
+  //           << " re-create NCCL comms done";
+
+  // // re-create NCCL comms
+  // getNCCLComm(device_key, devices, c10d::OpType::ALLREDUCE);
+
+  // for (auto & comm : nccl_comms) {
+  //   ncclComm_t nccl_comm = comm->getNcclComm();
+  //   ncclCommAbort(nccl_comm);
+  //   // ncclCommInitRank(&nccl_comm, )
+  // }
+
+  // ncclUniqueId nccl_id;
+  // if (getRank() == 0) {
+  //   ncclGetUniqueId(&nccl_id);
+  // }
+  // broadcastUniqueNCCLID(&nccl_id, false, device_key, 0);
+
+  // ncclGroupStart();
+  // for (int i = 0; i < nccl_comms.size(); i++) {
+  //   auto & comm = nccl_comms[i];
+  //   ncclComm_t nccl_comm;
+
+  //   int nRank = devices.size() * getSize();
+  //   int rank = getRank() * devices.size() + i;
+  //   comm = ::c10d::NCCLComm::create(nRank, rank, nccl_id);
+  // }
+  // ncclGroupEnd();
+
+  
+  
+  // // 1. abort and restart the nccl comm
+  // for (auto & comm : nccl_comms) {
+  //   ncclComm_t nccl_comm = comm->getNcclComm();
+  //   ncclCommAbort(nccl_comm);
+  //   ncclCommInitRank(&nccl_comm, )
+  // }
+}
+
+void ProcessGroupNCCL::RestartNcclCommByReSettingAbortFlag(      
+    const std::vector<at::Device> &devices, 
+    const std::string &device_key,
+    std::vector<std::shared_ptr<::c10d::NCCLComm>> &comms,
+    const std::unique_lock<std::mutex> &pg_lock) {
+  {
+    std::unique_lock<std::mutex> work_meta_list_lock(workMetaListMutex_);
+    workMetaList_.clear();
+  }
+
+  auto nccl_streams_it = ncclStreams_.find(device_key);
+  CHECK(nccl_streams_it != ncclStreams_.end());
+  for (auto & stream : nccl_streams_it->second) {
+    COL_CUDA_CALL(cudaStreamSynchronize(stream));
+  }
+
+  for (auto & comm : comms) {
+    _SetNcclCommAbortFlag(comm->getNcclComm(), 0);
+  }
+
+  LOG(INFO) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
+            << " device_key " << device_key
+            << " re-set abort flag done";
+}
+
+void ProcessGroupNCCL::RestartNcclCommByRecreating(
+    const std::vector<at::Device> &devices, 
+    const std::string &device_key,
+    std::vector<std::shared_ptr<::c10d::NCCLComm>> &nccl_comms,
+    const std::unique_lock<std::mutex> &pg_lock) {
+  
+  auto old_ncclId = nccl_comms[0]->getNcclId();
+  
+  // lock the nccl work to avoid watch dog detecting the error
+  // during the restart nccl comm
+  {
+    std::unique_lock<std::mutex> work_meta_list_lock(workMetaListMutex_);
+
     for (auto & comm : nccl_comms) {
       comm->ncclCommAbort();
     }
@@ -136,41 +297,80 @@ void ProcessGroupNCCL::RestartNcclComm(
   LOG(INFO) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
             << " device_key " << device_key
             << " re-create NCCL comms done";
+}
 
-  // re-create NCCL comms
-  // getNCCLComm(device_key, devices, c10d::OpType::ALLREDUCE);
+void ProcessGroupNCCL::SetNcclCommAbortFlag(
+    const std::vector<at::Device> &devices,
+    uint32_t val) {
+  auto device_key = getKeyFromDevices(devices);
+  std::vector<std::shared_ptr<::c10d::NCCLComm>> ncc_comms;
 
-  // for (auto & comm : nccl_comms) {
-  //   ncclComm_t nccl_comm = comm->getNcclComm();
-  //   ncclCommAbort(nccl_comm);
-  //   // ncclCommInitRank(&nccl_comm, )
-  // }
+  std::unique_lock<std::mutex> lock(mutex_);
+  auto it = devNCCLCommMap_.find(device_key);
+  if (it == devNCCLCommMap_.end()) {
+    LOG(INFO) << str(boost::format("[Rank %d | SetNcclCommAbortFlag]") % getRank())
+              << " device_key " << device_key
+              << " not found, valid keys: "
+              << GetDevNcclCommMapKeySetStrsUnlocked();
+    return;
+  }
+  ncc_comms = it->second;
 
-  // ncclUniqueId nccl_id;
-  // if (getRank() == 0) {
-  //   ncclGetUniqueId(&nccl_id);
-  // }
-  // broadcastUniqueNCCLID(&nccl_id, false, device_key, 0);
+  for (auto & comm : ncc_comms) {
+    _SetNcclCommAbortFlag(comm->getNcclComm(), val);
+  }
+  LOG(INFO) << str(boost::format("[Rank %d | SetNcclCommAbortFlag]") % getRank())
+            << " device_key " << device_key
+            << " set abort flag done";
+}
 
-  // ncclGroupStart();
-  // for (int i = 0; i < nccl_comms.size(); i++) {
-  //   auto & comm = nccl_comms[i];
-  //   ncclComm_t nccl_comm;
+void ProcessGroupNCCL::_SetNcclCommAbortFlag(ncclComm_t comm, uint32_t val) {
+  auto [abort_flag, child_abort_flag] = _GetNcclCommAbortFlagPtr(comm);
+  *abort_flag = val;
+  *child_abort_flag = val;
+  this->abort_flag_ = val;
+}
 
-  //   int nRank = devices.size() * getSize();
-  //   int rank = getRank() * devices.size() + i;
-  //   comm = ::c10d::NCCLComm::create(nRank, rank, nccl_id);
-  // }
-  // ncclGroupEnd();
+std::pair<uint32_t, uint32_t> 
+ProcessGroupNCCL::_GetNcclCommAbortFlag(ncclComm_t comm) {
+  auto [abort_flag, child_abort_flag] = _GetNcclCommAbortFlagPtr(comm);
+  return {*abort_flag, *child_abort_flag};
+}
 
-  
-  
-  // // 1. abort and restart the nccl comm
-  // for (auto & comm : nccl_comms) {
-  //   ncclComm_t nccl_comm = comm->getNcclComm();
-  //   ncclCommAbort(nccl_comm);
-  //   ncclCommInitRank(&nccl_comm, )
-  // }
+std::pair<uint32_t*, uint32_t*> 
+ProcessGroupNCCL::_GetNcclCommAbortFlagPtr(ncclComm_t comm) {
+  auto nccl_version = c10d::getNcclVersion();
+
+  if (nccl_version == "2.18.6") {
+    auto abort_flag_offset = 10784;
+    uint32_t* abort_flag = reinterpret_cast<uint32_t*>(
+        reinterpret_cast<char*>(comm) + abort_flag_offset);
+
+    auto child_abort_flag_offset = 10792;
+    uint32_t* child_abort_flag = reinterpret_cast<uint32_t*>(
+        reinterpret_cast<char*>(comm) + child_abort_flag_offset);
+
+    return std::make_pair(abort_flag, child_abort_flag);
+  } else {
+    LOG(FATAL) << "NCCL version " << nccl_version << " not supported"
+               << " abort flag offset may be different";
+    return {};
+  }
+}
+
+std::string ProcessGroupNCCL::GetDevNcclCommMapKeySetStrs() {
+  std::unique_lock lock(mutex_);
+  return GetDevNcclCommMapKeySetStrsUnlocked();
+}
+
+std::string ProcessGroupNCCL::GetDevNcclCommMapKeySetStrsUnlocked() const {
+  std::string key_set_strs =
+      std::accumulate(devNCCLCommMap_.begin(), devNCCLCommMap_.end(),
+        std::string{},
+        [](std::string &acc, auto &kv) {
+          return acc.empty() ? kv.first : acc + ", " + kv.first;
+        });
+  return "{ " + key_set_strs + " }";
 }
 
 } // namespace torch_col
@@ -181,6 +381,7 @@ void ProcessGroupNCCL::RestartNcclComm(
 // MARK: Overwrite the following functions of c10d
 
 namespace {
+// from torch/csrc/distributed/c10d/init.cpp
 
 // Wrapper to ensure GIL is released before destructing ProcessGroupGloo
 // TODO: move this somewhere more generally useful
@@ -509,6 +710,15 @@ void TorchExtInit() {
       /* ext ProcessGroupNCCL */
       .def("_restart_nccl_comm", &ProcessGroupNCCL::RestartNcclComm,
           py::arg("devices"),
+          py::call_guard<py::gil_scoped_release>())
+      .def("_set_nccl_comm_abort_flag", &ProcessGroupNCCL::SetNcclCommAbortFlag,
+          py::arg("devices"),
+          py::arg("val") = 1,
+          py::call_guard<py::gil_scoped_release>())
+      .def("_set_as_default_pg", 
+          [](const c10::intrusive_ptr<ProcessGroupNCCL> &self) {
+            ProcessGroupNCCL::SetDefaultProcessGroupNCCL(self);
+          },
           py::call_guard<py::gil_scoped_release>());
 
     // ProcessGroupNCCL.Options
