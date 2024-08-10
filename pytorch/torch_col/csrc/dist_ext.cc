@@ -109,140 +109,34 @@ void ProcessGroupNCCL::RestartNcclComm(
 
 
   bool is_abort_flag_setted = (abort_flags[0].first || abort_flags[0].second);
+  if ((!!abort_flag_) != is_abort_flag_setted) {
+    LOG(FATAL) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
+              << " device_key " << device_key
+              << " comm abort flags are not the same with abort_flag_";
+  }
+
   for (int i = 1; i < abort_flags.size(); i++) {
     auto & flag = abort_flags[i];
     if ((flag.first || flag.second) != is_abort_flag_setted) {
       LOG(FATAL) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
                 << " device_key " << device_key
-                << " abort flags are not the same";
+                << " abort flags are not the same across comms";
       break;
     }
   }
 
+  // if nccl kernel are aborted, connect state may be corrupted
+  // thus, we choose to restart the nccl comm
+
+  // first recover the abort flag
   if (is_abort_flag_setted) {
-    RestartNcclCommByReSettingAbortFlag(devices, device_key, nccl_comms, lock);
-  } else {
-    RestartNcclCommByRecreating(devices, device_key, nccl_comms, lock);
-  }
-  return ;
-
-  ///////
-
-  auto old_ncclId = nccl_comms[0]->getNcclId();
-  
-  // lock the nccl work to avoid watch dog detecting the error
-  // during the restart nccl comm
-  {
-    std::unique_lock<std::mutex> work_meta_list_lock(workMetaListMutex_);
-
-    // destroyNCCLComms()
-    // for (auto & comm : nccl_comms) {
-    //   comm->ncclCommAbort();
-    // }
     for (auto & comm : nccl_comms) {
       _SetNcclCommAbortFlag(comm->getNcclComm(), 0);
-      // comm->ncclCommAbort();
     }
-    
-    // remove work in list, rely on cuda stream to ensure the work is done
-    workMetaList_.clear();
   }
 
-  // devNCCLCommMap_.erase(device_key);
-
-  // sync the nccl stream to ensure all the nccl work is completed
-  auto nccl_streams_it = ncclStreams_.find(device_key);
-  CHECK(nccl_streams_it != ncclStreams_.end());
-  for (auto & stream : nccl_streams_it->second) {
-    COL_CUDA_CALL(cudaStreamSynchronize(stream));
-  }
-
-  return;
-  // RestartNcclCommByRecreating(devices, device_key, nccl_comms, lock);
-
-
-  // // re-create NCCL comms, we DO NOT want nccl streams to be changed,
-  // // thus, we manually create the new nccl comms
-  // ncclUniqueId ncclId{0};
-  // if (getRank() == 0) {
-  //   ncclGetUniqueId(&ncclId);
-  // }
-  // broadcastUniqueNCCLID(&ncclId, false, device_key, 0);
-  // LOG(INFO) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
-  //           << " new ncclId " << buildNcclUniqueIdStr(ncclId);
-
-  // COL_NCCL_CALL(ncclGroupStart());
-  // for (auto & comm : nccl_comms) {
-  //   comm = ::c10d::NCCLComm::create(size_, rank_, ncclId);
-  // }
-  // COL_NCCL_CALL(ncclGroupEnd());
-
-  // ncclIdToCommMap_.emplace(buildNcclUniqueIdStr(ncclId), nccl_comms);
-  // devNCCLCommMap_[device_key] = nccl_comms;
-
-  // LOG(INFO) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
-  //           << " device_key " << device_key
-  //           << " re-create NCCL comms done";
-
-  // // re-create NCCL comms
-  // getNCCLComm(device_key, devices, c10d::OpType::ALLREDUCE);
-
-  // for (auto & comm : nccl_comms) {
-  //   ncclComm_t nccl_comm = comm->getNcclComm();
-  //   ncclCommAbort(nccl_comm);
-  //   // ncclCommInitRank(&nccl_comm, )
-  // }
-
-  // ncclUniqueId nccl_id;
-  // if (getRank() == 0) {
-  //   ncclGetUniqueId(&nccl_id);
-  // }
-  // broadcastUniqueNCCLID(&nccl_id, false, device_key, 0);
-
-  // ncclGroupStart();
-  // for (int i = 0; i < nccl_comms.size(); i++) {
-  //   auto & comm = nccl_comms[i];
-  //   ncclComm_t nccl_comm;
-
-  //   int nRank = devices.size() * getSize();
-  //   int rank = getRank() * devices.size() + i;
-  //   comm = ::c10d::NCCLComm::create(nRank, rank, nccl_id);
-  // }
-  // ncclGroupEnd();
-
-  
-  
-  // // 1. abort and restart the nccl comm
-  // for (auto & comm : nccl_comms) {
-  //   ncclComm_t nccl_comm = comm->getNcclComm();
-  //   ncclCommAbort(nccl_comm);
-  //   ncclCommInitRank(&nccl_comm, )
-  // }
-}
-
-void ProcessGroupNCCL::RestartNcclCommByReSettingAbortFlag(      
-    const std::vector<at::Device> &devices, 
-    const std::string &device_key,
-    std::vector<std::shared_ptr<::c10d::NCCLComm>> &comms,
-    const std::unique_lock<std::mutex> &pg_lock) {
-  {
-    std::unique_lock<std::mutex> work_meta_list_lock(workMetaListMutex_);
-    workMetaList_.clear();
-  }
-
-  auto nccl_streams_it = ncclStreams_.find(device_key);
-  CHECK(nccl_streams_it != ncclStreams_.end());
-  for (auto & stream : nccl_streams_it->second) {
-    COL_CUDA_CALL(cudaStreamSynchronize(stream));
-  }
-
-  for (auto & comm : comms) {
-    _SetNcclCommAbortFlag(comm->getNcclComm(), 0);
-  }
-
-  LOG(INFO) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
-            << " device_key " << device_key
-            << " re-set abort flag done";
+  // then restart the nccl comm
+  RestartNcclCommByRecreating(devices, device_key, nccl_comms, lock);
 }
 
 void ProcessGroupNCCL::RestartNcclCommByRecreating(
@@ -319,22 +213,39 @@ void ProcessGroupNCCL::SetNcclCommAbortFlag(
   for (auto & comm : ncc_comms) {
     _SetNcclCommAbortFlag(comm->getNcclComm(), val);
   }
+
+  if (val) {
+    auto nccl_stream = ncclStreams_.find(device_key);
+    for (auto & stream : nccl_stream->second) {
+      LOG(INFO) << "sync stream " << stream.stream();
+      COL_CUDA_CALL(cudaStreamSynchronize(stream.stream()));
+    }
+  }
+  COL_CUDA_CALL(cudaSetDevice(getRank()));
+  COL_CUDA_CALL(cudaDeviceSynchronize());
+
   LOG(INFO) << str(boost::format("[Rank %d | SetNcclCommAbortFlag]") % getRank())
             << " device_key " << device_key
             << " set abort flag done";
 }
 
 void ProcessGroupNCCL::_SetNcclCommAbortFlag(ncclComm_t comm, uint32_t val) {
-  auto [abort_flag, child_abort_flag] = _GetNcclCommAbortFlagPtr(comm);
+  auto abort_flag_ptr = _GetNcclCommAbortFlagPtr(comm);
+  volatile uint32_t *abort_flag = abort_flag_ptr.first;
+  volatile uint32_t *child_abort_flag = abort_flag_ptr.second;
   *abort_flag = val;
-  *child_abort_flag = val;
+  // *child_abort_flag = val;
+  if (child_abort_flag) {
+    *child_abort_flag = val;
+  }
   this->abort_flag_ = val;
+  LOG(INFO) << "abort flag " << abort_flag << " " << abort_flag_ptr.first << " "  << *abort_flag;
 }
 
 std::pair<uint32_t, uint32_t> 
 ProcessGroupNCCL::_GetNcclCommAbortFlag(ncclComm_t comm) {
   auto [abort_flag, child_abort_flag] = _GetNcclCommAbortFlagPtr(comm);
-  return {*abort_flag, *child_abort_flag};
+  return {*abort_flag, child_abort_flag ? *child_abort_flag : false};
 }
 
 std::pair<uint32_t*, uint32_t*> 
@@ -343,12 +254,15 @@ ProcessGroupNCCL::_GetNcclCommAbortFlagPtr(ncclComm_t comm) {
 
   if (nccl_version == "2.18.6") {
     auto abort_flag_offset = 10784;
-    uint32_t* abort_flag = reinterpret_cast<uint32_t*>(
+    uint32_t* abort_flag = *reinterpret_cast<uint32_t**>(
         reinterpret_cast<char*>(comm) + abort_flag_offset);
 
     auto child_abort_flag_offset = 10792;
-    uint32_t* child_abort_flag = reinterpret_cast<uint32_t*>(
+    uint32_t* child_abort_flag = *reinterpret_cast<uint32_t**>(
         reinterpret_cast<char*>(comm) + child_abort_flag_offset);
+
+    LOG(INFO) << std::hex << "_GetNcclCommAbortFlagPtr "
+              << abort_flag << " " << child_abort_flag;
 
     return std::make_pair(abort_flag, child_abort_flag);
   } else {

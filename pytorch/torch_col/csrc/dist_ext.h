@@ -32,7 +32,7 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
     WorkDummy(int rank = -1, 
               ::c10d::OpType opType = ::c10d::OpType::UNKNOWN)
         : ::c10d::Work(rank, opType) {
-      completed_ = true;      
+      completed_ = true;
     }
 
     c10::intrusive_ptr<c10::ivalue::Future> getFuture() override {
@@ -67,7 +67,7 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
 
   ~ProcessGroupNCCL() override {
     // recover the abort flag to let nccl release the resources
-    CHECK(abort_flag_ == 0) << "abort flag should be 0";
+    // CHECK(abort_flag_ == 0) << "abort flag should be 0";
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -257,11 +257,6 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
     return oss.str();
   }
 
-  void RestartNcclCommByReSettingAbortFlag(
-      const std::vector<at::Device> &devices, 
-      const std::string &device_key,
-      std::vector<std::shared_ptr<::c10d::NCCLComm>> &nccl_comms,
-      const std::unique_lock<std::mutex> &pg_lock);
   void RestartNcclCommByRecreating(
       const std::vector<at::Device> &devices, 
       const std::string &device_key,
