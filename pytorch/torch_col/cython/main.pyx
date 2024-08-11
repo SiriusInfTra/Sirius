@@ -262,6 +262,7 @@ cdef extern from "<common/xsched_ctrl.h>" namespace "colserve::sta::xsched":
     cpdef uint64_t AbortAllStreams()
     cpdef int SyncStream(uint64_t stream)
     cpdef int SyncAllStreams()
+    cpdef void SetRejectCudaCalls(bool reject)
     cpdef void GuessNcclBegin()
     cpdef void GuessNcclEnd()
     cpdef vector[uint64_t] GetNcclStreams()
@@ -484,13 +485,16 @@ cdef extern from "<torch_col/csrc/util.h>" namespace "torch_col":
     cpdef long get_unix_timestamp()
     cpdef long get_unix_timestamp_us()
 
+    cpdef void CallGLOG_INFO(const char* log_str, const char* file, int line)
+    cpdef void CallGLOG_DINFO(const char* log_str, const char* file, int line)
+
 
 cdef extern from "<torch_col/csrc/util.h>" namespace "torch_col":
     cdef cppclass TensorWeakRef:
         TensorWeakRef(PyObject *tensor) except +
         size_t Nbytes()
         size_t StorageNbytes()
-        void* DataPtr()
+        const void* DataPtr()
 
 
 cdef class PyTensorWeakRef:
@@ -511,5 +515,3 @@ cdef class PyTensorWeakRef:
 
     def __dealloc__(self):
         del self._cppclass
-
-

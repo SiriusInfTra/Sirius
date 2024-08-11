@@ -422,7 +422,7 @@ void TrainLauncher::DummyAdjust() {
   int ori_target_bs = this->target_batch_size_;
 
   auto start = Profiler::Now();
-  while (Profiler::MilliFrom(start) < 30*1000 && this->train_pid_ != -1) {
+  while (Profiler::MilliFrom(start) < 60*1000 && this->train_pid_ != -1) {
     LOG(INFO) << "DummyAdjust at " << Profiler::GetTimeStamp();
     auto batch_size = 1;
     auto cmd_id = ctrl::Controller::Get()->ColocateAdjust(-1, 0, batch_size);

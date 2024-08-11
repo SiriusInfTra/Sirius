@@ -5,9 +5,24 @@ from dataclasses import dataclass
 import time
 from typing import Optional
 import pandas as pd
+import inspect
 
 import torch
 import torch_col
+
+
+def info(msg: str):
+    func = inspect.currentframe().f_back.f_code
+    print(func.co_filename, func.co_firstlineno)
+    c_msg = msg.encode('utf-8')
+    c_file = func.co_filename.encode('utf-8')
+    torch_col._C.CallGLOG_INFO(c_msg, c_file, func.co_firstlineno)
+
+def dinfo(msg: str):
+    func = inspect.currentframe().f_back.f_code
+    c_msg = msg.encode('utf-8')
+    c_file = func.co_filename.encode('utf-8')
+    torch_col._C.CallGLOG_DINFO(c_msg, c_file, func.co_firstlineno)
 
 
 class TrainMode(Enum):

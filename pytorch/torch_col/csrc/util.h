@@ -20,6 +20,9 @@ inline auto get_unix_timestamp_us() {
     std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
+void CallGLOG_INFO(const char* log_str, const char* file, int line);
+void CallGLOG_DINFO(const char* log_str, const char* file, int line);
+
 void ReleaseGradFnSavedTensor(PyObject* grad_fn);
 void ReleaseUnderlyingStorage(PyObject* tensor);
 
