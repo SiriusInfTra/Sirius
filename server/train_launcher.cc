@@ -412,7 +412,7 @@ void TrainLauncher::DummyAdjust() {
   while (this->train_pid_ == -1) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
-  size_t delay_before_dummy_adjust = 30;
+  size_t delay_before_dummy_adjust = 60;
   LOG(INFO) << "DummyAdjust: train pid " << this->train_pid_ 
             << " start after " << delay_before_dummy_adjust << "s";
   std::this_thread::sleep_for(std::chrono::seconds(delay_before_dummy_adjust));
@@ -422,7 +422,7 @@ void TrainLauncher::DummyAdjust() {
   int ori_target_bs = this->target_batch_size_;
 
   auto start = Profiler::Now();
-  while (Profiler::MilliFrom(start) < 30*1000 && this->train_pid_ != -1) {
+  while (Profiler::MilliFrom(start) < 60*1000 && this->train_pid_ != -1) {
     LOG(INFO) << "DummyAdjust at " << Profiler::GetTimeStamp();
     auto batch_size = 1;
     auto cmd_id = ctrl::Controller::Get()->ColocateAdjust(-1, 0, batch_size);

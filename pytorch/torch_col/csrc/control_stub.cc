@@ -6,6 +6,7 @@
 #include <torch_col/csrc/config.h>
 #include <torch_col/csrc/util.h>
 #include <torch_col/csrc/fake_engine.h>
+#include <torch_col/csrc/dist_ext.h>
 
 #include <cstddef>
 
@@ -225,17 +226,19 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
 
     // only used for colocate l1
     if (TorchColConfig::kill_batch_on_recv 
-        && msg.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)) {
+        && msg.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)
+        && cmd_ != static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)){
         std::unique_lock step_lock{step_mutex_};
         auto t1 = torch_col::get_unix_timestamp();
+
         sta::xsched::SetRejectCudaCalls(true);
-        size_t remove = sta::xsched::AbortStream();
-        cudaStream_t stream = reinterpret_cast<cudaStream_t>(
-            sta::xsched::GetRegisteredGlobalStream());
-        CHECK(reinterpret_cast<uint64_t>(stream) != 0);
-        auto err = cudaStreamSynchronize(stream);
-        CHECK_EQ(err, cudaSuccess) << "cudaStreamSynchronize failed: " 
-                                        << cudaGetErrorString(err);
+
+        ProcessGroupNCCL::GetDefaultProcessGroupNCCL()->SetNcclCommAbortFlag(
+          {at::Device(at::kCUDA, TorchColConfig::GetTrainRank())});
+
+        size_t remove = sta::xsched::AbortAllStreams();
+        
+        sta::xsched::SyncAllStreams();
         auto t2 = torch_col::get_unix_timestamp();
         LOG(INFO) << "Receive adjust request, cancel calls first, "
                   << " cost " << t2 - t1 << "ms, remove " << remove 

@@ -3,13 +3,13 @@ import threading
 
 
 class DebugServer:
-    def __init__(self):
+    def __init__(self, train_world_size):
         self._cmd_ids = {}
-        self._cmd_mq = torch_col.PyMemoryQueue('cmd-ctrl', True)
-        self._status_mq = torch_col.PyMemoryQueue('status-ctrl', True)
-
+        self._inf_tra_comm = torch_col.PyInfTraCommunicator(
+            True, True, train_world_size)
+        
         self._running = True
-        self._thread = threading.Thread(target=self._recv_status)
+        self._thread = threading.Thread(target=self._recv_from_train)
         self._thread.start()
 
     def colocate_l1(self, batch_size: int):
@@ -18,7 +18,12 @@ class DebugServer:
         else:
             self._cmd_ids[torch_col.CtrlEvent.kColocateAdjustL1] += 1
         cmd_id = self._cmd_ids[torch_col.CtrlEvent.kColocateAdjustL1]
-        self._cmd_mq.put(torch_col.PyCtrlMsgEntry(cmd_id, torch_col.CtrlEvent.kColocateAdjustL1, batch_size))
+
+        msg = torch_col.PyCtrlMsgEntry(
+            cmd_id, torch_col.CtrlEvent.kColocateAdjustL1, batch_size)
+        
+        # self._inf_tra_comm.put_all_inf2tra(msg)
+        self._inf_tra_comm.put_inf2tra(msg, 0)
 
     def colocate_l2(self, batch_size: int):
         if torch_col.CtrlEvent.kColocateAdjustL2 not in self._cmd_ids:
@@ -26,7 +31,10 @@ class DebugServer:
         else:
             self._cmd_ids[torch_col.CtrlEvent.kColocateAdjustL2] += 1
         cmd_id = self._cmd_ids[torch_col.CtrlEvent.kColocateAdjustL2]
-        self._cmd_mq.put(torch_col.PyCtrlMsgEntry(cmd_id, torch_col.CtrlEvent.kColocateAdjustL2, batch_size))
+
+        msg = torch_col.PyCtrlMsgEntry(
+            cmd_id, torch_col.CtrlEvent.kColocateAdjustL2, batch_size)
+        self._inf_tra_comm.put_inf2tra(msg, 0)
 
     def infer_exit(self, batch_size: int):
         if torch_col.CtrlEvent.kInferExit not in self._cmd_ids:
@@ -34,11 +42,16 @@ class DebugServer:
         else:
             self._cmd_ids[torch_col.CtrlEvent.kInferExit] += 1
         cmd_id = self._cmd_ids[torch_col.CtrlEvent.kInferExit]
-        self._cmd_mq.put(torch_col.PyCtrlMsgEntry(cmd_id, torch_col.CtrlEvent.kInferExit, batch_size))
 
-    def _recv_status(self):
+        msg = torch_col.PyCtrlMsgEntry(
+            cmd_id, torch_col.CtrlEvent.kInferExit, batch_size)
+        self._inf_tra_comm.put_inf2tra(msg, 0)
+        # self._cmd_mq.put_all_inf2tra(msg)
+
+    def _recv_from_train(self):
         while self._running:
-            msg = self._status_mq.timed_get(10)
+            # msg = self._status_mq.timed_get_inf_tra(1, 0)
+            msg = self._inf_tra_comm.timed_get_tra2inf(10, 0)
             if msg is None:
                 continue
             if msg.event != torch_col.CtrlEvent.kReportBatchSize:

@@ -5,13 +5,15 @@ include "./ctrl_stub.pxi"
 from libcpp.string cimport string
 from libcpp.optional cimport optional, nullopt_t, make_optional
 from libcpp.functional cimport function
+from libcpp cimport bool
+
 from posix.unistd cimport pid_t
-from libc.stdint cimport uint64_t
+from libc.stdint cimport uint64_t, uint32_t
 from enum import Enum
 import os
 
 ############################
-#  MARK: Torch Col Config  #
+#  MARK: Torch Col Init    #
 ############################
 
 cdef extern from "<torch_col/csrc/config.h>" namespace "torch_col":
@@ -56,7 +58,8 @@ cdef extern from "<common/device_manager.h>" namespace "colserve::sta":
 
 cdef extern from "<torch_col/csrc/init.h>" namespace "torch_col":
     cpdef void TorchColInit(int, int)
-    cpdef void InitSMPartition()
+    cpdef void SMPartitionInit(uint64_t stream)
+    cpdef void TorchExtInit()
 
 
 class HookMode(Enum):
@@ -138,6 +141,9 @@ def set_train_rank_world_size(rank, world_size):
     set_train_rank(rank)
     set_train_world_size(world_size)
 
+
+def has_colocated_infer_server():
+    return TorchColConfig.HasColocatedInferServer()
 
 #############################
 #  MARK: Memory Management  #
@@ -248,10 +254,18 @@ def rearrange_memory():
 
 cdef extern from "<common/xsched_ctrl.h>" namespace "colserve::sta::xsched":
     cpdef uint64_t RegisterStream(uint64_t stream)
-    cpdef void UnRegisterStream()
-    cdef uint64_t GetXQueueSize(optional[uint64_t] stream)
-    cpdef uint64_t AbortStream()
-    cpdef int SyncStream()
+    cpdef void UnRegisterStream(uint64_t stream)
+    cpdef void UnRegisterAllStreams()
+    cpdef size_t GetXQueueSize(uint64_t stream)
+    cpdef size_t GetTotalXQueueSize()
+    cpdef uint64_t AbortStream(uint64_t stream)
+    cpdef uint64_t AbortAllStreams()
+    cpdef int SyncStream(uint64_t stream)
+    cpdef int SyncAllStreams()
+    cpdef void SetRejectCudaCalls(bool reject)
+    cpdef void GuessNcclBegin()
+    cpdef void GuessNcclEnd()
+    cpdef vector[uint64_t] GetNcclStreams()
 
 
 cdef extern from "<common/sm_partition.h>" namespace "colserve":
@@ -266,11 +280,11 @@ cdef extern from "<common/sm_partition.h>" namespace "colserve":
         uint64_t GetTrainAvailTpcMask()
 
 
-def GetXQueueSize_(stream):
-    cdef optional[uint64_t] stream_opt
-    if stream is not None:
-        stream_opt = make_optional[uint64_t](<uint64_t> stream)
-    return GetXQueueSize(stream_opt)
+# def GetXQueueSize_(stream):
+#     cdef optional[uint64_t] stream_opt
+#     if stream is not None:
+#         stream_opt = make_optional[uint64_t](<uint64_t> stream)
+#     return GetXQueueSize(stream_opt)
 
 
 def monitor_sm_partition(interval: float):
@@ -328,8 +342,12 @@ cdef extern from "<common/inf_tra_comm/communicator.h>" namespace "colserve::ctr
 
 
     cdef cppclass InfTraMessageQueue:
-        pass
-
+        CtrlMsgEntry BlockGet(Direction direction, int id)
+        bool TimedGet(uint32_t timeout_ms, Direction direction, int id,
+                      CtrlMsgEntry &msg)
+        void Put(const CtrlMsgEntry &entry, Direction direction, int id)
+        void PutAll(const CtrlMsgEntry &entry, Direction direction)
+    
 
     cdef cppclass InfTraInfoBoard:
         void SetTrainInfo(int id, function fn)
@@ -344,34 +362,41 @@ cdef extern from "<common/inf_tra_comm/communicator.h>" namespace "colserve::ctr
         @staticmethod
         bool IsInitialized()
         @staticmethod
-        InfTraCommunicator* GetMQ()
+        InfTraMessageQueue* GetMQ()
         @staticmethod
         InfTraInfoBoard* GetIB()
 
 
+cdef extern from "<common/inf_tra_comm/communicator.h>" namespace "colserve::ctrl::InfTraMessageQueue":
+    cdef enum class Direction:
+        kInf2Tra,
+        kTra2Inf,
+        kNumDirection
+
+
 cdef class PyCtrlMsgEntry:
-    cdef CtrlMsgEntry _entry
+    cdef CtrlMsgEntry _cppclass
     
     def __cinit__(self, uint64_t id, CtrlEvent cmd, int value):
-        self._entry = CtrlMsgEntry(id, int(cmd), value)
+        self._cppclass = CtrlMsgEntry(id, int(cmd), value)
 
     @property
     def event(self):
-        return CtrlEvent(self._entry.event)
+        return CtrlEvent(self._cppclass.event)
 
     @property
     def id(self):
-        return self._entry.id
+        return self._cppclass.id
 
     @property
     def value(self):
-        return self._entry.value
+        return self._cppclass.value
 
     def __repr__(self):
         return "PyCtrlMsgEntry(id={}, event={}, value={})".format(self.id, str(self.event), self.value)
 
 
-cdef class PyInfTraCommunicator:
+class PyInfTraCommunicator:
     def __init__(self, is_server = None, cleanup = None, train_world_size = None):
         if InfTraCommunicator.IsInitialized():
             return
@@ -381,7 +406,42 @@ cdef class PyInfTraCommunicator:
             or train_world_size is None
         ):
             raise Exception("Invalid InfTraCommunicator init args")
-        InfTraCommunicator.Init(<bool> is_server, <bool> cleanup, <int> train_world_size)
+        InfTraCommunicator.Init(<bool> is_server, <bool> cleanup, 
+                                <int> train_world_size)
+
+    def put_inf2tra(self, PyCtrlMsgEntry entry, int id):
+        InfTraCommunicator.GetMQ().Put(
+            entry._cppclass, InfTraMessageQueue.Direction.kInf2Tra, id)
+
+    def put_all_inf2tra(self, PyCtrlMsgEntry entry):
+        InfTraCommunicator.GetMQ().PutAll(
+            entry._cppclass, InfTraMessageQueue.Direction.kInf2Tra)
+
+    def block_get_inf2tra(self, int id):
+        return InfTraCommunicator.GetMQ().BlockGet(
+            InfTraMessageQueue.Direction.kInf2Tra, id)
+
+    def block_get_tra2inf(self, int id):
+        return InfTraCommunicator.GetMQ().BlockGet(
+            InfTraMessageQueue.Direction.kTra2Inf, id)
+
+    def timed_get_inf2tra(self, uint32_t timeout_ms, int id):
+        cdef CtrlMsgEntry msg
+        if InfTraCommunicator.GetMQ().TimedGet(
+            timeout_ms, InfTraMessageQueue.Direction.kInf2Tra, 
+            id, msg
+        ):
+            return PyCtrlMsgEntry(msg.id, CtrlEvent(msg.event), msg.value)
+        return None
+
+    def timed_get_tra2inf(self, uint32_t timeout_ms, int id):
+        cdef CtrlMsgEntry msg
+        if InfTraCommunicator.GetMQ().TimedGet(
+            timeout_ms, InfTraMessageQueue.Direction.kTra2Inf, 
+            id, msg
+        ):
+            return PyCtrlMsgEntry(msg.id, CtrlEvent(msg.event), msg.value)
+        return None 
 
 
 def init_train_info(init_batch_size, 
@@ -425,35 +485,33 @@ cdef extern from "<torch_col/csrc/util.h>" namespace "torch_col":
     cpdef long get_unix_timestamp()
     cpdef long get_unix_timestamp_us()
 
+    cpdef void CallGLOG_INFO(const char* log_str, const char* file, int line)
+    cpdef void CallGLOG_DINFO(const char* log_str, const char* file, int line)
+
 
 cdef extern from "<torch_col/csrc/util.h>" namespace "torch_col":
     cdef cppclass TensorWeakRef:
         TensorWeakRef(PyObject *tensor) except +
         size_t Nbytes()
         size_t StorageNbytes()
-        void* DataPtr()
+        const void* DataPtr()
 
 
 cdef class PyTensorWeakRef:
-    cdef TensorWeakRef* _tensor_weak_ref
+    cdef TensorWeakRef* _cppclass
     
     def __cinit__(self, tensor):
         cdef PyObject* obj = <PyObject*> tensor
-        self._tensor_weak_ref = new TensorWeakRef(obj)
+        self._cppclass = new TensorWeakRef(obj)
 
     def nbytes(self):
-        return self._tensor_weak_ref.Nbytes()
+        return self._cppclass.Nbytes()
 
     def storage_nbytes(self):
-        return self._tensor_weak_ref.StorageNbytes()
+        return self._cppclass.StorageNbytes()
 
     def data_ptr(self):
-        return <size_t>self._tensor_weak_ref.DataPtr()
+        return <size_t>self._cppclass.DataPtr()
 
     def __dealloc__(self):
-        del self._tensor_weak_ref
-
-
-
-
-
+        del self._cppclass

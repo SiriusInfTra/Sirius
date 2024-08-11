@@ -13,6 +13,7 @@
 [submodule "third_party/xsched"]
 	path = third_party/xsched
 	url = git@ipads.se.sjtu.edu.cn:infer-train/xsched.git
+	branch = inf-tra
 [submodule "third_party/mpool"]
 	path = third_party/mpool
 	url = git@ipads.se.sjtu.edu.cn:infer-train/mpool.git

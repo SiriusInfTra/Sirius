@@ -24,9 +24,7 @@ server/models/*/
 *.out
 
 *.egg-info/
-python/torch_col/torch_col.cpp
-python/torch_col/sta.cpp
-pytorch/torch_col/main.cpp
+pytorch/torch_col/cython/*.cpp
 dist/
 
 *.code-workspace

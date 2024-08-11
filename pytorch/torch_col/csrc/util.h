@@ -2,6 +2,7 @@
 #define TORCH_COL_UTIL_H
 
 #include <c10/core/TensorImpl.h>
+#include <pybind11/pytypes.h>
 #include <Python.h>
 #include <chrono>
 #include <string>
@@ -19,6 +20,9 @@ inline auto get_unix_timestamp_us() {
     std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
+void CallGLOG_INFO(const char* log_str, const char* file, int line);
+void CallGLOG_DINFO(const char* log_str, const char* file, int line);
+
 void ReleaseGradFnSavedTensor(PyObject* grad_fn);
 void ReleaseUnderlyingStorage(PyObject* tensor);
 
@@ -31,11 +35,13 @@ class TensorWeakRef {
   TensorWeakRef(PyObject* tensor);
   size_t Nbytes() const;
   size_t StorageNbytes() const;
-  void* DataPtr() const;
+  const void* DataPtr() const;
 
  private:
   std::optional<c10::weak_intrusive_ptr<at::TensorImpl>> tensor_weak_ref_;
 };
+
+
 
 }
 

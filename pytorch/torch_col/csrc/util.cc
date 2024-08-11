@@ -1,15 +1,26 @@
+#include <common/util.h>
+#include <torch_col/csrc/util.h>
+#include <torch_col/csrc/config.h>
+
 #include <torch/csrc/autograd/function.h>
 #include <torch/csrc/autograd/python_cpp_function.h>
 #include <torch/csrc/autograd/python_variable.h>
-
-// #include <common/mempool_sampler.h>
-#include <common/util.h>
-#include <torch_col/csrc/util.h>
 
 #include <string>
 
 
 namespace torch_col {
+
+void CallGLOG_INFO(const char* log_str, const char* file, int line) {
+  google::LogMessage(file, line).stream()
+      << "[Rank " << TorchColConfig::GetTrainRank() << "] " << log_str;
+}
+
+void CallGLOG_DINFO(const char* str, const char* file, int line) {
+#ifndef NDEBUG
+  CallGLOG_DINFO(str, file, line);
+#endif
+}
 
 void ReleaseGradFnSavedTensor(PyObject* py_grad_fn) {
   auto grad_fn = (::torch::autograd::THPCppFunction*)py_grad_fn;
@@ -54,7 +65,7 @@ size_t TensorWeakRef::StorageNbytes() const {
   return 0;
 }
 
-void* TensorWeakRef::DataPtr() const {
+const void* TensorWeakRef::DataPtr() const {
   if (tensor_weak_ref_.has_value()) {
     if (auto tensor = tensor_weak_ref_.value().lock()) {
       return tensor->data();

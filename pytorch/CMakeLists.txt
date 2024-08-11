@@ -14,6 +14,7 @@ add_library(new_torch_col SHARED
   torch_col/csrc/config.cc
   torch_col/csrc/fake_engine.cc
   torch_col/csrc/init.cc
+  torch_col/csrc/dist_ext.cc
 )
 
 add_dependencies(new_torch_col xsched_lib)
@@ -59,7 +60,11 @@ else()
   set(PYTHON_EXECUTABLE ${CONDA_PREFIX}/bin/python)
 endif()
 
-file(GLOB TORCH_COL_PYTHON_FILES "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/*.py")
+file(GLOB TORCH_COL_PYTHON_FILES "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/*.py") 
+set(TORCH_COL_CYTHON_FILES 
+  "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/cython/ctrl_stub.pxi"
+  "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/cython/main.pyx" 
+)
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/torch_col.egg-info
   COMMAND BUILD_DIR=${CMAKE_BINARY_DIR} ${PYTHON_EXECUTABLE}
@@ -68,7 +73,6 @@ add_custom_command(
   DEPENDS 
     new_torch_col sta
     "${CMAKE_CURRENT_SOURCE_DIR}/setup.py"
-    "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/ctrl_stub.pxi"
-    "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/main.pyx"
+    ${TORCH_COL_CYTHON_FILES}
     ${TORCH_COL_PYTHON_FILES}
 )

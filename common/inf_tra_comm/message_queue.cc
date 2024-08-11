@@ -45,6 +45,22 @@ std::ostream& operator<<(std::ostream& os, ctrl::CtrlMsgEntry msg) {
   return os;
 }
 
+std::ostream &operator<<(std::ostream &os, 
+                         InfTraMessageQueue::Direction direction) {
+  switch (direction) {
+  case InfTraMessageQueue::Direction::kInf2Tra:
+    os << "Direction::kInf2Tra";
+    return os;
+  case InfTraMessageQueue::Direction::kTra2Inf:
+    os << "Direction::kTra2Inf";
+    return os;
+  default:
+    LOG(FATAL) << "unknown InfTraMessageQueue::Direction " 
+               << static_cast<int>(direction);
+    return os;
+  }
+}
+
 InfTraMessageQueue::InfTraMessageQueue(bool is_server,
                                        int train_world_size, 
                                        bip::managed_shared_memory &bip_shm,
@@ -209,6 +225,9 @@ void InfTraMessageQueue::PutAll(const CtrlMsgEntry &msg, Direction direction) {
     inf_tra_mq_conds_[static_cast<int>(direction)][i]->notify_one();
   }
   inf_tra_mq_group_conds_[static_cast<int>(direction)]->notify_one();
+
+  DLOG(INFO) << "[InfTra MQ] PutAll " << msg << " to all " 
+            << direction;
 }
 
 void InfTraMessageQueue::Clear() {

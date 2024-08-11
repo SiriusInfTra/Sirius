@@ -87,15 +87,15 @@ void init_cli_options() {
   app.add_option("--dynamic-sm-partition", colserve::Config::dynamic_sm_partition, 
       "dynamic sm partition, default is false");
   app.add_option("--train-profile", colserve::Config::train_profile, 
-    "train timeline path, default is train-timeline");
+      "train timeline path, default is train-timeline");
   app.add_option("--max-warm-cache-nbytes", colserve::Config::max_warm_cache_nbytes, 
-    "max warm cache nbytes, default is 0*1024*1024*1024(0G).");
+      "max warm cache nbytes, default is 0*1024*1024*1024(0G).");
   app.add_option("--cold-cache-min-capability-nbytes", colserve::Config::cold_cache_min_capability_nbytes, 
-    "min cold cache capability nbytes, default is 0*1024*1024*1024(0G).");
+      "min cold cache capability nbytes, default is 0*1024*1024*1024(0G).");
   app.add_option("--cold-cache-max-capability-nbytes", colserve::Config::cold_cache_max_capability_nbytes, 
-    "max cold cache capability nbytes, default is 0*1024*1024*1024(0G).");
+      "max cold cache capability nbytes, default is 0*1024*1024*1024(0G).");
   app.add_option("--cold-cache-ratio", colserve::Config::cold_cache_ratio, 
-    "cold cache ratio, default is 0.3(30%).");
+      "cold cache ratio, default is 0.3(30%).");
   app.add_option("--memory-pressure-mb", colserve::Config::memory_pressure_mb,
       "memory pressure in MB, default is 0");
   app.add_option("--ondemand-adjust", colserve::Config::ondemand_adjust,

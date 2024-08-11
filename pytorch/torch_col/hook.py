@@ -2,6 +2,7 @@ from enum import Enum
 import abc
 import contextlib
 import time
+import os
 
 import torch
 import torch_col
@@ -406,7 +407,9 @@ class ColocateHook(HookABC):
             t3 = time.time()
             cur_cached_gpu_mem, cur_allocate_gpu_mem = MemoryPool.get_memory_usage(), MemoryPool.get_allocated_memory()
         t4 = time.time()
-        print(f'[{torch_col.get_unix_timestamp_us()/1000}] [Adjust L1 {(t1-t0)*1e3:.1f} | {(t2-t1)*1e3:.1f} | {(t3-t2)*1e3:.1f} | {(t4-t3)*1e3:.1f} ms] target batch_size: {self.target_batch_size},'
+        print(f'[Rank {torch_col.get_train_rank()} | PID {os.getpid()} | {torch_col.get_unix_timestamp_us()/1000}]'
+                + f' [Adjust L1 {(t1-t0)*1e3:.1f} | {(t2-t1)*1e3:.1f} | {(t3-t2)*1e3:.1f} | {(t4-t3)*1e3:.1f} ms]'
+                + f' target batch_size: {self.target_batch_size},'
                 + f' memory cached: {old_cached_gpu_mem:.2f}GB -> {cur_cached_gpu_mem:.2f}GB,'
                 + f' memory allocated: {old_allocate_gpu_mem:.2f}GB -> {cur_allocate_gpu_mem:.2f}GB.', flush=True)
 

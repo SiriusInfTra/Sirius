@@ -250,27 +250,20 @@ c10::cuda::CUDACachingAllocator::SnapshotInfo CUDAColAllocator::snapshot() {
   return c10::cuda::CUDACachingAllocator::SnapshotInfo{};
 }
 
-void CUDAColAllocator::notifyCaptureBegin(
+void CUDAColAllocator::beginAllocateStreamToPool(
     int device,
-    c10::cuda::CaptureId_t graph_id,
+    cudaStream_t stream,
     c10::cuda::MempoolId_t mempool_id) {
-  LOG(WARNING) << "notifyCaptureBegin not implemented";
+  LOG(WARNING) << "beginAllocateStreamToPool not implemented";
 }
 
-void CUDAColAllocator::notifyCaptureAboutToEnd(
-    int device,
-    c10::cuda::CaptureId_t graph_id) {
-  LOG(WARNING) << "notifyCaptureAboutToEnd not implemented";
+void CUDAColAllocator::endAllocateStreamToPool(
+    int device, cudaStream_t stream) {
+  LOG(WARNING) << "endAllocateStreamToPool not implemented";
 }
 
-void CUDAColAllocator::notifyCaptureEnded(
-    int device, c10::cuda::CaptureId_t graph_id) {
-  LOG(WARNING) << "notifyCaptureEnded not implemented";
-}
-
-void CUDAColAllocator::notifyCaptureDestroy(
-    int device, c10::cuda::MempoolId_t mempool_id) {
-  LOG(WARNING) << "notifyCaptureDestroy not implemented";
+void CUDAColAllocator::releasePool(int device, c10::cuda::MempoolId_t mempool_id) {
+  LOG(WARNING) << "releasePool not implemented";
 }
 
 std::shared_ptr<void> CUDAColAllocator::getIpcDevPtr(std::string handle) {
@@ -280,9 +273,9 @@ std::shared_ptr<void> CUDAColAllocator::getIpcDevPtr(std::string handle) {
 
 void CUDAColAllocator::recordHistory(
     bool enabled,
-    c10::cuda::CUDACachingAllocator::CreateContextFn context_recorder,
-    size_t alloc_trace_max_entries,
-    bool alloc_trace_record_context) {
+      c10::cuda::CUDACachingAllocator::CreateContextFn context_recorder,
+      size_t alloc_trace_max_entries,
+      c10::cuda::CUDACachingAllocator::RecordContext when) {
   LOG(WARNING) << "recordHistory not implemented";
 };
 
@@ -291,8 +284,35 @@ void CUDAColAllocator::attachOutOfMemoryObserver(
   LOG(WARNING) << "attachOutOfMemoryObserver not implemented";
 };
 
-bool CUDAColAllocator::needsPoolSpecificPeerAccess() {
-  return false;
+void CUDAColAllocator::enablePeerAccess(int dev, int dev_to_access) {
+  LOG(WARNING) << "enablePeerAccess not implemented";
+}
+
+cudaError_t CUDAColAllocator::memcpyAsync(
+    void* dst,
+    int dstDevice,
+    const void* src,
+    int srcDevice,
+    size_t count,
+    cudaStream_t stream,
+    bool p2p_enabled) {
+  return cudaMemcpyAsync(dst, src, count, cudaMemcpyDeviceToDevice, stream);
+}
+
+std::shared_ptr<c10::cuda::CUDACachingAllocator::AllocatorState> 
+CUDAColAllocator::getCheckpointState(
+    int device,
+    c10::cuda::MempoolId_t id) {
+  LOG(WARNING) << "getCheckpointState not implemented";
+  return nullptr;
+}
+
+c10::cuda::CUDACachingAllocator::CheckpointDelta 
+CUDAColAllocator::setCheckpointPoolState(
+    int device,
+    std::shared_ptr<c10::cuda::CUDACachingAllocator::AllocatorState> pps) {
+  LOG(WARNING) << "setCheckpointPoolState not implemented";
+  return {};
 }
 
 bool CUDAColAllocator::initialized() {
@@ -315,12 +335,12 @@ void CUDAColAllocator::TagIntermMemory(at::Tensor tensor) {
   }
   
   std::unique_lock lock{interm_memory_mutex_};
-  DLOG(INFO) << "TagIntermMemory emplace " << storage.data() << " nbytes " << storage.nbytes();
+  DLOG(INFO) << "TagIntermMemory emplace " << storage.mutable_data() << " nbytes " << storage.nbytes();
   // if (train_model_params_.find(storage.data()) != train_model_params_.cend()) {
-  if (train_model_params_.count(storage.data())) {
+  if (train_model_params_.count(storage.mutable_data())) {
     DLOG(INFO) << "TagIntermMemory but is train";
   } else {
-    interm_memories_[storage.data()].emplace_back(tensor.getIntrusivePtr());
+    interm_memories_[storage.mutable_data()].emplace_back(tensor.getIntrusivePtr());
   }
 };
 

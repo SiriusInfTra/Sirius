@@ -192,8 +192,8 @@ uint64_t Controller::ColocateAdjust(size_t model_rank, int device_id, size_t bat
       .value = static_cast<int>(TrainLauncher::Get()->GetTargetBatchSize())
     };
 
-    InfTraCommunicator::GetMQ()->Put(
-        msg, InfTraMessageQueue::Direction::kInf2Tra, device_id);
+    InfTraCommunicator::GetMQ()->PutAll(
+        msg, InfTraMessageQueue::Direction::kInf2Tra);
   }
   LOG(INFO) << "[Controller] model " << model_rank 
             << " send ColocateAdjust cmd_id: " << cmd_id 
@@ -274,14 +274,13 @@ uint64_t Controller::InferExit(int device_id) {
       //           << " (predict bs " << train_bs_predict_by_avail_memory << ")"
       //           << " free memory " << free_memory_MB
       //           << " target batch size " << cur_train_target_bs << " -> " << train_target_bs;
-      InfTraCommunicator::GetMQ()->Put(
-          {
-              cmd_id, 
-              static_cast<int>(CtrlEvent::kInferExit), 
-              train_target_bs
+      InfTraCommunicator::GetMQ()->PutAll(
+          CtrlMsgEntry{
+            .id=cmd_id, 
+            .event=static_cast<int>(CtrlEvent::kInferExit), 
+            .value=train_target_bs
           }, 
-          InfTraMessageQueue::Direction::kInf2Tra, 
-          device_id);
+          InfTraMessageQueue::Direction::kInf2Tra);
     }
   }
   return cmd_id;
@@ -294,14 +293,13 @@ uint64_t Controller::DummyInferExit(int device_id, int target_batch_size) {
       1, std::memory_order_relaxed);
 
   if (!IsTrainIdle()) {
-    InfTraCommunicator::GetMQ()->Put(
-        {
-            cmd_id,
-            static_cast<int>(CtrlEvent::kInferExit),
-            target_batch_size
+    InfTraCommunicator::GetMQ()->PutAll(
+        CtrlMsgEntry{
+          .id = cmd_id,
+          .event = static_cast<int>(CtrlEvent::kInferExit),
+          .value = target_batch_size
         }, 
-        InfTraMessageQueue::Direction::kInf2Tra, 
-        device_id);
+        InfTraMessageQueue::Direction::kInf2Tra);
   }
   return cmd_id;
 }
@@ -412,6 +410,11 @@ bool Controller::HasFlyingColocateAdjust() {
 void Controller::InferenceWorkloadDone() {
   auto cmd_id = Controller::infer_workload_done_id.fetch_add(
       1, std::memory_order_relaxed);
+
+  if (Config::dummy_adjust) {
+    LOG(INFO) << "[Controller] skip send InferenceWorkloadDone to train to eval dummy adjust";
+    return;
+  }
 
   InfTraCommunicator::GetMQ()->PutAll(
       {cmd_id, static_cast<int>(ctrl::CtrlEvent::kInferenceWorkloadDone)}, 

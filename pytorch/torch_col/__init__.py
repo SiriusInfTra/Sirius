@@ -1,6 +1,7 @@
 from ._C import *
 
-from .util import MemoryPool, TrainMode, EventManager
+from .util import MemoryPool, TrainMode, EventManager, \
+      info, dinfo
 from .accumulate import GradAccumulator
 
 from .dataset import CustomeDynamicBatchDataset

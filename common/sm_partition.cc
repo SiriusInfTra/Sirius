@@ -23,37 +23,11 @@ SMPartitioner* SMPartitioner::Get(int device_id) {
 }
 
 SMPartitioner::SMPartitioner(int device_id) : device_id_(device_id) {
-  // if (cleanup && observe) {
-  //   LOG(FATAL) << "[SMPartitioner] cleanup and observe can't be both true";
-  // }
-
-  // auto *gpu_id = std::getenv("CUDA_VISIBLE_DEVICES");
-  // CHECK(gpu_id != nullptr);
-  // shm_name_ = "gpu-colocate-sm-partition-" + std::to_string(getuid()) + "-" + gpu_id;
-  // shm_name_ = GetDefaultShmNamePrefix(device) + "_sm_partition";
-
   LOG(INFO) << "[SM Partitioner] initialize, "
             << "train_tpc " << min_train_tpc_num_ << " - " << max_train_tpc_num_;
             // << ", "
             // << "shm_name " << shm_name_.c_str();
 
-  // if (cleanup) {
-  //   bip::shared_memory_object::remove(shm_name_.c_str());
-  // }
-
-  // shm_ = bip::managed_shared_memory{bip::open_or_create, shm_name_.c_str(), 65536};
-
-  // auto atomic_init = [&]() {
-  //   tpc_data_ = shm_.find_or_construct<TpcData>("tpc_data")();
-  //   ref_cnt_ = shm_.find_or_construct<std::atomic<int>>("ref_cnt")();
-  // };
-  // shm_.atomic_func(atomic_init);
-
-  // ref_cnt_->fetch_add(1, std::memory_order_relaxed);
-
-  // if (cleanup) {
-  //   memset(tpc_data_, 0, sizeof(TpcData));
-  // }
   tpc_data_ = &ctrl::InfTraCommunicator::GetIB()
       ->GetMutableInferInfo()->tpc_datas[device_id_];
 
@@ -71,10 +45,6 @@ SMPartitioner::SMPartitioner(int device_id) : device_id_(device_id) {
 }
 
 SMPartitioner::~SMPartitioner() {
-  // auto cnt = ref_cnt_->fetch_sub(1, std::memory_order_relaxed);
-  // if (cnt == 1) {
-  //   bip::shared_memory_object::remove(shm_name_.c_str());
-  // }
 }
 
 int SMPartitioner::GetGPUNumSM() {

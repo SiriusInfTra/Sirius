@@ -5,9 +5,24 @@ from dataclasses import dataclass
 import time
 from typing import Optional
 import pandas as pd
+import inspect
 
 import torch
 import torch_col
+
+
+def info(msg: str):
+    func = inspect.currentframe().f_back.f_code
+    print(func.co_filename, func.co_firstlineno)
+    c_msg = msg.encode('utf-8')
+    c_file = func.co_filename.encode('utf-8')
+    torch_col._C.CallGLOG_INFO(c_msg, c_file, func.co_firstlineno)
+
+def dinfo(msg: str):
+    func = inspect.currentframe().f_back.f_code
+    c_msg = msg.encode('utf-8')
+    c_file = func.co_filename.encode('utf-8')
+    torch_col._C.CallGLOG_DINFO(c_msg, c_file, func.co_firstlineno)
 
 
 class TrainMode(Enum):
@@ -36,23 +51,25 @@ class MemoryPool:
     @classmethod
     def get_memory_usage(cls):
         if torch_col.is_enable_shared_tensor():
-            return torch_col.cuda_memory_pool_train_all_usage(0) / 1024 / 1024 / 1024
+            nbytes = torch_col.cuda_memory_pool_train_all_usage(torch_col.get_train_rank())
+            return nbytes / 1024 / 1024 / 1024
         else:
-            free, total = torch.cuda.mem_get_info(0)
+            free, total = torch.cuda.mem_get_info(torch_col.get_train_rank())
             return (total - free) / 1024 / 1024 / 1024
     
     @classmethod
     def get_allocated_memory(cls):
         if torch_col.is_enable_shared_tensor():
-            return torch_col.cuda_memory_pool_train_usage(0) / 1024 / 1024 / 1024
+            nbytes = torch_col.cuda_memory_pool_train_usage(torch_col.get_train_rank())
+            return nbytes / 1024 / 1024 / 1024
         else:
-            free, total = torch.cuda.mem_get_info(0)
+            free, total = torch.cuda.mem_get_info(torch_col.get_train_rank())
             return (total - free) / 1024 / 1024 / 1024
     
     @classmethod
     def empty_cache(cls):
         if torch_col.is_enable_shared_tensor():
-            torch_col.cuda_memory_pool_free_train_local(0)
+            torch_col.cuda_memory_pool_free_train_local(torch_col.get_train_rank())
         else:
             torch.cuda.empty_cache()
 
