@@ -222,7 +222,7 @@ void ProcessGroupNCCL::RestartNcclCommByRecreating(
     ncclGetUniqueId(&ncclId);
   }
   broadcastUniqueNCCLID(&ncclId, false, device_key, 0);
-  LOG(INFO) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
+  DLOG(INFO) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
             << " new ncclId " << buildNcclUniqueIdStr(ncclId);
 
   COL_NCCL_CALL(ncclGroupStart());
@@ -248,7 +248,7 @@ void ProcessGroupNCCL::SetNcclCommAbortFlag(
   std::unique_lock<std::mutex> lock(mutex_);
   auto it = devNCCLCommMap_.find(device_key);
   if (it == devNCCLCommMap_.end()) {
-    LOG(INFO) << str(boost::format("[Rank %d | SetNcclCommAbortFlag]") % getRank())
+    LOG(WARNING) << str(boost::format("[Rank %d | SetNcclCommAbortFlag]") % getRank())
               << " device_key " << device_key
               << " not found, valid keys: "
               << GetDevNcclCommMapKeySetStrsUnlocked();
@@ -275,7 +275,7 @@ void ProcessGroupNCCL::_SetNcclCommAbortFlag(ncclComm_t comm, uint32_t val) {
     *child_abort_flag = val;
   }
   this->abort_flag_ = val;
-  LOG(INFO) << "abort flag " << abort_flag << " " << abort_flag_ptr.first << " "  << *abort_flag;
+  DLOG(INFO) << "abort flag " << abort_flag << " " << abort_flag_ptr.first << " "  << *abort_flag;
 }
 
 std::pair<uint32_t, uint32_t> 
@@ -297,7 +297,7 @@ ProcessGroupNCCL::_GetNcclCommAbortFlagPtr(ncclComm_t comm) {
     uint32_t* child_abort_flag = *reinterpret_cast<uint32_t**>(
         reinterpret_cast<char*>(comm) + child_abort_flag_offset);
 
-    LOG(INFO) << std::hex << "_GetNcclCommAbortFlagPtr "
+    DLOG(INFO) << std::hex << "_GetNcclCommAbortFlagPtr "
               << abort_flag << " " << child_abort_flag;
 
     return std::make_pair(abort_flag, child_abort_flag);
