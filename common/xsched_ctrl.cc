@@ -3,6 +3,7 @@
 
 #include <xsched/include/shim/cuda/xctrl.h>
 #include <xsched/include/shim/cuda/shim.h>
+#include <xsched/include/shim/cuda/extra.h>
 #include <xsched/include/shim/common/xmanager.h>
 #include <xsched/include/hal/cuda/cuda_command.h>
 #include <xsched/include/preempt/xqueue/xcommand.h>
@@ -93,6 +94,13 @@ size_t AbortStreamHandleWithLock(uint64_t stream_handle,
   CHECK(xqueue != nullptr) << "XQueue is NULL, stream_handle=" 
                            << stream_handle;
   auto remove_filter = [](std::shared_ptr<XCommand> hal_command) -> bool {
+    // if (auto kernel = std::dynamic_pointer_cast<CudaKernelLaunchCommand>(hal_command);
+    //     kernel != nullptr && 
+    //     std::string(::xsched::shim::cuda::extra::GetFuncName(kernel->function_))
+    //         .find("ncclKernel") != std::string::npos) {
+    //     LOG(INFO) << "Abort nccl kernel: " << kernel.get() 
+    //               << " " << ::xsched::shim::cuda::extra::GetFuncName(kernel->function_);
+    //   }
     return std::dynamic_pointer_cast<CudaMemoryCommand>(hal_command) != nullptr 
         || std::dynamic_pointer_cast<CudaKernelLaunchCommand>(hal_command) != nullptr;
   };
@@ -109,10 +117,19 @@ size_t AbortStream(uint64_t stream) {
 size_t AbortAllStreams() {
   std::unique_lock lock{stream_mut};
   size_t total = 0;
+
+  std::stringstream ss;
   for (auto &kv : stream_map) {
     auto stream_handle = kv.second;
-    total += AbortStreamHandleWithLock(stream_handle, lock);
+
+    auto x = AbortStreamHandleWithLock(stream_handle, lock);
+    total += x;
+
+    std::string sep = ss.str().empty() ? "" : " | ";
+    ss << sep << std::hex << "stream 0x" << kv.first << " handle 0x" << stream_handle 
+       << " aborted " << std::dec << x << " commands";
   }
+  DLOG(INFO) << "[AbortAllStreams] " << ss.str();
   return total;
 }
 
@@ -160,7 +177,7 @@ int QueryRejectCudaCalls() {
   return CudaXQueueQueryReject();
 }
 
-void SetRejectCudaCalls(int reject) {
+void SetRejectCudaCalls(bool reject) {
   CudaXQueueSetReject(reject);
 }
 

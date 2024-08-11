@@ -23,7 +23,7 @@ int SyncAllStreams();
 size_t GetXQueueSize(uint64_t stream);
 size_t GetTotalXQueueSize();
 int QueryRejectCudaCalls();
-void SetRejectCudaCalls(int reject);
+void SetRejectCudaCalls(bool reject);
 int RegisterCudaKernelLaunchPreHook(std::function<void*()> fn);
 
 void StreamApply(std::function<void(uint64_t stream)> fn);

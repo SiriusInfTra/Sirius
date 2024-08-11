@@ -22,8 +22,8 @@ class DebugServer:
         msg = torch_col.PyCtrlMsgEntry(
             cmd_id, torch_col.CtrlEvent.kColocateAdjustL1, batch_size)
         
-        self._inf_tra_comm.put_all_inf2tra(msg)
-        # self._inf_tra_comm.put_inf2tra(msg, 0)
+        # self._inf_tra_comm.put_all_inf2tra(msg)
+        self._inf_tra_comm.put_inf2tra(msg, 0)
 
     def colocate_l2(self, batch_size: int):
         if torch_col.CtrlEvent.kColocateAdjustL2 not in self._cmd_ids:
@@ -34,7 +34,7 @@ class DebugServer:
 
         msg = torch_col.PyCtrlMsgEntry(
             cmd_id, torch_col.CtrlEvent.kColocateAdjustL2, batch_size)
-        self._cmd_mq.put_inf2tra(msg, 0)
+        self._inf_tra_comm.put_inf2tra(msg, 0)
 
     def infer_exit(self, batch_size: int):
         if torch_col.CtrlEvent.kInferExit not in self._cmd_ids:
@@ -45,8 +45,8 @@ class DebugServer:
 
         msg = torch_col.PyCtrlMsgEntry(
             cmd_id, torch_col.CtrlEvent.kInferExit, batch_size)
-        # self._cmd_mq.put_inf2_tra(msg, 0)
-        self._cmd_mq.put_all_inf2tra(msg)
+        self._inf_tra_comm.put_inf2tra(msg, 0)
+        # self._cmd_mq.put_all_inf2tra(msg)
 
     def _recv_from_train(self):
         while self._running:

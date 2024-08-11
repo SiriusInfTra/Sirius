@@ -85,6 +85,10 @@ def unregister_stream(stream: Stream | int):
     torch_col.UnRegisterStream(stream)
 
 
+def unregister_all_streams():
+    torch_col.UnRegisterAllStreams()
+
+
 def get_xqueue_size(stream: Optional[Stream | int] = None) -> int:
     if stream is None:
         stream = torch.cuda.current_stream()
@@ -123,9 +127,13 @@ def kill_batch(stream: Optional[Stream] = None):
         if isinstance(stream, Stream):
             stream = stream.cuda_stream
         num_cmds = torch_col.AbortStream(stream)
-        stream.synchronize()
+        torch_col.SyncStream(stream)
     t2 = torch_col.get_unix_timestamp()
-    print(f'kill batch cost {t2 - t1} ms, num_cmds={num_cmds}')
+    print(f'kill batch cost {t2 - t1} ms, num_cmds={num_cmds}, total_queue_size={torch_col.GetTotalXQueueSize()}')
+
+
+def set_reject_cuda_calls(reject: bool):
+    torch_col.SetRejectCudaCalls(reject)
 
 
 def guess_nccl_begin():
@@ -136,5 +144,6 @@ def guess_nccl_end():
     torch_col.GuessNcclEnd()
 
 
-def get_nccl_steams():
+def get_nccl_streams():
     return torch_col.GetNcclStreams()
+

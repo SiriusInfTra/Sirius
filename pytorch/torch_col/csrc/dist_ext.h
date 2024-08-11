@@ -1,5 +1,7 @@
 #pragma once
 
+#include <common/log_as_glog_sta.h>
+
 #include <torch/csrc/distributed/c10d/reducer.hpp>
 #include <torch/csrc/distributed/c10d/logger.hpp>
 #include <torch/csrc/distributed/c10d/ProcessGroupNCCL.hpp>
@@ -12,10 +14,22 @@ class Reducer : public ::c10d::Reducer {
  public:
   template<typename ... T>
   Reducer(T&& ... args) : 
-      ::c10d::Reducer(std::forward<T>(args)...) {}
+      ::c10d::Reducer(std::forward<T>(args)...) {
+    ResetAutoGradHook();
+  }
 
+  void autograd_hook(size_t index);
   void finalize_dropped_batch();
+
+ protected:
+  void finalize_backward();
+  void mark_bucket_ready(size_t bucket_index) {
+    LOG(INFO) << "[Reducer | mark_bucket_ready] bucket_index: " << bucket_index;
+    ::c10d::Reducer::mark_bucket_ready(bucket_index);
+  }
+
  private:
+  void ResetAutoGradHook();
 };
 
 class Logger : public ::c10d::Logger {
@@ -75,7 +89,8 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
   #define REDISPATCH_COLLECTIVE_FUNC(op_type, func, args...) \
     do { \
       if (abort_flag_ != 0) { \
-        LOG(INFO) << "[ProcessGroupNCCL | REDISPATCH_COLLECTIVE_FUNC] abort " << #func;  \
+        LOG(INFO) << "[Rank " << rank_ << " | ProcessGroupNCCL | REDISPATCH_COLLECTIVE_FUNC]" \
+                  << " abort " << #func;  \
         return ::c10::make_intrusive<WorkDummy>(rank_, op_type); \
       } else { \
         return func(args); \
@@ -211,7 +226,11 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
   void RestartNcclComm(
       const std::vector<at::Device> &devices);
 
-  void SetNcclCommAbortFlag(const std::vector<at::Device> &devices, uint32_t val = 1 /* default to abort */);
+  uint32_t GetAbortFlag() const {
+    return abort_flag_.load();
+  }
+  void SetNcclCommAbortFlag(const std::vector<at::Device> &devices, 
+                            uint32_t val = 1 /* default to abort */);
 
  private:
   // from torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp

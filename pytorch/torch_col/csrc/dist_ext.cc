@@ -2,11 +2,13 @@
 #include <common/util.h>
 
 #include <torch_col/csrc/dist_ext.h>
+#include <torch_col/csrc/mem_tagging.h>
 
 #include <torch/csrc/jit/python/pybind_utils.h>
 #include <torch/csrc/distributed/c10d/comm.hpp>
 #include <torch/csrc/distributed/c10d/debug.h>
 #include <torch/csrc/utils/pybind.h>
+#include <torch/csrc/autograd/utils/lambda_post_hook.h>
 
 #include <boost/format.hpp>
 
@@ -19,12 +21,35 @@ namespace torch_col {
 
 ::c10::intrusive_ptr<ProcessGroupNCCL> ProcessGroupNCCL::default_pg_ = nullptr;
 
+
+void Reducer::autograd_hook(size_t index) {
+  // batch may be dropped after the last checking point but
+  // before finalize_backward is called, so some comm operations
+  // are dropped but will try to parse the comm result, resulting
+  // the error. So, we need to check if batch is dropped 
+  // before finalize_backward. To achieve this, we add one more 
+  // graph task callback which will be executed before 
+  // finalize_backward callback.
+
+  if (!first_autograd_hook_called_) {
+    torch::autograd::Engine::get_default_engine().queue_callback([=] {
+      auto pg = ProcessGroupNCCL::GetDefaultProcessGroupNCCL();
+      if (pg.defined() && pg->GetAbortFlag() != 0) {
+        LOG(INFO) << "[Reducer::autograd_hook()] ProcessGroupNCCL abort flag is set,"
+                  << " drop the batch";
+        throw EngineColocateAdjustL1Exception("TorchColEngine");
+      }
+    });
+  }
+  ::c10d::Reducer::autograd_hook(index);
+}
+
 void Reducer::finalize_dropped_batch() {
   // ::c10d::Reducer::finalize_backward();
-  LOG(INFO) << "Reducer::finalize_dropped_batch() begin";
+  DLOG(INFO) << "Reducer::finalize_dropped_batch() begin";
   if (expect_autograd_hooks_) {
-    // ::c10d::Reducer::finalize_backward();
     expect_autograd_hooks_ = false;
+    first_autograd_hook_called_ = false;
     require_finalize_ = false;
     for (auto & bucket : buckets_) {
       bucket.future_work->wait();
@@ -33,7 +58,28 @@ void Reducer::finalize_dropped_batch() {
   } else {
     require_finalize_ = false;
   }
-  LOG(INFO) << "Reducer::finalize_dropped_batch() end";
+  DLOG(INFO) << "Reducer::finalize_dropped_batch() end";
+}
+
+void Reducer::ResetAutoGradHook() {
+  // As ::c10d::Reducer member function are not overridable,
+  // to implement custom functionality, we reset the autograd
+  // hooks.
+
+  // first remove the autograd hooks
+  remove_autograd_hooks();
+  for (const auto variable_index : ::c10::irange(params_.size())) {
+    auto &variable = params_[variable_index];
+    auto grad_accumulator = grad_accumulators_[variable_index];
+    hooks_.emplace_back(grad_accumulator->add_post_hook(
+        torch::make_unique<torch::autograd::utils::LambdaPostHook>(
+            [=](const torch::autograd::variable_list& outputs,
+                const torch::autograd::variable_list& /* unused */) {
+              this->autograd_hook(variable_index);
+              return outputs;
+          })),
+        grad_accumulator);
+  }
 }
 
 std::vector<ncclComm_t> ProcessGroupNCCL::GetNcclComm(
@@ -214,19 +260,9 @@ void ProcessGroupNCCL::SetNcclCommAbortFlag(
     _SetNcclCommAbortFlag(comm->getNcclComm(), val);
   }
 
-  if (val) {
-    auto nccl_stream = ncclStreams_.find(device_key);
-    for (auto & stream : nccl_stream->second) {
-      LOG(INFO) << "sync stream " << stream.stream();
-      COL_CUDA_CALL(cudaStreamSynchronize(stream.stream()));
-    }
-  }
-  COL_CUDA_CALL(cudaSetDevice(getRank()));
-  COL_CUDA_CALL(cudaDeviceSynchronize());
-
   LOG(INFO) << str(boost::format("[Rank %d | SetNcclCommAbortFlag]") % getRank())
             << " device_key " << device_key
-            << " set abort flag done";
+            << " set abort flag " << val << " done";
 }
 
 void ProcessGroupNCCL::_SetNcclCommAbortFlag(ncclComm_t comm, uint32_t val) {
