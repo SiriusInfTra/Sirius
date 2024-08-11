@@ -1,7 +1,9 @@
 import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as torch_dist
+import torch.multiprocessing as torch_mp
 from torch import nn
+import torch_col.xsched
 from torchvision import models
 from torch.utils.data import DataLoader
 import argparse
@@ -11,33 +13,61 @@ import torch_col
 from torch_col import MemoryPool, EventManager, TrainMode, HookMode
 from torch_col import ColocateAdjustL1Exception, SwitchL1Exception
 from torch_col import CustomeDynamicBatchDataset
-import train_valiation
 from typing import Optional
+import time
 
 
 def setup(rank, world_size):
+    print(f'[Train rank {rank} PID {os.getpid()} world size {world_size}] setup')
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = str(12345 + os.getpid() % 100)
-    torch_dist.init_process_group("nccl", rank=rank, world_size=world_size)
-    torch_col.torch_col_init(torch.cuda.device_count())
-    torch_col.set_train_rank_world_size(rank, world_size)
+    os.environ['MASTER_PORT'] = str(12345 + os.getuid() % 100)
+    torch_col.torch_col_init(rank, world_size)
+    torch_col.xsched.guess_nccl_begin()
 
+    torch.cuda.set_device(rank)
+    stream = torch.cuda.Stream(device=rank)
+
+    if torch_col.is_enable_xsched():
+        torch_col.xsched.register_stream(stream)
+        print("CUDA Stream create with xsched registered.")
+    else:
+        print(f"CUDA Stream create without xsched.")
+    torch.cuda.set_stream(stream)
+
+    torch_dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    
+    torch_dist.GroupMember.WORLD._get_backend(torch.device('cuda'))._set_as_default_pg()
+
+    import time
+    time.sleep(10)
 
 def cleanup():
+    if torch_col.is_enable_xsched():
+        torch_col.xsched.unregister_all_streams()
     torch_dist.destroy_process_group()
 
 
-def train(train_mode: TrainMode, hook_mode: HookMode, 
-          num_epoch: int, batch_size: int, global_batch_size: Optional[int] = None):
+def train(rank:int, world_size:int,
+          train_mode: TrainMode, 
+          num_epoch: int, batch_size: int, 
+          global_batch_size: Optional[int] = None):
+    setup(rank, world_size)
+    gloo_group = torch_dist.new_group(backend='gloo')
+
+    # batch_size = 32 if rank == 0 else 36
+
+    hook_mode = torch_col.get_hook_mode()
+    
     if torch_col.is_enable_shared_tensor():
         torch_col.tag_model_start()
 
-    setup()
-    torch_col.train_model = model = models.swin_b(weights=models.Swin_B_Weights.DEFAULT).cuda()
+
+    model = models.swin_b(weights=models.Swin_B_Weights.DEFAULT).cuda()
+    model = DDP(model, device_ids=[rank])
 
     print(f"Train params memory usage: {torch_col.MemoryPool.get_memory_usage() * 1024:.2f}M")
 
-    criterion = nn.CrossEntropyLoss().cuda(0)
+    criterion = nn.CrossEntropyLoss().cuda(rank)
     optimizer = torch.optim.SGD(model.parameters(), 0.1, 
                                 momentum=0.9, weight_decay=1e-4)
     scaler = torch.cuda.amp.GradScaler()
@@ -47,13 +77,14 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
     hook = torch_col.get_hook(train_mode, hook_mode, num_epoch, batch_size)
     hook.register_pytorch_hook([model, criterion])
     checkpoint_micro_batch = hook.train_mode.is_kill_batch()
+    # checkpoint_micro_batch = False
 
     # dummy data
     train_dataset = CustomeDynamicBatchDataset(
         model_name='swin_b', size=1000, max_batch_size=batch_size, 
-        hook=hook, trace=train_valiation.get_trace_input(),
+        hook=hook, trace=None,
         input_shape=(3, 224, 224), num_class=10, 
-        max_global_batch_size=global_batch_size,
+        max_global_batch_size=None,
         checkpoint_micro_batch=checkpoint_micro_batch)
     train_loader = DataLoader(train_dataset, batch_size=None, 
                               shuffle=False, pin_memory=True, drop_last=False, num_workers=0)
@@ -65,9 +96,13 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
     model.train()
     hook.train_start()
 
+    # torch_dist.barrier(None)
+    # torch_dist.barrier(group=gloo_group)
+
     torch_col.util.initialize_sgd_optimizer(model, optimizer)
     if train_dataset.checkpoint_micro_batch:
-        grad_accumulator = torch_col.GradAccumulator(model)
+        # grad_accumulator = torch_col.GradAccumulator(model)
+        grad_accumulator = None
     else:
         grad_accumulator = None
 
@@ -77,6 +112,9 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
         flush=True, file=sys.stderr)
 
     # print_opt(optimizer)
+
+    gloo_group.barrier()
+
 
     for epoch in range(num_epoch):
         epoch_event = EventManager.record_event(f'epoch_{epoch:02d}_{train_dataset.size}')
@@ -89,13 +127,15 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
         wait_bs_valid_sec = 0 # add infer may cause batch size <= 0
         finished_imgs = 0
         for i, batch in enumerate(train_loader):
+            # torch_dist.barrier(group=gloo_group)
             # print(f'[epoch {epoch} batch {i}] batch size {len(images)}', flush=True, file=sys.stderr)
             images = batch['image']
             targets = batch['label']
             train_dataset.record_batch_event(epoch, i, len(images), train_dataset.global_batch_size)
-            images: torch.Tensor = images.to('cuda:0', non_blocking=True)
-            targets: torch.Tensor = targets.to('cuda:0', non_blocking=True)
-            train_valiation.make_rng_state_checkpoint()
+            images: torch.Tensor = images.cuda(rank, non_blocking=True)
+            targets: torch.Tensor = targets.cuda(rank, non_blocking=True)
+            torch_col.info(f'epoch {epoch} batch {i} begin')
+            gloo_group.barrier()
             try:
                 tried_batch += 1
                 total_tried_batch += 1
@@ -103,8 +143,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
                 with torch.cuda.amp.autocast(cache_enabled=False):
                     output = model(images)
                     loss = criterion(output, targets)
-                    train_dataset.scale_loss(loss)
-                train_valiation.debug_print_loss(len(images), loss)
+                    # train_dataset.scale_loss(loss)
                 scaler.scale(loss).backward()
                 train_dataset.step_stage(hook, optimizer, scaler=scaler, 
                                          grad_accumulator=grad_accumulator)
@@ -118,8 +157,15 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
                 if epoch == 0 and i == 0:
                     raise RuntimeError("micro batch 0 could not be interrupted.")
                 # for fast develop, should merge to hook.py
+                torch_col.info(f'epoch {epoch} batch {i} drop')
+                gloo_group.barrier()
+                # torch_dist.GroupMember.WORLD._get_backend(torch.device('cuda'))._restart_nccl_comm([torch.device(f'cuda:{rank}')])
                 if isinstance(e, torch_col.EngineColocateAdjustL1Exception):
-                    xsched.kill_batch()
+                    torch_col.xsched.kill_batch()
+
+                torch.cuda.synchronize()
+                model.reducer.finalize_dropped_batch()
+                gloo_group.barrier()
                 killed_batch += 1
                 total_killed_batch += 1
                 train_dataset.cancel_micro_batch()
@@ -127,17 +173,39 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
                     # cuda has alreadly synced
                     hook.release_and_reply()
                     print(f'[{e}] batch_size: {len(images)} -> {train_dataset.batch_size}.')
-                train_valiation.recover_rng_state()
+
+                # gloo_group.barrier()
+                torch_dist.barrier(gloo_group)
+                torch_dist.GroupMember.WORLD._get_backend(torch.device('cuda'))._restart_nccl_comm([torch.device(f'cuda:{rank}')])
+
+
+                print(f'[PID {os.getpid()}] sync training begin', flush=True, file=sys.stderr)
+                torch.cuda.synchronize()
+                # torch_dist.barrier(group=gloo_group)
+                print(f'[PID {os.getpid()}] sync training done', flush=True, file=sys.stderr)
+                # import time
+                # time.sleep(30)
+
+                # tmp_ts = torch.tensor([-1] * 100, dtype=int, device='cuda')
+                # work = torch_dist.broadcast(tmp_ts, 0)
+                # torch_col.info(f'tmp_ts {tmp_ts}')
             else:
                 # torch.cuda.current_stream().synchronize()
-                train_valiation.record_completed_batch(train_dataset, epoch, i, len(images), loss)
+                torch_col.info(f'epoch {epoch} batch {i} pass')
                 train_dataset.next_batch()
                 if epoch == 0 and i == 0:
                     if torch_col.is_enable_shared_tensor():
                         torch_col.tag_model_end()
-            if hook_mode.use_xsched():
-                from torch_col import xsched
-                xsched.initial_kill_batch(epoch, i)
+            if torch_col.is_enable_xsched():
+                if epoch == 0 and i == 0:
+                    torch_col.xsched.guess_nccl_end()
+                    nccl_streams = torch_col.xsched.get_nccl_streams()
+                    assert len(nccl_streams) <= 1, f'nccl streams {nccl_streams}'
+                    if len(nccl_streams) == 1:
+                        torch_col.xsched.register_stream(nccl_streams[0], False)
+                torch_col.xsched.initial_kill_batch(epoch, i)
+            torch.cuda.synchronize()
+
         EventManager.record_event('', epoch_event)
 
         mem_info = f'mem {MemoryPool.get_memory_usage():.2f}Gb'
@@ -146,8 +214,8 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
             batch_info += f' | try {tried_batch} kill {killed_batch}, {killed_time*1e3:.1f}ms finish {finished_batch}, {finished_time*1e3:.1f}ms'
         if global_batch_size is not None:
             batch_info += f' | num_rollback_sampels {train_dataset.num_rollback_samples_in_epoch}'
-        print('[{} epoch {}] {:.3f}s | {} | batch-size {} | micro-batch-size {} | {} | thpt {:.2f} | wait_bs_valid {:.3f}s | loss {:.6f}'.format(
-                model.__class__.__name__, epoch, epoch_event.duration / 1e3,
+        print('[Rank {} | {} epoch {}] {:.3f}s | {} | batch-size {} | micro-batch-size {} | {} | thpt {:.2f} | wait_bs_valid {:.3f}s | loss {:.6f}'.format(
+                rank, model.__class__.__name__, epoch, epoch_event.duration / 1e3,
                 batch_info, batch_size, train_dataset.batch_size,
                 mem_info, finished_imgs / (epoch_event.duration / 1e3), wait_bs_valid_sec, loss.item()), flush=True)
     
@@ -162,6 +230,8 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
 
     hook.train_end()
     hook.stop()
+
+    EventManager.dump(None, train_mode)
     cleanup()
 
 def main():
@@ -182,23 +252,28 @@ def main():
     num_epoch = args.num_epoch
     train_mode = [train_mode for train_mode in TrainMode if train_mode.value == args.train_mode][0]
     # hook_mode = [hook_mode for hook_mode in HookMode if hook_mode.value == args.hook_mode][0]
-    hook_mode = torch_col.get_hook_mode()
+    # hook_mode = torch_col.get_hook_mode()
+    
+    
+    print(f"Swin Transformer training, batch-size={batch_size}"
+        + f", num-epoch={num_epoch}, train-mode={train_mode}")
+    torch_mp.spawn(train, 
+                   args=(torch.cuda.device_count(),train_mode,
+                         num_epoch, batch_size, global_batch_size), 
+                   nprocs=torch.cuda.device_count(), 
+                   join=True)
     
 
-    print(f"Swin Transformer training, batch-size={batch_size}, num-epoch={num_epoch}, train-mode={train_mode}, hook-mode={hook_mode}.")
-    train_valiation.val_begin()
-    stream = torch.cuda.Stream()
-    # if hook_mode.use_xsched():
-    if torch_col.is_enable_xsched():
-        from torch_col import xsched
-        xsched.register_stream(stream)
-        print("CUDA Stream create with xsched registered.")
-    else:
-        print("CUDA Stream create without xsched.")
-    with torch.cuda.stream(stream):
-        train(train_mode, hook_mode, num_epoch, batch_size, global_batch_size=global_batch_size)
-    train_valiation.val_end()
-    EventManager.dump(args.train_profile, train_mode)
+    # stream = torch.cuda.Stream()
+    # # if hook_mode.use_xsched():
+    # if torch_col.is_enable_xsched():
+    #     from torch_col import xsched
+    #     xsched.register_stream(stream)
+    #     print("CUDA Stream create with xsched registered.")
+    # else:
+    #     print("CUDA Stream create without xsched.")
+    # with torch.cuda.stream(stream):
+    #     train(train_mode, hook_mode, num_epoch, batch_size, global_batch_size=global_batch_size)
 
 
 if __name__ == '__main__':
