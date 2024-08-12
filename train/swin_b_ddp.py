@@ -67,18 +67,9 @@ def train(rank:int, world_size:int,
         input_shape=(3, 224, 224), num_class=10, 
         max_global_batch_size=None,
         checkpoint_micro_batch=checkpoint_micro_batch)
-    train_loader = DataLoader(train_dataset, batch_size=None, 
-                              shuffle=False, pin_memory=True, drop_last=False, num_workers=0)
-
-    total_killed_batch = 0
-    total_finished_batch = 0
-    total_tried_batch = 0
 
     model.train()
     hook.train_start()
-
-    # torch_dist.barrier(None)
-    # torch_dist.barrier(group=gloo_group)
 
     torch_col.util.initialize_sgd_optimizer(model, optimizer)
     if train_dataset.checkpoint_micro_batch:
@@ -91,8 +82,6 @@ def train(rank:int, world_size:int,
         torch_col.MemoryPool.get_allocated_memory(), 
         torch_col.MemoryPool.get_memory_usage()),
         flush=True, file=sys.stderr)
-
-    # print_opt(optimizer)
 
     torch_col.wait_barrier()
 
@@ -142,9 +131,11 @@ def train(rank:int, world_size:int,
             break
 
     if train_mode.is_kill_batch():
+        overall_stat = trainer.get_overall_stat()
         print("[{}] Epoch x Batch {} | Batch Total Tried {} Killed {} Finished {}".format(
             model.__class__.__name__,
-            num_epoch * batch_size, total_tried_batch, total_killed_batch, total_finished_batch))
+            num_epoch * batch_size, overall_stat.tried_batch, 
+            overall_stat.killed_batch, overall_stat.finished_batch), flush=True)
 
     hook.train_end()
     hook.stop()

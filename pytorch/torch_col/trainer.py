@@ -119,6 +119,9 @@ class Trainer:
 
         return last_loss
 
+    def get_overall_stat(self) -> TrainStat:
+        return self.overall_stat
+
     def get_last_epoch_stat(self) -> EpochStat | None:
         if len(self.epoch_stats) == 0:
             return None
