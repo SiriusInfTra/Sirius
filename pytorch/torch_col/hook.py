@@ -277,6 +277,9 @@ class SwitchHook(HookABC):
 class ColocateAdjustL1Exception(Exception):
     pass
 
+class EngineColocateAdjustL1Exception(Exception):
+    pass
+
 class ColocateHook(HookABC):
     def __init__(self, train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size: int):
         assert train_mode == TrainMode.COLOCATE_L1 or train_mode == TrainMode.COLOCATE_L2

@@ -409,6 +409,8 @@ using intrusive_ptr_no_gil_destructor_class_ =
 
 // MARK: TorchDistExtInit
 void TorchDistExtInit() {
+  DLOG(INFO) << "[TorchDistExtInit] begin";
+
   // first init our classes
   CHECK(TorchColConfig::IsConfigured());
   DistTrainSync::Init();

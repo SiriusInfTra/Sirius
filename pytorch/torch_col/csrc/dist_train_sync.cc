@@ -18,7 +18,10 @@ void DistTrainSync::Init() {
 
 void DistTrainSync::WaitBarrier() {
   CHECK(DistTrainSync::dist_train_sync_ != nullptr);
-  CHECK_EQ(pthread_barrier_wait(dist_train_sync_->barrier_), 0);
+
+  auto err = pthread_barrier_wait(dist_train_sync_->barrier_);
+  CHECK(err == 0 || err == PTHREAD_BARRIER_SERIAL_THREAD) 
+      << "pthread_barrier_wait err " << err;
 }
 
 DistTrainSync::DistTrainSync() {
@@ -47,11 +50,16 @@ DistTrainSync::DistTrainSync() {
     sem_->post();
   } else {
     sem_->wait();
+    bip_shm_ = bip::managed_shared_memory{bip::open_only, shm_name_.c_str()};
     auto atomic_init = [&]() {
       barrier_ = bip_shm_.find<pthread_barrier_t>("barrier").first;
     };
+    atomic_init();
   }
-  WaitBarrier();
+
+  auto err = pthread_barrier_wait(barrier_);
+  CHECK(err == 0 || err == PTHREAD_BARRIER_SERIAL_THREAD)
+      << "pthread_barrier_wait err " << err;
 }
 
 DistTrainSync::~DistTrainSync() {

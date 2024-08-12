@@ -5,18 +5,15 @@ from ._C import *
 from .util import MemoryPool, TrainMode, EventManager, \
       info, dinfo
 from .accumulate import GradAccumulator
-from .dist import wait_barrier
 
 from .dataset import DynamicBatchDataset
-from .hook import register_saved_tensor_hook, get_hook, HookMode, DummyHook,\
-      SwitchHook, SwitchL1Exception, ColocateHook, ColocateAdjustL1Exception
+from .hook import register_saved_tensor_hook, get_hook, \
+    HookMode, DummyHook, SwitchHook, \
+    SwitchL1Exception, ColocateHook, ColocateAdjustL1Exception, \
+    EngineColocateAdjustL1Exception
 from .trainer import Trainer
 
 from .debug_server import DebugServer
-
-
-class EngineColocateAdjustL1Exception(Exception):
-    pass
 
 
 def setup_colocate_training(rank, world_size,

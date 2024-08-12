@@ -138,6 +138,7 @@ def train(rank:int, world_size:int,
     
         if hook.can_exit_after_infer_worklaod_done():
             print('[hook] inference workload done, will exit training', flush=True)
+            torch_col.wait_barrier()
             break
 
     if train_mode.is_kill_batch():

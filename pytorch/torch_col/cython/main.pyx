@@ -487,6 +487,9 @@ cdef extern from "<torch_col/csrc/dist_train_sync.h>" namespace "torch_col":
         @staticmethod
         void WaitBarrier()
 
+def wait_barrier():
+    DistTrainSync.WaitBarrier()
+
 
 ####################
 #  MARK: Utililty  #

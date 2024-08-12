@@ -3,7 +3,7 @@ from torch.utils.data import DataLoader
 import torch.distributed as torch_dist
 
 import torch_col
-from torch_col import ColocateAdjustL1Exception, SwitchL1Exception, \
+from .hook import ColocateAdjustL1Exception, SwitchL1Exception, \
     EngineColocateAdjustL1Exception
 import torch_col.xsched
 
@@ -12,6 +12,7 @@ from .util import EventManager, Event
 from dataclasses import dataclass
 
 from typing import Callable, Any
+
 
 @dataclass
 class TrainStat:
@@ -141,7 +142,7 @@ class Trainer:
         if torch_col.is_enable_xsched():
             if torch_col.xsched.is_guess_nccl_begined():
                 torch_col.xsched.guess_nccl_end()
-                nccl_streams = torch.cuda.current_stream()
+                nccl_streams = torch_col.xsched.get_nccl_streams()
                 assert len(nccl_streams) <= 1, f"nccl streams {nccl_streams}"
                 if len(nccl_streams) == 1:
                     torch_col.xsched.register_stream(nccl_streams[0], False)
