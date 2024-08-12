@@ -313,7 +313,7 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
   static ::c10::intrusive_ptr<ProcessGroupNCCL> default_pg_;
   
   // our own maintained abort flag outside of NCCL, 
-  // therefore we check abort flag without get the NCCLComm
+  // therefore we can check abort flag without get the NCCLComm
   std::atomic<uint32_t> abort_flag_{0};
 };
 

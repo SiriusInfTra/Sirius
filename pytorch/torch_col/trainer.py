@@ -9,13 +9,33 @@ import torch_col.xsched
 
 from .dataset import DynamicBatchDataset
 from .util import EventManager, Event
+from dataclasses import dataclass
+
+from typing import Callable, Any
+
+@dataclass
+class TrainStat:
+    killed_batch: int = 0
+    finished_batch: int = 0
+    tried_batch: int = 0
+
+
+@dataclass
+class EpochStat:
+    killed_batch: int = 0
+    finished_batch: int = 0
+    tried_batch: int = 0
+    finished_sample: int = 0
+
+    killed_time: float = 0.0
+    finished_time: float = 0.0
 
 
 class Trainer:
     def __init__(self, 
                  model: torch.nn.Module,
                  dynamic_dataset:DynamicBatchDataset, 
-                 iter_train_fn:callable):
+                 iter_train_fn:Callable[[Any], torch.Tensor]):
         self.rank = torch_col.get_train_rank()
         self.model = model
         self.dynamic_dataset = dynamic_dataset
@@ -25,11 +45,29 @@ class Trainer:
         )
         self.iter_train_fn = iter_train_fn
 
-    def train_one_epoch(self, epoch_idx: int):
-        self._reset_epoch_stat()
+        # stat
+        self.overall_stat = TrainStat(0, 0, 0)
+        self.epoch_stats = []
+        self.epoch_events = []
+
+    def train_one_epoch(self, epoch_idx: int) -> torch.Tensor | None:
+        epoch_event_name = f'epoch_{epoch_idx:02d}_{self.dynamic_dataset.size}'
+        epoch_event = EventManager.record_event(epoch_event_name)
+
+        epoch_stat = EpochStat()
+        last_loss = None
+
         for batch_idx, batch in enumerate(self.data_loader):
             try:
-                self.iter_train_fn(batch)
+                epoch_stat.tried_batch += 1
+                self.overall_stat.tried_batch += 1
+
+                self.dynamic_dataset.record_batch_event(
+                    epoch_idx, batch_idx, 
+                    self.dynamic_dataset.get_batch_size(batch), 
+                    self.dynamic_dataset.global_batch_size
+                )
+                last_loss = self.iter_train_fn(batch)
             except (
                 ColocateAdjustL1Exception, 
                 SwitchL1Exception, 
@@ -38,7 +76,7 @@ class Trainer:
                 if epoch_idx == 0 and batch_idx == 0:
                     raise RuntimeError("first micro batch could not be interrupted.")
                 torch_col.info(f'epoch {epoch_idx} batch {batch_idx} dropped due to {e}')
-
+                torch_col.wait_barrier()
                 if isinstance(e, EngineColocateAdjustL1Exception):
                     # ad-hoc code here, handle batch is not killed on adjustment.
                     # should be move to c++ pytorch hook?
@@ -59,6 +97,9 @@ class Trainer:
                     self.dynamic_dataset.hook.release_and_reply()
                     print(f'[{e}] batch_size: {batch_size} -> {self.dynamic_dataset.batch_size}.')
 
+                epoch_stat.killed_batch += 1
+                self.overall_stat.killed_batch += 1
+
                 torch_col.wait_barrier()
                 nccl_backend = torch_dist.GroupMember.WORLD._get_backend(torch.device('cuda'))
                 nccl_backend._restart_nccl_comm([torch.device(f'cuda:{self.rank}')])
@@ -68,8 +109,30 @@ class Trainer:
                 if epoch_idx == 0 and batch_idx == 0:
                     self._default_first_batch_hook()
 
-    def _reset_epoch_stat(self):
-        pass
+                epoch_stat.finished_batch += 1
+                self.overall_stat.finished_batch += 1
+
+        EventManager.record_event('', epoch_event)
+        self.epoch_stats.append(epoch_stat)
+        self.epoch_events.append(epoch_event)
+
+        return last_loss
+
+    def get_last_epoch_stat(self) -> EpochStat | None:
+        if len(self.epoch_stats) == 0:
+            return None
+        return self.epoch_stats[-1]
+    
+    def get_last_epoch_event(self) -> Event | None:
+        if len(self.epoch_events) == 0:
+            return None
+        return self.epoch_events[-1]
+    
+    def get_last_epoch_duration(self) -> float | None:
+        last_epoch_event = self.get_last_epoch_event()
+        if last_epoch_event is None:
+            return None
+        return last_epoch_event.duration
 
     def _default_first_batch_hook(self):
         if torch_col.is_enable_shared_tensor():

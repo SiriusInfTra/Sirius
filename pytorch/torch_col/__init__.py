@@ -10,6 +10,8 @@ from .dist import wait_barrier
 from .dataset import DynamicBatchDataset
 from .hook import register_saved_tensor_hook, get_hook, HookMode, DummyHook,\
       SwitchHook, SwitchL1Exception, ColocateHook, ColocateAdjustL1Exception
+from .trainer import Trainer
+
 from .debug_server import DebugServer
 
 
