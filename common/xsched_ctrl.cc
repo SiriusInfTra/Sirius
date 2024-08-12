@@ -201,6 +201,10 @@ void GuessNcclEnd() {
   CudaGuessNcclEnd();
 }
 
+bool IsGuessNcclBegined() {
+  return CudaIsGuessNcclBegined();
+}
+
 std::vector<uint64_t> GetNcclStreams() {
   std::vector<CUstream> nccl_streams;
   CudaNcclSteamGet(nccl_streams);

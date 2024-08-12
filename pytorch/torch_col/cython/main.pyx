@@ -265,6 +265,7 @@ cdef extern from "<common/xsched_ctrl.h>" namespace "colserve::sta::xsched":
     cpdef void SetRejectCudaCalls(bool reject)
     cpdef void GuessNcclBegin()
     cpdef void GuessNcclEnd()
+    cpdef bool IsGuessNcclBegined()
     cpdef vector[uint64_t] GetNcclStreams()
 
 
