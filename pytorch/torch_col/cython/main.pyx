@@ -478,6 +478,16 @@ def update_current_batch_size(current_batch_size):
         make_optional[int](<int> current_batch_size)
     )
 
+######################
+#  MARK: Dist Train  #
+######################
+
+cdef extern from "<torch_col/csrc/dist_ext.h>" namespace "torch_col":
+    cdef cppclass DistTrainSync:
+        @staticmethod
+        void WaitBarrier()
+
+
 ####################
 #  MARK: Utililty  #
 ####################

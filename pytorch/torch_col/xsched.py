@@ -144,6 +144,10 @@ def guess_nccl_end():
     torch_col.GuessNcclEnd()
 
 
+def is_guess_nccl_begined():
+    return torch_col.IsGuessNcclBegined()
+
+
 def get_nccl_streams():
     return torch_col.GetNcclStreams()
 

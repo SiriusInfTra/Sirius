@@ -32,7 +32,7 @@ void TorchColInit(int train_rank, int train_world_size) {
     colserve::ctrl::InfTraCommunicator::Init(false, false, 
                                              train_world_size);
   }
-  TorchExtInit();
+  TorchDistExtInit();
 
   LOG(INFO) << "TorchCol initialized.";
 
