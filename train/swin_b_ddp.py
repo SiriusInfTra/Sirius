@@ -134,7 +134,6 @@ def train(rank:int, world_size:int,
             train_dataset.record_batch_event(epoch, i, len(images), train_dataset.global_batch_size)
             images: torch.Tensor = images.cuda(rank, non_blocking=True)
             targets: torch.Tensor = targets.cuda(rank, non_blocking=True)
-            torch_col.info(f'epoch {epoch} batch {i} begin')
             gloo_group.barrier()
             try:
                 tried_batch += 1
@@ -191,7 +190,6 @@ def train(rank:int, world_size:int,
                 # torch_col.info(f'tmp_ts {tmp_ts}')
             else:
                 # torch.cuda.current_stream().synchronize()
-                torch_col.info(f'epoch {epoch} batch {i} pass')
                 train_dataset.next_batch()
                 if epoch == 0 and i == 0:
                     if torch_col.is_enable_shared_tensor():

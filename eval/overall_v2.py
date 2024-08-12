@@ -7,9 +7,14 @@ from dataclasses import dataclass
 import workload_collections as wkld_coll
 import run_comm
 
+# run_comm.UniformConfig_v2.train_model = 'swin_b_ddp'
+run_comm.UniformConfig_v2.train_batch_size = 48
 
 use_time_stamp = True
-skip_fail = True
+skip_fail = False
+
+run_comm.skip_fail = skip_fail
+run_comm.use_time_stamp = use_time_stamp
 
 run_colsys  = False
 run_um_mps = False
@@ -30,10 +35,12 @@ enable_skewed_v2 = False
 uniform_v2_workload_types = [
     'NormalA', 
     'NormalB',
+    'NormalC'
 ]
 skew_v2_workload_types = [
     'SkewA',
     'SkewB',
+    'SkewC'
 ]
 
 # should be false to eval infer-only
@@ -63,9 +70,11 @@ parser.add_argument('--all-sys', action='store_true')
 parser.add_argument('--all-workload', action='store_true')
 parser.add_argument('--infer-only-without-mps', action='store_true')
 parser.add_argument('--retry-limit', type=int, default=0)
+parser.add_argument('--skip-fail', type=bool, default=False)
 parser.add_argument('--azure-rps', type=int, default=150)
 parser.add_argument('--skip-set-mps-pct', action='store_true')
 parser.add_argument('--binary-dir', type=str, default='build')
+parser.add_argument('--multi-gpu', action='store_true')
 args = parser.parse_args()
 
 if args.colsys or args.all_sys:
@@ -114,8 +123,15 @@ if not skip_set_mps_pct:
 if args.binary_dir != 'build':
     set_binary_dir(args.binary_dir)
 
+if args.multi_gpu:
+    run_comm.UniformConfig_v2.train_model += "_ddp"
+
 retry_limit = args.retry_limit
 retry_if_fail = retry_limit >= 1
+
+if args.skip_fail:
+    skip_fail = True
+    run_comm.skip_fail = skip_fail
 
 ## MARK: Configurations
 ## =========================================================== ##
@@ -465,7 +481,7 @@ if run_colsys:
         'use_xsched' : True,
         'has_warmup' : True,
         'ondemand_adjust' : True,
-        'cuda_memory_pool_gb' : "13",
+        'cuda_memory_pool_gb' : "12.5",
         'train_memory_over_predict_mb' : 1500,
         'infer_model_max_idle_ms' : 5000,
         'cold_cache_ratio': 0.5, 

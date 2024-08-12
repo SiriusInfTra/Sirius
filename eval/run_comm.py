@@ -144,7 +144,7 @@ class SkewedConfig_v2:
 ## =========================================================== ##
 
 def get_train_epoch(train_epoch_time, duration):
-    return int(duration / train_epoch_time + 5)
+    return int(duration / train_epoch_time + 10)
 
 
 def _workload_v2(wkld_type, client_model_list, infer_only,
@@ -154,7 +154,7 @@ def _workload_v2(wkld_type, client_model_list, infer_only,
     workload = HyperWorkload(concurrency=2048,
                              warmup=5,
                              wait_warmup_done_sec=5,
-                             wait_train_setup_sec=40 ,
+                             wait_train_setup_sec=60 ,
                              wait_stable_before_start_profiling_sec=10)
     InferModel.reset_model_cnt()
     if not infer_only:
