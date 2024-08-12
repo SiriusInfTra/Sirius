@@ -109,8 +109,11 @@ void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
   int next_gpu = 0;
   for (auto &model : models) {
     auto model_path = infer_store_path / model.second["path"];
-    CHECK(std::filesystem::exists(model_path)) << "InferModelStore: " << model_path << " not exist";
-    CHECK(std::filesystem::is_directory(model_path)) << model_path << " is not a directory";
+    CHECK(std::filesystem::exists(model_path)) 
+        << "InferModelStore: " << model_path << " not exist";
+    CHECK(std::filesystem::is_directory(model_path)) 
+        << model_path << " is not a directory";
+
     auto model_params = tvm::TVMGraph::LoadParamsAsTVMArray(
         (model_path / "mod.params").c_str());
     
