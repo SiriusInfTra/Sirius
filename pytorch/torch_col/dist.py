@@ -1,4 +1,4 @@
 import torch_col
 
 def wait_barrier():
-    torch_col.WaitBarrier()
+    torch_col.DistTrainSync.WaitBarrier()

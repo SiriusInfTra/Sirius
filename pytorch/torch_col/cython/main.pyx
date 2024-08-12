@@ -59,7 +59,7 @@ cdef extern from "<common/device_manager.h>" namespace "colserve::sta":
 cdef extern from "<torch_col/csrc/init.h>" namespace "torch_col":
     cpdef void TorchColInit(int, int)
     cpdef void SMPartitionInit(uint64_t stream)
-    cpdef void TorchExtInit()
+    cpdef void TorchDistExtInit()
 
 
 class HookMode(Enum):
@@ -482,7 +482,7 @@ def update_current_batch_size(current_batch_size):
 #  MARK: Dist Train  #
 ######################
 
-cdef extern from "<torch_col/csrc/dist_ext.h>" namespace "torch_col":
+cdef extern from "<torch_col/csrc/dist_train_sync.h>" namespace "torch_col":
     cdef cppclass DistTrainSync:
         @staticmethod
         void WaitBarrier()

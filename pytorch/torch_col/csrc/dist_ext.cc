@@ -4,6 +4,7 @@
 #include <torch_col/csrc/dist_ext.h>
 #include <torch_col/csrc/mem_tagging.h>
 #include <torch_col/csrc/config.h>
+#include <torch_col/csrc/dist_train_sync.h>
 
 #include <torch/csrc/jit/python/pybind_utils.h>
 #include <torch/csrc/distributed/c10d/comm.hpp>
@@ -21,57 +22,6 @@
 namespace torch_col {
 
 ::c10::intrusive_ptr<ProcessGroupNCCL> ProcessGroupNCCL::default_pg_ = nullptr;
-std::unique_ptr<DistTrainSync> DistTrainSync::dist_train_sync_ = nullptr; 
-
-void DistTrainSync::Init() {
-  CHECK(DistTrainSync::dist_train_sync_ == nullptr)
-      << "DistTrainSync has been initialized";
-  DistTrainSync::dist_train_sync_ = std::make_unique<DistTrainSync>();
-  LOG(INFO) << "DistTrainSync initialized";
-}
-
-void DistTrainSync::WaitBarrier() {
-  CHECK(DistTrainSync::dist_train_sync_ != nullptr);
-  CHECK_EQ(pthread_barrier_wait(dist_train_sync_->barrier_), 0);
-}
-
-DistTrainSync::DistTrainSync() {
-  namespace bip = colserve::bip;
-  CHECK(TorchColConfig::IsConfigured());
-  shm_name_ = colserve::GetDefaultShmNamePrefix() + "_dist_train_sync";
-  sem_name_ = colserve::GetDefaultShmNamePrefix() + "_dist_train_sync_sem";
-
-  sem_ = new bip::named_semaphore{bip::open_or_create, 
-                                  sem_name_.c_str(), 0};
-
-  if (TorchColConfig::GetTrainRank() == 0) {
-    bip::shared_memory_object::remove(shm_name_.c_str());
-    bip_shm_ = bip::managed_shared_memory{bip::create_only,
-                                          shm_name_.c_str(), 65536};
-    auto atomic_init = [&]() {
-      barrier_ = 
-          bip_shm_.find_or_construct<pthread_barrier_t>("barrier")();
-      pthread_barrierattr_t attr;
-      CHECK_EQ(pthread_barrierattr_init(&attr), 0);
-      CHECK_EQ(pthread_barrierattr_setpshared(&attr, PTHREAD_PROCESS_SHARED), 0);
-      CHECK_EQ(pthread_barrier_init(barrier_, &attr, 
-                                    TorchColConfig::GetTrainWorldSize()), 0);
-    };
-    atomic_init();
-    sem_->post();
-  } else {
-    sem_->wait();
-    auto atomic_init = [&]() {
-      barrier_ = bip_shm_.find<pthread_barrier_t>("barrier").first;
-    };
-  }
-  WaitBarrier();
-}
-
-DistTrainSync::~DistTrainSync() {
-  delete sem_;
-}
-
 
 ///////////////////////////////////////////////////////////////////////////////
 // MARK: C++ class for extending ::c10d
@@ -471,7 +421,7 @@ void TorchDistExtInit() {
   
   try {
     // Reducer
-    LOG(INFO) << "torch_col::TorchExtInit() Reducer";
+    DLOG(INFO) << "[TorchDistExtInit] Reducer";
     shared_ptr_class_<Reducer>(module, "Reducer")
     .def(
         py::init<
@@ -625,7 +575,7 @@ void TorchDistExtInit() {
 
 
     // Logger
-    LOG(INFO) << "torch_col::TorchExtInit() Logger";
+    DLOG(INFO) << "[TorchDistExtInit] Logger";
     shared_ptr_class_<Logger>(module, "Logger")
     .def(
         py::init<std::shared_ptr<Reducer>>(),
@@ -671,9 +621,9 @@ void TorchDistExtInit() {
 
     
     // ProcessGroupNCCL
-    LOG(INFO) << "torch_col::TorchExtInit() ProcessGroupNCCL";
+    DLOG(INFO) << "[TorchDistExtInit] ProcessGroupNCCL";
     auto backend = py::module::import("torch._C._distributed_c10d").attr("Backend");
-    LOG(INFO) << "torch_col::TorchExtInit() ProcessGroupNCCL backend " << backend.ptr();
+    DLOG(INFO) << "[TorchDistExtInit] ProcessGroupNCCL backend " << backend.ptr();
     auto processGroupNCCL =
       intrusive_ptr_no_gil_destructor_class_<ProcessGroupNCCL>(
       module, "ProcessGroupNCCL", backend)
@@ -735,9 +685,9 @@ void TorchDistExtInit() {
         .attr("Options");
     processGroupNCCL.attr("Options") = c10d_processGroupNcclOptions;
 
-    LOG(INFO) << "torch_col::TorchExtInit() register python objects done";
+    LOG(INFO) << "[TorchDistExtInit] register python objects done";
   } catch (const std::exception& e) {
-    LOG(FATAL) << "torch_col::TorchExtInit() exception " << e.what();
+    LOG(FATAL) << "[TorchDistExtInit] exception " << e.what();
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -756,7 +706,7 @@ void TorchDistExtInit() {
   auto torch_c10d_module = torch_dist_module.attr("distributed_c10d");
   torch_c10d_module.attr("ProcessGroupNCCL") = module.attr("ProcessGroupNCCL");
   
-  LOG(INFO) << "torch_col::TorchExtInit() DONE";
+  LOG(INFO) << "[TorchDistExtInit] overwrite torch distributed module attributes done";
 }
 
 } // namespace torch_col

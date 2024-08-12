@@ -15,6 +15,7 @@ add_library(new_torch_col SHARED
   torch_col/csrc/fake_engine.cc
   torch_col/csrc/init.cc
   torch_col/csrc/dist_ext.cc
+  torch_col/csrc/dist_train_sync.cc
 )
 
 add_dependencies(new_torch_col xsched_lib)
