@@ -6,6 +6,7 @@ import time
 from typing import Optional
 import pandas as pd
 import inspect
+from io import StringIO
 
 import torch
 import torch_col
@@ -85,7 +86,6 @@ class Event:
         return f'{self.timestamp} {self.loc} {self.name} {self.duration} {self.tag}'
         
     
-
 # Note: EventManager use us as time unit to avoid time collision, but duration is ms
 class EventManager:
     event_list: list[Event] = []
@@ -132,7 +132,19 @@ class EventManager:
                 cls.event_list.append(Event(ts, 'adjust_done', 'none', 0, ''))
         df = pd.DataFrame(cls.event_list)
         df['timestamp'] = df['timestamp'] / 1000
-        df.to_csv(path, index=None)
+        # df.to_csv(path, index=None)
+        
+        df['rank'] = torch_col.get_train_rank()
+        string_io = StringIO()
+        df.to_csv(string_io, index=None)
+        if torch_col.get_train_rank() == 0:
+            for i in range(1, torch_col.get_train_world_size()):
+                train_event_str = torch_col.dist.recv_msg(i)
+                string_io.write(train_event_str)
+                with open(path, 'w') as f:
+                    f.write(string_io.getvalue())
+        else:
+            torch_col.dist.send_msg(0, string_io.getvalue())
 
     
 # event_manager = EventManager()

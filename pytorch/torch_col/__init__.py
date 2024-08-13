@@ -1,6 +1,7 @@
 import torch_col.xsched
 import torch_col.xsched
 from ._C import *
+from ._C import _dist as dist
 
 from .util import MemoryPool, TrainMode, EventManager, \
       info, dinfo

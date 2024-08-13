@@ -69,7 +69,7 @@ set(TORCH_COL_CYTHON_FILES
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/torch_col.egg-info
   COMMAND BUILD_DIR=${CMAKE_BINARY_DIR} ${PYTHON_EXECUTABLE}
-  ARGS setup.py develop
+  ARGS setup.py build_ext --inplace
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS 
     new_torch_col sta

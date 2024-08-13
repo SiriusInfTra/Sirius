@@ -77,7 +77,7 @@ class Trainer:
                 if epoch_idx == 0 and batch_idx == 0:
                     raise RuntimeError("first micro batch could not be interrupted.")
                 torch_col.info(f'epoch {epoch_idx} batch {batch_idx} dropped due to {e}')
-                torch_col.wait_barrier()
+                torch_col.dist.wait_barrier()
                 if isinstance(e, EngineColocateAdjustL1Exception):
                     # ad-hoc code here, handle batch is not killed on adjustment.
                     # should be move to c++ pytorch hook?
@@ -101,7 +101,7 @@ class Trainer:
                 epoch_stat.killed_batch += 1
                 self.overall_stat.killed_batch += 1
 
-                torch_col.wait_barrier()
+                torch_col.dist.wait_barrier()
                 nccl_backend = torch_dist.GroupMember.WORLD._get_backend(torch.device('cuda'))
                 nccl_backend._restart_nccl_comm([torch.device(f'cuda:{self.rank}')])
             else:
