@@ -17,7 +17,7 @@ struct InferInfo {
 };
 
 struct TrainInfo {
-  pid_t train_pid;
+  pid_t train_pid{-1};
   int train_rank;
   int train_world_size;
 

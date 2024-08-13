@@ -111,6 +111,7 @@ class Trainer:
                     self._default_first_batch_hook()
 
                 epoch_stat.finished_batch += 1
+                epoch_stat.finished_sample += self.dynamic_dataset.get_batch_size(batch)
                 self.overall_stat.finished_batch += 1
 
         EventManager.record_event('', epoch_event)

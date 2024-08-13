@@ -215,28 +215,6 @@ bool TrainLauncher::Train() {
     LOG(FATAL) << "Unsupported serve mode: " << static_cast<int>(Config::serve_mode);
   }
 
-  // if (Config::serve_mode == ServeMode::kColocateL1 || Config::serve_mode == ServeMode::kTaskSwitchL1) {
-  //   if (Config::use_xsched) {
-  //     args_str.push_back("--hook-mode");
-  //     args_str.push_back("xsched-sync2");
-  //     // args_str.push_back("xsched-sync"); # used for dummy adjust
-  //   } else {
-  //     args_str.push_back("--hook-mode");
-  //     args_str.push_back("sync");
-  //   }
-  // } else {
-  //   args_str.push_back("--hook-mode");
-  //   args_str.push_back("none");
-  // }
-
-  // if (Config::use_xsched) {
-  //   args_str.push_back("--use-xsched");
-  //   args_str.push_back("1");
-  // } else {
-  //   args_str.push_back("--use-xsched");
-  //   args_str.push_back("0");
-  // }
-
   args_str.push_back("--train-profile");
   args_str.push_back(Config::train_profile);
 
@@ -429,6 +407,21 @@ void TrainLauncher::DummyAdjust() {
     ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
     ctrl::Controller::Get()->DummyInferExit(0, ori_target_bs);
     std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<>(200, 1000)(gen)));
+  }
+}
+
+void TrainLauncher::KillTrain() {
+  int num_train_proc = 
+      ctrl::InfTraCommunicator::GetIB()->GetTrainInfo(0)->train_world_size;
+  for (int i = 0; i < num_train_proc; i++) {
+    auto train_info = ctrl::InfTraCommunicator::GetIB()->GetTrainInfo(i);
+    auto pid = train_info->train_pid;
+    auto rank = train_info->train_rank;
+    if (pid != -1) {
+      LOG(INFO) << "[TrainLauncher]: Kill train pid " << pid << " rank " << rank;
+      auto err = kill(pid, SIGKILL);
+      CHECK(err == 0 || errno == ESRCH);
+    }
   }
 }
 

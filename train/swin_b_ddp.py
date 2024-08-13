@@ -164,11 +164,19 @@ def main():
     
     print(f"Swin Transformer training, batch-size={batch_size}"
         + f", num-epoch={num_epoch}, train-mode={train_mode}")
-    torch_mp.spawn(train, 
+    
+    process_context =  torch_mp.spawn(train, 
                    args=(torch.cuda.device_count(),train_mode,
                          num_epoch, batch_size, global_batch_size), 
                    nprocs=torch.cuda.device_count(), 
-                   join=True)
+                   join=False)
+    try:
+        process_context.join()
+    except Exception as e:
+        print(f"Exception in training: {e}", file=sys.stderr, flush=True)
+        for p in process_context.processes:
+            p.terminate()
+        raise e
 
 
 if __name__ == '__main__':

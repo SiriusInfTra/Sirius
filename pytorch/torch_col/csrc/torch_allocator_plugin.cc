@@ -35,9 +35,9 @@ CUDAColAllocator* CUDAColAllocator::Get() {
 
 void CUDAColAllocator::SetCurrentAllocator() {
   CHECK(cuda_col_allocator_.get() != nullptr)
-    << "CUDAColAllocator is not initialized";
+      << "CUDAColAllocator is not initialized";
   CHECK(!c10::cuda::CUDACachingAllocator::allocator.load()->initialized())
-    << "Can't swap an already initialized allocator";
+      << "Can't swap an already initialized allocator";
   c10::cuda::CUDACachingAllocator::allocator.store(cuda_col_allocator_.get());
   LOG(INFO) << "CUDAColAllocator is set as current allocator";
 }

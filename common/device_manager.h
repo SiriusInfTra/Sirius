@@ -29,6 +29,7 @@ class DeviceManager {
   static int GetGpuSystemId(int gpu_id);
   static const std::string& GetGpuSystemUuid(int gpu_id);
   static int GetCurrentDevice();
+  static int GetVisibleGpuId(int system_id);
   
  private:
   static std::unique_ptr<DeviceManager> device_manager_;
@@ -37,7 +38,8 @@ class DeviceManager {
   std::vector<std::string> system_gpu_uuids_;
 
   // visible id -> (system id, uuid)
-  std::unordered_map<int, std::pair<int, std::string>> gpu_id_map_; 
+  std::unordered_map<int, std::pair<int, std::string>> gpu_id_map_;
+  std::unordered_map<int, int> system_to_visible_id_;
 
 };
 

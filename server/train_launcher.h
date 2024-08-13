@@ -59,6 +59,8 @@ class TrainLauncher {
   bool Train();
   bool LaunchTrain(std::shared_ptr<Job> job, std::vector<std::string> &args);
   void DummyAdjust();
+
+  void KillTrain();
   
   JobQueue job_queue_;
   std::unique_ptr<std::thread> thread_;
