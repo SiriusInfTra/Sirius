@@ -203,7 +203,8 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
   switch (static_cast<ctrl::CtrlEvent>(msg.event)) {
   case ctrl::CtrlEvent::kColocateAdjustL1:
   case ctrl::CtrlEvent::kColocateAdjustL2:
-    LOG(INFO) << "[ColocateStub] Adjust batch size, target " << msg.value
+    LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() <<  " | ColocateStub]" 
+              << " Adjust batch size, target " << msg.value
               << " cur target " << this->target_bs_
               << " current " << this->current_bs_
               << " timestamp: " << torch_col::get_unix_timestamp();
@@ -252,7 +253,8 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
   case ctrl::CtrlEvent::kInferExit: {
     auto old_target_bs = this->target_bs_;
     this->target_bs_ = msg.value;
-    LOG(INFO) << "[ColocateStub] Infer Exit adjust, cmd_id " << msg.id
+    LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() << " | ColocateStub]" 
+              << " Infer Exit adjust, cmd_id " << msg.id
               << " target bs " << old_target_bs << " -> " << this->target_bs_
               << " current " << this->current_bs_
               << " timestamp: " << torch_col::get_unix_timestamp();
@@ -268,7 +270,8 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
     break;
   case ctrl::CtrlEvent::kInferenceWorkloadDone:
     this->infer_workload_done_timestamp_ = torch_col::get_unix_timestamp();
-    LOG(INFO) << "[ColocateStub] Inference workload done, cmd_id " << msg.id;
+    LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() << " ColocateStub]" 
+              << " Inference workload done, cmd_id " << msg.id;
     break;
   default:
     LOG(FATAL) << "[ColocateStub] Unknown command: " << msg.event;

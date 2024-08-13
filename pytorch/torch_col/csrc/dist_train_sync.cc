@@ -24,6 +24,34 @@ void DistTrainSync::WaitBarrier() {
       << "pthread_barrier_wait err " << err;
 }
 
+void DistTrainSync::Send(int dst, const std::string &msg) {
+  CHECK(DistTrainSync::dist_train_sync_ != nullptr);
+
+  int src = TorchColConfig::GetTrainRank();
+  for (int i = 0; i < msg.size(); i++) {
+    int j = i + kMsgBufSize >= msg.size() ? msg.size() : i + kMsgBufSize;
+
+    std::array<char, kMsgBufSize> buf{0};
+    std::copy(msg.data() + i, msg.data() + j, buf.begin());
+    
+    dist_train_sync_->intra_train_mqs_[src][dst]->BlockPut(buf);
+    i = j;
+  }
+}
+
+std::string DistTrainSync::Recv(int src) {
+  std::string ret;
+  int rank = TorchColConfig::GetTrainRank();
+  while (true) {
+    auto buf = dist_train_sync_->intra_train_mqs_[src][rank]->BlockGet();
+    ret.append(buf.data());
+    if (buf.back() == 0) {
+      break;
+    }
+  }
+  return ret;
+}
+
 DistTrainSync::DistTrainSync() {
   namespace bip = colserve::bip;
   CHECK(TorchColConfig::IsConfigured());
@@ -33,28 +61,42 @@ DistTrainSync::DistTrainSync() {
   sem_ = new bip::named_semaphore{bip::open_or_create, 
                                   sem_name_.c_str(), 0};
 
+  int train_world_size = TorchColConfig::GetTrainWorldSize();
   if (TorchColConfig::GetTrainRank() == 0) {
     bip::shared_memory_object::remove(shm_name_.c_str());
     bip_shm_ = bip::managed_shared_memory{bip::create_only,
-                                          shm_name_.c_str(), 65536};
+                                          shm_name_.c_str(), 1024 * 1024};
     auto atomic_init = [&]() {
       barrier_ = 
           bip_shm_.find_or_construct<pthread_barrier_t>("barrier")();
+      for (int i = 0; i < train_world_size; i++) {
+        for (int j = 0; i < train_world_size; j++) {
+          intra_train_mqs_[i][j] = std::make_unique<dist_train_mq_t>(
+            true, GetMqName(i, j), bip_shm_);
+        }
+      }
+
       pthread_barrierattr_t attr;
       CHECK_EQ(pthread_barrierattr_init(&attr), 0);
       CHECK_EQ(pthread_barrierattr_setpshared(&attr, PTHREAD_PROCESS_SHARED), 0);
       CHECK_EQ(pthread_barrier_init(barrier_, &attr, 
                                     TorchColConfig::GetTrainWorldSize()), 0);
     };
-    atomic_init();
+    bip_shm_.atomic_func(atomic_init);
     sem_->post();
   } else {
     sem_->wait();
     bip_shm_ = bip::managed_shared_memory{bip::open_only, shm_name_.c_str()};
     auto atomic_init = [&]() {
       barrier_ = bip_shm_.find<pthread_barrier_t>("barrier").first;
+      for (int i = 0; i < train_world_size; i++) {
+        for (int j = 0; i < train_world_size; j++) {
+          intra_train_mqs_[i][j] = std::make_unique<dist_train_mq_t>(
+            false, GetMqName(i, j), bip_shm_);
+        }
+      }
     };
-    atomic_init();
+    bip_shm_.atomic_func(atomic_init);
   }
 
   auto err = pthread_barrier_wait(barrier_);
