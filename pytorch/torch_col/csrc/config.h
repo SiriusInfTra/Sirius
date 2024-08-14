@@ -39,11 +39,15 @@ class TorchColConfig {
   static inline std::string GetHookMode() { return hook_mode; }
   static inline int IsEnableXsched() { return colocate_use_xsched; }
   static inline int IsEnableDynamicSmPartition() { return dynamic_sm_partition; }
-  static inline int IsReleaseIntermMemoryByGradFn() { return release_interm_memory_by_grad_fn; }
+  static inline int IsReleaseIntermMemoryByGradFn() { 
+    return release_interm_memory_by_grad_fn; 
+  }
   static inline void SetReleaseIntermMemoryByGradFn(int value) { 
     release_interm_memory_by_grad_fn = value; 
   }
-  static inline int IsReleaseIntermMemoryByTagging() { return release_interm_memory_by_tagging; }
+  static inline int IsReleaseIntermMemoryByTagging() { 
+    return release_interm_memory_by_tagging; 
+  }
   static inline void SetReleaseIntermMemoryByTagging(int value) { 
     release_interm_memory_by_tagging = value;
   }

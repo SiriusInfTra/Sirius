@@ -65,6 +65,7 @@ file(GLOB TORCH_COL_PYTHON_FILES "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/*.py")
 set(TORCH_COL_CYTHON_FILES 
   "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/cython/ctrl_stub.pxi"
   "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/cython/main.pyx" 
+  "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/cython/dist.pyx" 
 )
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/torch_col.egg-info

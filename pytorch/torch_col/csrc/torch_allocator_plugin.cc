@@ -42,11 +42,6 @@ void CUDAColAllocator::SetCurrentAllocator() {
   LOG(INFO) << "CUDAColAllocator is set as current allocator";
 }
 
-// CUDAColAllocator::CUDAColAllocator() {
-//   // DLOG(INFO) << "CUDAColAllocator" << std::endl;
-//   // init(1); // for a single gpu
-// }
-
 void CUDAColAllocator::init(int device_count) {
   using namespace colserve;
   if (initialized_) {

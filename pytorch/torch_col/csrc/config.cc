@@ -96,13 +96,19 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
             << "|LD_LIBRARY_PATh=" 
             << (getenv("LD_LIBRARY_PATH") != nullptr ? getenv("LD_LIBRARY_PATH") : "")
             << std::endl;
-  config_ss << "TorchColConfig::kill_batch_on_recv=" << kill_batch_on_recv << std::endl;
-  config_ss << "TorchColConfig::has_colocated_infer_server=" << has_colocated_infer_server << std::endl;
-  config_ss << "TorchColConfig::has_shared_tensor_server=" << has_shared_tensor_server << std::endl;
-  config_ss << "TorchColConfig::shared_tensor_pool_gb=" << shared_tensor_pool_gb << std::endl;
-  config_ss << "TorchColConfig::dynamic_sm_partition=" << dynamic_sm_partition << std::endl;
+  config_ss << "TorchColConfig::kill_batch_on_recv=" 
+            << kill_batch_on_recv << std::endl;
+  config_ss << "TorchColConfig::has_colocated_infer_server=" 
+            << has_colocated_infer_server << std::endl;
+  config_ss << "TorchColConfig::has_shared_tensor_server=" 
+            << has_shared_tensor_server << std::endl;
+  config_ss << "TorchColConfig::shared_tensor_pool_gb=" 
+            << shared_tensor_pool_gb << std::endl;
+  config_ss << "TorchColConfig::dynamic_sm_partition=" 
+            << dynamic_sm_partition << std::endl;
   config_ss << "TorchColConfig::hook_mode=" << hook_mode << std::endl;
-  config_ss << "TorchColConfig::train_profile_log_path=" << train_profile_log_path << std::endl;
+  config_ss << "TorchColConfig::train_profile_log_path=" 
+            << train_profile_log_path << std::endl;
   config_ss << std::string(config_head.size(), '=') << std::endl;
 
   std::cerr << config_ss.str() << std::endl;
