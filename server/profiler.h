@@ -47,7 +47,6 @@ class Profiler {
   using perf_entity_t = std::tuple<time_stamp_t, double>;
 
   static std::pair<size_t, size_t> GetGPUMemInfo();
-  static size_t GetLastInferMem();
   static size_t GetLastInferMem(int device_id);
   static size_t GetLastTrainMem();
   static size_t GetLastTrainMem(int device_id);
@@ -243,9 +242,6 @@ class Profiler {
 
   // pass, time stamp, infering model used memory
   std::vector<std::tuple<time_stamp_t, size_t>> infering_memory_nbytes_; 
-
-  size_t last_infer_mem_;
-  size_t last_train_mem_;
 
   std::array<size_t, MAX_DEVICE_NUM> last_infer_mems_;
   std::array<size_t, MAX_DEVICE_NUM> last_train_mems_;

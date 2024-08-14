@@ -206,7 +206,7 @@ bool Model::ReclaimMemory(size_t rank,
     return false; 
   }
   if (Config::profiler_acquire_resource_lock) { // not used in performance test
-    ResourceManager::InferMemoryChangingLock();
+    ResourceManager::InferMemoryChangingLock(device_.device_id);
   }
 
   auto &executor = executors_[rank];
@@ -225,7 +225,7 @@ bool Model::ReclaimMemory(size_t rank,
   ChangeStatus(rank, Status::kWithoutMemory);
 
   if (Config::profiler_acquire_resource_lock) {
-    ResourceManager::InferMemoryChangingUnlock();
+    ResourceManager::InferMemoryChangingUnlock(device_.device_id);
   }
   return true;
 }
@@ -249,7 +249,8 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
     if (Controller::Get()->HasFlyingColocateAdjust()) {
       double total_storage_MB = sta::ByteToMB(executors_[rank]->GetMissingStorageSizeAlign());
       double free_memory_MB = ResourceManager::GetFreeMemoryMB(true);
-      double cold_cache_free_memory_MB = ColdModelCache::Get().GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock);
+      double cold_cache_free_memory_MB = 
+          ColdModelCache::Get().GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock);
       if (total_storage_MB > cold_cache_free_memory_MB && !Controller::Get()->IsTrainIdle()) {
         PROFILE_START(TrainAdjust);
         auto adjust_batch_size = TrainLauncher::Get()->
@@ -269,10 +270,10 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
   auto cold_model_cache = ColdModelCache::Get(device_.device_id);
   if (!try_lock_memory_changing_succ) {
     PROFILE_START(InferWaitBeforeEnterAlloc);
-    ResourceManager::InferMemoryChangingLock();
+    ResourceManager::InferMemoryChangingLock(device_.device_id);
     PROFILE_END(InferWaitBeforeEnterAlloc);
   }
-  double free_memory_MB = ResourceManager::GetFreeMemoryMB(true);
+  double free_memory_MB = ResourceManager::GetFreeMemoryMB(device_.device_id, true);
   double cold_cache_free_memory_MB =
       cold_model_cache->GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock);
   double total_storage_MB = sta::ByteToMB(executors_[rank]->GetMissingStorageSizeAlign());
@@ -320,7 +321,8 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
       LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " 
                 << rank << " , skip adjust";
     }
-    free_memory_MB = ResourceManager::GetFreeMemoryMB(Config::log_memory_adjust);
+    free_memory_MB = ResourceManager::GetFreeMemoryMB(device_.device_id, 
+                                                      Config::log_memory_adjust);
   }
   LOG_IF(INFO, Config::log_memory_adjust) 
       << "[Model, Cold Cache Adjust] after adjust, "
@@ -349,7 +351,7 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
 #if 1
   // directly release memory changing lock, 
   // infer may alloc memory but without this lock
-  ResourceManager::InferMemoryChangingUnlock();
+  ResourceManager::InferMemoryChangingUnlock(device_.device_id);
   return false;
 #else
   // delay release the lock, will be released after infer finish alloc
@@ -365,12 +367,16 @@ bool Model::SetupMemory(size_t rank,
   bool will_unlock_memory_changing = false;
   if (Config::IsColocateMode() && Config::ondemand_adjust) {
     PROFILE_START(InferAdjustAlloc);
-    if (!Config::colocate_config.skip_malloc) 
-      will_unlock_memory_changing = MaybeAdjustTrainAndCache(rank, cold_cache_lock, model_lock);
+    if (!Config::colocate_config.skip_malloc) {
+      will_unlock_memory_changing = 
+          MaybeAdjustTrainAndCache(rank, cold_cache_lock, model_lock);
+    }
     PROFILE_END(InferAdjustAlloc);
   }
   executors_[rank]->Init(false);
-  if (will_unlock_memory_changing) ResourceManager::InferMemoryChangingUnlock();
+  if (will_unlock_memory_changing) {
+    ResourceManager::InferMemoryChangingUnlock(device_.device_id);
+  }
   ChangeStatus(rank, Status::kWithoutParam);
   return true;
 }

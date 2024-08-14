@@ -217,15 +217,15 @@ uint64_t Controller::InferExit(int device_id) {
       double train_avail_memory_MB;
       {
         auto cold_cache_lock = ColdModelCache::Get(0)->Lock();
-        ResourceManager::InferMemoryChangingLock();
+        ResourceManager::InferMemoryChangingLock(device_id);
         // size_t reserve_memory_MB = sta::ByteToMB(Config::cold_cache_max_capability_nbytes - ColdModelCache::Get().GetCachedNbytes(cold_cache_lock));
         // train_avail_memory_MB = ResourceManager::GetTrainAvailMemoryMB() - reserve_memory_MB;
         // train_avail_memory_MB = std::max(train_avail_memory_MB, 0.0);
         // train_target_bs = TrainLauncher::Get()->PredictTargetBatchSize(train_avail_memory_MB);
 
         // min of bs predicted based on the actual and the predict
-        train_avail_memory_MB = std::max(ResourceManager::GetTrainAvailMemoryMB(false), 0.0);
-        free_memory_MB = std::max(ResourceManager::GetFreeMemoryMB(true), 0.0);
+        train_avail_memory_MB = std::max(ResourceManager::GetTrainAvailMemoryMB(device_id, false), 0.0);
+        free_memory_MB = std::max(ResourceManager::GetFreeMemoryMB(device_id, true), 0.0);
         reserve_memory_MB = ColdModelCache::Get(0)->GetReleaseReserveMemoryMB(cold_cache_lock);
         if (Config::use_shared_tensor) {
           auto adjust_bs = TrainLauncher::Get()->GetAdjustBatchSize(
@@ -248,7 +248,7 @@ uint64_t Controller::InferExit(int device_id) {
         }
 
         TrainLauncher::Get()->SetTargetBatchSize(train_target_bs);
-        ResourceManager::InferMemoryChangingUnlock();
+        ResourceManager::InferMemoryChangingUnlock(device_id);
         // TrainLauncher::Get()->AddTargetBatchSize(batch_size);
       }
 

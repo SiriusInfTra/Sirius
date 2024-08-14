@@ -18,16 +18,16 @@ ResourceManager::ResourceManager() {
   
 }
 
-double ResourceManager::GetFreeMemoryMB(bool verbose) {
+double ResourceManager::GetFreeMemoryMB(int device_id, bool verbose) {
   using namespace sta;
 
   double free_memory_mb;
-  double infer_memory_mb = GetInferMemoryMB();
-  double train_memory_mb = GetTrainMemoryMB();
+  double infer_memory_mb = GetInferMemoryMB(device_id);
+  double train_memory_mb = GetTrainMemoryMB(device_id);
   double train_predict_memory_mb = TrainLauncher::Get()->PredictMemUsageMB(verbose);
 
   if (Config::use_shared_tensor) {
-    free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::Get(0)->PoolNbytes());
+    free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::Get(device_id)->PoolNbytes());
     free_memory_mb -= infer_memory_mb;
     free_memory_mb -= std::max(train_memory_mb, train_predict_memory_mb);
     free_memory_mb -= Config::train_memory_over_predict_mb;
@@ -44,7 +44,7 @@ double ResourceManager::GetFreeMemoryMB(bool verbose) {
   }
 
   LOG_IF(INFO, verbose && Config::log_memory_adjust) 
-      << "[ResourceManager] "
+      << str(boost::format("[ResourceManager | Device %d]") % device_id)
       << " infer memory " << infer_memory_mb 
       << " train memory " << train_memory_mb 
       << " predict train memory " << train_predict_memory_mb
@@ -53,10 +53,10 @@ double ResourceManager::GetFreeMemoryMB(bool verbose) {
   return free_memory_mb;
 }
 
-double ResourceManager::GetTrainAvailMemoryMB(bool verbose) {
+double ResourceManager::GetTrainAvailMemoryMB(int device_id, bool verbose) {
   using namespace sta;
 
-  double infer_memory_mb = GetInferMemoryMB();
+  double infer_memory_mb = GetInferMemoryMB(device_id);
 
   double free_memory_mb;
   if (Config::use_shared_tensor) {
@@ -72,43 +72,44 @@ double ResourceManager::GetTrainAvailMemoryMB(bool verbose) {
     );
   }
 
-  LOG_IF(INFO, verbose) << "[ResourceManager]"
-                        << " free memory " << free_memory_mb
-                        << " infer memory " << infer_memory_mb;
+  LOG_IF(INFO, verbose) 
+      << str(boost::format("[ResourceManager | Device %d]") % device_id)
+      << " free memory " << free_memory_mb
+      << " infer memory " << infer_memory_mb;
 
   return free_memory_mb;  
 }
 
-void ResourceManager::InferMemoryChangingLock() {
+void ResourceManager::InferMemoryChangingLock(int device_id) {
   CHECK(resource_manager_ != nullptr);
-  resource_manager_->infer_memory_changing_mut_.lock();
+  resource_manager_->infer_memory_changing_mut_[device_id].lock();
 }
 
-void ResourceManager::InferMemoryChangingUnlock() {
+void ResourceManager::InferMemoryChangingUnlock(int device_id) {
   CHECK(resource_manager_ != nullptr);
-  resource_manager_->infer_memory_changing_mut_.unlock();
+  resource_manager_->infer_memory_changing_mut_[device_id].unlock();
 }
 
-bool ResourceManager::InferChangeMemoryTryLock() {
+bool ResourceManager::InferChangeMemoryTryLock(int device_id) {
   CHECK(resource_manager_ != nullptr);
-  return resource_manager_->infer_memory_changing_mut_.try_lock();
+  return resource_manager_->infer_memory_changing_mut_[device_id].try_lock();
 }
 
-double ResourceManager::GetInferMemoryMB() {
+double ResourceManager::GetInferMemoryMB(int device_id) {
   using namespace sta;
   if (Config::use_shared_tensor_infer) {
-    return ByteToMB(CUDAMemPool::Get(0)->InferMemUsage());
+    return ByteToMB(CUDAMemPool::Get(device_id)->InferMemUsage());
   } else {
-    return ByteToMB(Profiler::GetLastInferMem());
+    return ByteToMB(Profiler::GetLastInferMem(device_id));
   }
 }
 
-double ResourceManager::GetTrainMemoryMB() {
+double ResourceManager::GetTrainMemoryMB(int device_id) {
   using namespace sta;
   if (Config::use_shared_tensor_train) {
     return ByteToMB(CUDAMemPool::Get(0)->TrainAllMemUsage());
   } else {
-    return ByteToMB(Profiler::GetLastTrainMem());
+    return ByteToMB(Profiler::GetLastTrainMem(device_id));
   }
 }
 

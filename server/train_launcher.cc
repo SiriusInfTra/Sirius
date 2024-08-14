@@ -12,12 +12,17 @@
 #include <tvm/runtime/module.h>
 #include <tvm/runtime/registry.h>
 #include <tvm/runtime/logging.h>
+
+#include <boost/range/irange.hpp>
+#include <boost/range/numeric.hpp>
+
 #include <glog/logging.h>
 #include <random>
 #include <pthread.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <chrono>
+
 
 
 namespace colserve {
@@ -378,13 +383,22 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
       LOG(INFO) << "[TrainLauncher]: " << job << " is killed, restart";
       return false;
     } else {
+      int train_world_size = ctrl::InfTraCommunicator::GetIB()
+                              ->GetTrainInfo(0)->train_world_size;
+      std::string train_memory_str, free_memory_str;
+      for (auto i : boost::irange(train_world_size)) {
+        train_memory_str += 
+            std::to_string(ResourceManager::GetTrainMemoryMB(i)) + " ";
+        free_memory_str += 
+            std::to_string(ResourceManager::GetFreeMemoryMB(i, true)) + " ";
+      }
       LOG(FATAL) << "[TrainLauncher]: " << job 
                  << " failed, signal is " << strsignal(signal) 
                  << " target_batch_size " << target_batch_size_ 
                  << " cur_batch_size " << cur_batch_size_ 
-                 << " memory " << ResourceManager::GetTrainMemoryMB() << "MB"
+                 << " memory [ " << train_memory_str << "] MB"
                  << " predict memory " << PredictMemUsageMB(false) << "MB"
-                 << " calculated free memory " << ResourceManager::GetFreeMemoryMB(true) << "MB";
+                 << " calculated free memory [ " << free_memory_str << "] MB";
       return false;
     }
   } else {

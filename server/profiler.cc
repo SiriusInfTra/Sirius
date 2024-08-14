@@ -132,19 +132,9 @@ std::pair<size_t, size_t> Profiler::GetGPUMemInfo() {
   return {free, total};
 }
 
-size_t Profiler::GetLastInferMem() {
-  CHECK(profiler_ != nullptr);
-  return profiler_->last_infer_mem_;
-}
-
 size_t Profiler::GetLastInferMem(int device_id) {
   CHECK(profiler_ != nullptr);
   return profiler_->last_infer_mems_[device_id];
-}
-
-size_t Profiler::GetLastTrainMem() {
-  CHECK(profiler_ != nullptr);
-  return profiler_->last_train_mem_;
 }
 
 size_t Profiler::GetLastTrainMem(int device_id) {
@@ -382,9 +372,9 @@ void Profiler::CollectMemoryResourceInfo(
 
       if (Config::profiler_acquire_resource_lock) {
         auto cold_cache_lock = ColdModelCache::Get(device_id)->Lock();
-        ResourceManager::InferMemoryChangingLock();
+        ResourceManager::InferMemoryChangingLock(device_id);
         read_resource_info();
-        ResourceManager::InferMemoryChangingUnlock();
+        ResourceManager::InferMemoryChangingUnlock(device_id);
       } else {
         read_resource_info();
       }

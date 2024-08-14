@@ -927,7 +927,7 @@ void Executor::AllocStorageMaybeAdjust() {
       // this->tvm_graph_.infer_model_->SetWaitTrainPid(this->infer_model_worker_id_, wait_train_pid);
 
       auto adjust_memory_mb = sta::ByteToMB(GetMissingStorageSizeAlign()) 
-                              - ResourceManager::GetFreeMemoryMB(true);
+                              - ResourceManager::GetFreeMemoryMB(devices_[0].device_id, true);
       adjust_memory_mb = std::max(0.0, adjust_memory_mb);
       if (adjust_memory_mb == 0) return;
 
@@ -961,16 +961,16 @@ void Executor::AllocStorageMaybeAdjust() {
   };
 
   // ensure sequential inference allocation  
-  if (!ResourceManager::InferChangeMemoryTryLock()) {
+  if (!ResourceManager::InferChangeMemoryTryLock(devices_[0].device_id)) {
     if (ctrl::Controller::Get()->HasFlyingColocateAdjust()) {
       adjust_train_batch_size(false);
     }
     PROFILE_START(InferWaitBeforeEnterAlloc);
-    ResourceManager::InferMemoryChangingLock();
+    ResourceManager::InferMemoryChangingLock(devices_[0].device_id);
     PROFILE_END(InferWaitBeforeEnterAlloc);
   }
 
-  double free_memory_mb = ResourceManager::GetFreeMemoryMB(true);
+  double free_memory_mb = ResourceManager::GetFreeMemoryMB(devices_[0].device_id, true);
 
   size_t total_storage_nbytes = GetMissingStorageSizeAlign();
   // std::vector<size_t> storage_nbytes(storage_pool_.size());
@@ -993,7 +993,7 @@ void Executor::AllocStorageMaybeAdjust() {
   AllocStorage();
   PROFILE_END(InferAllocStorage);
 
-  ResourceManager::InferMemoryChangingUnlock();
+  ResourceManager::InferMemoryChangingUnlock(devices_[0].device_id);
 
   // TODO: consider fwd/bwd -> deprecated
   // if (sta::ByteToMB(total_storage_nbytes) < free_memory_mb) {
