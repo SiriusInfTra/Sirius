@@ -48,6 +48,8 @@ cdef extern from "<torch_col/csrc/config.h>" namespace "torch_col":
         int GetTrainWorldSize()
         @staticmethod
         void SetTrainWorldSize(int)
+        @staticmethod
+        string GetTrainProfileLogPath()
 
 
 cdef extern from "<common/device_manager.h>" namespace "colserve::sta":
@@ -144,6 +146,10 @@ def set_train_rank_world_size(rank, world_size):
 
 def has_colocated_infer_server():
     return TorchColConfig.HasColocatedInferServer()
+
+
+def get_train_profile_log_path():
+    return TorchColConfig.GetTrainProfileLogPath()
 
 #############################
 #  MARK: Memory Management  #

@@ -40,19 +40,23 @@ void DistTrainSync::Send(int dst, const std::string &msg) {
 }
 
 std::string DistTrainSync::Recv(int src) {
-  std::string ret;
+  std::vector<char> ret;
   int rank = TorchColConfig::GetTrainRank();
   while (true) {
     auto buf = dist_train_sync_->intra_train_mqs_[src][rank]->BlockGet();
-    ret.append(buf.data());
-    if (buf.back() == 0) {
+    auto it = std::find(buf.begin(), buf.end(), 0);
+    if (it != buf.end()) {
+      ret.insert(ret.end(), buf.begin(), it);
       break;
+    } else {
+      ret.insert(ret.end(), buf.begin(), buf.end());
     }
   }
-  return ret;
+  return std::string(ret.begin(), ret.end());
 }
 
 DistTrainSync::DistTrainSync() {
+
   namespace bip = colserve::bip;
   CHECK(TorchColConfig::IsConfigured());
   shm_name_ = colserve::GetDefaultShmNamePrefix() + "_dist_train_sync";
@@ -67,12 +71,13 @@ DistTrainSync::DistTrainSync() {
     bip_shm_ = bip::managed_shared_memory{bip::create_only,
                                           shm_name_.c_str(), 1024 * 1024};
     auto atomic_init = [&]() {
+      LOG(INFO) << "dist train sync rank " << TorchColConfig::GetTrainRank();
       barrier_ = 
           bip_shm_.find_or_construct<pthread_barrier_t>("barrier")();
       for (int i = 0; i < train_world_size; i++) {
-        for (int j = 0; i < train_world_size; j++) {
-          intra_train_mqs_[i][j] = std::make_unique<dist_train_mq_t>(
-            true, GetMqName(i, j), bip_shm_);
+        for (int j = 0; j < train_world_size; j++) {
+          intra_train_mqs_[i][j].reset(new dist_train_mq_t(
+              true, GetMqName(i, j), bip_shm_));
         }
       }
 
@@ -88,11 +93,13 @@ DistTrainSync::DistTrainSync() {
     sem_->wait();
     bip_shm_ = bip::managed_shared_memory{bip::open_only, shm_name_.c_str()};
     auto atomic_init = [&]() {
+      LOG(INFO) << "dist train sync rank " << TorchColConfig::GetTrainRank();
+
       barrier_ = bip_shm_.find<pthread_barrier_t>("barrier").first;
       for (int i = 0; i < train_world_size; i++) {
-        for (int j = 0; i < train_world_size; j++) {
-          intra_train_mqs_[i][j] = std::make_unique<dist_train_mq_t>(
-            false, GetMqName(i, j), bip_shm_);
+        for (int j = 0; j < train_world_size; j++) {
+          intra_train_mqs_[i][j].reset(new dist_train_mq_t(
+              false, GetMqName(i, j), bip_shm_));
         }
       }
     };

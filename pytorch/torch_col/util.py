@@ -88,25 +88,28 @@ class Event:
     
 # Note: EventManager use us as time unit to avoid time collision, but duration is ms
 class EventManager:
-    event_list: list[Event] = []
-    # event_log_path = 'event_record.csv'
-    event_log_path = 'train-profile.csv'
+    _event_list: list[Event] = []
+    _default_event_log_path = 'train-profile.csv'
 
     @classmethod
     def set_log_path(cls, path: str):
-        cls.event_log_path = path
+        cls._event_log_path = path
 
     @classmethod
-    def record_event(cls, name: str, prev_event: Optional[Event]=None) -> Event:
+    def record_event(cls, name: str, 
+                     prev_event: Optional[Event]=None, 
+                     record_loc:bool=False) -> Event:
         timestamp = torch_col.get_unix_timestamp_us()
-        # frameinfo = inspect.getframeinfo(inspect.currentframe().f_back)
-        # loc = f'{frameinfo.filename}:{frameinfo.lineno}'
-        loc = 'none'
+        if record_loc:
+            caller = inspect.getframeinfo(inspect.stack()[1][0])
+            loc = f'{caller.filename}:{caller.lineno}'
+        else:
+            loc = 'none'
         if prev_event is not None:
             prev_event.duration = (timestamp - prev_event.timestamp) / 1000
         if len(name) > 0:
             event = Event(timestamp, name, loc, 0, '')
-            cls.event_list.append(event)
+            cls._event_list.append(event)
             return event
     
     @classmethod
@@ -115,37 +118,41 @@ class EventManager:
         timestamp = torch_col.get_unix_timestamp_us()
         loc = 'none'
         event = Event(timestamp, name, loc, 0, '')
-        cls.event_list.append(event)
+        cls._event_list.append(event)
         yield
         event.duration = (torch_col.get_unix_timestamp_us() - timestamp) / 1000
         
     @classmethod
     def dump(cls, path: Optional[str]=None, train_mode: Optional[TrainMode]=None):
         if path is None:
-            path = cls.event_log_path
+            if len(torch_col.get_train_profile_log_path()):
+                path = torch_col.get_train_profile_log_path()
+            else:
+                path = cls._default_event_log_path
+
         if train_mode is not None and train_mode.is_colocate():
             adjust_request_time_stamp = torch_col.get_adjust_request_time_stamp()
             adjust_done_time_stamp = torch_col.get_adjust_done_time_stamp()
             for ts in adjust_request_time_stamp:
-                cls.event_list.append(Event(ts, 'recv_adjust', 'none', 0, ''))
+                cls._event_list.append(Event(ts, 'recv_adjust', 'none', 0, ''))
             for ts in adjust_done_time_stamp:
-                cls.event_list.append(Event(ts, 'adjust_done', 'none', 0, ''))
-        df = pd.DataFrame(cls.event_list)
+                cls._event_list.append(Event(ts, 'adjust_done', 'none', 0, ''))
+        df = pd.DataFrame(cls._event_list)
         df['timestamp'] = df['timestamp'] / 1000
-        # df.to_csv(path, index=None)
-        
         df['rank'] = torch_col.get_train_rank()
-        string_io = StringIO()
-        df.to_csv(string_io, index=None)
+
         if torch_col.get_train_rank() == 0:
+            df_str = df.to_string(index=None, float_format='%.2f')
             for i in range(1, torch_col.get_train_world_size()):
                 train_event_str = torch_col.dist.recv_msg(i)
-                string_io.write(train_event_str)
-                with open(path, 'w') as f:
-                    f.write(string_io.getvalue())
+                df_str += '\n' + train_event_str
+            with open(path, 'w') as f:
+                f.write(df_str)
+            torch_col.info(f'[EventMananger] dump train event to {path}')
         else:
-            torch_col.dist.send_msg(0, string_io.getvalue())
-
+            df_str = df.to_string(index=None, header=False, float_format='%.2f')
+            torch_col.dist.send_msg(0, df_str)
+        torch_col.dist.wait_barrier()
     
 # event_manager = EventManager()
 

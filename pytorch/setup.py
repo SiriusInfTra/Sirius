@@ -87,7 +87,6 @@ def config_extension():
 
 
 setup(
-    name="torch_col",
     packages=find_packages(),
     package_data={
         "torch_col" : ['lib/*.so']

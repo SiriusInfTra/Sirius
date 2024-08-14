@@ -1,0 +1,7 @@
+[build-system]
+requires=["setuptools", "cython"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name="torch_col"
+version="0.1.0"

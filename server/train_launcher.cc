@@ -215,8 +215,8 @@ bool TrainLauncher::Train() {
     LOG(FATAL) << "Unsupported serve mode: " << static_cast<int>(Config::serve_mode);
   }
 
-  args_str.push_back("--train-profile");
-  args_str.push_back(Config::train_profile);
+  // args_str.push_back("--train-profile");
+  // args_str.push_back(Config::train_profile);
 
   while (Config::running) {
     if (LaunchTrain(job, args_str)) {
@@ -300,7 +300,8 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
       extra_env_ss << "COL_USE_SHARED_TENSOR=0 ";
     }
 
-    if (Config::serve_mode == ServeMode::kColocateL1 || Config::serve_mode == ServeMode::kTaskSwitchL1) {
+    if (Config::serve_mode == ServeMode::kColocateL1 
+        || Config::serve_mode == ServeMode::kTaskSwitchL1) {
       if (Config::use_xsched) {
         CHECK_NE(setenv("COL_HOOK_MODE", "xsched-sync2", 1), -1);
         extra_env_ss << "COL_HOOK_MODE=xsched-sync2 ";
@@ -312,6 +313,12 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
     } else {
       CHECK_NE(setenv("COL_HOOK_MODE", "none", 1), -1);
       extra_env_ss << "COL_HOOK_MODE=none ";
+    }
+
+    if (!Config::train_profile.empty()) {
+      CHECK_NE(setenv("COL_TRAIN_PROFILE_LOG_PATH", 
+                      Config::train_profile.c_str(), 1), -1);
+      extra_env_ss << "COL_TRAIN_PROFILE_LOG_PATH=" << Config::train_profile << " ";
     }
 
     if (Config::skip_set_mps_thread_percent) {

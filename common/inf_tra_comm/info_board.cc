@@ -16,7 +16,7 @@ InfTraInfoBoard::InfTraInfoBoard(bool is_server, int train_world_size,
 
     for (int i = 0; i < train_world_size; i++) {
       train_infos_[i] = bip_shm_.find_or_construct<TrainInfo>
-        (GetTrainInfoName(i).c_str())();
+          (GetTrainInfoName(i).c_str())();
       train_info_muts_[i] = bip_shm_.find_or_construct<bip_mutex>
           (GetTrainInfoMutexName(i).c_str())();
 

@@ -27,11 +27,11 @@ class DistTrainSync {
     return str(boost::format("dist-train-mq-%d-%d") % src % dst);
   }
 
-  pthread_barrier_t *barrier_;
+  pthread_barrier_t *barrier_{nullptr};
   std::unique_ptr<dist_train_mq_t>
-      intra_train_mqs_[colserve::MAX_DEVICE_NUM][colserve::MAX_DEVICE_NUM]{nullptr};
+      intra_train_mqs_[colserve::MAX_DEVICE_NUM][colserve::MAX_DEVICE_NUM] = {nullptr};
 
-  colserve::bip_named_sem *sem_; // semaphore for init
+  colserve::bip_named_sem *sem_{nullptr}; // semaphore for init
   std::string shm_name_;
   std::string sem_name_;
   colserve::bip::managed_shared_memory bip_shm_;

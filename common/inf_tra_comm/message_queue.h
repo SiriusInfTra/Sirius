@@ -49,7 +49,8 @@ class BasicMessageQueue {
                 "T must be trivially copyable");
  public:
   BasicMessageQueue(bool is_server, const std::string &name, 
-                    bip::managed_shared_memory &bip_shm) {
+                    bip::managed_shared_memory &bip_shm) 
+                    : bip_shm_(bip_shm) {
     this->name_ = "basic_mq_" + name;
     if (is_server) {
       mq_ = bip_shm.find_or_construct<bip_deque<T>>(name_.c_str())
@@ -134,9 +135,10 @@ class BasicMessageQueue {
 
  private:
   std::string name_;
-  bip_deque<T> *mq_;
-  bip_mutex *mut_;
-  bip_cond *get_cond_, *put_cond_;
+  bip_deque<T> *mq_{nullptr};
+  bip_mutex *mut_{nullptr};
+  bip_cond *get_cond_{nullptr}, *put_cond_{nullptr};
+  bip::managed_shared_memory &bip_shm_;
 };
 
 class InfTraMessageQueue {

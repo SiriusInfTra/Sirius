@@ -26,6 +26,8 @@ class TorchColConfig {
 
   static int train_rank;
   static int train_world_size;
+
+  static std::string train_profile_log_path;
   
   static int configured;
 
@@ -53,6 +55,8 @@ class TorchColConfig {
   static inline int IsTrainMaster() { return train_rank == 0; }
   static inline int GetTrainWorldSize() { return train_world_size; }
   static inline void SetTrainWorldSize(int size) { train_world_size = size; }
+
+  static inline std::string GetTrainProfileLogPath() { return train_profile_log_path; }
 };
 
 }

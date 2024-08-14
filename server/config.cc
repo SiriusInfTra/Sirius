@@ -18,7 +18,7 @@ bool Config::check_mps = true;
 
 std::atomic<bool> Config::running{true};
 
-std::string Config::train_profile = "train-profile";
+std::string Config::train_profile = "train-profile.csv";
 
 bool Config::use_xsched = false;
 
