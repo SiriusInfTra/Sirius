@@ -56,7 +56,7 @@ namespace colserve {
 
 constexpr int MAX_DEVICE_NUM = 8;
 
-using memory_nbyte_t = size_t;
+using memory_byte_t = size_t;
 using memory_mb_t = double;
 
 namespace memory_literals {

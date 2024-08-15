@@ -4,8 +4,10 @@
 #include <boost/interprocess/sync/scoped_lock.hpp>
 #include <boost/interprocess/sync/interprocess_condition.hpp>
 #include <boost/format.hpp>
-#include <chrono>
+#include <boost/range/irange.hpp>
 
+#include <chrono>
+#include <type_traits>
 
 namespace colserve {
 namespace ctrl {
@@ -214,20 +216,48 @@ void InfTraMessageQueue::Put(const CtrlMsgEntry &msg, Direction direction, int i
             << GetMqName(direction, id);
 }
 
-void InfTraMessageQueue::PutAll(const CtrlMsgEntry &msg, Direction direction) {
+template<typename T>
+void InfTraMessageQueue::PutAllImpl(const T & msg, Direction direction) {
+  if (std::is_same_v<T, CtrlMsgEntry> == false) {
+    static_assert(std::is_same_v<T, std::vector<CtrlMsgEntry>>, 
+        "vector<CtrlMsgEntry>, or CtrlMsgEntry");
+    CHECK_EQ(msg.size(), message_queue_num_);
+  }
   for (int i = 0; i < message_queue_num_; i++) {
     bip::scoped_lock
       lock{*inf_tra_mq_muts_[static_cast<int>(direction)][i]};
 
     auto inf_tra_mq = inf_tra_mqs_[static_cast<int>(direction)][i];
     CHECK(inf_tra_mq != nullptr);
-    inf_tra_mq->push_back(msg);
+    if (std::is_same_v<T, CtrlMsgEntry>) {
+      inf_tra_mq->push_back(msg);
+    } else {
+      inf_tra_mq->push_back(msg[i]);
+    }
     inf_tra_mq_conds_[static_cast<int>(direction)][i]->notify_one();
   }
   inf_tra_mq_group_conds_[static_cast<int>(direction)]->notify_one();
 
   DLOG(INFO) << "[InfTra MQ] PutAll " << msg << " to all " 
             << direction;
+}
+
+template<>
+void InfTraMessageQueue::PutAllImpl<CtrlMsgEntry>(const CtrlMsgEntry &msg, 
+                                                  Direction direction);
+
+template<>
+void InfTraMessageQueue::PutAllImpl<std::vector<CtrlMsgEntry>>(
+    const std::vector<CtrlMsgEntry> &msg, Direction direction);
+
+void InfTraMessageQueue::PutAll(const CtrlMsgEntry &msg, Direction direction) {
+  PutAllImpl<CtrlMsgEntry>(msg, direction);
+}
+
+void InfTraMessageQueue::PutAll(const std::vector<CtrlMsgEntry> &msg, 
+                                Direction direction) {
+  // std::is_same_v<CtrlMsgEntry, CtrlMsgEntry>;
+  PutAllImpl<std::vector<CtrlMsgEntry>>(msg, direction);
 }
 
 void InfTraMessageQueue::Clear() {

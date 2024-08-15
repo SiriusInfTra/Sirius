@@ -1,0 +1,275 @@
+#include <server/logging_as_glog.h>
+#include <server/config.h>
+#include <server/train_adjuster.h>
+#include <server/model_store/model_cache.h>
+#include <server/resource_manager.h>
+
+#include <common/inf_tra_comm/communicator.h>
+
+#include <boost/range/irange.hpp>
+#include <math.h>
+
+
+namespace colserve {
+
+std::unique_ptr<TrainAdjuster> TrainAdjuster::adjuster_ = nullptr;
+
+void TrainAdjuster::Init() {
+  CHECK(adjuster_ == nullptr);
+  adjuster_ = std::make_unique<TrainAdjuster>();
+}
+
+TrainAdjuster::TrainAdjuster() {
+  cached_train_world_size_ = 0;
+  for (auto &bs : cached_target_batch_sizes_) {
+    bs = INVALID_BATCH_SIZE;
+  }
+}
+
+void TrainAdjuster::LoadTrainInfo() {
+  CHECK(adjuster_ != nullptr);
+
+  std::unique_lock lock{adjuster_->mut_};
+  auto inftra_info = ctrl::InfTraCommunicator::GetIB();
+  adjuster_->cached_train_world_size_ = 
+      ctrl::InfTraCommunicator::GetTrainWorldSize();
+  for (auto rank : boost::irange(adjuster_->cached_train_world_size_)) {
+    adjuster_->cached_target_batch_sizes_[rank] =
+        inftra_info->GetTrainInfoUnsafe(rank)->target_batch_size;
+  }
+}
+
+void TrainAdjuster::ResetTrainInfo() {
+  CHECK(adjuster_ != nullptr);
+
+  std::unique_lock lock{adjuster_->mut_};
+  adjuster_->cached_train_world_size_ = 0;
+  for (auto &bs : adjuster_->cached_target_batch_sizes_) {
+    bs = INVALID_BATCH_SIZE;
+  }
+}
+
+double TrainAdjuster::PredictTrainMemUsageMB(int device_id, bool verbose) {
+  CHECK(adjuster_ != nullptr);
+  CHECK(adjuster_->cached_target_batch_sizes_[device_id] != INVALID_BATCH_SIZE);
+  auto target_batch_size_ = adjuster_->cached_target_batch_sizes_[device_id];
+  if (target_batch_size_ <= 0) {
+    return 0;
+  } else {
+    auto [base, slope] = adjuster_->GetModelMemParam();
+    auto res = base + slope * target_batch_size_;
+    LOG_IF(INFO, verbose && Config::log_memory_adjust) 
+        << "Predict train memory " << res
+        << ", target batch size " << target_batch_size_;
+    return res;
+  }
+}
+
+std::vector<TrainAdjuster::AdjustPlan> 
+TrainAdjuster::GetInferRequireMemAdjustPlan(
+      int device_id, memory_mb_t required_mem_mb) {
+  CHECK(adjuster_ != nullptr);
+
+  auto train_world_size = adjuster_->cached_train_world_size_;
+  int cur_train_target_bs = 
+      adjuster_->cached_target_batch_sizes_[device_id];
+
+  
+
+  std::vector<TrainAdjuster::AdjustPlan> adjust_plan(train_world_size);
+  if (Config::use_shared_tensor) {
+    int delta_bs = adjuster_->GetDeltaBatchSize(device_id, required_mem_mb);
+    auto target_batch_size = cur_train_target_bs - delta_bs;
+
+    for (auto rank : boost::irange(train_world_size)) {
+      adjust_plan[rank].batch_size = target_batch_size;
+
+    }
+  } else {
+
+  }
+  adjuster_->UpdateCachedTrainInfoByAdjustPlan(adjust_plan);
+  return adjust_plan;
+}
+
+std::vector<TrainAdjuster::AdjustPlan>
+TrainAdjuster::GetInferReleaseMemAdjustPlan(int device_id) {
+  CHECK(adjuster_ != nullptr);
+  
+  int train_world_size = adjuster_->cached_train_world_size_;
+  int cur_train_target_bs = 
+      adjuster_->cached_target_batch_sizes_[device_id];
+  int target_batch_size; /* calcu in following */
+
+  // acquire lock to prevent occurency
+  std::unique_lock adjuster_lock{adjuster_->mut_};
+  auto cold_cache_lock = ColdModelCache::Get(device_id)->Lock();
+  ResourceManager::InferMemoryChangingLock(device_id);
+
+  auto train_avail_mem_mb = 
+      std::max(ResourceManager::GetTrainAvailMemoryMB(device_id, false), 0.0);
+  auto free_mem_mb = 
+      std::max(ResourceManager::GetFreeMemoryMB(device_id, false), 0.0);
+  auto reserve_mem_mb = 
+      ColdModelCache::Get(device_id)->GetReleaseReserveMemoryMB(cold_cache_lock);
+
+  int target_bs_predict_by_avail_mem;
+  int target_bs_calcu_by_delta_mem;
+  if (Config::use_shared_tensor) {
+    target_bs_predict_by_avail_mem = adjuster_->PredictTargetBatchSize(
+        device_id, 
+        std::max(train_avail_mem_mb - reserve_mem_mb, 0.0));
+
+    auto release_mem_mb = std::max(free_mem_mb - reserve_mem_mb, 0.0);
+    target_bs_calcu_by_delta_mem =
+        cur_train_target_bs + adjuster_->GetDeltaBatchSize(device_id, release_mem_mb);
+
+    // ensure not OOM but also not decrease batch size
+    target_batch_size = std::max(
+        cur_train_target_bs,
+        std::min(target_bs_predict_by_avail_mem, target_bs_calcu_by_delta_mem)
+    );
+  } else {
+    // w/ native gpu memory management
+    target_bs_predict_by_avail_mem = -1;
+
+    target_bs_calcu_by_delta_mem =
+        cur_train_target_bs + 
+        adjuster_->GetDeltaBatchSize(device_id, std::max(free_mem_mb, 0.0));
+    
+    target_batch_size = std::max(
+        cur_train_target_bs,
+        target_bs_calcu_by_delta_mem
+    );
+  }
+
+  std::vector<TrainAdjuster::AdjustPlan> adjust_plan(train_world_size);
+  for (auto rank : boost::irange(train_world_size)) {
+    adjust_plan[rank].batch_size = target_batch_size;
+  }
+
+  adjuster_->UpdateCachedTrainInfoByAdjustPlan(
+      adjust_plan, adjuster_lock);
+  adjuster_lock.unlock();
+
+  if (Config::log_memory_adjust) {
+    std::stringstream ss;
+    ss << "[InferReleaseMemAdjust]"
+      << " cur_train_target_bs " << cur_train_target_bs
+      << " cold cache reserve memory " << reserve_mem_mb
+      << " train_avail_mem_mb " << train_avail_mem_mb;
+    if (Config::use_shared_tensor) {
+      ss << " (target_bs_predict_by_avail_mem " << target_bs_predict_by_avail_mem
+        << " target_bs_calcu_by_delta_mem " << target_bs_calcu_by_delta_mem << ")";
+    } else {
+      ss << " (target_bs_calcu_by_delta_mem " << target_bs_calcu_by_delta_mem
+         << ", not use avail memory to predict bs)";
+    }
+    ss << " free memory " << free_mem_mb
+      << " | adjust plan: ";
+
+    ss << "target bs [ ";
+    for (auto &plan : adjust_plan) {
+      ss << plan.batch_size << " ";
+    };
+    ss << "]";
+
+    LOG(INFO) << ss.str();
+  }
+
+  return adjust_plan;
+}
+
+int TrainAdjuster::PredictTargetBatchSize(int device_id, memory_mb_t memory_mb) {
+  auto [base, slope] = GetModelMemParam();
+  auto inftra_info = ctrl::InfTraCommunicator::GetIB();
+  auto max_batch_size = 
+      inftra_info->GetTrainInfoUnsafe(ctrl::kTraRank_0)->init_batch_size;
+  
+  auto ret = static_cast<int>((memory_mb - base) / slope);
+  ret = std::min(ret, max_batch_size);
+  ret = std::max(ret, 0);
+  // LOG(INFO) << "## " << memory_mb << " " << base << " " << slope
+  //           << " " << job_batch_size_;
+  return ret;
+}
+
+int TrainAdjuster::GetDeltaBatchSize(int device_id, memory_mb_t memory_mb) {
+  auto [base, slope] = GetModelMemParam();
+  return static_cast<int>(std::ceil(memory_mb / slope));
+}
+
+void TrainAdjuster::UpdateCachedTrainInfoByAdjustPlan(
+    const std::vector<AdjustPlan> &adjust_plans,
+    std::unique_lock<std::mutex> &lock) {
+  for (auto rank : boost::irange(adjust_plans.size())) {
+    cached_target_batch_sizes_[rank] = 
+        adjust_plans[rank].batch_size;
+  }
+}
+
+std::pair<double, double> TrainAdjuster::GetModelMemParam() {
+  auto inftra_info = ctrl::InfTraCommunicator::GetIB();
+  if (!inftra_info->IsTrainInfoValid(ctrl::kTraRank_0)) {
+    LOG(FATAL) << "Train info is not valid";
+  }
+  std::string_view model_name = 
+      std::string_view{inftra_info->GetTrainInfoUnsafe(0)->model_name};
+
+  // ad-hoc currently, should profile training and return the result
+  // to adjuster
+  if (Config::use_shared_tensor_train) {
+    if (model_name == "resnet152") {
+      /*
+          8   1.50
+         32   3.75
+        128  11.75
+        150  13.50
+      
+        AFTER EMPTY CACHE: 0.81 ~ 1.22
+      */
+      // NOTE: DID NOT consider grad checkpoint
+      return {1150, 85};
+    } else if (model_name == "swin_b" || model_name == "swin_b_ddp") {
+      return {1700, 140};
+    } else if (model_name == "gpt2") {
+      /*
+       
+        1   3.00Gb
+        4   4.25Gb
+        8   6.50Gb
+        12  8.75Gb
+        16  11.00Gb
+        20  12.25Gb
+
+        AFTER EMPTY CACHE: 2.4 ~ 2.9 
+       */
+      return {2700, 490}; 
+    } else if (model_name == "bert_large") {
+      LOG(FATAL) << "Unsupported model: " << model_name;
+    } else {
+      LOG(FATAL) << "Unsupported model: " << model_name;
+    }
+  } else { // * used for strawman, adjust but no shared tensor
+    /*
+        8     2.64
+        32    4.97
+        128  13.75
+        150  15.68
+
+        AFTER EMPTY CACHE: 2.28 ~ 2.37
+    */
+    if (model_name == "resnet152") {
+      return {2396, 85};
+    } else if (model_name == "swin_b") {
+      // NOTE: PLACEHOLDER
+      // return {1700, 140};
+      return {3300, 145};
+    } else {
+      LOG(FATAL) << "Unsupported model: " << model_name;
+    }
+  }
+  return {};
+}
+
+} // namespace colserve

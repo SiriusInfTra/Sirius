@@ -50,11 +50,19 @@ void InfTraInfoBoard::SetTrainInfo(int id, std::function<void(TrainInfo*)> fn) {
 }
 
 void InfTraInfoBoard::SetTrainInfo(
-    int id, std::optional<pid_t> pid, 
-    std::optional<int> rank, std::optional<int> world_size,
+    int id, 
+    std::optional<pid_t> pid, 
+    std::optional<int> rank, 
+    std::optional<int> world_size,
     std::optional<int> init_batch_size,
-    std::optional<int> current_batch_size) {
+    std::optional<int> current_batch_size,
+    std::optional<const char*> model_name) {
   bip::scoped_lock lock{*train_info_muts_[id]};
+  bool is_initial_set = train_infos_[id]->train_pid == -1;
+  if (is_initial_set && !pid.has_value()) {
+    LOG(FATAL) << "initial set train info, pid must be valid";
+  }
+
   if (pid.has_value()) {
     train_infos_[id]->train_pid = pid.value();
   }
@@ -66,9 +74,15 @@ void InfTraInfoBoard::SetTrainInfo(
   }
   if (init_batch_size.has_value()) {
     train_infos_[id]->init_batch_size = init_batch_size.value();
+    if (is_initial_set) {
+      train_infos_[id]->target_batch_size = init_batch_size.value();
+    }
   }
   if (current_batch_size.has_value()) {
     train_infos_[id]->current_batch_size = current_batch_size.value();
+  }
+  if (model_name.has_value()) {
+    strncpy(train_infos_[id]->model_name, model_name.value(), 256);
   }
 }
 

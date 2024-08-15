@@ -18,11 +18,14 @@ struct InferInfo {
 
 struct TrainInfo {
   pid_t train_pid{-1};
-  int train_rank;
-  int train_world_size;
+  int train_rank{0};
+  int train_world_size{0};
 
-  int init_batch_size;
-  int current_batch_size;
+  int init_batch_size{0};
+  int current_batch_size{0};
+  int target_batch_size{0};
+
+  char model_name[256];
 };
 
 class InfTraInfoBoard {
@@ -31,18 +34,18 @@ class InfTraInfoBoard {
                   bip::managed_shared_memory &bip_shm,
                   bip::scoped_lock<bip_mutex> &lock);
 
-  const InferInfo* GetInferInfo() {
+  const InferInfo* GetInferInfoUnsafe() {
     return infer_info_;
   }
-  InferInfo* GetMutableInferInfo() {
+  InferInfo* GetMutableInferInfoUnsafe() {
     return infer_info_;
   }
 
-  const TrainInfo* GetTrainInfo(int id) {
+  const TrainInfo* GetTrainInfoUnsafe(int id) {
     CHECK(IsTrainInfoValid(id));
     return train_infos_[id];
   }
-  TrainInfo* GetMutableTrainInfo(int id) {
+  TrainInfo* GetMutableTrainInfoUnsafe(int id) {
     CHECK(IsTrainInfoValid(id));
     return train_infos_[id];
   }
@@ -60,9 +63,11 @@ class InfTraInfoBoard {
   void SetInferInfo(std::function<void(InferInfo*)> fn);
   void SetTrainInfo(int id, std::function<void(TrainInfo*)> fn);
   void SetTrainInfo(int id, std::optional<pid_t> pid, 
-                    std::optional<int> rank, std::optional<int> world_size,
+                    std::optional<int> rank, 
+                    std::optional<int> world_size,
                     std::optional<int> init_batch_size,
-                    std::optional<int> current_batch_size);
+                    std::optional<int> current_batch_size,
+                    std::optional<const char*> model_name);
 
  private:
   std::string GetInferInfoName() {

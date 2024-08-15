@@ -10,6 +10,7 @@ from libcpp cimport bool
 from posix.unistd cimport pid_t
 from libc.stdint cimport uint64_t, uint32_t
 from enum import Enum
+import cython
 import os
 
 ############################
@@ -358,10 +359,13 @@ cdef extern from "<common/inf_tra_comm/communicator.h>" namespace "colserve::ctr
 
     cdef cppclass InfTraInfoBoard:
         void SetTrainInfo(int id, function fn)
-        void SetTrainInfo(int id, optional[pid_t] pid,
-                          optional[int] rank, optional[int] world_size,
+        void SetTrainInfo(int id, 
+                          optional[pid_t] pid,
+                          optional[int] rank, 
+                          optional[int] world_size,
                           optional[int] init_batch_size, 
-                          optional[int] current_batch_size)
+                          optional[int] current_batch_size,
+                          optional[const char*] model_name)
 
     cdef cppclass InfTraCommunicator:
         @staticmethod
@@ -453,10 +457,19 @@ class PyInfTraCommunicator:
 
 def init_train_info(init_batch_size, 
                     current_batch_size,
+                    model_name = None | str,
                     pid = None):
     if not TorchColConfig.HasColocatedInferServer():
         print("There not exist colocated infer server, skip init train info")
         return
+
+    cdef optional[cython.p_char] model_name_opt
+    cdef bytes model_name_cstr
+    if model_name is not None:
+        model_name_cstr = model_name.encode('utf-8')
+        model_name_opt = make_optional[cython.p_char](<cython.p_char> model_name_cstr)
+    else:
+        model_name_opt = optional[cython.p_char]()
 
     cdef optional[pid_t] pid_opt
     if pid is not None:
@@ -465,11 +478,13 @@ def init_train_info(init_batch_size,
         pid_opt = make_optional[pid_t](<pid_t> os.getpid())
 
     InfTraCommunicator.GetIB().SetTrainInfo(
-        TorchColConfig.GetTrainRank(), pid_opt,
+        TorchColConfig.GetTrainRank(), 
+        pid_opt,
         make_optional[int](TorchColConfig.GetTrainRank()), 
         make_optional[int](TorchColConfig.GetTrainWorldSize()), 
         make_optional[int](<int> init_batch_size), 
-        make_optional[int](<int> current_batch_size)
+        make_optional[int](<int> current_batch_size),
+        model_name_opt
     )
 
 
@@ -481,7 +496,8 @@ def update_current_batch_size(current_batch_size):
         TorchColConfig.GetTrainRank(), 
         optional[pid_t](), optional[int](), 
         optional[int](), optional[int](), 
-        make_optional[int](<int> current_batch_size)
+        make_optional[int](<int> current_batch_size),
+        optional[cython.p_char]()
     )
 
 ####################

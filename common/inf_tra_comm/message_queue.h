@@ -165,6 +165,7 @@ class InfTraMessageQueue {
 
   void Put(const CtrlMsgEntry &msg, Direction direction, int id);
   void PutAll(const CtrlMsgEntry &msg, Direction direction);
+  void PutAll(const std::vector<CtrlMsgEntry> &msg, Direction direction);
 
   void Clear();
 
@@ -175,6 +176,8 @@ class InfTraMessageQueue {
   std::string GetMqGroupMutexName(Direction direction);
   std::string GetMqGroupCondName(Direction direction);
 
+  template<typename T>
+  void PutAllImpl(const T &msg, Direction direction);
 
   int message_queue_num_;
   std::array<bip_deque<CtrlMsgEntry>*, MAX_DEVICE_NUM> 

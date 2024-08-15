@@ -29,7 +29,9 @@ target_link_directories(new_torch_col PRIVATE ${CMAKE_BINARY_DIR}/xsched/lib)
 set(torch_python_lib)
 foreach(torch_lib IN ITEMS ${TORCH_LIBRARIES})
   if(torch_lib MATCHES ".*torch/lib/libc10.so")
-    string(REPLACE "torch/lib/libc10.so" "torch/lib/libtorch_python.so" torch_python_lib ${torch_lib})
+    string(REPLACE "torch/lib/libc10.so" 
+                   "torch/lib/libtorch_python.so" 
+                   torch_python_lib ${torch_lib})
   endif()
 endforeach()
 
