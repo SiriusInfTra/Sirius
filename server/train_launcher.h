@@ -44,9 +44,10 @@ class TrainLauncher {
     return target_batch_size_.load(std::memory_order_relaxed); 
   }
   void AddTargetBatchSize(int delta_bs) { 
-    if (batch_start_)  target_batch_size_.fetch_add(delta_bs, std::memory_order_relaxed);
+    if (batch_start_) {
+      target_batch_size_.fetch_add(delta_bs, std::memory_order_relaxed);
+    }
   }
-
 
   double PredictMemUsageMB(bool verbose);
   int PredictTargetBatchSize(double memory_mb);
@@ -54,7 +55,6 @@ class TrainLauncher {
 
  private:
   static std::unique_ptr<TrainLauncher> train_launcher_;
-  std::pair<double, double> GetModelMemParam();
 
   bool Train();
   bool LaunchTrain(std::shared_ptr<Job> job, std::vector<std::string> &args);

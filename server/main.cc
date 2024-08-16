@@ -22,6 +22,7 @@
 #include <server/grpc/grpc_server.h>
 #include <server/model_store/infer_model_store.h>
 #include <server/train_launcher.h>
+#include <server/train_adjuster.h>
 #include <server/resource_manager.h>
 #include <server/control/controller.h>
 #include <server/profiler.h>
@@ -267,7 +268,8 @@ int main(int argc, char *argv[]) {
         true, false, free_list_policy);
       colserve::sta::CUDAMemPool::Get(device_id)->RegisterOOMHandler([]() {
         LOG(INFO) << "train predict memory " 
-                  <<  colserve::TrainLauncher::Get()->PredictMemUsageMB(true) << "."; 
+                  <<  colserve::TrainAdjuster::PredictTrainMemUsageMB(0, true) 
+                  << "."; 
         }, colserve::sta::MemType::kInfer);
     }
   }
@@ -282,6 +284,7 @@ int main(int argc, char *argv[]) {
   colserve::ResourceManager::Init();
   colserve::Profiler::Init(colserve::Config::profile_log_path);
   colserve::TrainLauncher::Init("train");
+  colserve::TrainAdjuster::Init();
   colserve::InferModelStore::Init("server/models");
   colserve::Profiler::Start();
 

@@ -18,7 +18,7 @@
 
 namespace colserve {
 namespace {
-std::string GetMemMbStr(memory_nbyte_t bytes) {
+std::string GetMemMbStr(memory_byte_t bytes) {
   return (boost::format("%.1f Mb") % (1.0 * bytes / 1024 / 1024)).str();
 }
 std::string GetMemMbStr(memory_mb_t mb) { 

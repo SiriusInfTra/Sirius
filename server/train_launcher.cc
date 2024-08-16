@@ -3,6 +3,7 @@
 #include <server/model_store/infer_model_store.h>
 #include <server/train_launcher.h>
 #include <server/control/controller.h>
+#include <server/train_adjuster.h>
 #include <server/profiler.h>
 #include <server/config.h>
 
@@ -28,61 +29,6 @@
 namespace colserve {
 
 std::unique_ptr<TrainLauncher> TrainLauncher::train_launcher_;
-
-std::pair<double, double> TrainLauncher::GetModelMemParam() {
-  if (Config::use_shared_tensor_train) {
-    if (cur_model_name_ == "resnet152") {
-      /*
-          8   1.50
-         32   3.75
-        128  11.75
-        150  13.50
-      
-        AFTER EMPTY CACHE: 0.81 ~ 1.22
-      */
-      // NOTE: DID NOT consider grad checkpoint
-      return {1150, 85};
-    } else if (cur_model_name_ == "swin_b" || cur_model_name_ == "swin_b_ddp") {
-      return {1700, 140};
-    } else if (cur_model_name_ == "gpt2") {
-      /*
-       
-        1   3.00Gb
-        4   4.25Gb
-        8   6.50Gb
-        12  8.75Gb
-        16  11.00Gb
-        20  12.25Gb
-
-        AFTER EMPTY CACHE: 2.4 ~ 2.9 
-       */
-      return {2700, 490}; 
-    } else if (cur_model_name_ == "bert_large") {
-      LOG(FATAL) << "Unsupported model: " << cur_model_name_;
-    } else {
-      LOG(FATAL) << "Unsupported model: " << cur_model_name_;
-    }
-  } else { // * used for strawman, adjust but no shared tensor
-    /*
-        8     2.64
-        32    4.97
-        128  13.75
-        150  15.68
-
-        AFTER EMPTY CACHE: 2.28 ~ 2.37
-    */
-    if (cur_model_name_ == "resnet152") {
-      return {2396, 85};
-    } else if (cur_model_name_ == "swin_b") {
-      // NOTE: PLACEHOLDER
-      // return {1700, 140};
-      return {3300, 145};
-    } else {
-      LOG(FATAL) << "Unsupported model: " << cur_model_name_;
-    }
-  }
-  return {};
-}
 
 void TrainLauncher::Init(const std::filesystem::path &train_store_path) {
   train_launcher_ = std::make_unique<TrainLauncher>();
@@ -128,34 +74,6 @@ bool TrainLauncher::AddJob(network::TrainHandler::TrainData* data) {
   return true;
 }
 
-double TrainLauncher::PredictMemUsageMB(bool verbose) {
-  if (target_batch_size_ <= 0) {
-    return 0;
-  } else {
-    auto [base, slope] = GetModelMemParam();
-    auto res = base + slope * target_batch_size_;
-    LOG_IF(INFO, verbose && Config::log_memory_adjust) 
-        << "Predict train memory " << res
-        << ", target batch size " << target_batch_size_;
-    return res;
-  }
-}
-
-int TrainLauncher::PredictTargetBatchSize(double memory_mb) {
-  auto [base, slope] = GetModelMemParam();
-  auto ret = static_cast<int>((memory_mb - base) / slope);
-  ret = std::min(ret, job_batch_size_);
-  ret = std::max(ret, 0);
-  // LOG(INFO) << "## " << memory_mb << " " << base << " " << slope
-  //           << " " << job_batch_size_;
-  return ret;
-}
-
-int TrainLauncher::GetAdjustBatchSize(double memory_mb) {
-  auto [base, slope] = GetModelMemParam();
-  return static_cast<int>(std::ceil(memory_mb / slope));
-}
-
 bool TrainLauncher::Train() {
   std::shared_ptr<Job> job = nullptr;
   while (job == nullptr) {
@@ -171,7 +89,7 @@ bool TrainLauncher::Train() {
   if ((Config::IsColocateMode() || Config::IsSwitchMode()) && 
       Config::use_shared_tensor &&
       Config::enable_warm_cache_fallback) {
-    auto [base, slope] = GetModelMemParam();
+    auto [base, slope] = TrainAdjuster::adjuster_->GetModelMemParam();
     Config::max_warm_cache_nbytes = static_cast<size_t>((
       Config::cuda_memory_pool_gb * 1024 - Config::train_memory_over_predict_mb - base) * 1_MB);
     LOG(INFO) << "[Warm Cache Fallback for Colocation] set max warm cache nbytes to "
@@ -384,7 +302,7 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
       return false;
     } else {
       int train_world_size = ctrl::InfTraCommunicator::GetIB()
-                              ->GetTrainInfo(0)->train_world_size;
+                              ->GetTrainInfoUnsafe(0)->train_world_size;
       std::string train_memory_str, free_memory_str;
       for (auto i : boost::irange(train_world_size)) {
         train_memory_str += 
@@ -397,7 +315,8 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
                  << " target_batch_size " << target_batch_size_ 
                  << " cur_batch_size " << cur_batch_size_ 
                  << " memory [ " << train_memory_str << "] MB"
-                 << " predict memory " << PredictMemUsageMB(false) << "MB"
+                 << " predict memory " 
+                 << TrainAdjuster::PredictTrainMemUsageMB(0, false) << "MB"
                  << " calculated free memory [ " << free_memory_str << "] MB";
       return false;
     }
@@ -433,9 +352,9 @@ void TrainLauncher::DummyAdjust() {
 
 void TrainLauncher::KillTrain() {
   int num_train_proc = 
-      ctrl::InfTraCommunicator::GetIB()->GetTrainInfo(0)->train_world_size;
+      ctrl::InfTraCommunicator::GetIB()->GetTrainInfoUnsafe(0)->train_world_size;
   for (int i = 0; i < num_train_proc; i++) {
-    auto train_info = ctrl::InfTraCommunicator::GetIB()->GetTrainInfo(i);
+    auto train_info = ctrl::InfTraCommunicator::GetIB()->GetTrainInfoUnsafe(i);
     auto pid = train_info->train_pid;
     auto rank = train_info->train_rank;
     if (pid != -1) {

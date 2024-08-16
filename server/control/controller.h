@@ -1,8 +1,8 @@
 #ifndef COLSERVE_CONTROLLER_H
 #define COLSERVE_CONTROLLER_H
 
-// #include <common/block_queue.h>
-// #include <common/controlling.h>
+#include <server/train_adjuster.h>
+
 #include <common/inf_tra_comm/communicator.h>
 
 #include <thread>
@@ -38,10 +38,14 @@ class Controller {
   uint64_t InterruptTrain();
   uint64_t ResumeTrain();
   uint64_t ColocateAdjust(size_t model_rank, int device_id, size_t batch_size);
+  uint64_t ColocateInferRequireAdjust(
+      size_t model_rank, int device_id, 
+      const std::vector<TrainAdjuster::AdjustPlan> &adjust_plans);
   bool WaitTrainNotRunning();
   bool WaitInferIdle();
   bool WaitColocateAdjustDone(uint64_t cmd_id);
-  uint64_t InferExit(int device_id);
+  // uint64_t InferExit(int device_id);
+  uint64_t ColocateInferReleaseAdjust(const std::vector<TrainAdjuster::AdjustPlan> &adjust_plans);
   uint64_t DummyInferExit(int device_id, int target_batch_size);
 
   // void InferRequestInc(size_t inc=1);

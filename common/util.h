@@ -1,7 +1,6 @@
 #ifndef COLSERVE_COMMON_UTIL_H
 #define COLSERVE_COMMON_UTIL_H
 
-#include <boost/format/format_fwd.hpp>
 #include <common/log_as_glog_sta.h>
 #include <common/device_manager.h>
 

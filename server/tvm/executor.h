@@ -79,7 +79,10 @@ class Executor {
   // void AllocParamStorage();
   void ResetStorage();
   void AllocStorage();
-  void AllocStorageMaybeAdjust();
+
+  // deprecated
+  // void AllocStorageMaybeAdjust();
+
   void LoadParams(bool pipeline, bool force);
   void ReSetupDataEntry();
 

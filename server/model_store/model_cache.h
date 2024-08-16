@@ -201,6 +201,8 @@ class ColdModelCache {
     return free_memory_MB;
   }
 
+  double GetReleaseReserveMemoryMBUnsafe();
+  double GetAdjustReserveMemoryMBUnsafe();
   double GetReleaseReserveMemoryMB(std::unique_lock<std::mutex> &lock);  
   double GetAdjustReserveMemoryMB(std::unique_lock<std::mutex> &lock);  
 

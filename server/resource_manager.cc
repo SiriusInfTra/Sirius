@@ -1,6 +1,7 @@
 #include <server/logging_as_glog.h>
 #include <server/resource_manager.h>
 #include <server/train_launcher.h>
+#include <server/train_adjuster.h>
 #include <server/config.h>
 
 #include <common/cuda_allocator.h>
@@ -24,7 +25,8 @@ double ResourceManager::GetFreeMemoryMB(int device_id, bool verbose) {
   double free_memory_mb;
   double infer_memory_mb = GetInferMemoryMB(device_id);
   double train_memory_mb = GetTrainMemoryMB(device_id);
-  double train_predict_memory_mb = TrainLauncher::Get()->PredictMemUsageMB(verbose);
+  // double train_predict_memory_mb = TrainLauncher::Get()->PredictMemUsageMB(verbose);
+  double train_predict_memory_mb = TrainAdjuster::PredictTrainMemUsageMB(device_id, verbose);
 
   if (Config::use_shared_tensor) {
     free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::Get(device_id)->PoolNbytes());

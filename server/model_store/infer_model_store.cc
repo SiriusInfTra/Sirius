@@ -4,11 +4,14 @@
 #include <server/model_store/model_cache.h>
 #include <server/train_launcher.h>
 #include <server/control/controller.h>
+#include <server/train_adjuster.h>
 #include <server/profiler.h>
 #include <server/config.h> 
 
 #include <common/dtype_helper.h>
 #include <common/device_manager.h>
+
+#include <boost/range/irange.hpp>
 
 #include <atomic>
 #include <filesystem>
@@ -269,7 +272,8 @@ void InferModelStore::ClearColdCache() {
     auto cold_cache_lock = cold_model_cache->Lock();
     int rank = 0;
     for (auto &&[name, model]: models_) {
-      auto &&[evict_groups_id, succ] = cold_model_cache->PopCacheItem(name, rank, cold_cache_lock);
+      auto &&[evict_groups_id, succ] = 
+          cold_model_cache->PopCacheItem(name, rank, cold_cache_lock);
       if (succ) { 
         model->ClearColdCache(evict_groups_id, rank, cold_cache_lock); 
       }
@@ -317,7 +321,8 @@ void InferModelStore::ColocateMonitor() {
         bool res = model->ReclaimMemory(rank, cold_cache_lock, model_lock, nullptr);
         if (res) {
           num_exits[device_id]++;
-          auto cold_cache_nbytes = ColdModelCache::Get(device_id)->GetCachedNbytes(cold_cache_lock);          
+          auto cold_cache_nbytes = 
+              ColdModelCache::Get(device_id)->GetCachedNbytes(cold_cache_lock);
           LOG_IF(INFO, Config::log_infer_model_reclaim) 
               << "[InferModelStore] reclaim " << model_name
               << ", cold cache nbytes "
@@ -325,8 +330,14 @@ void InferModelStore::ColocateMonitor() {
         }
       }
     }
-    for (int i = 0; i < sta::DeviceManager::GetNumVisibleGpu(); i++) {
-      if (num_exits[i] > 0) ctrl::Controller::Get()->InferExit(i);
+    // for (int i = 0; i < sta::DeviceManager::GetNumVisibleGpu(); i++) {
+    //   if (num_exits[i] > 0) ctrl::Controller::Get()->InferExit(i);
+    // }
+    for (auto i : boost::irange(sta::DeviceManager::GetNumVisibleGpu())) {
+      auto adjust_plan = TrainAdjuster::GetInferReleaseMemAdjustPlan(i);
+      if (!adjust_plan.empty()) {
+        ctrl::Controller::Get()->ColocateInferReleaseAdjust(adjust_plan);
+      }
     }
     std::this_thread::sleep_for(10ms);
   }

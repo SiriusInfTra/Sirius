@@ -218,18 +218,21 @@ void InfTraMessageQueue::Put(const CtrlMsgEntry &msg, Direction direction, int i
 
 template<typename T>
 void InfTraMessageQueue::PutAllImpl(const T & msg, Direction direction) {
-  if (std::is_same_v<T, CtrlMsgEntry> == false) {
-    static_assert(std::is_same_v<T, std::vector<CtrlMsgEntry>>, 
-        "vector<CtrlMsgEntry>, or CtrlMsgEntry");
+  static_assert((std::is_same_v<T, std::vector<CtrlMsgEntry>> 
+                 || std::is_same_v<T, CtrlMsgEntry>), 
+                "vector<CtrlMsgEntry>, or CtrlMsgEntry");
+
+  if constexpr (std::is_same_v<T, std::vector <CtrlMsgEntry>>) {
     CHECK_EQ(msg.size(), message_queue_num_);
   }
+
   for (int i = 0; i < message_queue_num_; i++) {
     bip::scoped_lock
       lock{*inf_tra_mq_muts_[static_cast<int>(direction)][i]};
 
     auto inf_tra_mq = inf_tra_mqs_[static_cast<int>(direction)][i];
     CHECK(inf_tra_mq != nullptr);
-    if (std::is_same_v<T, CtrlMsgEntry>) {
+    if constexpr (std::is_same_v<T, CtrlMsgEntry>) {
       inf_tra_mq->push_back(msg);
     } else {
       inf_tra_mq->push_back(msg[i]);
@@ -241,14 +244,6 @@ void InfTraMessageQueue::PutAllImpl(const T & msg, Direction direction) {
   DLOG(INFO) << "[InfTra MQ] PutAll " << msg << " to all " 
             << direction;
 }
-
-template<>
-void InfTraMessageQueue::PutAllImpl<CtrlMsgEntry>(const CtrlMsgEntry &msg, 
-                                                  Direction direction);
-
-template<>
-void InfTraMessageQueue::PutAllImpl<std::vector<CtrlMsgEntry>>(
-    const std::vector<CtrlMsgEntry> &msg, Direction direction);
 
 void InfTraMessageQueue::PutAll(const CtrlMsgEntry &msg, Direction direction) {
   PutAllImpl<CtrlMsgEntry>(msg, direction);

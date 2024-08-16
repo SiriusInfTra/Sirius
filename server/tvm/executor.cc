@@ -1,4 +1,14 @@
-#include "logging_as_glog.h"
+#include <server/logging_as_glog.h>
+#include <server/train_launcher.h>
+#include <server/model_store/infer_model_store.h>
+#include <server/profiler.h>
+#include <server/control/controller.h>
+#include <server/resource_manager.h>
+#include <server/config.h>
+#include <server/tvm/executor.h>
+#include <server/tvm/texture.h>
+#include <server/tvm/graph.h>
+
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/c_runtime_api.h>
 #include <tvm/runtime/packed_func.h>
@@ -9,15 +19,6 @@
 
 #include <common/shape_helper.h>
 #include <common/util.h>
-#include <server/train_launcher.h>
-#include <server/model_store/infer_model_store.h>
-#include <server/profiler.h>
-#include <server/control/controller.h>
-#include <server/resource_manager.h>
-#include <server/config.h>
-#include <server/tvm/executor.h>
-#include <server/tvm/texture.h>
-#include <server/tvm/graph.h>
 
 #include <algorithm>
 #include <atomic>
@@ -911,116 +912,116 @@ std::pair<std::function<void()>, std::shared_ptr<OpArgs>> Executor::CreateTVMOp(
   return {fexec, arg_ptr};
 }
 
-void Executor::AllocStorageMaybeAdjust() {
-  // CHECK(Config::use_shared_tensor_infer && Config::ondemand_adjust);
-  CHECK(Config::ondemand_adjust);
-  CHECK(!Config::infer_raw_blob_alloc);
+// void Executor::AllocStorageMaybeAdjust() {
+//   // CHECK(Config::use_shared_tensor_infer && Config::ondemand_adjust);
+//   CHECK(Config::ondemand_adjust);
+//   CHECK(!Config::infer_raw_blob_alloc);
 
-  bool adjusted = false;
+//   bool adjusted = false;
 
-  auto adjust_train_batch_size = [this, &adjusted](bool first_adjust) {
-    if (adjusted) return;
-    if (!ctrl::Controller::Get()->IsTrainIdle()) {
-      auto wait_train_pid = TrainLauncher::Get()->GetTrainPid();
-      // LOG(INFO) << "[Executor] AllocStorageMaybeAdjust: model " << this->tvm_graph_.model_rank_ 
-      //           << " begin wait train pid " << wait_train_pid;
-      // this->tvm_graph_.infer_model_->SetWaitTrainPid(this->infer_model_worker_id_, wait_train_pid);
+//   auto adjust_train_batch_size = [this, &adjusted](bool first_adjust) {
+//     if (adjusted) return;
+//     if (!ctrl::Controller::Get()->IsTrainIdle()) {
+//       auto wait_train_pid = TrainLauncher::Get()->GetTrainPid();
+//       // LOG(INFO) << "[Executor] AllocStorageMaybeAdjust: model " << this->tvm_graph_.model_rank_ 
+//       //           << " begin wait train pid " << wait_train_pid;
+//       // this->tvm_graph_.infer_model_->SetWaitTrainPid(this->infer_model_worker_id_, wait_train_pid);
 
-      auto adjust_memory_mb = sta::ByteToMB(GetMissingStorageSizeAlign()) 
-                              - ResourceManager::GetFreeMemoryMB(devices_[0].device_id, true);
-      adjust_memory_mb = std::max(0.0, adjust_memory_mb);
-      if (adjust_memory_mb == 0) return;
+//       auto adjust_memory_mb = sta::ByteToMB(GetMissingStorageSizeAlign()) 
+//                               - ResourceManager::GetFreeMemoryMB(devices_[0].device_id, true);
+//       adjust_memory_mb = std::max(0.0, adjust_memory_mb);
+//       if (adjust_memory_mb == 0) return;
 
-      PROFILE_START(TrainAdjust);
-      auto adjust_batch_size = TrainLauncher::Get()->GetAdjustBatchSize(
-          first_adjust 
-          ? adjust_memory_mb 
-          : sta::ByteToMB(GetMissingStorageSizeAlign()));
-      auto cmd_id = ctrl::Controller::Get()->ColocateAdjust(
-          this->tvm_graph_.model_rank_, 
-          this->devices_[0].device_id, 
-          adjust_batch_size);
-      ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
-      PROFILE_END(TrainAdjust);
-      if (first_adjust) {
-        Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, 
-                                    PROFILE_DURATRION(TrainAdjust));        
-      }
-      LOG(INFO) << "[Executor] AllocStorageMaybeAdjust:" 
-                << " model " << this->tvm_graph_.model_rank_ 
-                << " adjust memory mb " << adjust_memory_mb
-                << " adjust batch size " << adjust_batch_size
-                << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
-                << " wait train pid " << wait_train_pid;
+//       PROFILE_START(TrainAdjust);
+//       auto adjust_batch_size = TrainLauncher::Get()->GetAdjustBatchSize(
+//           first_adjust 
+//           ? adjust_memory_mb 
+//           : sta::ByteToMB(GetMissingStorageSizeAlign()));
+//       auto cmd_id = ctrl::Controller::Get()->ColocateAdjust(
+//           this->tvm_graph_.model_rank_, 
+//           this->devices_[0].device_id, 
+//           adjust_batch_size);
+//       ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
+//       PROFILE_END(TrainAdjust);
+//       if (first_adjust) {
+//         Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, 
+//                                     PROFILE_DURATRION(TrainAdjust));        
+//       }
+//       LOG(INFO) << "[Executor] AllocStorageMaybeAdjust:" 
+//                 << " model " << this->tvm_graph_.model_rank_ 
+//                 << " adjust memory mb " << adjust_memory_mb
+//                 << " adjust batch size " << adjust_batch_size
+//                 << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
+//                 << " wait train pid " << wait_train_pid;
                 
-    } else {
-      LOG(INFO) << "[Executor] AllocStorageMaybeAdjust: model "
-                << this->tvm_graph_.model_rank_ << " train idle";
-    }
-    adjusted = true;
-  };
+//     } else {
+//       LOG(INFO) << "[Executor] AllocStorageMaybeAdjust: model "
+//                 << this->tvm_graph_.model_rank_ << " train idle";
+//     }
+//     adjusted = true;
+//   };
 
-  // ensure sequential inference allocation  
-  if (!ResourceManager::InferChangeMemoryTryLock(devices_[0].device_id)) {
-    if (ctrl::Controller::Get()->HasFlyingColocateAdjust()) {
-      adjust_train_batch_size(false);
-    }
-    PROFILE_START(InferWaitBeforeEnterAlloc);
-    ResourceManager::InferMemoryChangingLock(devices_[0].device_id);
-    PROFILE_END(InferWaitBeforeEnterAlloc);
-  }
+//   // ensure sequential inference allocation  
+//   if (!ResourceManager::InferChangeMemoryTryLock(devices_[0].device_id)) {
+//     if (ctrl::Controller::Get()->HasFlyingColocateAdjust()) {
+//       adjust_train_batch_size(false);
+//     }
+//     PROFILE_START(InferWaitBeforeEnterAlloc);
+//     ResourceManager::InferMemoryChangingLock(devices_[0].device_id);
+//     PROFILE_END(InferWaitBeforeEnterAlloc);
+//   }
 
-  double free_memory_mb = ResourceManager::GetFreeMemoryMB(devices_[0].device_id, true);
+//   double free_memory_mb = ResourceManager::GetFreeMemoryMB(devices_[0].device_id, true);
 
-  size_t total_storage_nbytes = GetMissingStorageSizeAlign();
-  // std::vector<size_t> storage_nbytes(storage_pool_.size());
-  // for (size_t sid = 0; sid < storage_pool_.size(); sid++) {
-  //   auto tensor = storage_pool_[sid];
-  //   auto nbytes = sta::ComputeStorageNbytes(tensor.Shape(), tensor.Stride(), 
-  //       tensor->dtype, tensor.StorageOffset());
-  //   storage_nbytes[sid] = nbytes;
-  //   total_storage_nbytes += sta::detail::GetAlignedNbytes(nbytes);
-  // }
+//   size_t total_storage_nbytes = GetMissingStorageSizeAlign();
+//   // std::vector<size_t> storage_nbytes(storage_pool_.size());
+//   // for (size_t sid = 0; sid < storage_pool_.size(); sid++) {
+//   //   auto tensor = storage_pool_[sid];
+//   //   auto nbytes = sta::ComputeStorageNbytes(tensor.Shape(), tensor.Stride(), 
+//   //       tensor->dtype, tensor.StorageOffset());
+//   //   storage_nbytes[sid] = nbytes;
+//   //   total_storage_nbytes += sta::detail::GetAlignedNbytes(nbytes);
+//   // }
 
 
-  LOG(INFO) << "infer require " << sta::ByteDisplay(total_storage_nbytes)
-            << " free memory " << free_memory_mb << " MB";
-  if (sta::ByteToMB(total_storage_nbytes) > free_memory_mb) {
-    adjust_train_batch_size(true);
-  }
+//   LOG(INFO) << "infer require " << sta::ByteDisplay(total_storage_nbytes)
+//             << " free memory " << free_memory_mb << " MB";
+//   if (sta::ByteToMB(total_storage_nbytes) > free_memory_mb) {
+//     adjust_train_batch_size(true);
+//   }
 
-  PROFILE_START(InferAllocStorage);
-  AllocStorage();
-  PROFILE_END(InferAllocStorage);
+//   PROFILE_START(InferAllocStorage);
+//   AllocStorage();
+//   PROFILE_END(InferAllocStorage);
 
-  ResourceManager::InferMemoryChangingUnlock(devices_[0].device_id);
+//   ResourceManager::InferMemoryChangingUnlock(devices_[0].device_id);
 
-  // TODO: consider fwd/bwd -> deprecated
-  // if (sta::ByteToMB(total_storage_nbytes) < free_memory_mb) {
-  // // case 1: memory is enough, do not need to adjust
-  //   for (size_t sid = 0; sid < storage_pool_.size(); sid++) {
-  //     auto &s = storage_pool_[sid];
-  //     auto tensor = sta::TensorPool::Get()->Tensor(s);
-  //     tensor.AllocForNull(sta::MemType::kInfer, false);
-  //   }
-  // } else { 
-  // // casae 2: memory is not enough, adjustment batch
-  //   for (size_t sid = 0; sid < storage_pool_.size(); ) {
-  //     auto &s = storage_pool_[sid];
-  //     auto tensor = sta::TensorPool::Get()->Tensor(s);
-  //     auto nbytes = sta::ComputeStorageNbytes(tensor.Shape(), tensor.Stride(), 
-  //         tensor->dtype, tensor.StorageOffset());
-  //     auto mdata = sta::CUDAMemPool::Get()->Alloc(nbytes, sta::MemType::kInfer, true);
-  //     if (nbytes > 0 && mdata == nullptr) {
-  //       adjust_train_batch_size();
-  //     } else {
-  //       tensor.SetMDataForNull(mdata);
-  //       sid++;
-  //     }
-  //   }
-  // }
-  // Controller::Get()->ExitInferChangeMemory(tvm_graph_.model_rank_);
-}
+//   // TODO: consider fwd/bwd -> deprecated
+//   // if (sta::ByteToMB(total_storage_nbytes) < free_memory_mb) {
+//   // // case 1: memory is enough, do not need to adjust
+//   //   for (size_t sid = 0; sid < storage_pool_.size(); sid++) {
+//   //     auto &s = storage_pool_[sid];
+//   //     auto tensor = sta::TensorPool::Get()->Tensor(s);
+//   //     tensor.AllocForNull(sta::MemType::kInfer, false);
+//   //   }
+//   // } else { 
+//   // // casae 2: memory is not enough, adjustment batch
+//   //   for (size_t sid = 0; sid < storage_pool_.size(); ) {
+//   //     auto &s = storage_pool_[sid];
+//   //     auto tensor = sta::TensorPool::Get()->Tensor(s);
+//   //     auto nbytes = sta::ComputeStorageNbytes(tensor.Shape(), tensor.Stride(), 
+//   //         tensor->dtype, tensor.StorageOffset());
+//   //     auto mdata = sta::CUDAMemPool::Get()->Alloc(nbytes, sta::MemType::kInfer, true);
+//   //     if (nbytes > 0 && mdata == nullptr) {
+//   //       adjust_train_batch_size();
+//   //     } else {
+//   //       tensor.SetMDataForNull(mdata);
+//   //       sid++;
+//   //     }
+//   //   }
+//   // }
+//   // Controller::Get()->ExitInferChangeMemory(tvm_graph_.model_rank_);
+// }
 
 size_t Executor::GetMissingStorageSizeAlign() const {
   CHECK_GE(GetStorageSizeAlign(),
@@ -1028,5 +1029,6 @@ size_t Executor::GetMissingStorageSizeAlign() const {
   return GetStorageSizeAlign() -
          cold_cached_nbytes_.load(std::memory_order_relaxed);
 }
-}  // namespace tvm
-}
+
+} // namespace tvm
+} // namespace colserve

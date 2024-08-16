@@ -309,7 +309,7 @@ double ColdModelCache::GetCacheSizeMBUnsafe() {
                   sta::ByteToMB(cold_cache_nbytes) + std::max(0.0, free_memory_mb));
 }
 
-double ColdModelCache::GetReleaseReserveMemoryMB(std::unique_lock<std::mutex> &lock) {
+double ColdModelCache::GetReleaseReserveMemoryMBUnsafe() {
   double cached_MB = sta::ByteToMB(current_cached_nbytes_);
   double min_cap_MB = sta::ByteToMB(Config::cold_cache_min_capability_nbytes);
   double max_cap_MB = sta::ByteToMB(Config::cold_cache_max_capability_nbytes);
@@ -325,7 +325,7 @@ double ColdModelCache::GetReleaseReserveMemoryMB(std::unique_lock<std::mutex> &l
   }
 }
 
-double ColdModelCache::GetAdjustReserveMemoryMB(std::unique_lock<std::mutex> &lock) {
+double ColdModelCache::GetAdjustReserveMemoryMBUnsafe() {
   double cached_MB = sta::ByteToMB(current_cached_nbytes_);
   double min_cap_MB = sta::ByteToMB(Config::cold_cache_min_capability_nbytes);
   double max_cap_MB = sta::ByteToMB(Config::cold_cache_max_capability_nbytes);
@@ -339,6 +339,14 @@ double ColdModelCache::GetAdjustReserveMemoryMB(std::unique_lock<std::mutex> &lo
   } else {
     return 0.0;
   }
+}
+
+double ColdModelCache::GetReleaseReserveMemoryMB(std::unique_lock<std::mutex> &lock) {
+  return GetReleaseReserveMemoryMBUnsafe();
+}
+
+double ColdModelCache::GetAdjustReserveMemoryMB(std::unique_lock<std::mutex> &lock) {
+  return GetAdjustReserveMemoryMBUnsafe();
 }
 
 } // namespace colserve
