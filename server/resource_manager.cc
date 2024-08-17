@@ -7,8 +7,8 @@
 #include <common/cuda_allocator.h>
 #include <common/util.h>
 
-#include <regex>
 #include <boost/algorithm/string.hpp>
+#include <regex>
 
 
 namespace colserve {

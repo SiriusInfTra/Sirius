@@ -824,4 +824,4 @@ std::string getNcclErrorDetailStr(
   return interpret + err;
 }
 
-}
+} // namespace torch_col

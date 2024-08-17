@@ -43,8 +43,17 @@ num_devices = len([mem for mem in memory_info_strs if mem is not None])
 ax_width = 6
 ax_height = 4
 hmargin = 0.5
-fig, axes = plt.subplots(num_devices, 1, 
-                         figsize=(ax_width, ax_height*num_devices + hmargin*(num_devices-1)))
+
+num_subplots = num_devices
+if num_devices > 1:
+    num_subplots += 1 # plot infer variance
+
+fig, axes = plt.subplots(num_subplots, 1, 
+                         figsize=(ax_width, ax_height*num_devices + hmargin*(num_subplots)))
+
+print(len(axes))
+
+infer_mem_all_devices = []
 
 for i in range(num_devices):
     ax = axes[i]
@@ -65,9 +74,9 @@ for i in range(num_devices):
         train_mem = train_all_mem
 
     infer_mem, train_mem = map(np.array, [infer_mem, train_mem])
+    infer_mem_all_devices.append(infer_mem)
     # invert_train_mem = total_mem - train_mem
     infer_train_mem = infer_mem + train_mem
-
 
     ax.plot(timeline, infer_mem, label='Infer', linewidth=0.2)
     ax.fill_between(timeline, 0, infer_mem, alpha=0.3)
@@ -76,12 +85,23 @@ for i in range(num_devices):
     ax.fill_between(timeline, infer_mem, infer_train_mem, alpha=0.3)
 
     ax.set_ylim(0, total_mem)
-    ax.set_xlim(0,
-                min(max(timeline), end_time - begin_time))
+    ax.set_xlim(0, min(max(timeline), end_time - begin_time))
 
     ax.set_xlabel("Time (ms)", fontsize=14)
     ax.set_ylabel("GPU Memory (MB)",fontsize=14)
     ax.legend()
+
+# memory info are expected to have same timestamp index
+infer_mem_all_devices = np.array(infer_mem_all_devices)
+infer_mem_all_devices = infer_mem_all_devices.transpose()
+if num_devices > 1:
+    ax = axes[-1]
+    min_infer_mem = np.min(infer_mem_all_devices, axis=1)
+    max_infer_mem = np.max(infer_mem_all_devices, axis=1)
+    delta_infer_mem = max_infer_mem - min_infer_mem
+    ax.plot(timeline, delta_infer_mem, label='Infer variance', linewidth=0.5)
+    ax.set_xlabel("Time (ms)", fontsize=14)
+    ax.set_ylabel("Infer Memory |Max-Min| (MB)",fontsize=14)
 
 # plt.legend()
 
