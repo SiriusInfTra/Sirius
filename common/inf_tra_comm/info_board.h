@@ -49,6 +49,7 @@ class InfTraInfoBoard {
     CHECK(IsTrainInfoValid(id));
     return train_infos_[id];
   }
+  std::vector<pid_t> GetTrainPIDs();
 
   void InvalidateTrainInfo(int id) {
     bip::scoped_lock lock{*train_info_muts_[id]};

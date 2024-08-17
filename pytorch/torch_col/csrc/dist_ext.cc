@@ -279,7 +279,8 @@ void ProcessGroupNCCL::_SetNcclCommAbortFlag(ncclComm_t comm, uint32_t val) {
     *child_abort_flag = val;
   }
   this->abort_flag_ = val;
-  DLOG(INFO) << "abort flag " << abort_flag << " " << abort_flag_ptr.first << " "  << *abort_flag;
+  DLOG(INFO) << "abort flag " << abort_flag << " " 
+             << abort_flag_ptr.first << " "  << *abort_flag;
 }
 
 std::pair<uint32_t, uint32_t> 
@@ -676,6 +677,8 @@ void TorchDistExtInit() {
           py::call_guard<py::gil_scoped_release>())
       .def("_set_as_default_pg", 
           [](const c10::intrusive_ptr<ProcessGroupNCCL> &self) {
+            DLOG(INFO) << "[TorchDistExt] set default ProcessGroupNCCL "
+                      << self.get();
             ProcessGroupNCCL::SetDefaultProcessGroupNCCL(self);
           },
           py::call_guard<py::gil_scoped_release>());

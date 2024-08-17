@@ -14,6 +14,7 @@ void InfTraCommunicator::Init(bool is_server, bool cleanup,
   communicator_ = std::make_unique<InfTraCommunicator>(
       GetDefaultShmNamePrefix() + "_inf_tra_comm", 
       is_server, cleanup, train_world_size);
+  DLOG(INFO) << "[PID " << getpid() << " | InfTraCommunicator ] initialized.";
 }
 
 InfTraMessageQueue* InfTraCommunicator::GetMQ() {

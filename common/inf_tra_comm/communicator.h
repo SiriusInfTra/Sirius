@@ -25,8 +25,11 @@ class InfTraCommunicator {
   static int GetTrainWorldSize() {
     return GetIB()->GetTrainInfoUnsafe(kTraRank_0)->train_world_size; 
   }
-  static int GetTrainPID(int rank) {
+  static pid_t GetTrainPID(int rank) {
     return GetIB()->GetTrainInfoUnsafe(rank)->train_pid;
+  }
+  static std::vector<pid_t> GetTrainPIDs() {
+    return GetIB()->GetTrainPIDs();
   }
 
   InfTraCommunicator(const std::string &shm_name, bool is_server, 

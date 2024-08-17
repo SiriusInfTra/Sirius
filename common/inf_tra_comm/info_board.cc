@@ -1,5 +1,7 @@
 #include <common/inf_tra_comm/info_board.h>
 
+#include <boost/range/irange.hpp>
+
 
 namespace colserve {
 namespace ctrl {
@@ -58,9 +60,26 @@ void InfTraInfoBoard::SetTrainInfo(
     std::optional<int> current_batch_size,
     std::optional<const char*> model_name) {
   bip::scoped_lock lock{*train_info_muts_[id]};
+
   bool is_initial_set = train_infos_[id]->train_pid == -1;
   if (is_initial_set && !pid.has_value()) {
     LOG(FATAL) << "initial set train info, pid must be valid";
+  }
+
+  if (is_initial_set) {
+    LOG(INFO) << "initial set training info "
+              << (pid.has_value() ? 
+                  "pid " + std::to_string(pid.value()) : "")
+              << (rank.has_value() ? 
+                  " rank " + std::to_string(rank.value()) : "")
+              << (world_size.has_value() ? 
+                  " world_size " + std::to_string(world_size.value()) : "")
+              << (init_batch_size.has_value() ? 
+                  " init_batch_size " + std::to_string(init_batch_size.value()) : "")
+              << (current_batch_size.has_value() ? 
+                  " current_batch_size " + std::to_string(current_batch_size.value()) : "")
+              << (model_name.has_value() ? 
+                  " model_name " + std::string(model_name.value()) : "");
   }
 
   if (pid.has_value()) {
@@ -84,6 +103,26 @@ void InfTraInfoBoard::SetTrainInfo(
   if (model_name.has_value()) {
     strncpy(train_infos_[id]->model_name, model_name.value(), 256);
   }
+}
+
+std::vector<pid_t> InfTraInfoBoard::GetTrainPIDs() {
+  std::vector<bip::scoped_lock<bip_mutex>> locks;
+  locks.emplace_back(*train_info_muts_[0]);
+  
+  int train_world_size = train_infos_[0]->train_world_size;
+  if (train_world_size == 0) {
+    return {};
+  }
+
+  for (auto i : boost::irange(1, train_world_size)) {
+    locks.emplace_back(*train_info_muts_[i]);
+  }
+  
+  std::vector<pid_t> ret;
+  for (auto i : boost::irange(0, train_world_size)) {
+    ret.push_back(train_infos_[i]->train_pid);
+  }
+  return ret;
 }
 
 } // namespace ctrl

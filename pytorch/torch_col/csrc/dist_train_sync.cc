@@ -1,8 +1,10 @@
+#include <torch_col/csrc/config.h>
+#include <torch_col/csrc/dist_train_sync.h>
+
 #include <common/log_as_glog_sta.h>
 #include <common/util.h>
 
-#include <torch_col/csrc/config.h>
-#include <torch_col/csrc/dist_train_sync.h>
+#include <thread>
 
 
 namespace torch_col {
@@ -60,10 +62,11 @@ DistTrainSync::DistTrainSync() {
   namespace bip = colserve::bip;
   CHECK(TorchColConfig::IsConfigured());
   shm_name_ = colserve::GetDefaultShmNamePrefix() + "_dist_train_sync";
-  sem_name_ = colserve::GetDefaultShmNamePrefix() + "_dist_train_sync_sem";
 
-  sem_ = new bip::named_semaphore{bip::open_or_create, 
-                                  sem_name_.c_str(), 0};
+  // semaphore for init
+  auto sem_name = colserve::GetDefaultShmNamePrefix() + "_dist_train_sync_sem";
+  colserve::bip_named_sem init_sem = bip::named_semaphore{
+      bip::open_or_create, sem_name.c_str(), 0};
 
   int train_world_size = TorchColConfig::GetTrainWorldSize();
   if (TorchColConfig::GetTrainRank() == 0) {
@@ -71,7 +74,7 @@ DistTrainSync::DistTrainSync() {
     bip_shm_ = bip::managed_shared_memory{bip::create_only,
                                           shm_name_.c_str(), 1024 * 1024};
     auto atomic_init = [&]() {
-      LOG(INFO) << "dist train sync rank " << TorchColConfig::GetTrainRank();
+      DLOG(INFO) << "dist train sync init rank " << TorchColConfig::GetTrainRank();
       barrier_ = 
           bip_shm_.find_or_construct<pthread_barrier_t>("barrier")();
       for (int i = 0; i < train_world_size; i++) {
@@ -88,12 +91,15 @@ DistTrainSync::DistTrainSync() {
                                     TorchColConfig::GetTrainWorldSize()), 0);
     };
     bip_shm_.atomic_func(atomic_init);
-    sem_->post();
+
+    for (int i = 1; i < train_world_size; i++) {
+      init_sem.post();
+    }
   } else {
-    sem_->wait();
+    init_sem.wait();
     bip_shm_ = bip::managed_shared_memory{bip::open_only, shm_name_.c_str()};
     auto atomic_init = [&]() {
-      LOG(INFO) << "dist train sync rank " << TorchColConfig::GetTrainRank();
+      DLOG(INFO) << "dist train sync init rank " << TorchColConfig::GetTrainRank();
 
       barrier_ = bip_shm_.find<pthread_barrier_t>("barrier").first;
       for (int i = 0; i < train_world_size; i++) {
@@ -107,12 +113,19 @@ DistTrainSync::DistTrainSync() {
   }
 
   auto err = pthread_barrier_wait(barrier_);
+
+  if (TorchColConfig::GetTrainRank() == 0) {
+    bip::shared_memory_object::remove(sem_name.c_str());
+  }
+
   CHECK(err == 0 || err == PTHREAD_BARRIER_SERIAL_THREAD)
       << "pthread_barrier_wait err " << err;
+  DLOG(INFO) << "[DistTrainSync | Rank " << TorchColConfig::GetTrainRank() 
+            <<  "] initialized";
 }
 
 DistTrainSync::~DistTrainSync() {
-  delete sem_;
+
 }
 
 } // namespace torch_col
