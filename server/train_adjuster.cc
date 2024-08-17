@@ -51,7 +51,7 @@ void TrainAdjuster::ResetTrainInfo() {
 
 double TrainAdjuster::PredictTrainMemUsageMB(int device_id, bool verbose) {
   CHECK(adjuster_ != nullptr);
-  CHECK(adjuster_->cached_target_batch_sizes_[device_id] != INVALID_BATCH_SIZE);
+  // CHECK(adjuster_->cached_target_batch_sizes_[device_id] != INVALID_BATCH_SIZE);
   auto target_batch_size_ = adjuster_->cached_target_batch_sizes_[device_id];
   if (target_batch_size_ <= 0) {
     return 0;
@@ -94,13 +94,15 @@ TrainAdjuster::GetInferRequireMemAdjustPlan(
 
   if (adjust_batch_buf_mb <= 0) {
     LOG_IF(INFO, Config::log_memory_adjust) 
-        << "[InferRequireMemAdjust] skip adjust memory " << adjust_batch_buf_mb;
+        << "[InferRequireMemAdjust] skip adjust memory " 
+        << adjust_batch_buf_mb;
     return {};
   }
 
-  int delta_batch_size = adjuster_->GetDeltaBatchSize(device_id, adjust_batch_buf_mb);
+  int delta_batch_size = 
+      adjuster_->GetDeltaBatchSize(device_id, adjust_batch_buf_mb);
   CHECK_GE(adjust_batch_buf_mb, 0);
-  int target_batch_size = cur_train_target_bs + delta_batch_size;
+  int target_batch_size = cur_train_target_bs - delta_batch_size;
   
   std::vector<TrainAdjuster::AdjustPlan> adjust_plan(train_world_size);
   for (int rank : boost::irange(train_world_size)) {
@@ -120,12 +122,7 @@ TrainAdjuster::GetInferRequireMemAdjustPlan(
       << " required_mem_mb " << required_mem_mb
       << " adjust_batch_buf_mb " << adjust_batch_buf_mb
       << " delta_batch_size " << delta_batch_size
-      << " | adjust plan: ";
-    ss << "target bs [ ";
-    for (auto &plan : adjust_plan) {
-      ss << plan.batch_size << " ";
-    }
-    ss << "]";
+      << " | adjust plan: " << PrettyPrintAdjustPlans(adjust_plan);
     LOG(INFO) << ss.str();
   }
 
@@ -135,9 +132,6 @@ TrainAdjuster::GetInferRequireMemAdjustPlan(
 std::vector<TrainAdjuster::AdjustPlan>
 TrainAdjuster::GetInferReleaseMemAdjustPlan(int device_id) {
   CHECK(adjuster_ != nullptr);
-  
-    // acquire lock to prevent occurency
-  ResourceManager::InferMemoryChangingLock(device_id);
   
   std::unique_lock adjuster_lock{adjuster_->mut_};
 
@@ -200,19 +194,13 @@ TrainAdjuster::GetInferReleaseMemAdjustPlan(int device_id) {
       << " train_avail_mem_mb " << train_avail_mem_mb;
     if (Config::use_shared_tensor) {
       ss << " (target_bs_predict_by_avail_mem " << target_bs_predict_by_avail_mem
-        << " target_bs_calcu_by_delta_mem " << target_bs_calcu_by_delta_mem << ")";
+         << " target_bs_calcu_by_delta_mem " << target_bs_calcu_by_delta_mem << ")";
     } else {
       ss << " (target_bs_calcu_by_delta_mem " << target_bs_calcu_by_delta_mem
          << ", not use avail memory to predict bs)";
     }
     ss << " free memory " << free_mem_mb
-      << " | adjust plan: ";
-
-    ss << "target bs [ ";
-    for (auto &plan : adjust_plan) {
-      ss << plan.batch_size << " ";
-    };
-    ss << "]";
+      << " | adjust plan: " << PrettyPrintAdjustPlans(adjust_plan);
 
     LOG(INFO) << ss.str();
   }
@@ -253,8 +241,12 @@ std::pair<double, double> TrainAdjuster::GetModelMemParam() {
   if (!inftra_info->IsTrainInfoValid(ctrl::kTraRank_0)) {
     LOG(FATAL) << "Train info is not valid";
   }
-  std::string_view model_name = 
-      std::string_view{inftra_info->GetTrainInfoUnsafe(0)->model_name};
+  std::string model_name{
+      std::string_view{inftra_info->GetTrainInfoUnsafe(0)->model_name}};
+  return GetModelMemParam(model_name);
+}
+
+std::pair<double, double> TrainAdjuster::GetModelMemParam(const std::string &model_name) {
 
   // ad-hoc currently, should profile training and return the result
   // to adjuster

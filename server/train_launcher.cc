@@ -89,7 +89,7 @@ bool TrainLauncher::Train() {
   if ((Config::IsColocateMode() || Config::IsSwitchMode()) && 
       Config::use_shared_tensor &&
       Config::enable_warm_cache_fallback) {
-    auto [base, slope] = TrainAdjuster::adjuster_->GetModelMemParam();
+    auto [base, slope] = TrainAdjuster::adjuster_->GetModelMemParam(cur_model_name_);
     Config::max_warm_cache_nbytes = static_cast<size_t>((
       Config::cuda_memory_pool_gb * 1024 - Config::train_memory_over_predict_mb - base) * 1_MB);
     LOG(INFO) << "[Warm Cache Fallback for Colocation] set max warm cache nbytes to "
@@ -301,14 +301,16 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
       LOG(INFO) << "[TrainLauncher]: " << job << " is killed, restart";
       return false;
     } else {
-      int train_world_size = ctrl::InfTraCommunicator::GetIB()
-                              ->GetTrainInfoUnsafe(0)->train_world_size;
+      int train_world_size = ctrl::InfTraCommunicator::GetTrainWorldSize();
       std::string train_memory_str, free_memory_str;
       for (auto i : boost::irange(train_world_size)) {
         train_memory_str += 
             std::to_string(ResourceManager::GetTrainMemoryMB(i)) + " ";
         free_memory_str += 
             std::to_string(ResourceManager::GetFreeMemoryMB(i, true)) + " ";
+      }
+      for (auto pid : ctrl::InfTraCommunicator::GetTrainPIDs()) {
+        kill(pid, SIGKILL);
       }
       LOG(FATAL) << "[TrainLauncher]: " << job 
                  << " failed, signal is " << strsignal(signal) 

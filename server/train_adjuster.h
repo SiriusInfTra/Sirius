@@ -48,6 +48,7 @@ class TrainAdjuster {
       const std::vector<AdjustPlan> &adjust_plans, 
       std::unique_lock<std::mutex> &lock);
   std::pair<double, double> GetModelMemParam();
+  std::pair<double, double> GetModelMemParam(const std::string &model_name);
 
   int cached_train_world_size_;
   std::array<int, MAX_DEVICE_NUM> cached_target_batch_sizes_;
