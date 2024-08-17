@@ -12,13 +12,28 @@ import torch
 import torch_col
 
 
-def info(msg: str):
+def info(*args):
+    if len(args) == 1:
+        msg = args[0]
+    else:
+        msg = ' '.join([f'{arg}' for arg in args])
+    if type(msg) != str:
+        msg = f'{msg}'
+
     caller = inspect.getframeinfo(inspect.stack()[1][0])
     c_msg = msg.encode('utf-8')
     c_file = caller.filename.encode('utf-8')
     torch_col._C.CallGLOG_INFO(c_msg, c_file, caller.lineno)
 
-def dinfo(msg: str):
+
+def dinfo(*args):
+    if len(args) == 1:
+        msg = args[0]
+    else:
+        msg = ' '.join([f'{arg}' for arg in args])
+    if type(msg) != str:
+        msg = f'{msg}'
+
     caller = inspect.getframeinfo(inspect.stack()[1][0])
     c_msg = msg.encode('utf-8')
     c_file = caller.filename.encode('utf-8')

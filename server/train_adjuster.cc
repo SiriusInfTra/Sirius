@@ -135,7 +135,7 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
       << " required_mem_mb " << required_mem_mb
       << " adjust_batch_buf_mb " << adjust_batch_buf_mb
       << " delta_batch_size " << delta_batch_size
-      << " | adjust plan: " << PrettyPrintAdjustPlans(adjust_plan);
+      << " | require adjust plan: " << PrettyPrintAdjustPlans(adjust_plan);
     LOG(INFO) << ss.str();
   }
 
@@ -245,7 +245,7 @@ TrainAdjuster::GetInferReleaseMemAdjustPlanWithInLock(
          << ", not use avail memory to predict bs)";
     }
     ss << " free memory [" << free_mem_mbs << "]"
-      << " | adjust plan: " << PrettyPrintAdjustPlans(adjust_plan);
+      << " | release adjust plan: " << PrettyPrintAdjustPlans(adjust_plan);
 
     LOG(INFO) << ss.str();
   }

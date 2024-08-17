@@ -30,12 +30,12 @@ void DistTrainSync::Send(int dst, const std::string &msg) {
   CHECK(DistTrainSync::dist_train_sync_ != nullptr);
 
   int src = TorchColConfig::GetTrainRank();
-  for (int i = 0; i < msg.size(); i++) {
+  for (int i = 0; i < msg.size(); ) {
     int j = i + kMsgBufSize >= msg.size() ? msg.size() : i + kMsgBufSize;
 
     std::array<char, kMsgBufSize> buf{0};
     std::copy(msg.data() + i, msg.data() + j, buf.begin());
-    
+
     dist_train_sync_->intra_train_mqs_[src][dst]->BlockPut(buf);
     i = j;
   }
