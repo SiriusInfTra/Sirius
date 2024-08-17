@@ -128,19 +128,7 @@ class DynamicBatchDataset(IterableDataset):
         if self.hook.train_mode == TrainMode.COLOCATE_L2:
             if self.hook._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL2:
                 self.hook.release_and_reply()
-                #     t0 = time.time()
-                #     old_gpu_mem = gpu_mem()
-                #     torch.cuda.synchronize()
-                #     torch.cuda.empty_cache()
-                #     hook.adjust_l2()
-                #     t1 = time.time()
-                #     if not use_shared_tensor:
-                #         mem_info = f'gpu mem {old_gpu_mem:.1f} -> {gpu_mem():.1f}'
-                #     else:
-                #         mem_info = f'mem pool {torch_col.cuda_memory_pool_train_all_usage() / 1024 / 1024:.1f}M'
-                #     print('batch {} adjust : bs {} -> {} | {:.1f}ms | {:.1f}ms | {}'.format(
-                #         i, train_dataset.last_batch_size, train_dataset.batch_size, (time.time()-batch_begin) * 1000, (t1 - t0) * 1000, 
-                #         mem_info))
+
         assert self.state == DatasetState.ITER
         self.batch_event.tag = 'finish'
         EventManager.record_event('', self.batch_event)
