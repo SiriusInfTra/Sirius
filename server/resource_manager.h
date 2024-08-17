@@ -20,10 +20,6 @@ class ResourceManager {
   static double GetFreeMemoryMB(int device_id, bool verbose);
   static double GetTrainAvailMemoryMB(int device_id, bool verbose);
 
-  static void InferMemoryChangingLock(int device_id);
-  static void InferMemoryChangingUnlock(int device_id);
-  static bool InferChangeMemoryTryLock(int device_id);
-
   static double GetInferMemoryMB(int device_id);
   static double GetTrainMemoryMB(int device_id);
   
@@ -32,7 +28,6 @@ class ResourceManager {
  private:
   static std::unique_ptr<ResourceManager> resource_manager_;
 
-  std::array<std::mutex, MAX_DEVICE_NUM> infer_memory_changing_mut_;
 };
 
 }

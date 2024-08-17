@@ -82,21 +82,6 @@ double ResourceManager::GetTrainAvailMemoryMB(int device_id, bool verbose) {
   return free_memory_mb;  
 }
 
-void ResourceManager::InferMemoryChangingLock(int device_id) {
-  CHECK(resource_manager_ != nullptr);
-  resource_manager_->infer_memory_changing_mut_[device_id].lock();
-}
-
-void ResourceManager::InferMemoryChangingUnlock(int device_id) {
-  CHECK(resource_manager_ != nullptr);
-  resource_manager_->infer_memory_changing_mut_[device_id].unlock();
-}
-
-bool ResourceManager::InferChangeMemoryTryLock(int device_id) {
-  CHECK(resource_manager_ != nullptr);
-  return resource_manager_->infer_memory_changing_mut_[device_id].try_lock();
-}
-
 double ResourceManager::GetInferMemoryMB(int device_id) {
   using namespace sta;
   if (Config::use_shared_tensor_infer) {

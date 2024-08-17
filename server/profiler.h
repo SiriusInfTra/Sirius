@@ -129,7 +129,6 @@ class Profiler {
     TrainAdjust,
     TrainFirstAdjust, // the latter will be batch with the first
     InferAllocStorage,
-    InferWaitBeforeEnterAlloc,
     InferAdjustAlloc,
     InferLoadParam,
     InferPipelineExec,

@@ -371,10 +371,11 @@ void Profiler::CollectMemoryResourceInfo(
       };
 
       if (Config::profiler_acquire_resource_lock) {
+        // as all model require/release memory will get the cold cache
+        // lock before do the operation, so we only need to get the lock
+        // to ensure atomic read of the resource info
         auto cold_cache_lock = ColdModelCache::Get(device_id)->Lock();
-        ResourceManager::InferMemoryChangingLock(device_id);
         read_resource_info();
-        ResourceManager::InferMemoryChangingUnlock(device_id);
       } else {
         read_resource_info();
       }

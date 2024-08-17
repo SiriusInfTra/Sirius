@@ -206,9 +206,6 @@ bool Model::ReclaimMemory(size_t rank,
   if (status_[rank] == Status::kWithoutMemory) {
     return false; 
   }
-  if (Config::profiler_acquire_resource_lock) { // not used in performance test
-    ResourceManager::InferMemoryChangingLock(device_.device_id);
-  }
 
   auto &executor = executors_[rank];
   auto cold_model_cache = ColdModelCache::Get(device_.device_id);
@@ -225,9 +222,6 @@ bool Model::ReclaimMemory(size_t rank,
   executor->DeInit(cached_groups_id);
   ChangeStatus(rank, Status::kWithoutMemory);
 
-  if (Config::profiler_acquire_resource_lock) {
-    ResourceManager::InferMemoryChangingUnlock(device_.device_id);
-  }
   return true;
 }
 
@@ -270,11 +264,10 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
 #endif
 
   auto cold_model_cache = ColdModelCache::Get(device_.device_id);
-  if (!try_lock_memory_changing_succ) {
-    PROFILE_START(InferWaitBeforeEnterAlloc);
-    ResourceManager::InferMemoryChangingLock(device_.device_id);
-    PROFILE_END(InferWaitBeforeEnterAlloc);
-  }
+
+  LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
+            << " wait memory change lock done";
+
   double free_memory_MB = ResourceManager::GetFreeMemoryMB(device_.device_id, true);
   double cold_cache_free_memory_MB =
       cold_model_cache->GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock);
@@ -370,7 +363,6 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
 #if 1
   // directly release memory changing lock, 
   // infer may alloc memory but without this lock
-  ResourceManager::InferMemoryChangingUnlock(device_.device_id);
   return false;
 #else
   // delay release the lock, will be released after infer finish alloc
@@ -383,19 +375,14 @@ bool Model::SetupMemory(size_t rank,
                         std::unique_lock<std::mutex> &model_lock) {
   CHECK(status_[rank] == Status::kWithoutMemory);
   ColdModelCache::Get(device_.device_id)->PopCacheItem(name_, rank, cold_cache_lock);
-  bool will_unlock_memory_changing = false;
   if (Config::IsColocateMode() && Config::ondemand_adjust) {
     PROFILE_START(InferAdjustAlloc);
     if (!Config::colocate_config.skip_malloc) {
-      will_unlock_memory_changing = 
-          MaybeAdjustTrainAndCache(rank, cold_cache_lock, model_lock);
+      MaybeAdjustTrainAndCache(rank, cold_cache_lock, model_lock);
     }
     PROFILE_END(InferAdjustAlloc);
   }
   executors_[rank]->Init(false);
-  if (will_unlock_memory_changing) {
-    ResourceManager::InferMemoryChangingUnlock(device_.device_id);
-  }
   ChangeStatus(rank, Status::kWithoutParam);
   return true;
 }
