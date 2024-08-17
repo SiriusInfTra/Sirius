@@ -329,15 +329,12 @@ void InferModelStore::ColocateMonitor() {
         }
       }
     }
-    // for (int i = 0; i < sta::DeviceManager::GetNumVisibleGpu(); i++) {
-    //   if (num_exits[i] > 0) ctrl::Controller::Get()->InferExit(i);
-    // }
-    if (!ctrl::Controller::Get()->IsTrainIdle()) {
-      for (auto i : boost::irange(sta::DeviceManager::GetNumVisibleGpu())) {
-        auto adjust_plan = TrainAdjuster::GetInferReleaseMemAdjustPlan(i);
-        if (!adjust_plan.empty()) {
-          ctrl::Controller::Get()->ColocateInferReleaseAdjust(adjust_plan);
-        }
+
+    if (!ctrl::Controller::Get()->IsTrainIdle() 
+        && std::accumulate(num_exits.begin(), num_exits.end(), 0) > 0) {
+      auto adjust_plan = TrainAdjuster::GetInferReleaseMemAdjustPlan();
+      if (!adjust_plan.empty()) {
+        ctrl::Controller::Get()->ColocateInferReleaseAdjust(adjust_plan);
       }
     }
     std::this_thread::sleep_for(10ms);

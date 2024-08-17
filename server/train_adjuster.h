@@ -20,10 +20,17 @@ class TrainAdjuster {
   static double PredictTrainMemUsageMB(int device_id, bool verbose);
 
   // TODO: adjust for re-balance training
-  static std::vector<AdjustPlan> GetInferRequireMemAdjustPlan(
-      int device_id, memory_mb_t required_mem_mb, 
+  static std::vector<AdjustPlan> GetTrainRequireMemAdjustPlan(
+      int device_id, memory_mb_t required_mem_mb,
       memory_mb_t cold_cache_free_mem_mb);
-  static std::vector<AdjustPlan> GetInferReleaseMemAdjustPlan(int device_id);
+  static std::vector<AdjustPlan> GetInferRequireMemAdjustPlanWithInLock(
+      int device_id, memory_mb_t required_mem_mb, 
+      memory_mb_t cold_cache_free_mem_mb,
+      std::unique_lock<std::mutex> &cold_cache_lock);
+
+  static std::vector<AdjustPlan> GetInferReleaseMemAdjustPlan();
+  static std::vector<AdjustPlan> GetInferReleaseMemAdjustPlanWithInLock(
+      std::vector<std::unique_lock<std::mutex>> &cold_cache_locks);
 
   static void LoadTrainInfo();
   static void ResetTrainInfo();
