@@ -157,7 +157,7 @@ class EventManager:
         df['rank'] = torch_col.get_train_rank()
 
         if torch_col.get_train_rank() == 0:
-            df_str = df.to_string(index=None, float_format='%.2f') + '\n'
+            df_str = df.to_csv(index=None, float_format='%.2f') + '\n'
             for i in range(1, torch_col.get_train_world_size()):
                 train_event_str = torch_col.dist.recv_msg(i)
                 df_str += train_event_str + '\n'
@@ -165,7 +165,7 @@ class EventManager:
                 f.write(df_str)
             torch_col.info(f'[EventMananger] dump train event to {path}')
         else:
-            df_str = df.to_string(index=None, header=False, float_format='%.2f')
+            df_str = df.to_csv(index=None, header=False, float_format='%.2f')
             torch_col.dist.send_msg(0, df_str)
         torch_col.dist.wait_barrier()
     
