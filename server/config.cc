@@ -87,4 +87,17 @@ bool Config::profile_gpu_smact = true;
 bool Config::profile_gpu_util = true;
 bool Config::profile_sm_partition = false;
 
+bool Config::log_all = false;
+bool Config::log_grpc = false;
+bool Config::log_train_init = false;
+bool Config::log_warm_cache = false;
+bool Config::log_cold_cache = false;
+bool Config::log_infer_model_init = false;
+bool Config::log_infer_model_reclaim = false;
+bool Config::log_infer_time = false;
+bool Config::log_infer_pipeline_exec = false;
+bool Config::log_infer_load_param = false;
+bool Config::log_memory_adjust = false;
+bool Config::log_controller = false;
+
 }

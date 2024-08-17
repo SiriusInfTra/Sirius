@@ -12,6 +12,7 @@
 #include <common/sm_partition.h>
 
 #include <boost/format.hpp>
+#include <boost/range/irange.hpp>
 #include <numeric>
 #include <regex>
 #include <limits>
@@ -109,7 +110,6 @@ std::ostream& operator<<(std::ostream &os, Profiler::PerfItem item) {
     LOG_ITEM(Profiler::PerfItem, TrainAdjust)
     LOG_ITEM(Profiler::PerfItem, TrainFirstAdjust)
     LOG_ITEM(Profiler::PerfItem, InferAllocStorage)
-    LOG_ITEM(Profiler::PerfItem, InferWaitBeforeEnterAlloc)
     LOG_ITEM(Profiler::PerfItem, InferAdjustAlloc)
     LOG_ITEM(Profiler::PerfItem, InferLoadParam)
     LOG_ITEM(Profiler::PerfItem, InferPipelineExec)
@@ -325,7 +325,8 @@ void Profiler::ProfileThread(std::array<nvmlDevice_t, MAX_DEVICE_NUM> devices) {
     infering_memory_nbytes_.emplace_back(Profiler::GetTimeStamp(), 
                                          InferModelStore::GetInferingModelNbytes());
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(monitor_interval_ms_));
+    std::this_thread::sleep_for(
+        std::chrono::milliseconds(monitor_interval_ms_));
   }
 }
 
@@ -335,7 +336,7 @@ void Profiler::CollectMemoryResourceInfo(
   constexpr uint32_t max_proc_info_cnt = 32;
   nvmlProcessInfo_t proc_infos[32];
 
-  for (int device_id = 0; device_id < sta::DeviceManager::GetNumVisibleGpu(); device_id++) {
+  for (auto device_id : boost::irange(sta::DeviceManager::GetNumVisibleGpu())) {
     auto &res_info = res_infos[device_id];
     if (!Config::use_shared_tensor || !Config::use_shared_tensor_train) {
       uint32_t proc_info_cnt = max_proc_info_cnt;
@@ -359,14 +360,19 @@ void Profiler::CollectMemoryResourceInfo(
       auto read_resource_info = [&]() {
         res_info.infer_mem = sta::CUDAMemPool::Get(device_id)->InferMemUsage();
         res_info.train_mem = sta::CUDAMemPool::Get(device_id)->TrainMemUsage();
-        res_info.train_all_mem = sta::CUDAMemPool::Get(device_id)->TrainAllMemUsage();
-        res_info.gpu_used_mem = static_cast<size_t>(Config::cuda_memory_pool_gb * 1_GB);
+        res_info.train_all_mem = 
+            sta::CUDAMemPool::Get(device_id)->TrainAllMemUsage();
+        res_info.gpu_used_mem = 
+            static_cast<size_t>(Config::cuda_memory_pool_gb * 1_GB);
         if (Config::cold_cache_max_capability_nbytes != 0) {
-          res_info.cold_cache_nbytes = ColdModelCache::Get(device_id)->GetCachedNbytesUnsafe();
-          res_info.cold_cache_buffer_mb = ColdModelCache::Get(device_id)->GetBufferMBUnsafe();
+          res_info.cold_cache_nbytes = 
+              ColdModelCache::Get(device_id)->GetCachedNbytesUnsafe();
+          res_info.cold_cache_buffer_mb = 
+              ColdModelCache::Get(device_id)->GetBufferMBUnsafe();
           res_info.infer_mem_in_cold_cache_buffer_mb = 
               ColdModelCache::Get(device_id)->GetColdCacheReleasableMemoryMBUnsafe();
-          res_info.cold_cache_size_mb = ColdModelCache::Get(device_id)->GetCacheSizeMBUnsafe();
+          res_info.cold_cache_size_mb = 
+              ColdModelCache::Get(device_id)->GetCacheSizeMBUnsafe();
         }
       };
 

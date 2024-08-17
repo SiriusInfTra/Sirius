@@ -165,9 +165,7 @@ void WarmModelCache::ReserveCacheInternal(
           } else {
             warm_cache_lock.lock();
           }
-          auto cold_cache_lock = ColdModelCache::Get(device_id_)->Lock();
-          std::unique_lock model_lock{cm->muts_[rank]};
-          bool res = cm->ReclaimMemory(rank, cold_cache_lock, model_lock, model);
+          bool res = cm->ReclaimMemory(rank, model);
           if (res) {
             ss << " " << cm_name << "(hot=" << cm->GetHotness() << ")";
             warm_cache_items_[cm_name]->cached = false;
@@ -205,8 +203,9 @@ ColdModelCache* ColdModelCache::Get(int device_id) {
 
 std::tuple<ColdModelCache::group_id_list, ColdModelCache::evict_list, bool>
 ColdModelCache::PushCacheItem(
-    const std::string& name, size_t rank, std::vector<size_t> groups_nbytes, 
-    size_t total_nbytes, std::unique_lock<std::mutex> &lock, Model *source_model) {
+    const std::string& name, size_t rank, 
+    std::vector<size_t> groups_nbytes, size_t total_nbytes, 
+    std::unique_lock<std::mutex> &lock, Model *source_model) {
   DLOG(INFO) << "PushCacheItem, name = " << name 
              << ", rank = " << rank 
              << ", groups_nbytes = " << groups_nbytes 

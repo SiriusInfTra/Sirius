@@ -48,77 +48,109 @@ void init_cli_options() {
                              "colocate-l2"}));
   app.add_option("--mps", colserve::Config::check_mps, 
       "check mps, default is 1");
-  app.add_option("--use-sta", colserve::Config::use_shared_tensor, 
+  app.add_option("--use-sta", 
+      colserve::Config::use_shared_tensor, 
       "use shared tensor allocator, default is 1");
-  app.add_option("--use-sta-infer", colserve::Config::use_shared_tensor_infer, 
+  app.add_option("--use-sta-infer", 
+      colserve::Config::use_shared_tensor_infer, 
       "use shared tensor allocator in infer, default is 1");
-  app.add_option("--use-sta-train", colserve::Config::use_shared_tensor_train,
+  app.add_option("--use-sta-train", 
+      colserve::Config::use_shared_tensor_train,
       "use shared tensor allocator in train, default is 1");
-  app.add_option("--cuda-memory-pool-gb", colserve::Config::cuda_memory_pool_gb,
+  app.add_option("--cuda-memory-pool-gb", 
+      colserve::Config::cuda_memory_pool_gb,
       "cuda memory pool size in GB, default is 12");
-  app.add_option("--memory-pool-policy", colserve::Config::mempool_freelist_policy, 
-        "cuda memory pool freelist policy, default is best-fit.")
+  app.add_option("--memory-pool-policy", 
+      colserve::Config::mempool_freelist_policy, 
+      "cuda memory pool freelist policy, default is best-fit.")
         ->check(CLI::IsMember({"first-fit", "next-fit", "best-fit"}));
   app.add_option("-p,--port", port,
       "gRPC server port, default is 8080");
   app.add_option("--max-live-minute", max_live_minute,
-      "max server live minute, default is " + std::to_string(max_live_minute) + " minutes");
-  app.add_option("--infer-model-config", colserve::Config::infer_model_config_path, 
+      "max server live minute, default is " 
+      + std::to_string(max_live_minute) + " minutes");
+  app.add_option("--infer-model-config", 
+      colserve::Config::infer_model_config_path, 
       "infer model config path, default is config in models store");
-  app.add_option("--profile-log", colserve::Config::profile_log_path, 
+  app.add_option("--profile-log", 
+      colserve::Config::profile_log_path, 
       "profile log path, default is server-profile");
-  app.add_option("--profile-gpu-smact", colserve::Config::profile_gpu_smact, 
-      "profile gpu smact, default is " + std::to_string(colserve::Config::profile_gpu_smact));
-  app.add_option("--profile-gpu-util", colserve::Config::profile_gpu_util, 
-      "profile gpu util, default is " + std::to_string(colserve::Config::profile_gpu_util));
-  app.add_option("--profile-sm-partition", colserve::Config::profile_sm_partition, 
-      "profile sm partition, default is " + std::to_string(colserve::Config::profile_sm_partition));
-  app.add_option("--capture-train-log", colserve::Config::capture_train_log, 
+  app.add_option("--profile-gpu-smact", 
+      colserve::Config::profile_gpu_smact, 
+      "profile gpu smact, default is " 
+      + std::to_string(colserve::Config::profile_gpu_smact));
+  app.add_option("--profile-gpu-util", 
+      colserve::Config::profile_gpu_util, 
+      "profile gpu util, default is "
+      + std::to_string(colserve::Config::profile_gpu_util));
+  app.add_option("--profile-sm-partition", 
+      colserve::Config::profile_sm_partition, 
+      "profile sm partition, default is " 
+      + std::to_string(colserve::Config::profile_sm_partition));
+  app.add_option("--capture-train-log", 
+      colserve::Config::capture_train_log, 
       "capture train log, default is 1");
-  app.add_flag("--infer-blob-alloc", colserve::Config::infer_raw_blob_alloc, 
+  app.add_flag("--infer-blob-alloc", 
+      colserve::Config::infer_raw_blob_alloc, 
       "infer raw blob alloc, default is false");
-  app.add_option("--train-mps-thread-percent", colserve::Config::train_mps_thread_percent, 
+  app.add_option("--train-mps-thread-percent", 
+      colserve::Config::train_mps_thread_percent, 
       "train mps thread percent, default is None");
-  app.add_flag("--colocate-skip-malloc", colserve::Config::colocate_config.skip_malloc, 
+  app.add_flag("--colocate-skip-malloc", 
+      colserve::Config::colocate_config.skip_malloc, 
       "colocate skip malloc, default is false");
-  app.add_flag("--colocate-skip-loading", colserve::Config::colocate_config.skip_loading, 
+  app.add_flag("--colocate-skip-loading", 
+      colserve::Config::colocate_config.skip_loading, 
       "colocate skip loading, default is false");
   app.add_option("--use-xsched", colserve::Config::use_xsched, 
       "use xsched, default is false");
-  app.add_option("--dynamic-sm-partition", colserve::Config::dynamic_sm_partition, 
+  app.add_option("--dynamic-sm-partition", 
+      colserve::Config::dynamic_sm_partition, 
       "dynamic sm partition, default is false");
   app.add_option("--train-profile", colserve::Config::train_profile, 
       "train timeline path, default is train-timeline");
-  app.add_option("--max-warm-cache-nbytes", colserve::Config::max_warm_cache_nbytes, 
+  app.add_option("--max-warm-cache-nbytes", 
+      colserve::Config::max_warm_cache_nbytes, 
       "max warm cache nbytes, default is 0*1024*1024*1024(0G).");
-  app.add_option("--cold-cache-min-capability-nbytes", colserve::Config::cold_cache_min_capability_nbytes, 
+  app.add_option("--cold-cache-min-capability-nbytes", 
+      colserve::Config::cold_cache_min_capability_nbytes, 
       "min cold cache capability nbytes, default is 0*1024*1024*1024(0G).");
-  app.add_option("--cold-cache-max-capability-nbytes", colserve::Config::cold_cache_max_capability_nbytes, 
+  app.add_option("--cold-cache-max-capability-nbytes", 
+      colserve::Config::cold_cache_max_capability_nbytes, 
       "max cold cache capability nbytes, default is 0*1024*1024*1024(0G).");
-  app.add_option("--cold-cache-ratio", colserve::Config::cold_cache_ratio, 
+  app.add_option("--cold-cache-ratio", 
+      colserve::Config::cold_cache_ratio, 
       "cold cache ratio, default is 0.3(30%).");
-  app.add_option("--memory-pressure-mb", colserve::Config::memory_pressure_mb,
+  app.add_option("--memory-pressure-mb", 
+      colserve::Config::memory_pressure_mb,
       "memory pressure in MB, default is 0");
   app.add_option("--ondemand-adjust", colserve::Config::ondemand_adjust,
       "ondemand adjust batch size, default is 1");
   app.add_option("--pipeline-load", colserve::Config::pipeline_load,
       "pipeline load, default is 1");
-  app.add_option("--train-memory-over-predict-mb", colserve::Config::train_memory_over_predict_mb,
+  app.add_option("--train-memory-over-predict-mb", 
+      colserve::Config::train_memory_over_predict_mb,
       "train memory over predict in MB, default is 2560");
-  app.add_option("--infer-model-max-idle-ms", colserve::Config::infer_model_max_idle_ms,
+  app.add_option("--infer-model-max-idle-ms", 
+      colserve::Config::infer_model_max_idle_ms,
       "infer model max idle in ms, default is 3000");
   app.add_option("--has-warmup", colserve::Config::has_warmup,
       "has warmup, default is 0");
-  app.add_flag("--dump-adjust-info", colserve::Config::dump_adjust_info,
+  app.add_flag("--dump-adjust-info", 
+      colserve::Config::dump_adjust_info,
       "dump adjust info, default is 0");
-  app.add_flag("--profiler-acquire-resource-lock", colserve::Config::profiler_acquire_resource_lock,
-      "profiler acquire resource lock during profiling, not use for performance eval");
+  app.add_flag("--profiler-acquire-resource-lock", 
+      colserve::Config::profiler_acquire_resource_lock,
+      "profiler acquire resource lock during profiling, "
+      "not use for performance eval");
   app.add_flag("--dummy-adjust", colserve::Config::dummy_adjust,
       "dummy adjust for eval, default is 0");
-  app.add_flag("--skip-set-mps-thread-percent", colserve::Config::skip_set_mps_thread_percent,
+  app.add_flag("--skip-set-mps-thread-percent", 
+      colserve::Config::skip_set_mps_thread_percent,
       "skip set mps thread percent, default is 0");
 
-  app.add_flag("--enable-warm-cache-fallback", colserve::Config::enable_warm_cache_fallback,
+  app.add_flag("--enable-warm-cache-fallback", 
+      colserve::Config::enable_warm_cache_fallback,
       "enable warm cache fallback, default is 1");
 }
 
@@ -139,10 +171,14 @@ void init_config() {
   } else {
     LOG(FATAL) << "unknown serve mode: " << mode;
   }
+  
   colserve::Config::use_shared_tensor_infer = 
-      colserve::Config::use_shared_tensor_infer && colserve::Config::use_shared_tensor;
+      colserve::Config::use_shared_tensor_infer 
+      && colserve::Config::use_shared_tensor;
+
   colserve::Config::use_shared_tensor_train =
-      colserve::Config::use_shared_tensor_train && colserve::Config::use_shared_tensor;
+      colserve::Config::use_shared_tensor_train 
+      && colserve::Config::use_shared_tensor;
 
   if (!cfg::IsColocateMode()) {
     cfg::ondemand_adjust = false;
@@ -198,6 +234,26 @@ void init_config() {
   }
   if (cfg::dynamic_sm_partition && !cfg::use_xsched) {
     LOG(FATAL) << "Dynamic partition SM must work with xsched";
+  }
+
+  // log config
+  auto col_log_all_env = getenv("COLSERVE_LOG_ALL");
+  if (col_log_all_env != nullptr) {
+    cfg::log_all = std::string(col_log_all_env) == "1";
+  }
+  if (cfg::log_all) {
+    cfg::log_all = true;
+    cfg::log_grpc = true;
+    cfg::log_train_init = true;
+    cfg::log_warm_cache = true;
+    cfg::log_cold_cache = true;
+    cfg::log_infer_model_init = true;
+    cfg::log_infer_model_reclaim = true;
+    cfg::log_infer_time = true;
+    cfg::log_infer_pipeline_exec = true;
+    cfg::log_infer_load_param = true;
+    cfg::log_memory_adjust = true;
+    cfg::log_controller = true;
   }
 
   std::string header = str(boost::format("%s COLSERVE CONFIG [PID %d] %s") 

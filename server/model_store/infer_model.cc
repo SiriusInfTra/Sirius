@@ -35,7 +35,7 @@ std::string GetModelNameWithoutDuplicatedId(const std::string &model_name) {
 }
 
 std::array<std::atomic<int>, static_cast<size_t>(Model::Status::kNumStatus)> 
-Model::model_stat_{0, 0, 0};
+    Model::model_stat_{0, 0, 0};
 
 std::mutex Model::estimate_tpc_mut_;
 std::condition_variable Model::estimate_tpc_cv_;
@@ -58,8 +58,10 @@ int Model::GetPreEstimatedTPC(const std::string &model_name) {
 
 Model::Model(const std::string &name, const std::filesystem::path &model_path,
              std::optional<const std::map<std::string, tvm::TVMArray>> params,
-             DLDevice device, size_t batch_size, size_t num_worker, size_t max_num_worker)
-    : name_(name), device_(device), batch_size_(batch_size), max_num_worker_(max_num_worker) {
+             DLDevice device, size_t batch_size, 
+             size_t num_worker, size_t max_num_worker)
+    : name_(name), device_(device), batch_size_(batch_size), 
+      max_num_worker_(max_num_worker) {
   // DLOG(INFO) << "Model " << name << " start initializing from " << model_path;
   CHECK(std::filesystem::exists(model_path / "mod.so"));
   CHECK(std::filesystem::exists(model_path / "mod.json"));
@@ -101,25 +103,20 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
     LOG(INFO) << "[Model]: " << name << " task switch by pipelining load/run";
   }
 
-  // config infer scaling
-  // scale_up_queue_time_ = 200; // no used
-  // scale_down_idle_time_ = Config::infer_model_max_idle_ms;
-  // warmup_ = Config::has_warmup;
-  // max_num_worker_ = 5;
-  // infer_workers_.resize(max_num_worker_);
-  // worker_running_.resize(max_num_worker_);
-  // waited_trains_.resize(max_num_worker_);
-
   CHECK_LE(num_worker, max_num_worker);
-  CHECK(max_num_worker_ == 1 && num_worker == 1) << "currently, only support one worker";
-  CHECK_LT(max_num_worker_, MAX_NUM_WORKER) << "max num worker exceed limit";
+  CHECK(max_num_worker_ == 1 && num_worker == 1) 
+      << "currently, only support one worker";
+  CHECK_LT(max_num_worker_, MAX_NUM_WORKER) 
+      << "max num worker exceed limit";
+
   for (size_t i = 0; i < num_worker; i++) {
     auto executor = tvm_graph_->CreateGraphExecutor(i, std::vector{device});
     // InferModelCache::ReserveCache(name);
     // executor->Init(true);
     executors_.push_back(std::move(executor));
     status_.push_back(Status::kWithoutMemory);
-    model_stat_[static_cast<size_t>(Status::kWithoutMemory)].fetch_add(1, std::memory_order_relaxed);
+    model_stat_[static_cast<size_t>(Status::kWithoutMemory)].fetch_add(
+        1, std::memory_order_relaxed);
   }
   infer_workers_.resize(max_num_worker_);
 
@@ -195,6 +192,14 @@ bool Model::AddJob(network::InferHandler::InferData* data) {
   return job_queue_.Put(std::make_shared<InferJob>(data));
 }
 
+bool Model::ReclaimMemory(size_t rank, Model *source_model) {
+  if (name_ == "dummy") return false;
+  
+  auto cold_cache_lock = ColdModelCache::Get(device_.device_id)->Lock();
+  auto model_lock = std::unique_lock{muts_[rank]};
+  return ReclaimMemory(rank, cold_cache_lock, model_lock, source_model);
+}
+
 bool Model::ReclaimMemory(size_t rank, 
                           std::unique_lock<std::mutex> &cold_cache_lock, 
                           std::unique_lock<std::mutex> &model_lock, 
@@ -236,7 +241,6 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
                                      std::unique_lock<std::mutex> &model_lock) {
   CHECK(status_[rank] == Status::kWithoutMemory);
 
-  bool try_lock_memory_changing_succ = false;
 
 #if ADJUST_WITH_FLYING
   // batching adjust with flying adjusts, deprecated currently
@@ -273,6 +277,7 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
       cold_model_cache->GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock);
   double total_storage_MB = 
       sta::ByteToMB(executors_[rank]->GetMissingStorageSizeAlign());
+
   if (total_storage_MB > cold_cache_free_memory_MB 
       && !ctrl::Controller::Get()->IsTrainIdle()) {
     auto adjust_plan = TrainAdjuster::GetInferRequireMemAdjustPlan(
@@ -283,6 +288,7 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
           rank, device_.device_id, adjust_plan);
       ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
       PROFILE_END(TrainAdjust);
+
       LOG_IF(INFO, Config::log_memory_adjust) 
           << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
           << " wait adjust " << PROFILE_DURATRION(TrainAdjust)

@@ -295,9 +295,8 @@ void InferModelStore::ClearWarmCache() {
       CHECK(model != nullptr);
       CHECK_EQ(model->num_worker_, 1);
       std::unique_lock warm_cache_model_lock{cache_item->mut};
-      auto cold_cache_lock = ColdModelCache::Get(warm_model_cache->device_id_)->Lock();
-      std::unique_lock model_lock{model->muts_[0]};
-      bool res = model->ReclaimMemory(0, cold_cache_lock, model_lock, model);
+      bool res = model->ReclaimMemory(0, model);
+
       // force let cache = false
       cache_item->cached = false;
     }
@@ -333,10 +332,12 @@ void InferModelStore::ColocateMonitor() {
     // for (int i = 0; i < sta::DeviceManager::GetNumVisibleGpu(); i++) {
     //   if (num_exits[i] > 0) ctrl::Controller::Get()->InferExit(i);
     // }
-    for (auto i : boost::irange(sta::DeviceManager::GetNumVisibleGpu())) {
-      auto adjust_plan = TrainAdjuster::GetInferReleaseMemAdjustPlan(i);
-      if (!adjust_plan.empty()) {
-        ctrl::Controller::Get()->ColocateInferReleaseAdjust(adjust_plan);
+    if (!ctrl::Controller::Get()->IsTrainIdle()) {
+      for (auto i : boost::irange(sta::DeviceManager::GetNumVisibleGpu())) {
+        auto adjust_plan = TrainAdjuster::GetInferReleaseMemAdjustPlan(i);
+        if (!adjust_plan.empty()) {
+          ctrl::Controller::Get()->ColocateInferReleaseAdjust(adjust_plan);
+        }
       }
     }
     std::this_thread::sleep_for(10ms);

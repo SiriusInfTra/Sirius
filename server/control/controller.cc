@@ -236,7 +236,7 @@ uint64_t Controller::ColocateInferRequireAdjust(
 
     LOG_IF(INFO, Config::log_controller) 
               << "[Controller] model " << model_rank 
-              << " send ColocateAdjust cmd_id: " << cmd_id 
+              << " send Colocate Infer Require Adjust cmd_id: " << cmd_id 
               << " train idle " << IsTrainIdle()
               << " adjust plan: " << PrettyPrintAdjustPlans(adjust_plans);
   }
@@ -260,7 +260,7 @@ uint64_t Controller::ColocateInferReleaseAdjust(
         adjust_msgs, InfTraMessageQueue::Direction::kInf2Tra);
   
     LOG_IF(INFO, Config::log_controller) 
-        << "[Controller] send ColocateInferReleaseAdjust cmd_id: " << cmd_id 
+        << "[Controller] send Colocate Infer Release Adjust cmd_id: " << cmd_id 
         << " train idle " << IsTrainIdle()
         << " adjust plan: " 
         << PrettyPrintAdjustPlans(adjust_plans);

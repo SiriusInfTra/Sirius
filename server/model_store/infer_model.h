@@ -35,12 +35,15 @@ class Model {
   //       size_t batch_size, size_t num_worker, size_t max_num_worker);
   Model(const std::string &name, const std::filesystem::path &model_path,
         std::optional<const std::map<std::string, tvm::TVMArray>> params,
-        DLDevice device, size_t batch_size, size_t num_worker, size_t max_num_worker);
+        DLDevice device, size_t batch_size, 
+        size_t num_worker, size_t max_num_worker);
 
   size_t NumJobs() { return job_queue_.NumJobs(); }
 
   bool ReclaimMemory(size_t rank, std::unique_lock<std::mutex> &cold_cache_lock, 
                   std::unique_lock<std::mutex> &model_lock, Model *source_model);
+
+  bool ReclaimMemory(size_t rank, Model *source_model);
 
   void ClearColdCache(const std::vector<size_t> &cold_cached_group_id, int rank,
                                   std::unique_lock<std::mutex> &cold_cache_lock);

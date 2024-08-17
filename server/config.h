@@ -142,20 +142,18 @@ class Config {
   static bool profile_gpu_util;
   static bool profile_sm_partition;
 
-  static constexpr bool log_grpc = false;
-  static constexpr bool log_train_init = false;
-  static constexpr bool log_warm_cache = false;
-  static constexpr bool log_cold_cache = false;
-
-  static constexpr bool log_infer_model_init = false;
-  static constexpr bool log_infer_model_reclaim = false;
-  static constexpr bool log_infer_time = false;
-  static constexpr bool log_infer_pipeline_exec = false;
-  static constexpr bool log_infer_load_param = false;
-
-  static constexpr bool log_memory_adjust = false;
-
-  static constexpr bool log_controller = false;
+  static  bool log_all;
+  static  bool log_grpc;
+  static  bool log_train_init;
+  static  bool log_warm_cache;
+  static  bool log_cold_cache;
+  static  bool log_infer_model_init;
+  static  bool log_infer_model_reclaim;
+  static  bool log_infer_time;
+  static  bool log_infer_pipeline_exec;
+  static  bool log_infer_load_param;
+  static  bool log_memory_adjust;
+  static  bool log_controller;
 
   inline static bool IsSwitchMode() {
     return Config::serve_mode == ServeMode::kTaskSwitchL1
