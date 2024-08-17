@@ -15,6 +15,7 @@ add_library(new_torch_col SHARED
   torch_col/csrc/fake_engine.cc
   torch_col/csrc/init.cc
   torch_col/csrc/dist_ext.cc
+  torch_col/csrc/dist_train_sync.cc
 )
 
 add_dependencies(new_torch_col xsched_lib)
@@ -28,7 +29,9 @@ target_link_directories(new_torch_col PRIVATE ${CMAKE_BINARY_DIR}/xsched/lib)
 set(torch_python_lib)
 foreach(torch_lib IN ITEMS ${TORCH_LIBRARIES})
   if(torch_lib MATCHES ".*torch/lib/libc10.so")
-    string(REPLACE "torch/lib/libc10.so" "torch/lib/libtorch_python.so" torch_python_lib ${torch_lib})
+    string(REPLACE "torch/lib/libc10.so" 
+                   "torch/lib/libtorch_python.so" 
+                   torch_python_lib ${torch_lib})
   endif()
 endforeach()
 
@@ -64,11 +67,13 @@ file(GLOB TORCH_COL_PYTHON_FILES "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/*.py")
 set(TORCH_COL_CYTHON_FILES 
   "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/cython/ctrl_stub.pxi"
   "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/cython/main.pyx" 
+  "${CMAKE_CURRENT_SOURCE_DIR}/torch_col/cython/dist.pyx" 
 )
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/torch_col.egg-info
   COMMAND BUILD_DIR=${CMAKE_BINARY_DIR} ${PYTHON_EXECUTABLE}
-  ARGS setup.py develop
+  ARGS -m pip install --no-build-isolation --editable . 
+       --config-settings editable_mode=compat # for pylance
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS 
     new_torch_col sta

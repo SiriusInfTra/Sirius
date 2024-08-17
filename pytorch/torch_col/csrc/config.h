@@ -26,6 +26,8 @@ class TorchColConfig {
 
   static int train_rank;
   static int train_world_size;
+
+  static std::string train_profile_log_path;
   
   static int configured;
 
@@ -37,11 +39,15 @@ class TorchColConfig {
   static inline std::string GetHookMode() { return hook_mode; }
   static inline int IsEnableXsched() { return colocate_use_xsched; }
   static inline int IsEnableDynamicSmPartition() { return dynamic_sm_partition; }
-  static inline int IsReleaseIntermMemoryByGradFn() { return release_interm_memory_by_grad_fn; }
+  static inline int IsReleaseIntermMemoryByGradFn() { 
+    return release_interm_memory_by_grad_fn; 
+  }
   static inline void SetReleaseIntermMemoryByGradFn(int value) { 
     release_interm_memory_by_grad_fn = value; 
   }
-  static inline int IsReleaseIntermMemoryByTagging() { return release_interm_memory_by_tagging; }
+  static inline int IsReleaseIntermMemoryByTagging() { 
+    return release_interm_memory_by_tagging; 
+  }
   static inline void SetReleaseIntermMemoryByTagging(int value) { 
     release_interm_memory_by_tagging = value;
   }
@@ -53,6 +59,8 @@ class TorchColConfig {
   static inline int IsTrainMaster() { return train_rank == 0; }
   static inline int GetTrainWorldSize() { return train_world_size; }
   static inline void SetTrainWorldSize(int size) { train_world_size = size; }
+
+  static inline std::string GetTrainProfileLogPath() { return train_profile_log_path; }
 };
 
 }

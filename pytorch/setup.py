@@ -1,7 +1,8 @@
 import os, pathlib
 import setuptools
 from setuptools import Extension, setup, find_packages
-from Cython.Build import cythonize, build_ext
+from Cython.Build import cythonize
+from Cython.Distutils import build_ext
 
 import torch
 import shutil
@@ -11,8 +12,10 @@ shutil.rmtree("build", ignore_errors=True)
 shutil.rmtree("dist", ignore_errors=True)
 shutil.rmtree("torch_col.egg-info", ignore_errors=True)
 
+
 def get_build_path():
     return pathlib.Path(os.environ.get('BUILD_DIR', '../build'))
+
 
 def copy_lib():
     # build_path = pathlib.Path('../build')
@@ -24,6 +27,7 @@ def copy_lib():
     lib_path.mkdir(parents=True, exist_ok=True)
     shutil.copy(comm_build_path / 'libsta.so', lib_path)
     shutil.copy(ext_build_path / 'libnew_torch_col.so', lib_path)
+
 
 def config_extension():
     torch_install_path = pathlib.Path(torch.__file__).parent
@@ -42,13 +46,9 @@ def config_extension():
             break
     copy_lib()
 
-    ext = Extension(
-        name="torch_col._C",
-        sources=[
-            "torch_col/cython/main.pyx",
-        ],
-        language="c++",
-        include_dirs=[
+    compile_args = {
+        'language': 'c++',
+        'include_dirs': [
             "./",
             "../",
             "../third_party/mpool/allocator/include/",
@@ -56,18 +56,41 @@ def config_extension():
             *torch_include_path,
             f"{cuda_root_path}/include"
         ],
-        libraries=["new_torch_col"],
-        library_dirs=["torch_col/lib"],
-        extra_compile_args=["-std=c++17", "-DMPOOL_VERBOSE_LEVEL=0", "-DMPOOL_CHECK_LEVEL=0"],
-        extra_link_args=["-Wl,-rpath,$ORIGIN/lib"],
+        'libraries': ['new_torch_col'],
+        'library_dirs': ['torch_col/lib'],
+        'extra_compile_args': [
+            '-std=c++17',
+            '-DMPOOL_VERBOSE_LEVEL=0',
+            '-DMPOOL_CHECK_LEVEL=0',
+        ],
+        'extra_link_args': [
+            '-Wl,-rpath,$ORIGIN/../lib',
+        ],
+    }
+
+    c_ext = Extension(
+        name="torch_col._C._main",
+        sources=[
+            "torch_col/cython/main.pyx",
+        ],
+        **compile_args,
     )
-    return cythonize([ext], language_level=3) 
+    c_dist_ext = Extension(
+        name="torch_col._C._dist",
+        sources=[
+            "torch_col/cython/dist.pyx",
+        ],
+        **compile_args
+    )
+
+    return cythonize([c_ext, c_dist_ext], language_level=3) 
+
 
 setup(
-    name="torch_col",
     packages=find_packages(),
     package_data={
         "torch_col" : ['lib/*.so']
     },
+    cmdclass={'build_ext': build_ext},
     ext_modules=config_extension(),
 )

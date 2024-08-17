@@ -9,8 +9,8 @@
 
 
 namespace torch_col {
-using namespace colserve;
 
+using namespace colserve;
 
 class StubBase {
  public:
@@ -106,7 +106,6 @@ class StubProfiler {
   static std::vector<long> adjsut_done_time_stamp_;
   static std::mutex mutex_;
 };
-
 
 }
 

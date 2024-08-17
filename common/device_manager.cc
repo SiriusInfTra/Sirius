@@ -64,6 +64,10 @@ DeviceManager::DeviceManager() {
       gpu_id_map_[i] = {i, system_gpu_uuids_[i]};
     }
   }
+
+  for (auto it = gpu_id_map_.begin(); it != gpu_id_map_.end(); it++) {
+    system_to_visible_id_[it->second.first] = it->first;
+  }
 }
 
 void DeviceManager::Init() {
@@ -100,6 +104,13 @@ int DeviceManager::GetCurrentDevice() {
   int device_id;
   COL_CUDA_CALL(cudaGetDevice(&device_id));
   return device_id;
+}
+
+int DeviceManager::GetVisibleGpuId(int system_id) {
+  CHECK(device_manager_ != nullptr);
+  auto iter = device_manager_->system_to_visible_id_.find(system_id);
+  CHECK(iter != device_manager_->system_to_visible_id_.end());
+  return iter->second;
 }
 
 } // namespace colserve::sta

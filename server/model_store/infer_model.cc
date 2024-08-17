@@ -6,6 +6,7 @@
 #include <server/config.h>
 #include <server/resource_manager.h>
 #include <server/train_launcher.h>
+#include <server/train_adjuster.h>
 
 #include <common/util.h>
 #include <common/sm_partition.h>
@@ -34,7 +35,7 @@ std::string GetModelNameWithoutDuplicatedId(const std::string &model_name) {
 }
 
 std::array<std::atomic<int>, static_cast<size_t>(Model::Status::kNumStatus)> 
-Model::model_stat_{0, 0, 0};
+    Model::model_stat_{0, 0, 0};
 
 std::mutex Model::estimate_tpc_mut_;
 std::condition_variable Model::estimate_tpc_cv_;
@@ -57,8 +58,10 @@ int Model::GetPreEstimatedTPC(const std::string &model_name) {
 
 Model::Model(const std::string &name, const std::filesystem::path &model_path,
              std::optional<const std::map<std::string, tvm::TVMArray>> params,
-             DLDevice device, size_t batch_size, size_t num_worker, size_t max_num_worker)
-    : name_(name), device_(device), batch_size_(batch_size), max_num_worker_(max_num_worker) {
+             DLDevice device, size_t batch_size, 
+             size_t num_worker, size_t max_num_worker)
+    : name_(name), device_(device), batch_size_(batch_size), 
+      max_num_worker_(max_num_worker) {
   // DLOG(INFO) << "Model " << name << " start initializing from " << model_path;
   CHECK(std::filesystem::exists(model_path / "mod.so"));
   CHECK(std::filesystem::exists(model_path / "mod.json"));
@@ -100,25 +103,20 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
     LOG(INFO) << "[Model]: " << name << " task switch by pipelining load/run";
   }
 
-  // config infer scaling
-  // scale_up_queue_time_ = 200; // no used
-  // scale_down_idle_time_ = Config::infer_model_max_idle_ms;
-  // warmup_ = Config::has_warmup;
-  // max_num_worker_ = 5;
-  // infer_workers_.resize(max_num_worker_);
-  // worker_running_.resize(max_num_worker_);
-  // waited_trains_.resize(max_num_worker_);
-
   CHECK_LE(num_worker, max_num_worker);
-  CHECK(max_num_worker_ == 1 && num_worker == 1) << "currently, only support one worker";
-  CHECK_LT(max_num_worker_, MAX_NUM_WORKER) << "max num worker exceed limit";
+  CHECK(max_num_worker_ == 1 && num_worker == 1) 
+      << "currently, only support one worker";
+  CHECK_LT(max_num_worker_, MAX_NUM_WORKER) 
+      << "max num worker exceed limit";
+
   for (size_t i = 0; i < num_worker; i++) {
     auto executor = tvm_graph_->CreateGraphExecutor(i, std::vector{device});
     // InferModelCache::ReserveCache(name);
     // executor->Init(true);
     executors_.push_back(std::move(executor));
     status_.push_back(Status::kWithoutMemory);
-    model_stat_[static_cast<size_t>(Status::kWithoutMemory)].fetch_add(1, std::memory_order_relaxed);
+    model_stat_[static_cast<size_t>(Status::kWithoutMemory)].fetch_add(
+        1, std::memory_order_relaxed);
   }
   infer_workers_.resize(max_num_worker_);
 
@@ -194,6 +192,14 @@ bool Model::AddJob(network::InferHandler::InferData* data) {
   return job_queue_.Put(std::make_shared<InferJob>(data));
 }
 
+bool Model::ReclaimMemory(size_t rank, Model *source_model) {
+  if (name_ == "dummy") return false;
+  
+  auto cold_cache_lock = ColdModelCache::Get(device_.device_id)->Lock();
+  auto model_lock = std::unique_lock{muts_[rank]};
+  return ReclaimMemory(rank, cold_cache_lock, model_lock, source_model);
+}
+
 bool Model::ReclaimMemory(size_t rank, 
                           std::unique_lock<std::mutex> &cold_cache_lock, 
                           std::unique_lock<std::mutex> &model_lock, 
@@ -204,9 +210,6 @@ bool Model::ReclaimMemory(size_t rank,
   CHECK_LT(rank, status_.size());
   if (status_[rank] == Status::kWithoutMemory) {
     return false; 
-  }
-  if (Config::profiler_acquire_resource_lock) { // not used in performance test
-    ResourceManager::InferMemoryChangingLock();
   }
 
   auto &executor = executors_[rank];
@@ -224,9 +227,6 @@ bool Model::ReclaimMemory(size_t rank,
   executor->DeInit(cached_groups_id);
   ChangeStatus(rank, Status::kWithoutMemory);
 
-  if (Config::profiler_acquire_resource_lock) {
-    ResourceManager::InferMemoryChangingUnlock();
-  }
   return true;
 }
 
@@ -241,86 +241,107 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
                                      std::unique_lock<std::mutex> &model_lock) {
   CHECK(status_[rank] == Status::kWithoutMemory);
 
-  bool try_lock_memory_changing_succ = false;
 
 #if ADJUST_WITH_FLYING
-  // batching adjust with flying adjusts
-  if (try_lock_memory_changing_succ = ResourceManager::InferChangeMemoryTryLock()) {
-    if (Controller::Get()->HasFlyingColocateAdjust()) {
-      double total_storage_MB = sta::ByteToMB(executors_[rank]->GetMissingStorageSizeAlign());
-      double free_memory_MB = ResourceManager::GetFreeMemoryMB(true);
-      double cold_cache_free_memory_MB = ColdModelCache::Get().GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock);
-      if (total_storage_MB > cold_cache_free_memory_MB && !Controller::Get()->IsTrainIdle()) {
-        PROFILE_START(TrainAdjust);
-        auto adjust_batch_size = TrainLauncher::Get()->
-          GetAdjustBatchSize(total_storage_MB);
-        auto cmd_id = Controller::Get()->ColocateAdjust(rank, adjust_batch_size);
-        // LOG(INFO) << "try adjust, rank " << name_ << " cmd_id " << cmd_id;
-        Controller::Get()->WaitColocateAdjustDone(cmd_id);
-        PROFILE_END(TrainAdjust);
-        LOG(INFO) << "[Model, Cold Cache Adjust] adjust with flyings,"
-                  << " adjust memory mb " << total_storage_MB
-                  << " wait adjust " << PROFILE_DURATRION(TrainAdjust);
-      }
-    }
-  }
+  // batching adjust with flying adjusts, deprecated currently
+
+  // if (try_lock_memory_changing_succ = ResourceManager::InferChangeMemoryTryLock()) {
+  //   if (Controller::Get()->HasFlyingColocateAdjust()) {
+  //     double total_storage_MB = sta::ByteToMB(executors_[rank]->GetMissingStorageSizeAlign());
+  //     double free_memory_MB = ResourceManager::GetFreeMemoryMB(true);
+  //     double cold_cache_free_memory_MB = 
+  //         ColdModelCache::Get().GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock);
+  //     if (total_storage_MB > cold_cache_free_memory_MB && !Controller::Get()->IsTrainIdle()) {
+  //       PROFILE_START(TrainAdjust);
+  //       auto adjust_batch_size = TrainLauncher::Get()->
+  //         GetAdjustBatchSize(total_storage_MB);
+  //       auto cmd_id = Controller::Get()->ColocateAdjust(rank, adjust_batch_size);
+  //       // LOG(INFO) << "try adjust, rank " << name_ << " cmd_id " << cmd_id;
+  //       Controller::Get()->WaitColocateAdjustDone(cmd_id);
+  //       PROFILE_END(TrainAdjust);
+  //       LOG(INFO) << "[Model, Cold Cache Adjust] adjust with flyings,"
+  //                 << " adjust memory mb " << total_storage_MB
+  //                 << " wait adjust " << PROFILE_DURATRION(TrainAdjust);
+  //     }
+  //   }
+  // }
 #endif
 
   auto cold_model_cache = ColdModelCache::Get(device_.device_id);
-  if (!try_lock_memory_changing_succ) {
-    PROFILE_START(InferWaitBeforeEnterAlloc);
-    ResourceManager::InferMemoryChangingLock();
-    PROFILE_END(InferWaitBeforeEnterAlloc);
-  }
-  double free_memory_MB = ResourceManager::GetFreeMemoryMB(true);
+
+  double free_memory_MB = ResourceManager::GetFreeMemoryMB(device_.device_id, true);
   double cold_cache_free_memory_MB =
       cold_model_cache->GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock);
-  double total_storage_MB = sta::ByteToMB(executors_[rank]->GetMissingStorageSizeAlign());
-  if (total_storage_MB > cold_cache_free_memory_MB && !ctrl::Controller::Get()->IsTrainIdle()) {
-    auto wait_train_pid = TrainLauncher::Get()->GetTrainPid();
+  double total_storage_MB = 
+      sta::ByteToMB(executors_[rank]->GetMissingStorageSizeAlign());
+
+  if (total_storage_MB > cold_cache_free_memory_MB 
+      && !ctrl::Controller::Get()->IsTrainIdle()) {
+    auto adjust_plan = 
+        TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
+          device_.device_id, total_storage_MB, 
+          cold_cache_free_memory_MB, cold_cache_lock);
+    if (!adjust_plan.empty()) {
+      PROFILE_START(TrainAdjust);
+      auto cmd_id = ctrl::Controller::Get()->ColocateInferRequireAdjust(
+          rank, device_.device_id, adjust_plan);
+      ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
+      PROFILE_END(TrainAdjust);
+
+      LOG_IF(INFO, Config::log_memory_adjust) 
+          << "[Model, Cold Cache Adjust]"
+          << "AllocStorageMaybeAdjust: model " << rank
+          << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
+          << " | before adjust: free memory " << free_memory_MB
+          << " cold cache free memory " << cold_cache_free_memory_MB
+          << " model required " << total_storage_MB;
+    } else {
+      LOG_IF(INFO, Config::log_memory_adjust) 
+          << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " 
+          << rank << "skip adjust";
+    }
+    free_memory_MB = ResourceManager::GetFreeMemoryMB(
+        device_.device_id, Config::log_memory_adjust);
+
     // size_t adjust_batch_buffer_nbytes = std::min(
     //   Config::cold_cache_max_capability_nbytes - Config::cold_cache_min_capability_nbytes,
     //   Config::cold_cache_max_capability_nbytes - ColdModelCache::Get().GetCachedNbytes(cold_cache_lock) 
     // );
-    double adjust_reserve_mb = cold_model_cache->GetAdjustReserveMemoryMB(cold_cache_lock);
-    double adjust_batch_buffer_mb = total_storage_MB 
-                                    - std::max(0.0, cold_cache_free_memory_MB)
-                                    + adjust_reserve_mb;
+    
 
-    if (adjust_batch_buffer_mb > 0) {
-      int cur_target_bs = TrainLauncher::Get()->GetTargetBatchSize();
-      if (cur_target_bs >= 0) {
-        PROFILE_START(TrainAdjust);
-        bool is_first_adjust = !ctrl::Controller::Get()->HasFlyingColocateAdjust();
-        auto adjust_batch_size = TrainLauncher::Get()->GetAdjustBatchSize(adjust_batch_buffer_mb);
-        CHECK_GE(adjust_batch_size, 0);
-        int cmd_id = ctrl::Controller::Get()->ColocateAdjust(
-            0, device_.device_id, adjust_batch_size);
-        // LOG(INFO) << "adjust model " << name_ << " cmd " << cmd_id;
-        ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
-        PROFILE_END(TrainAdjust);
-        if (is_first_adjust) {
-          Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, 
-                                      PROFILE_DURATRION(TrainAdjust));
-        }
-        LOG_IF(INFO, Config::log_memory_adjust) 
-            << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
-            << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
-            << " wait train pid " << wait_train_pid
-            << " | before adjust: free memory " << free_memory_MB
-            << " cold cache free memory " << cold_cache_free_memory_MB
-            << " reserve memory " << adjust_reserve_mb
-            << " adjust_batch_buffer_mb " << adjust_batch_buffer_mb
-            << " delta batch size " << adjust_batch_size << ".";
-      } else {
-        LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
-                  << ", skip adjust due to negative target batch size (" << cur_target_bs << ")" ; 
-      }
-    } else {
-      LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " 
-                << rank << " , skip adjust";
-    }
-    free_memory_MB = ResourceManager::GetFreeMemoryMB(Config::log_memory_adjust);
+    // double adjust_reserve_mb = cold_model_cache->GetAdjustReserveMemoryMB(cold_cache_lock);
+    // double adjust_batch_buffer_mb = total_storage_MB 
+    //                                 - std::max(0.0, cold_cache_free_memory_MB)
+    //                                 + adjust_reserve_mb;
+
+    // if (adjust_batch_buffer_mb > 0) {
+    //   int cur_target_bs = TrainLauncher::Get()->GetTargetBatchSize();
+    //   if (cur_target_bs >= 0) {
+    //     PROFILE_START(TrainAdjust);
+    //     bool is_first_adjust = !ctrl::Controller::Get()->HasFlyingColocateAdjust();
+    //     auto adjust_batch_size = TrainLauncher::Get()->GetAdjustBatchSize(adjust_batch_buffer_mb);
+    //     CHECK_GE(adjust_batch_size, 0);
+    //     int cmd_id = ctrl::Controller::Get()->ColocateAdjust(
+    //         0, device_.device_id, adjust_batch_size);
+    //     // LOG(INFO) << "adjust model " << name_ << " cmd " << cmd_id;
+    //     ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
+    //     PROFILE_END(TrainAdjust);
+    //     if (is_first_adjust) {
+    //       Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, 
+    //                                   PROFILE_DURATRION(TrainAdjust));
+    //     }
+    //     LOG_IF(INFO, Config::log_memory_adjust) 
+    //         << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
+    //         << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
+    //         << " | before adjust: free memory " << free_memory_MB
+    //         << " cold cache free memory " << cold_cache_free_memory_MB
+    //         << " reserve memory " << adjust_reserve_mb
+    //         << " adjust_batch_buffer_mb " << adjust_batch_buffer_mb
+    //         << " delta batch size " << adjust_batch_size << ".";
+    //   } else {
+    //     LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
+    //               << ", skip adjust due to negative target batch size (" << cur_target_bs << ")" ; 
+    //   }
   }
   LOG_IF(INFO, Config::log_memory_adjust) 
       << "[Model, Cold Cache Adjust] after adjust, "
@@ -340,7 +361,8 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
     }
 
     LOG_IF(INFO, Config::log_memory_adjust) 
-        << "[Model, Cold Cache Adjust] after adjust, furthur evict model to make room for model "
+        << "[Model, Cold Cache Adjust] after adjust, "
+        << "furthur evict model to make room for model "
         << name_ << " rank " << rank
         << " current cache nbytes " 
         << sta::ByteDisplay(cold_model_cache->GetCachedNbytes(cold_cache_lock));
@@ -349,7 +371,6 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
 #if 1
   // directly release memory changing lock, 
   // infer may alloc memory but without this lock
-  ResourceManager::InferMemoryChangingUnlock();
   return false;
 #else
   // delay release the lock, will be released after infer finish alloc
@@ -362,15 +383,14 @@ bool Model::SetupMemory(size_t rank,
                         std::unique_lock<std::mutex> &model_lock) {
   CHECK(status_[rank] == Status::kWithoutMemory);
   ColdModelCache::Get(device_.device_id)->PopCacheItem(name_, rank, cold_cache_lock);
-  bool will_unlock_memory_changing = false;
   if (Config::IsColocateMode() && Config::ondemand_adjust) {
     PROFILE_START(InferAdjustAlloc);
-    if (!Config::colocate_config.skip_malloc) 
-      will_unlock_memory_changing = MaybeAdjustTrainAndCache(rank, cold_cache_lock, model_lock);
+    if (!Config::colocate_config.skip_malloc) {
+      MaybeAdjustTrainAndCache(rank, cold_cache_lock, model_lock);
+    }
     PROFILE_END(InferAdjustAlloc);
   }
   executors_[rank]->Init(false);
-  if (will_unlock_memory_changing) ResourceManager::InferMemoryChangingUnlock();
   ChangeStatus(rank, Status::kWithoutParam);
   return true;
 }

@@ -3,6 +3,8 @@
 
 #include <torch_col/csrc/dist_ext.h>
 #include <torch_col/csrc/mem_tagging.h>
+#include <torch_col/csrc/config.h>
+#include <torch_col/csrc/dist_train_sync.h>
 
 #include <torch/csrc/jit/python/pybind_utils.h>
 #include <torch/csrc/distributed/c10d/comm.hpp>
@@ -21,6 +23,8 @@ namespace torch_col {
 
 ::c10::intrusive_ptr<ProcessGroupNCCL> ProcessGroupNCCL::default_pg_ = nullptr;
 
+///////////////////////////////////////////////////////////////////////////////
+// MARK: C++ class for extending ::c10d
 
 void Reducer::autograd_hook(size_t index) {
   // batch may be dropped after the last checking point but
@@ -35,7 +39,7 @@ void Reducer::autograd_hook(size_t index) {
     torch::autograd::Engine::get_default_engine().queue_callback([=] {
       auto pg = ProcessGroupNCCL::GetDefaultProcessGroupNCCL();
       if (pg.defined() && pg->GetAbortFlag() != 0) {
-        LOG(INFO) << "[Reducer::autograd_hook()] ProcessGroupNCCL abort flag is set,"
+        LOG(INFO) << "[Reducer::autograd_hook] ProcessGroupNCCL abort flag is set,"
                   << " drop the batch";
         throw EngineColocateAdjustL1Exception("TorchColEngine");
       }
@@ -222,7 +226,7 @@ void ProcessGroupNCCL::RestartNcclCommByRecreating(
     ncclGetUniqueId(&ncclId);
   }
   broadcastUniqueNCCLID(&ncclId, false, device_key, 0);
-  LOG(INFO) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
+  DLOG(INFO) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
             << " new ncclId " << buildNcclUniqueIdStr(ncclId);
 
   COL_NCCL_CALL(ncclGroupStart());
@@ -248,7 +252,7 @@ void ProcessGroupNCCL::SetNcclCommAbortFlag(
   std::unique_lock<std::mutex> lock(mutex_);
   auto it = devNCCLCommMap_.find(device_key);
   if (it == devNCCLCommMap_.end()) {
-    LOG(INFO) << str(boost::format("[Rank %d | SetNcclCommAbortFlag]") % getRank())
+    LOG(WARNING) << str(boost::format("[Rank %d | SetNcclCommAbortFlag]") % getRank())
               << " device_key " << device_key
               << " not found, valid keys: "
               << GetDevNcclCommMapKeySetStrsUnlocked();
@@ -275,7 +279,8 @@ void ProcessGroupNCCL::_SetNcclCommAbortFlag(ncclComm_t comm, uint32_t val) {
     *child_abort_flag = val;
   }
   this->abort_flag_ = val;
-  LOG(INFO) << "abort flag " << abort_flag << " " << abort_flag_ptr.first << " "  << *abort_flag;
+  DLOG(INFO) << "abort flag " << abort_flag << " " 
+             << abort_flag_ptr.first << " "  << *abort_flag;
 }
 
 std::pair<uint32_t, uint32_t> 
@@ -297,7 +302,7 @@ ProcessGroupNCCL::_GetNcclCommAbortFlagPtr(ncclComm_t comm) {
     uint32_t* child_abort_flag = *reinterpret_cast<uint32_t**>(
         reinterpret_cast<char*>(comm) + child_abort_flag_offset);
 
-    LOG(INFO) << std::hex << "_GetNcclCommAbortFlagPtr "
+    DLOG(INFO) << std::hex << "_GetNcclCommAbortFlagPtr "
               << abort_flag << " " << child_abort_flag;
 
     return std::make_pair(abort_flag, child_abort_flag);
@@ -403,18 +408,23 @@ using intrusive_ptr_no_gil_destructor_class_ =
 
 }
 
-void TorchExtInit() {
-  auto c_module = py::module::import("torch_col._C");
-  auto module = c_module.def_submodule("_dist");
-  // auto torch_c_dist_model = pybind11::module::import("torch._C._distributed_c10d");
+// MARK: TorchDistExtInit
+void TorchDistExtInit() {
+  DLOG(INFO) << "[TorchDistExtInit] begin";
+
+  // first init our classes
+  CHECK(TorchColConfig::IsConfigured());
+  DistTrainSync::Init();
 
   /////////////////////////////////////////////////////////////////////////////
-  // define ext class
+  // define torch ext class
 
+  auto c_module = py::module::import("torch_col._C");
+  auto module = c_module.def_submodule("_dist");
   
   try {
     // Reducer
-    LOG(INFO) << "torch_col::TorchExtInit() Reducer";
+    DLOG(INFO) << "[TorchDistExtInit] Reducer";
     shared_ptr_class_<Reducer>(module, "Reducer")
     .def(
         py::init<
@@ -568,7 +578,7 @@ void TorchExtInit() {
 
 
     // Logger
-    LOG(INFO) << "torch_col::TorchExtInit() Logger";
+    DLOG(INFO) << "[TorchDistExtInit] Logger";
     shared_ptr_class_<Logger>(module, "Logger")
     .def(
         py::init<std::shared_ptr<Reducer>>(),
@@ -614,9 +624,9 @@ void TorchExtInit() {
 
     
     // ProcessGroupNCCL
-    LOG(INFO) << "torch_col::TorchExtInit() ProcessGroupNCCL";
+    DLOG(INFO) << "[TorchDistExtInit] ProcessGroupNCCL";
     auto backend = py::module::import("torch._C._distributed_c10d").attr("Backend");
-    LOG(INFO) << "torch_col::TorchExtInit() ProcessGroupNCCL backend " << backend.ptr();
+    DLOG(INFO) << "[TorchDistExtInit] ProcessGroupNCCL backend " << backend.ptr();
     auto processGroupNCCL =
       intrusive_ptr_no_gil_destructor_class_<ProcessGroupNCCL>(
       module, "ProcessGroupNCCL", backend)
@@ -667,6 +677,8 @@ void TorchExtInit() {
           py::call_guard<py::gil_scoped_release>())
       .def("_set_as_default_pg", 
           [](const c10::intrusive_ptr<ProcessGroupNCCL> &self) {
+            DLOG(INFO) << "[TorchDistExt] set default ProcessGroupNCCL "
+                      << self.get();
             ProcessGroupNCCL::SetDefaultProcessGroupNCCL(self);
           },
           py::call_guard<py::gil_scoped_release>());
@@ -678,9 +690,9 @@ void TorchExtInit() {
         .attr("Options");
     processGroupNCCL.attr("Options") = c10d_processGroupNcclOptions;
 
-    LOG(INFO) << "torch_col::TorchExtInit() register python objects done";
+    LOG(INFO) << "[TorchDistExtInit] register python objects done";
   } catch (const std::exception& e) {
-    LOG(FATAL) << "torch_col::TorchExtInit() exception " << e.what();
+    LOG(FATAL) << "[TorchDistExtInit] exception " << e.what();
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -699,7 +711,7 @@ void TorchExtInit() {
   auto torch_c10d_module = torch_dist_module.attr("distributed_c10d");
   torch_c10d_module.attr("ProcessGroupNCCL") = module.attr("ProcessGroupNCCL");
   
-  LOG(INFO) << "torch_col::TorchExtInit() DONE";
+  LOG(INFO) << "[TorchDistExtInit] overwrite torch distributed module attributes done";
 }
 
 } // namespace torch_col
@@ -812,4 +824,4 @@ std::string getNcclErrorDetailStr(
   return interpret + err;
 }
 
-}
+} // namespace torch_col

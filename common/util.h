@@ -1,7 +1,6 @@
 #ifndef COLSERVE_COMMON_UTIL_H
 #define COLSERVE_COMMON_UTIL_H
 
-#include <boost/format/format_fwd.hpp>
 #include <common/log_as_glog_sta.h>
 #include <common/device_manager.h>
 
@@ -56,7 +55,7 @@ namespace colserve {
 
 constexpr int MAX_DEVICE_NUM = 8;
 
-using memory_nbyte_t = size_t;
+using memory_byte_t = size_t;
 using memory_mb_t = double;
 
 namespace memory_literals {

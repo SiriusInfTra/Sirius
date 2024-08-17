@@ -10,6 +10,7 @@
 
 
 namespace torch_col {
+
 inline auto get_unix_timestamp() {
   return std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::system_clock::now().time_since_epoch()).count();
@@ -29,7 +30,6 @@ void ReleaseUnderlyingStorage(PyObject* tensor);
 void DumpMempoolFreeList(std::string filename);
 void DumpMempoolBlockList(std::string filename);
 
-
 class TensorWeakRef {
  public:
   TensorWeakRef(PyObject* tensor);
@@ -40,8 +40,6 @@ class TensorWeakRef {
  private:
   std::optional<c10::weak_intrusive_ptr<at::TensorImpl>> tensor_weak_ref_;
 };
-
-
 
 }
 

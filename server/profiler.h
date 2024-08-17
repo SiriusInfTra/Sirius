@@ -21,7 +21,7 @@
 
 namespace colserve {
 
-#define DCGM_CALL(func) do{ \
+#define COL_DCGM_CALL(func) do{ \
     auto error = func; \
     if (error != DCGM_ST_OK) { \
       LOG(FATAL) << #func << " " << errorString(error); \
@@ -38,17 +38,21 @@ class Profiler {
   enum class EventItem;
 
   using time_point_t = std::chrono::time_point<std::chrono::steady_clock>;
-  using dcgmEntityStat = std::unordered_map<unsigned short, double>;
+  // [dcgm field id -> value] of different device
+  using dcgmEntityStat = std::array<std::unordered_map<unsigned short, double>, 
+                                    MAX_DEVICE_NUM>;
 
   using resource_entity_t = std::tuple<time_stamp_t, ResourceInfo>;
   using event_entity_t = std::tuple<time_stamp_t, EventItem>;
   using perf_entity_t = std::tuple<time_stamp_t, double>;
 
   static std::pair<size_t, size_t> GetGPUMemInfo();
-  static size_t GetLastInferMem();
+  static size_t GetLastInferMem(int device_id);
   static size_t GetLastTrainMem();
+  static size_t GetLastTrainMem(int device_id);
   static time_stamp_t GetTimeStamp() {
-    return std::chrono::duration<double, std::milli>(std::chrono::system_clock::now().time_since_epoch()).count();
+    return std::chrono::duration<double, std::milli>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
   }
 
   static void Init(const std::string &profile_log_path);
@@ -61,7 +65,8 @@ class Profiler {
     return std::chrono::duration<double, std::milli>(end - begin).count();
   }
   inline static double MilliFrom(time_point_t begin) {
-    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
+    return std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - begin).count();
   }
   static Profiler* Get();
 
@@ -124,7 +129,6 @@ class Profiler {
     TrainAdjust,
     TrainFirstAdjust, // the latter will be batch with the first
     InferAllocStorage,
-    InferWaitBeforeEnterAlloc,
     InferAdjustAlloc,
     InferLoadParam,
     InferPipelineExec,
@@ -172,7 +176,15 @@ class Profiler {
 
  private:
   static std::unique_ptr<Profiler> profiler_;
-  
+
+  void ProfileThread(std::array<nvmlDevice_t, MAX_DEVICE_NUM> devices);
+  void CollectMemoryResourceInfo(
+      const std::array<nvmlDevice_t, MAX_DEVICE_NUM> &devices,
+      std::array<ResourceInfo, MAX_DEVICE_NUM> &res_infos /* output */);
+  void CollectComputingResourcesInfo(
+      const std::array<nvmlDevice_t, MAX_DEVICE_NUM> &devices, 
+      std::array<ResourceInfo, MAX_DEVICE_NUM> &res_infos /* output */);
+
   void WriteLog();
   std::vector<std::vector<std::string>> FmtResourceInfos(
       int device_id,
@@ -207,13 +219,6 @@ class Profiler {
     return res;
   }
 
-  // std::template<template field_type_t...>
-  // void FmtResourceInfo(std::ostream &os,
-  //                      const std::vector<resource_entity_t> & resource_infos, 
-  //                      const std::vector<std::tuple<std::string, size_t, >> &fields);
-
-  // template<typename T>
-  //  filter()
   
   std::atomic<bool> start_profile_;
   std::string profile_log_path_;
@@ -237,8 +242,8 @@ class Profiler {
   // pass, time stamp, infering model used memory
   std::vector<std::tuple<time_stamp_t, size_t>> infering_memory_nbytes_; 
 
-  size_t last_infer_mem_;
-  size_t last_train_mem_;
+  std::array<size_t, MAX_DEVICE_NUM> last_infer_mems_;
+  std::array<size_t, MAX_DEVICE_NUM> last_train_mems_;
 
   time_stamp_t stp_;
   time_stamp_t workload_start_time_stamp_{0};
@@ -259,16 +264,11 @@ class Profiler {
 #define PROFILE_START(item) \
     PROFILE_START_WITH_ID(item, 0)
 
-// #define PROFILE_END_WITH_ID(item, idx) \
-//     auto __t_ ## idx ## _ ## item ## _end_ = std::chrono::steady_clock::now(); \
-//     auto __t_ ## idx ## _ ## item ## _ms_ = std::chrono::duration<double, std::milli>(__t_ ## idx ## _ ## item ## _end_ - __t_ ## idx ## _ ## item ## _start_).count(); \
-//     Profiler::Get()->RecordEvent(Profiler::EventItem::item##Start, __t_ ## idx ## _ ## item ## _start_); \
-//     Profiler::Get()->RecordEvent(Profiler::EventItem::item##End, __t_ ## idx ## _ ## item ## _end_); \
-//     Profiler::Get()->RecordPerf(Profiler::PerfItem::item, __t_ ## idx ## _ ## item ## _ms_);
-
 #define PROFILE_END_WITH_ID(item, idx) \
     auto __t_ ## idx ## _ ## item ## _end_ = std::chrono::steady_clock::now(); \
-    auto __t_ ## idx ## _ ## item ## _ms_ = std::chrono::duration<double, std::milli>(__t_ ## idx ## _ ## item ## _end_ - __t_ ## idx ## _ ## item ## _start_).count(); \
+    auto __t_ ## idx ## _ ## item ## _ms_ = \
+        std::chrono::duration<double, std::milli>( \
+          __t_ ## idx ## _ ## item ## _end_ - __t_ ## idx ## _ ## item ## _start_).count(); \
     Profiler::Get()->RecordPerf(Profiler::PerfItem::item, __t_ ## idx ## _ ## item ## _ms_);
 
 #define PROFILE_END(item) \

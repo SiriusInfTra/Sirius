@@ -4,11 +4,14 @@
 #include <server/model_store/model_cache.h>
 #include <server/train_launcher.h>
 #include <server/control/controller.h>
+#include <server/train_adjuster.h>
 #include <server/profiler.h>
 #include <server/config.h> 
 
 #include <common/dtype_helper.h>
 #include <common/device_manager.h>
+
+#include <boost/range/irange.hpp>
 
 #include <atomic>
 #include <filesystem>
@@ -109,8 +112,11 @@ void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
   int next_gpu = 0;
   for (auto &model : models) {
     auto model_path = infer_store_path / model.second["path"];
-    CHECK(std::filesystem::exists(model_path)) << "InferModelStore: " << model_path << " not exist";
-    CHECK(std::filesystem::is_directory(model_path)) << model_path << " is not a directory";
+    CHECK(std::filesystem::exists(model_path)) 
+        << "InferModelStore: " << model_path << " not exist";
+    CHECK(std::filesystem::is_directory(model_path)) 
+        << model_path << " is not a directory";
+
     auto model_params = tvm::TVMGraph::LoadParamsAsTVMArray(
         (model_path / "mod.params").c_str());
     
@@ -266,7 +272,8 @@ void InferModelStore::ClearColdCache() {
     auto cold_cache_lock = cold_model_cache->Lock();
     int rank = 0;
     for (auto &&[name, model]: models_) {
-      auto &&[evict_groups_id, succ] = cold_model_cache->PopCacheItem(name, rank, cold_cache_lock);
+      auto &&[evict_groups_id, succ] = 
+          cold_model_cache->PopCacheItem(name, rank, cold_cache_lock);
       if (succ) { 
         model->ClearColdCache(evict_groups_id, rank, cold_cache_lock); 
       }
@@ -288,9 +295,8 @@ void InferModelStore::ClearWarmCache() {
       CHECK(model != nullptr);
       CHECK_EQ(model->num_worker_, 1);
       std::unique_lock warm_cache_model_lock{cache_item->mut};
-      auto cold_cache_lock = ColdModelCache::Get(warm_model_cache->device_id_)->Lock();
-      std::unique_lock model_lock{model->muts_[0]};
-      bool res = model->ReclaimMemory(0, cold_cache_lock, model_lock, model);
+      bool res = model->ReclaimMemory(0, model);
+
       // force let cache = false
       cache_item->cached = false;
     }
@@ -314,7 +320,8 @@ void InferModelStore::ColocateMonitor() {
         bool res = model->ReclaimMemory(rank, cold_cache_lock, model_lock, nullptr);
         if (res) {
           num_exits[device_id]++;
-          auto cold_cache_nbytes = ColdModelCache::Get(device_id)->GetCachedNbytes(cold_cache_lock);          
+          auto cold_cache_nbytes = 
+              ColdModelCache::Get(device_id)->GetCachedNbytes(cold_cache_lock);
           LOG_IF(INFO, Config::log_infer_model_reclaim) 
               << "[InferModelStore] reclaim " << model_name
               << ", cold cache nbytes "
@@ -322,8 +329,13 @@ void InferModelStore::ColocateMonitor() {
         }
       }
     }
-    for (int i = 0; i < sta::DeviceManager::GetNumVisibleGpu(); i++) {
-      if (num_exits[i] > 0) ctrl::Controller::Get()->InferExit(i);
+
+    if (!ctrl::Controller::Get()->IsTrainIdle() 
+        && std::accumulate(num_exits.begin(), num_exits.end(), 0) > 0) {
+      auto adjust_plan = TrainAdjuster::GetInferReleaseMemAdjustPlan();
+      if (!adjust_plan.empty()) {
+        ctrl::Controller::Get()->ColocateInferReleaseAdjust(adjust_plan);
+      }
     }
     std::this_thread::sleep_for(10ms);
   }

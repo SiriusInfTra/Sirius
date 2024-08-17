@@ -3,6 +3,7 @@
 #include <server/model_store/infer_model_store.h>
 #include <server/train_launcher.h>
 #include <server/control/controller.h>
+#include <server/train_adjuster.h>
 #include <server/profiler.h>
 #include <server/config.h>
 
@@ -12,6 +13,10 @@
 #include <tvm/runtime/module.h>
 #include <tvm/runtime/registry.h>
 #include <tvm/runtime/logging.h>
+
+#include <boost/range/irange.hpp>
+#include <boost/range/numeric.hpp>
+
 #include <glog/logging.h>
 #include <random>
 #include <pthread.h>
@@ -20,64 +25,10 @@
 #include <chrono>
 
 
+
 namespace colserve {
 
 std::unique_ptr<TrainLauncher> TrainLauncher::train_launcher_;
-
-std::pair<double, double> TrainLauncher::GetModelMemParam() {
-  if (Config::use_shared_tensor_train) {
-    if (cur_model_name_ == "resnet152") {
-      /*
-          8   1.50
-         32   3.75
-        128  11.75
-        150  13.50
-      
-        AFTER EMPTY CACHE: 0.81 ~ 1.22
-      */
-      // NOTE: DID NOT consider grad checkpoint
-      return {1150, 85};
-    } else if (cur_model_name_ == "swin_b" || cur_model_name_ == "swin_b_ddp") {
-      return {1700, 140};
-    } else if (cur_model_name_ == "gpt2") {
-      /*
-       
-        1   3.00Gb
-        4   4.25Gb
-        8   6.50Gb
-        12  8.75Gb
-        16  11.00Gb
-        20  12.25Gb
-
-        AFTER EMPTY CACHE: 2.4 ~ 2.9 
-       */
-      return {2700, 490}; 
-    } else if (cur_model_name_ == "bert_large") {
-      LOG(FATAL) << "Unsupported model: " << cur_model_name_;
-    } else {
-      LOG(FATAL) << "Unsupported model: " << cur_model_name_;
-    }
-  } else { // * used for strawman, adjust but no shared tensor
-    /*
-        8     2.64
-        32    4.97
-        128  13.75
-        150  15.68
-
-        AFTER EMPTY CACHE: 2.28 ~ 2.37
-    */
-    if (cur_model_name_ == "resnet152") {
-      return {2396, 85};
-    } else if (cur_model_name_ == "swin_b") {
-      // NOTE: PLACEHOLDER
-      // return {1700, 140};
-      return {3300, 145};
-    } else {
-      LOG(FATAL) << "Unsupported model: " << cur_model_name_;
-    }
-  }
-  return {};
-}
 
 void TrainLauncher::Init(const std::filesystem::path &train_store_path) {
   train_launcher_ = std::make_unique<TrainLauncher>();
@@ -123,34 +74,6 @@ bool TrainLauncher::AddJob(network::TrainHandler::TrainData* data) {
   return true;
 }
 
-double TrainLauncher::PredictMemUsageMB(bool verbose) {
-  if (target_batch_size_ <= 0) {
-    return 0;
-  } else {
-    auto [base, slope] = GetModelMemParam();
-    auto res = base + slope * target_batch_size_;
-    LOG_IF(INFO, verbose && Config::log_memory_adjust) 
-        << "Predict train memory " << res
-        << ", target batch size " << target_batch_size_;
-    return res;
-  }
-}
-
-int TrainLauncher::PredictTargetBatchSize(double memory_mb) {
-  auto [base, slope] = GetModelMemParam();
-  auto ret = static_cast<int>((memory_mb - base) / slope);
-  ret = std::min(ret, job_batch_size_);
-  ret = std::max(ret, 0);
-  // LOG(INFO) << "## " << memory_mb << " " << base << " " << slope
-  //           << " " << job_batch_size_;
-  return ret;
-}
-
-int TrainLauncher::GetAdjustBatchSize(double memory_mb) {
-  auto [base, slope] = GetModelMemParam();
-  return static_cast<int>(std::ceil(memory_mb / slope));
-}
-
 bool TrainLauncher::Train() {
   std::shared_ptr<Job> job = nullptr;
   while (job == nullptr) {
@@ -166,7 +89,7 @@ bool TrainLauncher::Train() {
   if ((Config::IsColocateMode() || Config::IsSwitchMode()) && 
       Config::use_shared_tensor &&
       Config::enable_warm_cache_fallback) {
-    auto [base, slope] = GetModelMemParam();
+    auto [base, slope] = TrainAdjuster::adjuster_->GetModelMemParam(cur_model_name_);
     Config::max_warm_cache_nbytes = static_cast<size_t>((
       Config::cuda_memory_pool_gb * 1024 - Config::train_memory_over_predict_mb - base) * 1_MB);
     LOG(INFO) << "[Warm Cache Fallback for Colocation] set max warm cache nbytes to "
@@ -215,30 +138,8 @@ bool TrainLauncher::Train() {
     LOG(FATAL) << "Unsupported serve mode: " << static_cast<int>(Config::serve_mode);
   }
 
-  // if (Config::serve_mode == ServeMode::kColocateL1 || Config::serve_mode == ServeMode::kTaskSwitchL1) {
-  //   if (Config::use_xsched) {
-  //     args_str.push_back("--hook-mode");
-  //     args_str.push_back("xsched-sync2");
-  //     // args_str.push_back("xsched-sync"); # used for dummy adjust
-  //   } else {
-  //     args_str.push_back("--hook-mode");
-  //     args_str.push_back("sync");
-  //   }
-  // } else {
-  //   args_str.push_back("--hook-mode");
-  //   args_str.push_back("none");
-  // }
-
-  // if (Config::use_xsched) {
-  //   args_str.push_back("--use-xsched");
-  //   args_str.push_back("1");
-  // } else {
-  //   args_str.push_back("--use-xsched");
-  //   args_str.push_back("0");
-  // }
-
-  args_str.push_back("--train-profile");
-  args_str.push_back(Config::train_profile);
+  // args_str.push_back("--train-profile");
+  // args_str.push_back(Config::train_profile);
 
   while (Config::running) {
     if (LaunchTrain(job, args_str)) {
@@ -322,7 +223,8 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
       extra_env_ss << "COL_USE_SHARED_TENSOR=0 ";
     }
 
-    if (Config::serve_mode == ServeMode::kColocateL1 || Config::serve_mode == ServeMode::kTaskSwitchL1) {
+    if (Config::serve_mode == ServeMode::kColocateL1 
+        || Config::serve_mode == ServeMode::kTaskSwitchL1) {
       if (Config::use_xsched) {
         CHECK_NE(setenv("COL_HOOK_MODE", "xsched-sync2", 1), -1);
         extra_env_ss << "COL_HOOK_MODE=xsched-sync2 ";
@@ -334,6 +236,12 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
     } else {
       CHECK_NE(setenv("COL_HOOK_MODE", "none", 1), -1);
       extra_env_ss << "COL_HOOK_MODE=none ";
+    }
+
+    if (!Config::train_profile.empty()) {
+      CHECK_NE(setenv("COL_TRAIN_PROFILE_LOG_PATH", 
+                      Config::train_profile.c_str(), 1), -1);
+      extra_env_ss << "COL_TRAIN_PROFILE_LOG_PATH=" << Config::train_profile << " ";
     }
 
     if (Config::skip_set_mps_thread_percent) {
@@ -393,13 +301,25 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
       LOG(INFO) << "[TrainLauncher]: " << job << " is killed, restart";
       return false;
     } else {
+      int train_world_size = ctrl::InfTraCommunicator::GetTrainWorldSize();
+      std::string train_memory_str, free_memory_str;
+      for (auto i : boost::irange(train_world_size)) {
+        train_memory_str += 
+            std::to_string(ResourceManager::GetTrainMemoryMB(i)) + " ";
+        free_memory_str += 
+            std::to_string(ResourceManager::GetFreeMemoryMB(i, true)) + " ";
+      }
+      for (auto pid : ctrl::InfTraCommunicator::GetTrainPIDs()) {
+        kill(pid, SIGKILL);
+      }
       LOG(FATAL) << "[TrainLauncher]: " << job 
                  << " failed, signal is " << strsignal(signal) 
                  << " target_batch_size " << target_batch_size_ 
                  << " cur_batch_size " << cur_batch_size_ 
-                 << " memory " << ResourceManager::GetTrainMemoryMB() << "MB"
-                 << " predict memory " << PredictMemUsageMB(false) << "MB"
-                 << " calculated free memory " << ResourceManager::GetFreeMemoryMB(true) << "MB";
+                 << " memory [ " << train_memory_str << "] MB"
+                 << " predict memory " 
+                 << TrainAdjuster::PredictTrainMemUsageMB(0, false) << "MB"
+                 << " calculated free memory [ " << free_memory_str << "] MB";
       return false;
     }
   } else {
@@ -429,6 +349,21 @@ void TrainLauncher::DummyAdjust() {
     ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
     ctrl::Controller::Get()->DummyInferExit(0, ori_target_bs);
     std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<>(200, 1000)(gen)));
+  }
+}
+
+void TrainLauncher::KillTrain() {
+  int num_train_proc = 
+      ctrl::InfTraCommunicator::GetIB()->GetTrainInfoUnsafe(0)->train_world_size;
+  for (int i = 0; i < num_train_proc; i++) {
+    auto train_info = ctrl::InfTraCommunicator::GetIB()->GetTrainInfoUnsafe(i);
+    auto pid = train_info->train_pid;
+    auto rank = train_info->train_rank;
+    if (pid != -1) {
+      LOG(INFO) << "[TrainLauncher]: Kill train pid " << pid << " rank " << rank;
+      auto err = kill(pid, SIGKILL);
+      CHECK(err == 0 || errno == ESRCH);
+    }
   }
 }
 

@@ -9,7 +9,7 @@ void TorchColInit(int train_rank, int train_world_size);
 
 void SMPartitionInit(uint64_t stream);
 
-void TorchExtInit();
+void TorchDistExtInit();
 
 }
 

@@ -30,6 +30,7 @@ void StreamApply(std::function<void(uint64_t stream)> fn);
 
 void GuessNcclBegin();
 void GuessNcclEnd();
+bool IsGuessNcclBegined();
 std::vector<uint64_t> GetNcclStreams();
 
 } // namespace xsched

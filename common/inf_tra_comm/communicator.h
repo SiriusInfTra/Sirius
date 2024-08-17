@@ -8,12 +8,29 @@
 namespace colserve {
 namespace ctrl {
 
+enum {
+  kTraRank_0 = 0,
+  kTraRank_1 = 1,
+  kTraRank_2 = 2,
+  kTraRank_3 = 3,
+};
+
 class InfTraCommunicator {
  public:
   static void Init(bool is_server, bool cleanup, int train_world_size);
   static bool IsInitialized() { return communicator_ != nullptr; }
   static InfTraMessageQueue* GetMQ();
   static InfTraInfoBoard* GetIB();
+
+  static int GetTrainWorldSize() {
+    return GetIB()->GetTrainInfoUnsafe(kTraRank_0)->train_world_size; 
+  }
+  static pid_t GetTrainPID(int rank) {
+    return GetIB()->GetTrainInfoUnsafe(rank)->train_pid;
+  }
+  static std::vector<pid_t> GetTrainPIDs() {
+    return GetIB()->GetTrainPIDs();
+  }
 
   InfTraCommunicator(const std::string &shm_name, bool is_server, 
                      bool cleanup, int train_world_size);

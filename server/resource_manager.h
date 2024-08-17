@@ -17,22 +17,17 @@ class ResourceManager {
   static void Init() {
     resource_manager_ = std::make_unique<ResourceManager>();
   }
-  static double GetFreeMemoryMB(bool verbose);
-  static double GetTrainAvailMemoryMB(bool verbose);
+  static double GetFreeMemoryMB(int device_id, bool verbose);
+  static double GetTrainAvailMemoryMB(int device_id, bool verbose);
 
-  static void InferMemoryChangingLock();
-  static void InferMemoryChangingUnlock();
-  static bool InferChangeMemoryTryLock();
-
-  static double GetInferMemoryMB();
-  static double GetTrainMemoryMB();
+  static double GetInferMemoryMB(int device_id);
+  static double GetTrainMemoryMB(int device_id);
   
   ResourceManager();
 
  private:
   static std::unique_ptr<ResourceManager> resource_manager_;
 
-  std::mutex infer_memory_changing_mut_;
 };
 
 }

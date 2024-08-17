@@ -9,6 +9,7 @@ import sys
 import torch_col
 from torch_col.hook import HookABC, HookMode
 from torch_col.util import TrainMode, MemoryPool, EventManager
+import torch_col.xsched
 
 class DatasetState(IntEnum):
     INIT = 0
@@ -24,7 +25,7 @@ def _text_gen(model_name):
 def _text_cls(model_name):
     return 'bert' in model_name
 
-class CustomeDynamicBatchDataset(IterableDataset):
+class DynamicBatchDataset(IterableDataset):
     def __init__(self, model_name, size, max_batch_size,
                  hook: HookABC, trace: Optional[list[dict]], 
                  input_shape = None, num_class = None,
@@ -89,7 +90,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
             assert hook.train_mode == TrainMode.NORMAL and hook.hook_mode == HookMode.NONE, \
                 'only normal train can valid trace.'
         self.empty_cache_at_larger_batch_size = empty_cache_at_larger_batch_size
-        print(f'Create CustomeDynamicBatchDataset, hook={type(hook)}.')
+        print(f'Create DynamicBatchDataset, hook={type(hook)}.')
         print(f'enable_accumulation={self.enable_accumulation}, checkpoint_micro_batch={self.checkpoint_micro_batch}.')
 
     @property
@@ -104,6 +105,14 @@ class CustomeDynamicBatchDataset(IterableDataset):
                 return 0
         else:
             return self.max_batch_size
+        
+    def get_batch_size(self, batch):
+        if _vision_task(self.model_name):
+            return len(batch['image'])
+        elif _text_gen(self.model_name):
+            return len(batch['input_ids'])
+        else:
+            raise Exception("not support model")
 
     def record_batch_event(self, epoch, i, batch_size, global_batch_size=None):
         self.batch_event = EventManager.record_event(f'batch_{epoch:02d}_{i:03d}_{batch_size:02d}')
@@ -119,19 +128,7 @@ class CustomeDynamicBatchDataset(IterableDataset):
         if self.hook.train_mode == TrainMode.COLOCATE_L2:
             if self.hook._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL2:
                 self.hook.release_and_reply()
-                #     t0 = time.time()
-                #     old_gpu_mem = gpu_mem()
-                #     torch.cuda.synchronize()
-                #     torch.cuda.empty_cache()
-                #     hook.adjust_l2()
-                #     t1 = time.time()
-                #     if not use_shared_tensor:
-                #         mem_info = f'gpu mem {old_gpu_mem:.1f} -> {gpu_mem():.1f}'
-                #     else:
-                #         mem_info = f'mem pool {torch_col.cuda_memory_pool_train_all_usage() / 1024 / 1024:.1f}M'
-                #     print('batch {} adjust : bs {} -> {} | {:.1f}ms | {:.1f}ms | {}'.format(
-                #         i, train_dataset.last_batch_size, train_dataset.batch_size, (time.time()-batch_begin) * 1000, (t1 - t0) * 1000, 
-                #         mem_info))
+
         assert self.state == DatasetState.ITER
         self.batch_event.tag = 'finish'
         EventManager.record_event('', self.batch_event)

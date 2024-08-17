@@ -52,7 +52,6 @@ cdef extern from "<torch_col/csrc/control_stub.h>" namespace "torch_col":
         vector[long] GetAdjustDoneTimeStamp()
 
 
-
 cdef class PyDummyStub:
     cdef DummyStub* _cppclass
 

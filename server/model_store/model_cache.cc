@@ -165,9 +165,7 @@ void WarmModelCache::ReserveCacheInternal(
           } else {
             warm_cache_lock.lock();
           }
-          auto cold_cache_lock = ColdModelCache::Get(device_id_)->Lock();
-          std::unique_lock model_lock{cm->muts_[rank]};
-          bool res = cm->ReclaimMemory(rank, cold_cache_lock, model_lock, model);
+          bool res = cm->ReclaimMemory(rank, model);
           if (res) {
             ss << " " << cm_name << "(hot=" << cm->GetHotness() << ")";
             warm_cache_items_[cm_name]->cached = false;
@@ -205,8 +203,9 @@ ColdModelCache* ColdModelCache::Get(int device_id) {
 
 std::tuple<ColdModelCache::group_id_list, ColdModelCache::evict_list, bool>
 ColdModelCache::PushCacheItem(
-    const std::string& name, size_t rank, std::vector<size_t> groups_nbytes, 
-    size_t total_nbytes, std::unique_lock<std::mutex> &lock, Model *source_model) {
+    const std::string& name, size_t rank, 
+    std::vector<size_t> groups_nbytes, size_t total_nbytes, 
+    std::unique_lock<std::mutex> &lock, Model *source_model) {
   DLOG(INFO) << "PushCacheItem, name = " << name 
              << ", rank = " << rank 
              << ", groups_nbytes = " << groups_nbytes 
@@ -290,25 +289,26 @@ ColdModelCache::evict_list ColdModelCache::GetEvictModels(
 }
 
 double ColdModelCache::GetBufferMBUnsafe() {
-  auto buffer_mb = ResourceManager::GetFreeMemoryMB(false);
+  auto buffer_mb = ResourceManager::GetFreeMemoryMB(device_id_, false);
   auto cold_cache_nbytes = current_cached_nbytes_;
   if (cold_cache_nbytes > Config::cold_cache_min_capability_nbytes) {
     buffer_mb += sta::ByteToMB(cold_cache_nbytes - Config::cold_cache_min_capability_nbytes);
   }
-  double cur_max_buffer_mb = sta::ByteToMB(Config::cold_cache_max_capability_nbytes
-                                           - std::min(Config::cold_cache_min_capability_nbytes, current_cached_nbytes_));
+  double cur_max_buffer_mb = 
+      sta::ByteToMB(Config::cold_cache_max_capability_nbytes
+                    - std::min(Config::cold_cache_min_capability_nbytes, current_cached_nbytes_));
   buffer_mb = std::min(buffer_mb, cur_max_buffer_mb);
   return std::max(0.0, buffer_mb);
 }
 
 double ColdModelCache::GetCacheSizeMBUnsafe() {
   auto cold_cache_nbytes = current_cached_nbytes_;
-  auto free_memory_mb = ResourceManager::GetFreeMemoryMB(false);
+  auto free_memory_mb = ResourceManager::GetFreeMemoryMB(device_id_, false);
   return std::min(sta::ByteToMB(Config::cold_cache_max_capability_nbytes),
                   sta::ByteToMB(cold_cache_nbytes) + std::max(0.0, free_memory_mb));
 }
 
-double ColdModelCache::GetReleaseReserveMemoryMB(std::unique_lock<std::mutex> &lock) {
+double ColdModelCache::GetReleaseReserveMemoryMBUnsafe() {
   double cached_MB = sta::ByteToMB(current_cached_nbytes_);
   double min_cap_MB = sta::ByteToMB(Config::cold_cache_min_capability_nbytes);
   double max_cap_MB = sta::ByteToMB(Config::cold_cache_max_capability_nbytes);
@@ -316,13 +316,15 @@ double ColdModelCache::GetReleaseReserveMemoryMB(std::unique_lock<std::mutex> &l
   if (ColdModelCache::reserve_policy_on_release == ReservePolicy::kMaxCap) {
     return std::max(0.0, max_cap_MB - cached_MB);
   } else if (ColdModelCache::reserve_policy_on_release == ReservePolicy::kMaxMinDiff) {
-    return cached_MB > min_cap_MB ? std::max(0.0, max_cap_MB - cached_MB) : max_cap_MB - min_cap_MB;
+    return cached_MB > min_cap_MB 
+           ? std::max(0.0, max_cap_MB - cached_MB) 
+           : max_cap_MB - min_cap_MB;
   } else {
     return 0.0;
   }
 }
 
-double ColdModelCache::GetAdjustReserveMemoryMB(std::unique_lock<std::mutex> &lock) {
+double ColdModelCache::GetAdjustReserveMemoryMBUnsafe() {
   double cached_MB = sta::ByteToMB(current_cached_nbytes_);
   double min_cap_MB = sta::ByteToMB(Config::cold_cache_min_capability_nbytes);
   double max_cap_MB = sta::ByteToMB(Config::cold_cache_max_capability_nbytes);
@@ -330,10 +332,20 @@ double ColdModelCache::GetAdjustReserveMemoryMB(std::unique_lock<std::mutex> &lo
   if (ColdModelCache::reserve_policy_on_adjust == ReservePolicy::kMaxCap) {
     return std::max(0.0, max_cap_MB - cached_MB);
   } else if (ColdModelCache::reserve_policy_on_adjust == ReservePolicy::kMaxMinDiff) {
-    return cached_MB > min_cap_MB ? std::max(0.0, max_cap_MB - cached_MB) : max_cap_MB - min_cap_MB;
+    return cached_MB > min_cap_MB 
+           ? std::max(0.0, max_cap_MB - cached_MB) 
+           : max_cap_MB - min_cap_MB;
   } else {
     return 0.0;
   }
+}
+
+double ColdModelCache::GetReleaseReserveMemoryMB(std::unique_lock<std::mutex> &lock) {
+  return GetReleaseReserveMemoryMBUnsafe();
+}
+
+double ColdModelCache::GetAdjustReserveMemoryMB(std::unique_lock<std::mutex> &lock) {
+  return GetAdjustReserveMemoryMBUnsafe();
 }
 
 } // namespace colserve

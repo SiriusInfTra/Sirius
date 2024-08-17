@@ -144,7 +144,7 @@ class SkewedConfig_v2:
 ## =========================================================== ##
 
 def get_train_epoch(train_epoch_time, duration):
-    return int(duration / train_epoch_time + 5)
+    return int(duration / train_epoch_time + 10)
 
 
 def _workload_v2(wkld_type, client_model_list, infer_only,

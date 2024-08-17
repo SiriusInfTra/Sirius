@@ -1,12 +1,15 @@
 #pragma once
 
 #include <common/log_as_glog_sta.h>
+#include <common/inf_tra_comm/bip_helper.h>
+#include <pthread.h>
 
 #include <torch/csrc/distributed/c10d/reducer.hpp>
 #include <torch/csrc/distributed/c10d/logger.hpp>
 #include <torch/csrc/distributed/c10d/ProcessGroupNCCL.hpp>
 #include <torch/csrc/distributed/c10d/Work.hpp>
 #include <torch/csrc/distributed/c10d/Types.hpp>
+
 
 namespace torch_col {
 
@@ -292,8 +295,8 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
   static ::c10::intrusive_ptr<ProcessGroupNCCL> default_pg_;
   
   // our own maintained abort flag outside of NCCL, 
-  // therefore we check abort flag without get the NCCLComm
+  // therefore we can check abort flag without get the NCCLComm
   std::atomic<uint32_t> abort_flag_{0};
 };
 
-}
+} // namespace torch_col

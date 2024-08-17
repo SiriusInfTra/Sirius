@@ -29,7 +29,7 @@ SMPartitioner::SMPartitioner(int device_id) : device_id_(device_id) {
             // << "shm_name " << shm_name_.c_str();
 
   tpc_data_ = &ctrl::InfTraCommunicator::GetIB()
-      ->GetMutableInferInfo()->tpc_datas[device_id_];
+      ->GetMutableInferInfoUnsafe()->tpc_datas[device_id_];
 
   cudaDeviceProp deviceProp;
   COL_CUDA_CALL(cudaGetDeviceProperties(&deviceProp, device_id));
