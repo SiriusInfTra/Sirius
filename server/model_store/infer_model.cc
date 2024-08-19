@@ -302,46 +302,6 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
     }
     free_memory_MB = ResourceManager::GetFreeMemoryMB(
         device_.device_id, Config::log_memory_adjust);
-
-    // size_t adjust_batch_buffer_nbytes = std::min(
-    //   Config::cold_cache_max_capability_nbytes - Config::cold_cache_min_capability_nbytes,
-    //   Config::cold_cache_max_capability_nbytes - ColdModelCache::Get().GetCachedNbytes(cold_cache_lock) 
-    // );
-    
-
-    // double adjust_reserve_mb = cold_model_cache->GetAdjustReserveMemoryMB(cold_cache_lock);
-    // double adjust_batch_buffer_mb = total_storage_MB 
-    //                                 - std::max(0.0, cold_cache_free_memory_MB)
-    //                                 + adjust_reserve_mb;
-
-    // if (adjust_batch_buffer_mb > 0) {
-    //   int cur_target_bs = TrainLauncher::Get()->GetTargetBatchSize();
-    //   if (cur_target_bs >= 0) {
-    //     PROFILE_START(TrainAdjust);
-    //     bool is_first_adjust = !ctrl::Controller::Get()->HasFlyingColocateAdjust();
-    //     auto adjust_batch_size = TrainLauncher::Get()->GetAdjustBatchSize(adjust_batch_buffer_mb);
-    //     CHECK_GE(adjust_batch_size, 0);
-    //     int cmd_id = ctrl::Controller::Get()->ColocateAdjust(
-    //         0, device_.device_id, adjust_batch_size);
-    //     // LOG(INFO) << "adjust model " << name_ << " cmd " << cmd_id;
-    //     ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
-    //     PROFILE_END(TrainAdjust);
-    //     if (is_first_adjust) {
-    //       Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, 
-    //                                   PROFILE_DURATRION(TrainAdjust));
-    //     }
-    //     LOG_IF(INFO, Config::log_memory_adjust) 
-    //         << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
-    //         << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
-    //         << " | before adjust: free memory " << free_memory_MB
-    //         << " cold cache free memory " << cold_cache_free_memory_MB
-    //         << " reserve memory " << adjust_reserve_mb
-    //         << " adjust_batch_buffer_mb " << adjust_batch_buffer_mb
-    //         << " delta batch size " << adjust_batch_size << ".";
-    //   } else {
-    //     LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
-    //               << ", skip adjust due to negative target batch size (" << cur_target_bs << ")" ; 
-    //   }
   }
   LOG_IF(INFO, Config::log_memory_adjust) 
       << "[Model, Cold Cache Adjust] after adjust, "

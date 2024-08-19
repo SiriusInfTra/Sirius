@@ -3,8 +3,6 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as torch_dist
 import torch.multiprocessing as torch_mp
 from torch import nn
-import torch_col.trainer
-import torch_col.xsched
 from torchvision import models
 from torch.utils.data import DataLoader
 import argparse
@@ -12,14 +10,15 @@ import os, sys
 
 import torch_col
 from torch_col import MemoryPool, EventManager, TrainMode, HookMode
-from torch_col import ColocateAdjustL1Exception, SwitchL1Exception
 from torch_col import DynamicBatchDataset
+import torch_col.trainer
+import torch_col.xsched
 from typing import Optional
 import time
 
 
 def setup(rank, world_size):
-    print(f'[Train rank {rank} PID {os.getpid()} world size {world_size}] setup')
+    torch_col.info(f'[Train rank {rank} PID {os.getpid()} world size {world_size}] setup')
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = str(12345 + os.getuid() % 100)
     torch_col.setup_colocate_training(rank, world_size, True, True)
@@ -33,9 +32,7 @@ def train(rank:int, world_size:int,
           num_epoch: int, batch_size: int, 
           global_batch_size: Optional[int] = None):
     setup(rank, world_size)
-    gloo_group = torch_dist.new_group(backend='gloo')
-
-    # batch_size = 32 if rank == 0 else 36
+    torch_col.init_train_info(batch_size, batch_size, model_name='swin_b_ddp')
 
     hook_mode = torch_col.get_hook_mode()
     
@@ -83,7 +80,7 @@ def train(rank:int, world_size:int,
         torch_col.MemoryPool.get_memory_usage()),
         flush=True, file=sys.stderr)
 
-    torch_col.wait_barrier()
+    torch_col.dist.wait_barrier()
 
     def iter_train_fn(batch):
         images = batch['image']
@@ -127,7 +124,7 @@ def train(rank:int, world_size:int,
     
         if hook.can_exit_after_infer_worklaod_done():
             print('[hook] inference workload done, will exit training', flush=True)
-            torch_col.wait_barrier()
+            torch_col.dist.wait_barrier()
             break
 
     if train_mode.is_kill_batch():
@@ -151,7 +148,6 @@ def main():
     parser.add_argument('--num-epoch', type=int, default=15)
     parser.add_argument('--train-mode', type=str, default=TrainMode.COLOCATE_L1.value, 
                         choices=[train_mode.value for train_mode in TrainMode])
-    parser.add_argument('--train-profile', type=str, default='train-profile.csv')
     args = parser.parse_args()
     
     batch_size = args.batch_size
@@ -173,10 +169,11 @@ def main():
     try:
         process_context.join()
     except Exception as e:
-        print(f"Exception in training: {e}", file=sys.stderr, flush=True)
+        torch_col.info(f"Exception in training: {e}")
         for p in process_context.processes:
-            p.terminate()
-        raise e
+            p.kill()
+            p.join()
+        os.abort()
 
 
 if __name__ == '__main__':

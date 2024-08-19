@@ -37,8 +37,9 @@ inline size_t AlignedNBytes(size_t nbytes) {
 }
 
 inline size_t AlignNBytes(size_t nbytes) {
-
-    return nbytes >= MEM_BLOCK_NBYTES ? AlignedNBytes<MEM_BLOCK_NBYTES>(nbytes) : AlignedNBytes<ALIGN_NBYTES>(nbytes);
+  return nbytes >= MEM_BLOCK_NBYTES 
+         ? AlignedNBytes<MEM_BLOCK_NBYTES>(nbytes) 
+         : AlignedNBytes<ALIGN_NBYTES>(nbytes);
 }
 
 constexpr size_t alignment = 1024;
@@ -125,16 +126,6 @@ class Executor {
     return storage_group_nbytes_;
   }
 
-  // size_t 
-
-  // size_t GetAdjustBatchSize() const {
-  //   size_t size_mega = sta::ByteToMB(GetStorageSize());
-  //   /* reserve 40MB, 145MB per batch */
-  //   auto [train_mem_base, train_mem_slope] = Mod;
-  //   return (size_mega + 125 + 40) / 125; 
-  // }
-
-  // double GetFreeMemoryMB();
 
  private:
   void SetupStorage(bool alloc);
