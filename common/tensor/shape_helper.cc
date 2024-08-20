@@ -4,7 +4,7 @@
 namespace colserve {
 namespace sta {
 
-size_t ComputeStorageNbytes(at::IntArrayRef size,
+size_t ComputeStorageNbytes(const dim_vec_t &size,
                             DLDataType dtype,
                             size_t storage_offset) {
   size_t result = 1;
@@ -16,8 +16,8 @@ size_t ComputeStorageNbytes(at::IntArrayRef size,
   return (result + storage_offset) * GetDataTypeNbytes(dtype);
 }
 
-size_t ComputeStorageNbytes(at::IntArrayRef size, 
-                            at::IntArrayRef stride, 
+size_t ComputeStorageNbytes(const dim_vec_t &size, 
+                            const dim_vec_t &stride, 
                             DLDataType dtype,
                             size_t storage_offset) {
   size_t result = storage_offset + 1;

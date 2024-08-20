@@ -113,7 +113,7 @@ STensor ViewShapeDtype(const STensor tensor,
 
 STensor AsStrided(const STensor tensor, const dim_vec_t &size,
                    const dim_vec_t &stride, 
-                   c10::optional<int64_t> storage_offset) {
+                   std::optional<int64_t> storage_offset) {
   DLOG(INFO) << "sta::AsStrided"
              << " size " << size << " stride " << stride 
              << " storage_offset " 
@@ -133,7 +133,7 @@ STensor AsStrided(const STensor tensor, const dim_vec_t &size,
 
 void AsStrided_(STensor tensor, const dim_vec_t &size,
                 const dim_vec_t &stride, 
-                c10::optional<int64_t> storage_offset) {
+                std::optional<int64_t> storage_offset) {
   DLOG(INFO) << "sta::AsStrided_"
              << " size " << size << " stride " << stride 
              << " storage_offset " 
