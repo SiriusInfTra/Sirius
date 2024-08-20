@@ -2,8 +2,8 @@
 #define COLSERVE_SHAPE_HELPER_H
 
 // #include <dlpack/dlpack.h>
+#include <common/log_as_glog_sta.h>
 #include <ATen/Tensor.h>
-#include "log_as_glog_sta.h"
 
 #include <vector>
 #include <cstdint>

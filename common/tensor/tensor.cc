@@ -1,15 +1,17 @@
-#include "log_as_glog_sta.h"
-#include <common/tensor.h>
+#include <common/log_as_glog_sta.h>
+#include <common/tensor/tensor.h>
 #include <common/cuda_allocator.h>
-#include <common/shape_helper.h>
+#include <common/tensor/shape_helper.h>
 
 
 namespace colserve {
 namespace sta {
 
-TensorContainer::TensorContainer() : tensor_{0}, mdata_{0}, stensor_version_{0} {}
+TensorContainer::TensorContainer() 
+    : tensor_{0}, mdata_{0}, stensor_version_{0} {}
 
-TensorContainer::TensorContainer(std::vector<int64_t> shape, DLDevice device, DLDataType dltype) 
+TensorContainer::TensorContainer(std::vector<int64_t> shape, 
+                                 DLDevice device, DLDataType dltype) 
     : is_null_{true}, stensor_version_{0} {
   SetTensor(nullptr, std::move(shape), device, dltype, 0);
 }
@@ -28,20 +30,14 @@ TensorContainer::TensorContainer(memory_data_t mdata, std::vector<int64_t> shape
 }
 
 TensorContainer::TensorContainer(memory_data_t mdata, std::vector<int64_t> shape, 
-                                 at::MemoryFormat memory_format, 
+                                 MemoryFormat memory_format, 
                                  DLDevice device, DLDataType dtype) {
   switch (memory_format) {
-    case c10::MemoryFormat::Contiguous:
+    case MemoryFormat::Contiguous:
       SetTensor(mdata, std::move(shape), device, dtype, 0);
       break;
-    case c10::MemoryFormat::ChannelsLast:
-      SetTensor(mdata, std::move(shape), c10::get_channels_last_strides_2d(shape), device, dtype, 0);
-      break;
-    case c10::MemoryFormat::ChannelsLast3d:
-      SetTensor(mdata, std::move(shape), c10::get_channels_last_strides_2d(shape), device, dtype, 0);
-      break;
-    default:
-      LOG(FATAL) << "unknown memory_format: " << memory_format << ".";
+      LOG(FATAL) << "unknown memory_format: " 
+                 << static_cast<int64_t>(memory_format) << ".";
       break;
   }
 }

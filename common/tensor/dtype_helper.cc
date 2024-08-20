@@ -1,6 +1,6 @@
 #include "dtype_helper.h"
 
-#include <glog/logging.h>
+#include <common/log_as_glog_sta.h>
 
 namespace colserve {
 namespace sta {
