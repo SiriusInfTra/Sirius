@@ -37,17 +37,24 @@ class TensorContainer {
                   
   TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, 
                   DLDevice device, DLDataType dtype);
-  TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, MemoryFormat memory_format, 
+  TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, 
+                  MemoryFormat memory_format, 
                   DLDevice device, DLDataType dtype);
-  TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, std::vector<int64_t> stride, 
-                  DLDevice device, DLDataType dtype, size_t storage_offset);
+  TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, 
+                  std::vector<int64_t> stride, 
+                  DLDevice device, DLDataType dtype, 
+                  size_t storage_offset);
   virtual ~TensorContainer();
 
-  void SetTensor(TensorContainer::memory_data_t mdata, std::vector<int64_t> shape, 
-                 DLDevice device, DLDataType dtype, std::optional<size_t> storage_offset);
-  void SetTensor(TensorContainer::memory_data_t mdata, std::vector<int64_t> shape, 
+  void SetTensor(TensorContainer::memory_data_t mdata, 
+                 std::vector<int64_t> shape, 
+                 DLDevice device, DLDataType dtype, 
+                 std::optional<size_t> storage_offset);
+  void SetTensor(TensorContainer::memory_data_t mdata, 
+                 std::vector<int64_t> shape, 
                  std::vector<int64_t> stride, 
-                 DLDevice device, DLDataType dtype, std::optional<size_t> storage_offset);
+                 DLDevice device, DLDataType dtype, 
+                 std::optional<size_t> storage_offset);
 
   friend STensor;
  private:
@@ -110,10 +117,12 @@ class STensor : public std::shared_ptr<TensorContainer> {
 
   bool ComputeContiguous() const;
   size_t ComputeNumel() const;
+  size_t ComputeNbytes() const;
 
   // void Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride);
   void AllocForNull(MemType mtype);
-  void SetMDataForNull(TensorContainer::memory_data_t mdata, bool check_memory_bound = false);
+  void SetMDataForNull(TensorContainer::memory_data_t mdata, 
+                       bool check_memory_bound = false);
   void DeallocToNull();
   void DeallocToDummy();
   void Rearrange();

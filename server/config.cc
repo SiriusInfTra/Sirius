@@ -28,7 +28,7 @@ bool Config::use_shared_tensor_train = true;
 bool Config::ondemand_adjust = true;
 bool Config::better_alloc = true;
 
-size_t Config::better_alloc_threshold = 64_MB;
+// size_t Config::better_alloc_threshold = 64_MB;
 
 bool Config::group_param_load = true;
 bool Config::group_param_dump = false;

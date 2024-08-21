@@ -75,6 +75,9 @@ class CUDAMemPool {
   static CUDAMemPool* Get(int device_id);
   static bool IsEnable();
 
+  static std::shared_ptr<PoolEntry> 
+      HostAlloc(size_t nbytes, MemType mtype);
+
   CUDAMemPool(int device_id, std::size_t nbytes, 
               bool cleanup, bool observe, 
               FreeListPolicyType free_list_policy);

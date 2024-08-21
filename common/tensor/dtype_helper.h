@@ -20,6 +20,12 @@ inline bool DLDataTypeEqual(const DLDataType &dtype1, const DLDataType &dtype2) 
   return dtype1 == dtype2;
 }
 
+constexpr DLDataType DLFloat32 = DLDataType{kDLFloat, 32, 1};
+constexpr DLDataType DLFloat64 = DLDataType{kDLFloat, 64, 1};
+constexpr DLDataType DLInt8 = DLDataType{kDLInt, 8, 1};
+constexpr DLDataType DLInt32 = DLDataType{kDLInt, 32, 1};
+constexpr DLDataType DLInt64 = DLDataType{kDLInt, 64, 1};
+
 }
 }
 

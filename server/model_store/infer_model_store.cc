@@ -8,7 +8,7 @@
 #include <server/profiler.h>
 #include <server/config.h> 
 
-#include <common/dtype_helper.h>
+#include <common/tensor/dtype_helper.h>
 #include <common/device_manager.h>
 
 #include <boost/range/irange.hpp>
@@ -221,7 +221,7 @@ bool InferModelStore::AddJob(const std::string &model_name,
   return true;
 }
 
-void InferModelStore::InferingInc(tvm::Executor *executor) {
+void InferModelStore::InferingInc(tvm::TVMGraph *graph, tvm::Executor *executor) {
   std::unique_lock lock{Get()->task_switch_mutex_, std::defer_lock};
   if (Config::IsSwitchMode()) {
     lock.lock();
@@ -231,19 +231,19 @@ void InferModelStore::InferingInc(tvm::Executor *executor) {
   //   return Get()->task_switch_ctrl_.load() != static_cast<int>(TaskSwitchStatus::kReclaimInfer);
   // });
   Get()->num_infering_model_.fetch_add(1, std::memory_order_relaxed);
-  Get()->infering_model_nbytes_.fetch_add(executor->GetStorageSize(), std::memory_order_relaxed); 
+  Get()->infering_model_nbytes_.fetch_add(graph->GetStorageNBytes(), std::memory_order_relaxed); 
 
   // if (res == 0) {
   //   Get()->task_switch_ctrl_.store(static_cast<int>(TaskSwitchStatus::kInfering));
   // }
 }
 
-void InferModelStore::InferingDec(tvm::Executor *executor) {
+void InferModelStore::InferingDec(tvm::TVMGraph *graph, tvm::Executor *executor) {
   // std::unique_lock lock{Get()->task_switch_mutex_};
   // CHECK(Get()->task_switch_ctrl_.load() == static_cast<int>(TaskSwitchStatus::kInfering));
   CHECK(Get()->num_infering_model_.load(std::memory_order_relaxed) > 0);
   Get()->num_infering_model_.fetch_sub(1, std::memory_order_relaxed);
-  Get()->infering_model_nbytes_.fetch_sub(executor->GetStorageSize(), std::memory_order_relaxed);
+  Get()->infering_model_nbytes_.fetch_sub(graph->GetStorageNBytes(), std::memory_order_relaxed);
   // if (res == 1) {
   //   Get()->task_switch_ctrl_.store(static_cast<int>(TaskSwitchStatus::kNotInfering));
   // }

@@ -5,7 +5,7 @@
 #include "colserve.grpc.pb.h"
 
 #include <server/logging_as_glog.h>
-#include <common/dlpack.h>
+#include <common/tensor/dlpack.h>
 
 #include <grpc++/grpc++.h>
 #include <thread>

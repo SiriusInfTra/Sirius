@@ -17,17 +17,33 @@ STensor Null(const dim_vec_t &size, DLDevice device, DLDataType dtype) {
 
 STensor Empty(const dim_vec_t &size, MemoryFormat memory_format, 
               DLDevice device, DLDataType dtype, MemType mtype) {
-  CHECK(device.device_type == kDLCUDA);
+  CHECK(device.device_type == kDLCUDA || device.device_type == kDLCUDAHost);
   auto storage_nbytes = ComputeStorageNbytes(size, dtype);
   std::shared_ptr<CUDAMemPool::PoolEntry> entry;
-  if (CUDAMemPool::IsEnable()) {
-    entry = CUDAMemPool::Get(device.device_id)->Alloc(storage_nbytes, mtype, false);
+  if (device.device_type == kDLCUDAHost) {
+    entry = CUDAMemPool::HostAlloc(storage_nbytes, mtype);
   } else {
-    entry = CUDAMemPool::Get(device.device_id)->RawAlloc(storage_nbytes, mtype);
+    if (CUDAMemPool::IsEnable()) {
+      entry = CUDAMemPool::Get(device.device_id)->Alloc(
+          storage_nbytes, mtype, false);
+    } else {
+      entry = CUDAMemPool::Get(device.device_id)->RawAlloc(
+          storage_nbytes, mtype);
+    }
   }
   CHECK(entry != nullptr && entry->nbytes >= storage_nbytes);
   return STensor(entry, size, memory_format, device, dtype);
 }
+
+STensor Empty(const dim_vec_t &size, DLDevice device, DLDataType dtype,
+              MemType mtype) {
+  return Empty(size, MemoryFormat::Contiguous, device, dtype, mtype);
+}
+
+STensor HostEmpty(const dim_vec_t &size, DLDataType dtype, MemType mtype) {
+  return Empty(size, DLDevice{kDLCUDAHost, 0}, dtype, mtype);
+}
+
 
 // STensor RawEmpty(const dim_vec_t &size, DLDataType dtype, MemType mtype) {
 //   auto storage_nbytes = ComputeStorageNbytes(size, dtype);

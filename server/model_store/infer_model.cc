@@ -79,8 +79,7 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
       (model_path / "mod.json").c_str(),
       (model_path / "mod.group").c_str(),
       rmod,
-      (model_path / "mod.params").c_str(),
-      std::vector{device}
+      (model_path / "mod.params").c_str()
     );
   } else {
     tvm_graph_ = std::make_unique<tvm::TVMGraph>(
@@ -91,8 +90,7 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
       (model_path / "mod.json").c_str(),
       (model_path / "mod.group").c_str(),
       rmod,
-      params.value(),
-      std::vector{device}
+      params.value()
     );
   }
 
@@ -216,8 +214,8 @@ bool Model::ReclaimMemory(size_t rank,
   auto cold_model_cache = ColdModelCache::Get(device_.device_id);
   auto &&[cached_groups_id, evict_group_list, succ] = 
     cold_model_cache->PushCacheItem(name_, rank, 
-                                    executor->GetGroupsNbytes(), 
-                                    executor->GetStorageSizeAlign(), 
+                                    tvm_graph_->GetGroupsNbytes(), 
+                                    tvm_graph_->GetStorageAlignedNBytes(), 
                                     cold_cache_lock, source_model);
   CHECK(succ);
   for (auto &&[name, evict_groups_id] : evict_group_list) {
@@ -407,7 +405,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     auto reserve_cache_ms = Profiler::MilliFrom(reserve_cache_begin);
 
     // [switch mode] before infering, first claim infering execution
-    InferModelStore::InferingInc(executors_[rank].get());
+    InferModelStore::InferingInc(tvm_graph_.get(), executors_[rank].get());
 
     // lock to avoid be interrupted by memory reclaim
     auto cold_cache_lock = cold_model_cache->Lock();
@@ -532,7 +530,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
       auto data = job->GetInferData();
       data->GetResponder().Finish(data->GetResponse(), grpc::Status::OK, data);
     }
-    InferModelStore::InferingDec(executors_[rank].get());
+    InferModelStore::InferingDec(tvm_graph_.get(), executors_[rank].get());
     Profiler::InferRespInc(jobs.size());
 
     // estimate tpc after first infer

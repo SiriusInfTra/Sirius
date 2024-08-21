@@ -1,6 +1,10 @@
 #ifndef COLSERVE_GRAPH_EXECUTOR_FACTORY_H
 #define COLSERVE_GRAPH_EXECUTOR_FACTORY_H
-#include "../logging_as_glog.h"
+#include <server/logging_as_glog.h>
+#include <server/config.h>
+
+#include <common/util.h>
+#include <common/tensor/tensor.h>
 
 #include <dlpack/dlpack.h>
 #include <dmlc/json.h>
@@ -8,8 +12,6 @@
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/packed_func.h>
 #include <tvm/runtime/module.h>
-
-#include <server/config.h>
 
 #include <fstream>
 #include <iostream>
@@ -23,8 +25,32 @@
 namespace colserve {
 
 class Model;
+std::string GetModelNameWithoutDuplicatedId(
+    const std::string &model_name);
 
 namespace tvm {
+
+// TODO read from configuration
+
+template<size_t align>
+inline size_t AlignedNBytes(size_t nbytes) {
+  static_assert((align & (align - 1)) == 0, 
+                "alignment must be power of 2");
+  return (nbytes + (align - 1)) & (~(align - 1));
+}
+
+static const constexpr size_t MEM_BLOCK_NBYTES = 32_MB;
+static const constexpr size_t MEM_BLOCK_ALIGN_NBYTES = 16_MB;
+inline size_t GetMemBlockAlignedNBytes(size_t nbytes) {
+  return nbytes >= MEM_BLOCK_NBYTES 
+         ? AlignedNBytes<MEM_BLOCK_NBYTES>(nbytes) 
+         : AlignedNBytes<MEM_BLOCK_ALIGN_NBYTES>(nbytes);
+}
+
+constexpr size_t LINE_ALIGN_NBYTES = 128_B;
+inline size_t GetLineAlignedNbytes(size_t nbytes) {
+  return AlignedNBytes<LINE_ALIGN_NBYTES>(nbytes);
+}
 
 using TVMArray = ::tvm::runtime::NDArray;
 
@@ -45,22 +71,18 @@ struct OpArgs {
 };
 
 struct PoolEntry {
-  int device_type;
-  std::vector<int64_t> shape;
-  DLDataType dtype;
-  int param_data_entry;
-  TVMArray linked_param;
-  std::string scope;
-  bool params_entry;
-  //    PoolEntry(int s, int dev_type, void* pre_linked_param) :
-  //        size(s), device_type(dev_type), pre_linked_param(std::move(pre_linked_param)) {}
+  memory_byte_t nbytes;
+  bool is_param_entry;
 };
+
 struct NodeEntry {
   uint32_t node_id;
   uint32_t index;
   uint32_t version;
   inline bool operator==(const NodeEntry& other) const {
-    return node_id == other.node_id && index == other.index && version == other.version;
+    return node_id == other.node_id 
+        && index == other.index 
+        && version == other.version;
   }
   // JSON Loader
   void Load(dmlc::JSONReader* reader) {
@@ -230,28 +252,58 @@ class TVMGraph {
   static std::string mod_params;
   static std::string mod_group;
 
+  static std::map<std::string, TVMArray> 
+      LoadParamsAsTVMArray(const std::string &params_file);
+
+
   TVMGraph(size_t rank, ::colserve::Model* infer_model,
                        const std::string &model_name,
                        const std::filesystem::path &model_path,
                        const std::string &graph_json,
                        const std::string &group_txt,
                        const ::tvm::runtime::Module mod,
-                       const std::string &params_file,
-                       const std::vector<DLDevice> &devs);
+                       const std::string &params_file);
   TVMGraph(size_t rank, ::colserve::Model* infer_model,
                        const std::string &model_name,
                        const std::filesystem::path &model_path,
                        const std::string &graph_json,
                        const std::string &group_txt,
                        const ::tvm::runtime::Module mod,
-                       const std::map<std::string, TVMArray> &params,
-                       const std::vector<DLDevice> &devs);
+                       const std::map<std::string, TVMArray> &params);
   std::unique_ptr<Executor> CreateGraphExecutor(size_t worker_id, const std::vector<DLDevice> &devs);
 
   using ShapeInfo = std::map<std::string, std::vector<int64_t>>;
   using DtypeInfo = std::map<std::string, std::string>;
   std::tuple<ShapeInfo, DtypeInfo> GetInputInfo() const;
   std::tuple<ShapeInfo, DtypeInfo> GetOutputInfo() const;
+
+  memory_byte_t GetParamStorageNBytes() const {
+    return param_storage_nbytes_;
+  }
+
+  memory_byte_t GetBufferStorageNBytes() const {
+    return buffer_storage_nbytes_;
+  }
+
+  memory_byte_t GetStorageNBytes() const {
+    return param_storage_nbytes_ + buffer_storage_nbytes_;
+  }
+
+  std::vector<memory_byte_t> GetGroupsNbytes() const {
+    return storage_group_nbytes_;
+  }
+
+  memory_byte_t GetStorageAlignedNBytes() const {
+    if (Config::group_param_load) {
+      if (Config::group_param_nbytes_with_fragment) {
+        return model_nbytes_with_group_fragment_;
+      } else {
+        return AlignedNBytes<MEM_BLOCK_ALIGN_NBYTES>(GetStorageNBytes());
+      }
+    } else {
+      return GetStorageNBytes();
+    }
+  }
 
   inline size_t GetModelRank() const { return model_rank_; }
 
@@ -262,8 +314,6 @@ class TVMGraph {
     return node_row_ptr_[nid] + index;
   }
 
-  static std::map<std::string, TVMArray> LoadParamsAsTVMArray(const std::string &params_file);
-
   // void ResetParamStorage();
   // void AllocParamStorage();
   // void PipelineLoadParams();
@@ -271,8 +321,16 @@ class TVMGraph {
   friend class Executor;
  private:
   // void SetupStorage();
+  void LoadGraph(const std::string &graph_json);
   void LoadParams(const std::string &params_file);
   void LoadParams(const std::map<std::string, TVMArray> &params);
+  void SetupStorage();
+  void SetupHostPinnedIOStorage();
+  void SetupStorageGroup();
+  void SetupParamGroupPartition(const std::string &path);
+
+  void DumpParamGroupPartition();
+
   void Load(dmlc::JSONReader* reader) {
     reader->BeginObject();
     int bitmask = 0;
@@ -314,20 +372,6 @@ class TVMGraph {
     return false;
   }
 
-  // void LoadParamGroupParti(const std::string &path) {
-  //   if (Config::group_param_dump) {
-  //     LOG(INFO) << "skip load storage group: " << path
-  //               << " because group_param_dump is enabled";
-  //     return;
-  //   }
-  //   std::ifstream handle(path);
-  //   CHECK(handle.is_open()) << "Cannot open file " << path;
-  //   std::string buf;
-  //   while (handle >> buf) {
-  //     storage_group_parti_.push_back(std::stoul(buf));
-  //   }
-  // }
-
   size_t model_rank_;
   std::filesystem::path model_path_;
   std::string model_name_;
@@ -345,15 +389,36 @@ class TVMGraph {
   std::map<std::string, uint32_t> node_map_;
   std::map<std::string, uint32_t> input_map_;
   std::map<std::string, uint32_t> output_map_;
-  std::map<uint32_t, TVMArray> params_; // data entry id -> TVMArray
+
+  // data entry id -> TVMArray
+  std::map<uint32_t, TVMArray> host_params_; 
+  // [ param storage group, [param ids ...] ]
+  std::vector<std::pair<sta::STensor, std::vector<uint32_t>>> 
+      host_param_storage_group_;
+
   
   // std::vector<size_t> storage_group_parti_;
   
   // std::map<uint32_t, uint32_t> param_node_storage_id_map_;
 
-  // std::vector<PoolEntry> pool_entry_;
-  // std::vector<TVMArray> storage_pool_;
 
+  // to avoid alloc pin memory during set input/get output
+  // std::unordered_map<std::string, TVMArray> 
+  //     input_cpu_pin_bufs_, output_cpu_pin_bufs_;
+
+  // storage meta data
+  std::vector<PoolEntry> storage_pool_entries_;
+  // ensure param are allocated together if group param loading is enabled
+  std::vector<uint32_t> storage_alloc_order_;
+  // storage allocation group
+  std::vector<size_t> storage_group_partition_;
+  std::vector<std::vector<size_t>> storage_group_offsets_;
+  std::vector<memory_byte_t> storage_group_nbytes_;
+  memory_byte_t param_storage_nbytes_,
+                buffer_storage_nbytes_,
+                model_nbytes_with_group_fragment_;
+
+  
 };
 
 } 

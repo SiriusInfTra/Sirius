@@ -38,7 +38,8 @@ void CUDAMemPool::Init(int device_id, std::size_t nbytes,
                        bool cleanup, bool observe,
                        FreeListPolicyType free_list_policy) {
   // DLOG(INFO) << "[CUDA Memory Pool] initilized with size " << size / 1024 / 1024 << " Mb";
-  CHECK(device_id < MAX_DEVICE_NUM) << "device_id " << device_id << " exceeds MAX_DEVICE_NUM";
+  CHECK(device_id < MAX_DEVICE_NUM) << "device_id " << device_id 
+                                    << " exceeds MAX_DEVICE_NUM";
   cuda_mem_pools_[device_id] = std::make_unique<CUDAMemPool>(
       device_id, nbytes, cleanup, observe, free_list_policy);
   allocate_tensor_from_memory_pool_ = true;
@@ -166,7 +167,7 @@ CUDAMemPool::RawAlloc(size_t nbytes, MemType mtype) {
   }
 
   void *ptr;
-  COL_CUDA_CALL(cudaSetDevice(device_id_));
+  sta::DeviceGuard guard(device_id_);
   if (!raw_alloc_enable_unified_memory_) {
     COL_CUDA_CALL(cudaMalloc(&ptr, nbytes));
   } else {
@@ -176,6 +177,17 @@ CUDAMemPool::RawAlloc(size_t nbytes, MemType mtype) {
       new PoolEntry{ptr, nbytes, mtype}, [this](PoolEntry *entry) {
         COL_CUDA_CALL(cudaSetDevice(this->device_id_));
         COL_CUDA_CALL(cudaFree(entry->addr));
+        delete entry;
+      });
+}
+
+std::shared_ptr<CUDAMemPool::PoolEntry>
+CUDAMemPool::HostAlloc(size_t nbytes, MemType mtype) {
+  void *ptr;
+  COL_CUDA_CALL(cudaMallocHost(&ptr, nbytes));
+  return std::shared_ptr<PoolEntry>(
+      new PoolEntry{ptr, nbytes, mtype}, [](PoolEntry *entry) {
+        COL_CUDA_CALL(cudaFreeHost(entry->addr));
         delete entry;
       });
 }

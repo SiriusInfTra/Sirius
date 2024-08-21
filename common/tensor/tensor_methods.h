@@ -23,6 +23,11 @@ STensor Null(const dim_vec_t &size, DLDevice device, DLDataType dtype);
 STensor Empty(const dim_vec_t &size, MemoryFormat memory_format, 
               DLDevice device, DLDataType dtype, MemType mtype);
 
+STensor Empty(const dim_vec_t &size, DLDevice device, DLDataType dtype,
+              MemType mtype);
+
+STensor HostEmpty(const dim_vec_t &size, DLDataType dtype, MemType mtype);
+
 STensor EmptyStrided(const dim_vec_t &size, const dim_vec_t &stride, 
                      DLDevice device, DLDataType dtype, MemType mtype);
 

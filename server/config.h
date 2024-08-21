@@ -80,7 +80,7 @@ class Config {
   static bool use_shared_tensor_infer;
   static bool use_shared_tensor_train;
   static bool better_alloc;
-  static size_t better_alloc_threshold;
+  // static size_t better_alloc_threshold;
 
   static bool group_param_load;
   static bool group_param_dump; // enable at the first time to get mod.group
