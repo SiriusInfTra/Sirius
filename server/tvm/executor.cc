@@ -75,39 +75,8 @@ Executor::Executor(TVMGraph &tvm_graph, size_t worker_id,
     COL_CUDA_CALL(cudaEventCreateWithFlags(&param_ready_events_[i], 
                                            cudaEventDisableTiming));
   }
-  // pipeline_op_exec_starts_.resize(op_execs_.size());
-  // pipeline_op_exec_ends_.resize(op_execs_.size());
-  // for (size_t i = 0; i < op_execs_.size(); i++) {
-  //   if (op_execs_[i]) {
-  //     COL_CUDA_CALL(cudaEventCreate(&pipeline_op_exec_starts_[i]));
-  //     COL_CUDA_CALL(cudaEventCreate(&pipeline_op_exec_ends_[i]));
-  //   }
-  // }
 
   if (Config::group_param_load) {
-    // for (auto sit = tvm_graph_.host_params_.begin(); sit != tvm_graph_.host_params_.end(); ) {
-    //   size_t total_nbytes = 0, off = 0;
-    //   std::vector<uint32_t> param_eids;
-    //   auto eit = sit;
-    //   for (; eit != tvm_graph_.host_params_.end() && total_nbytes < Config::group_param_load_threshold; eit++) {
-    //     auto &p = *eit;
-    //     auto aligned_nbytes = GetAlignedNbytes(GetDataSize(*p.second.operator->()));
-    //     total_nbytes += aligned_nbytes;
-    //     param_eids.push_back(p.first);
-    //     param_ready_event_ids_[p.first] = host_param_storage_group_.size();
-    //   }
-    //   auto param_group = TVMArray::Empty(ShapeTuple({static_cast<int64_t>(total_nbytes)}),
-    //      DLDataType{kDLInt, 8, 1}, DLDevice{kDLCUDAHost, 0});
-    //   for (; sit != eit; sit++) {
-    //     auto &p = *sit;
-    //     std::memcpy(static_cast<char*>(param_group->data) + off, p.second->data,
-    //       GetDataSize(*p.second.operator->()));
-    //     auto aligned_nbytes = GetAlignedNbytes(GetDataSize(*p.second.operator->()));
-    //     off += aligned_nbytes;
-    //   }
-    //   this->host_param_storage_group_.push_back(std::make_pair(param_group, param_eids));
-    // }
-    // for (auto & param_group : tvm_graph_.host_param_storage_group_) {
     auto num_param_groups = tvm_graph_.host_param_group_.size();
     for (auto pg_id : boost::irange(num_param_groups)) {
       auto & pg = tvm_graph_.host_param_group_[pg_id];
@@ -240,21 +209,6 @@ void Executor::PipelineRun() {
       wait_ms += Profiler::MilliFrom(t1);
 
       op_execs_[i]();
-      // auto t0 = std::chrono::steady_clock::now();
-      // for (bool param_ready = false; !param_ready; ) {
-      //   param_ready = true;
-      //   for (auto nid : input_param_eid_[i]) {
-      //     if (!param_ready_[nid]) {
-      //       param_ready = false;
-      //       break;
-      //     }
-      //   }
-      //   std::this_thread::sleep_for(std::chrono::microseconds(10));
-      // }
-      // auto t1 = std::chrono::steady_clock::now();
-      // wait_time += std::chrono::duration<double, std::milli>(t1-t0).count();
-      // op_execs_[i]();
-      // DeviceAPI::Get(tvm_graph_.devices_[0])->StreamSync(tvm_graph_.devices_[0], exec_stream_);
     }
   }
   DeviceAPI::Get(devices_[0])->StreamSync(devices_[0], exec_stream_);
@@ -264,18 +218,6 @@ void Executor::PipelineRun() {
       << " wait_ms " << wait_ms
       << " tot " << Profiler::MilliFrom(begin);
 }
-
-// double Executor::ComputePipelineExecTime() {
-//   double ret = 0;
-//   for (size_t i = 0; i < op_execs_.size(); i++) {
-//     if (op_execs_[i]) {
-//       float ms;
-//       COL_CUDA_CALL(cudaEventElapsedTime(&ms, pipeline_op_exec_starts_[i], pipeline_op_exec_ends_[i]));
-//       ret += ms;
-//     }
-//   }
-//   return ret;
-// }
 
 const DLTensor* Executor::GetInput(int index) const {
   CHECK(initialized_);
@@ -328,26 +270,6 @@ uint32_t Executor::GetOutputIndex(const std::string &name) const {
     return -1;
   }
 }
-
-// void Executor::ResetBufStorage() {
-//   using namespace ::tvm::runtime;
-//   for (auto &e : data_entry_) {
-//     e.get_mutable()->dl_tensor.data = nullptr;
-//   }
-//   for (auto &s: storage_pool_) {
-//     DeviceAPI::Get(s->device)->FreeDataSpace(s->device, s->data);
-//     s.get_mutable()->dl_tensor.data = nullptr;
-//   }
-// }
-
-// void Executor::AllocBufStorage() {
-//   using namespace ::tvm::runtime;
-//   for (auto &s : storage_pool_) {
-//     s.get_mutable()->dl_tensor.data =
-//         DeviceAPI::Get(s->device)->AllocDataSpace(
-//           s->device, s->ndim, s->shape, s->dtype);
-//   }
-// }
 
 void Executor::ResetStorage() {
   using namespace ::tvm::runtime;
@@ -572,92 +494,12 @@ void Executor::SetupStorage(bool alloc) {
         devices_[0], sta::DLInt8));
   }
 
-  // std::vector<PoolEntry> pool_entry_;
-  // for (size_t i = 0; i < tvm_graph_.attrs_.shape.size(); i++) {
-  //   int storage_id = tvm_graph_.attrs_.storage_id[i];
-  //   std::string storage_scope = tvm_graph_.attrs_.storage_scope.empty() ? "" : tvm_graph_.attrs_.storage_scope[i];
-  //   int device_type = static_cast<int>(devices_[0].device_type);
-  //   if (!tvm_graph_.attrs_.device_index.empty()) {
-  //     device_type = tvm_graph_.attrs_.device_index[i];
-  //   }
-
-  //   uint32_t sid = static_cast<uint32_t>(storage_id);
-  //   if (sid >= pool_entry_.size()) {
-  //     pool_entry_.resize(sid + 1, {-1, {0}, {}});
-  //   } else {
-  //     CHECK_EQ(pool_entry_[sid].params_entry, false)
-  //         << "parameter storage " << sid << " cannot be reused";
-  //     CHECK(pool_entry_[sid].device_type == -1 || pool_entry_[sid].device_type == device_type)
-  //         << "The same pool entry cannot be assigned to multiple devices";
-  //   }
-  //   tvm_graph_.CheckNullLinkedParam(tvm_graph_.module_, sid);
-  //   pool_entry_[sid].param_data_entry = i;
-  //   pool_entry_[sid].device_type = device_type;
-  //   pool_entry_[sid].scope = storage_scope;
-  //   if (tvm_graph_.host_params_.count(i)) {
-  //     pool_entry_[sid].params_entry = true;
-  //   }
-
-  //   DLDataType t = vtype[i];
-  //   if (!::tvm::runtime::IsTextureStorage(storage_scope)) {
-  //     size_t size = 1;
-  //     for (int64_t sz : tvm_graph_.attrs_.shape[i]) {
-  //       size *= static_cast<size_t>(sz);
-  //     }
-  //     size_t bits = t.bits * t.lanes;
-  //     CHECK(bits % 8U == 0U || bits == 1U || bits == 4U);
-  //     int64_t bytes = ((bits + 7U) / 8U) * size;
-  //     pool_entry_[sid].shape[0] = std::max(pool_entry_[sid].shape[0], bytes);
-  //     pool_entry_[sid].dtype = DLDataType{kDLFloat, 32, 1};
-  //   } else {
-  //     CHECK(false) << "unsuported texture memory";
-  //   }
-  // }
-
-  // param_storage_size_ = 0;
-  // buffer_storage_size_ = 0;
-  // for (size_t sid = 0; sid < pool_entry_.size(); sid++) {
-  //   const auto &pit = pool_entry_[sid];
-  //   // if (pit.params_entry)
-  //   //   continue;
-  //   const auto &cit = std::find_if(devices_.begin(), devices_.end(), [&pit](const DLDevice &d) {
-  //     return pit.device_type == static_cast<int>(d.device_type);
-  //   });
-  //   DLDevice dev = cit == devices_.end() ? devices_[0] : *cit;
-  //   std::vector<int64_t> shape = pit.shape;
-  //   if (shape.size() == 1) {
-  //     shape[0] = (shape[0] + 3) / 4;
-  //   }
-  //   ::tvm::runtime::Optional<::tvm::runtime::String> mem_scope;
-  //   if (!pit.scope.empty()) {
-  //     mem_scope = ::tvm::runtime::String(pit.scope);
-  //   }
-  //   // CHECK(dev.device_type == kDLCUDA && dev.device_id == 0);
-  //   CHECK(dev.device_type == kDLCUDA);
-  //   sta::STensor last_tensor;
-  //   if (!alloc) {
-  //     storage_pool_.push_back(sta::Null(shape, dev, pit.dtype));
-  //   } else {
-  //     storage_pool_.push_back(sta::Empty(shape, sta::MemoryFormat::Contiguous, dev, 
-  //                                        pit.dtype, sta::MemType::kInfer));
-  //   }
-  //   last_tensor = storage_pool_.back();
-  //   // op_node_storage_id_map_[sid] = storage_pool_.size() - 1;
-  //   if (pit.params_entry) {
-  //     param_storage_size_ += ::tvm::runtime::GetDataSize(*last_tensor.operator->());
-  //   } else {
-  //     buffer_storage_size_ += ::tvm::runtime::GetDataSize(*last_tensor.operator->());
-  //   }
-  // }
-
   data_entry_.resize(tvm_graph_.node_row_ptr_.back());
-  // data_alignment_.resize(tvm_graph_.node_row_ptr_.back());
   for (size_t i = 0; i < data_entry_.size(); i++) {
     int storage_id = tvm_graph_.attrs_.storage_id[i];
     
     data_entry_[i] = sta::ViewShapeDtype(storage_pool_[storage_id], 
                                          tvm_graph_.attrs_.shape[i], vtype[i]);
-    // data_alignment_[i] = details::GetDataAlignment(*data_entry_[i].operator->());
   }
 
   SetupHostPinnedIOStorage();
@@ -667,155 +509,7 @@ void Executor::SetupStorage(bool alloc) {
     RefreshDataEntry();
   }
 
-  // setup cpu pin memory
-  // for (auto nid : tvm_graph_.input_nodes_) {
-  //   auto eid = tvm_graph_.entry_id(nid, 0);
-  //   if (!tvm_graph_.params_.count(eid)) {
-  //     auto & input_id = tvm_graph_.nodes_[nid].name;
-  //     auto & shape = tvm_graph_.attrs_.shape[eid];
-  //     auto & dtype = tvm_graph_.attrs_.dltype[eid];
-  //     input_host_pin_bufs_[input_id] = ::tvm::runtime::NDArray::Empty(
-  //         shape, ::tvm::runtime::String2DLDataType(dtype), {kDLCUDAHost, 0});
-  //   }
-  // }
-  // for (auto e : tvm_graph_.outputs_) {
-  //   auto nid = e.node_id;
-  //   auto eid = tvm_graph_.entry_id(e);
-  //   auto & output_id = tvm_graph_.nodes_[nid].name;
-  //   auto & shape = tvm_graph_.attrs_.shape[eid];
-  //   auto & dtype = tvm_graph_.attrs_.dltype[eid];
-  //   output_host_pin_bufs_[output_id] = ::tvm::runtime::NDArray::Empty(
-  //       shape, ::tvm::runtime::String2DLDataType(dtype), {kDLCUDAHost, 0});
-  // }
-
-  // auto model_name_without_dup_id = GetModelNameWithoutDuplicatedId(tvm_graph_.model_name_);
-
-  // if (Config::use_shared_tensor_infer 
-  //     && Config::better_alloc) {
-  //   SetupStorageGroup();
-  // }
-
-  // static std::set<std::string> logged;
-  // if (!logged.count((model_name_without_dup_id))) {
-  //   logged.insert(model_name_without_dup_id);
-  //   LOG(INFO) << "[Executor] " << model_name_without_dup_id
-  //             << " params " << 1.0 * param_storage_size_ / 1024 / 1024 << " Mb"
-  //             << " intermediate " << 1.0 * buffer_storage_size_ / 1024 / 1024 << " Mb";
-  // }
 }
-
-// void Executor::SetupStorageGroup() {
-//   CHECK(Config::use_shared_tensor_infer && Config::better_alloc);
-
-//   std::vector<uint32_t> storage_alloc_order;
-//   if (Config::group_param_load) {
-//     std::vector<bool> storage_record(storage_pool_.size(), false);
-//     for (auto & p : tvm_graph_.host_params_) {
-//       auto sid = tvm_graph_.attrs_.storage_id[p.first];
-//       storage_alloc_order.push_back(sid);
-//       storage_record[sid] = true;
-//     }
-//     for (size_t i = 0; i < storage_pool_.size(); i++) {
-//       if (!storage_record[i]) {
-//         storage_alloc_order.push_back(i);
-//       }
-//     }
-//   } else {
-//     for (size_t i = 0; i < storage_pool_.size(); i++) {
-//       storage_alloc_order.push_back(i);
-//     }
-//   }
-//   storage_alloc_order_ = storage_alloc_order;
-
-//   // TO FIX: 
-//   //    garrentee consistent with the storage order
-//   //    this is affected by group_param_load
-//   //    currently, we assume group_param_load is always true
-//   if (Config::group_param_dump) {
-//     std::vector<size_t> model_storage_nbytes(storage_alloc_order.size());
-//     for (uint32_t k : storage_alloc_order) {
-//       auto tensor = storage_pool_[storage_alloc_order[k]];
-//       CHECK(tensor.IsNull());
-//       auto aligned_nbytes = sta::ComputeStorageNbytes(
-//           tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
-//       model_storage_nbytes[k] = aligned_nbytes;
-//     }
-//     size_t model_nbytes_acc = std::accumulate(model_storage_nbytes.cbegin(), 
-//                                               model_storage_nbytes.cend(), 0U);
-//     std::string file_name = "nbytes_" + std::to_string(model_nbytes_acc) + ".txt";
-//     file_name = (tvm_graph_.model_path_ / file_name).string();
-//     LOG(INFO) << "[Executor] " << tvm_graph_.model_name_ 
-//               << " dump storage nbytes to " << file_name;
-//     if (!std::filesystem::exists(file_name)) {
-//       std::ofstream handle(file_name);
-//       CHECK(handle.is_open());
-//       for (size_t nbytes : model_storage_nbytes) {
-//         handle << nbytes << "\n";
-//       }
-//       handle.close();
-//       CHECK_EQ(system(
-//         ("python util/prepare_model_store/offline_group.py --storage-nbytes-file "
-//           + file_name + " --output "
-//           + (tvm_graph_.model_path_ / TVMGraph::mod_group).string()
-//         ).c_str()
-//       ), 0) << " generate storage group failed";
-//     } else {
-//       LOG(WARNING) << "[Executor] " << tvm_graph_.model_name_ 
-//                    << " storage nbytes file " << file_name << " already exists, skip dump";
-//     }
-//   }
-//   LoadParamGroupParti((tvm_graph_.model_path_ / TVMGraph::mod_group).string());
-
-//   model_nbytes_with_group_fragment_ = 0;
-//   size_t model_nbytes = 0, fragment_nbytes = 0;
-//   CHECK_GE(storage_group_parti_.size(), 2);
-//   CHECK_EQ(storage_group_parti_.front(), 0);
-//   CHECK_EQ(storage_group_parti_.back(), storage_pool_.size());
-
-//   for (size_t k = 0; k < storage_group_parti_.size() - 1; ++k) {
-//     size_t i = storage_group_parti_[k], j = storage_group_parti_[k + 1];
-//     size_t group_nbytes = 0;
-//     for (auto iter = storage_alloc_order.cbegin() + i; iter != storage_alloc_order.cbegin() + j; ++iter) {
-//       auto tensor = storage_pool_[*iter];
-//       // CHECK(tensor.IsNull());
-//       auto aligned_nbytes = sta::ComputeStorageNbytes(
-//           tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
-//       aligned_nbytes = GetAlignedNbytes(aligned_nbytes);
-//       group_nbytes += aligned_nbytes;
-//     }
-//     storage_group_nbytes_.push_back(group_nbytes);
-
-//     // auto mdata_group = sta::CUDAMemPool::Get()->Alloc(
-//     //     group_nbytes, sta::MemType::kInfer, false);
-//     // size_t off = 0;
-//     // for (; i < j; i++) {
-//     //   auto tensor = storage_pool_[storage_alloc_order[i]];
-//     //   auto aligned_nbytes = sta::ComputeStorageNbytes(
-//     //       tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
-//     //   aligned_nbytes = sta::detail::GetAlignedNbytes(aligned_nbytes);
-//     //   auto mdata = std::shared_ptr<sta::CUDAMemPool::PoolEntry>(
-//     //       new sta::CUDAMemPool::PoolEntry{static_cast<char*>(mdata_group->addr) + off, aligned_nbytes});
-//     //   tensor.SetMDataForNull(mdata);
-//     //   off += aligned_nbytes;
-//     // }
-//     // storage_group_.push_back(mdata_group);
-
-//     model_nbytes += group_nbytes;
-//     fragment_nbytes += AlignNBytes(group_nbytes) - group_nbytes;
-//     model_nbytes_with_group_fragment_ += AlignNBytes(group_nbytes);
-//   }
-
-//   static std::set<std::string> logged;
-//   auto model_name_without_dup_id = GetModelNameWithoutDuplicatedId(tvm_graph_.model_name_);
-//   if (!logged.count((model_name_without_dup_id))) {
-//     logged.insert(model_name_without_dup_id);
-//     LOG_IF(INFO, Config::log_infer_model_init) 
-//         << "[Executor] " << tvm_graph_.model_name_ << " internal fragment: " 
-//         << sta::ByteDisplay(fragment_nbytes) << " / " << sta::ByteDisplay(model_nbytes)
-//         << " | model with group fragment "
-//         << sta::ByteDisplay(model_nbytes_with_group_fragment_);
-//   }
-// }
 
 void Executor::SetupHostPinnedIOStorage() {
   // setup cpu pin memory
@@ -842,23 +536,9 @@ void Executor::SetupHostPinnedIOStorage() {
   }
 }
 
-// void Executor::LoadParamGroupParti(const std::string &path) {
-//   std::ifstream handle(path);
-//   CHECK(handle.is_open()) << "Cannot open file " << path
-//                           << ", enable `group_param_dump` to generate it";
-//   LOG_IF(INFO, Config::log_infer_model_init) << "load from mod.group from " << path; 
-//   std::string buf;
-//   while (handle >> buf) {
-//     storage_group_parti_.push_back(std::stoul(buf));
-//   }
-// }
-
 void Executor::SetupOpExecs() {
   op_execs_.resize(tvm_graph_.nodes_.size());
   input_param_eid_.resize(op_execs_.size());
-  // input_dltensors_.resize(tvm_graph_.node_row_ptr_.back());
-  // output_dltensors_.resize(tvm_graph_.node_row_ptr_.back());
-  // both_input_output_dltensors_.resize(tvm_graph_.node_row_ptr_.back());
 
   std::unordered_set<uint32_t> input_node_eids;
   std::unordered_set<uint32_t> output_node_eids;
@@ -897,26 +577,6 @@ void Executor::SetupOpExecs() {
 
     std::shared_ptr<OpArgs> op_args = nullptr;
     std::tie(op_execs_[nid], op_args) = CreateTVMOp(inode.param, args);
-
-    // for (size_t i = 0; i < inode.inputs.size(); i++) {
-    //   uint32_t input_eid = tvm_graph_.entry_id(inode.inputs[i]);
-    //   if (input_node_eids.count(input_eid)) {
-    //     input_dltensors_[input_eid].push_back(
-    //         static_cast<DLTensor*>(op_args->arg_values[i].v_handle));
-    //   }
-    //   if (output_node_eids.count(input_eid)) {
-    //     both_input_output_dltensors_[input_eid].push_back(
-    //         static_cast<DLTensor*>(op_args->arg_values[i].v_handle));
-    //   }
-    // }
-
-    // for (uint32_t i = inode.inputs.size(); i < inode.inputs.size() + inode.param.num_outputs; i++) {
-    //   uint32_t output_eid = this->tvm_graph_.entry_id(nid, i - inode.inputs.size());
-    //   if (output_node_eids.count(output_eid)) {
-    //     output_dltensors_[output_eid].push_back(
-    //         static_cast<DLTensor*>(op_args->arg_values[i].v_handle));
-    //   }
-    // }
   }
 }
 

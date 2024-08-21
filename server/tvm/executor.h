@@ -91,10 +91,6 @@ class Executor {
 
 
   std::vector<std::function<void()>> op_execs_;
-  // node input and output dltensors
-  // std::vector<std::vector<DLTensor*>> input_dltensors_;
-  // std::vector<std::vector<DLTensor*>> output_dltensors_;
-  // std::vector<std::vector<DLTensor*>> both_input_output_dltensors_;
   std::vector<std::vector<size_t>> input_param_eid_; // node id -> [param data entry ids]
 
 
@@ -115,13 +111,6 @@ class Executor {
 
   // void* blob_mem_{nullptr};, deprecated
   std::shared_ptr<sta::CUDAMemPool::PoolEntry> blob_mem_{nullptr};
-
-  // group storage
-  // std::vector<uint32_t> storage_alloc_order_;
-
-  // better alloc to avoid fragmentation
-  // size_t model_nbytes_with_group_fragment_;
-  // std::vector<size_t> storage_group_nbytes_;
 
   // cached group, used for SetupMemory/Init(false)
   // storage_group_id -> storage_group_entry

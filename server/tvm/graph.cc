@@ -59,100 +59,6 @@ TVMGraph::TVMGraph(
   SetupStorage();
 }
 
-// void TVMGraph::SetupStorage() {
-//   std::vector<DLDataType> vtype;
-//   for (const std::string &s_type : attrs_.dltype) {
-//     vtype.push_back(::tvm::runtime::String2DLDataType(s_type));
-//   }
-
-//   // std::vector<PoolEntry> pool_entry_;
-//   for (size_t i = 0; i < attrs_.shape.size(); i++) {
-//     int storage_id = attrs_.storage_id[i];
-//     std::string storage_scope = attrs_.storage_scope.empty() ? "" : attrs_.storage_scope[i];
-//     int device_type = static_cast<int>(devices_[0].device_type);
-//     if (!attrs_.device_index.empty()) {
-//       device_type = attrs_.device_index[i];
-//     }
-
-//     uint32_t sid = static_cast<uint32_t>(storage_id);
-//     if (sid >= pool_entry_.size()) {
-//       pool_entry_.resize(sid + 1, {-1, {0}, {}});
-//     } else {
-//       CHECK_EQ(pool_entry_[sid].params_entry, false)
-//           << "parameter storage " << sid << " cannot be reused";
-//       CHECK(pool_entry_[sid].device_type == -1 || pool_entry_[sid].device_type == device_type)
-//           << "The same pool entry cannot be assigned to multiple devices";
-//     }
-//     CheckNullLinkedParam(module_, sid);
-//     pool_entry_[sid].param_data_entry = i;
-//     pool_entry_[sid].device_type = device_type;
-//     pool_entry_[sid].scope = storage_scope;
-//     if (params_.count(i)) {
-//       pool_entry_[sid].params_entry = true;
-//     }
-
-//     DLDataType t = vtype[i];
-//     if (!::tvm::runtime::IsTextureStorage(storage_scope)) {
-//       size_t size = 1;
-//       for (int64_t sz : attrs_.shape[i]) {
-//         size *= static_cast<size_t>(sz);
-//       }
-//       size_t bits = t.bits * t.lanes;
-//       CHECK(bits % 8U == 0U || bits == 1U || bits == 4U);
-//       int64_t bytes = ((bits + 7U) / 8U) * size;
-//       pool_entry_[sid].shape[0] = std::max(pool_entry_[sid].shape[0], bytes);
-//       pool_entry_[sid].dtype = DLDataType{kDLFloat, 32, 1};
-//     } else {
-//       CHECK(false) << "texture memory";
-//       if (pool_entry_[sid].shape.size() == 1) {
-//         pool_entry_[sid].shape.resize(3, 0);
-//       }
-//       size_t axis = ::tvm::runtime::DefaultTextureLayoutSeparator(
-//           attrs_.shape[i].size(), storage_scope);
-//       auto shape = ::tvm::runtime::ApplyTexture2DFlattening<int64_t>(
-//           attrs_.shape[i], attrs_.shape[i].size(), axis);
-//       pool_entry_[sid].shape[0] = std::max(pool_entry_[sid].shape[0], shape.height);
-//       pool_entry_[sid].shape[1] = std::max(pool_entry_[sid].shape[1], shape.width);
-//       CHECK(pool_entry_[sid].shape[2] == 0 || pool_entry_[sid].shape[2] == shape.channel)
-//           << pool_entry_[sid].shape[2] << " != " << shape.channel
-//           << ",  texture channel length must be consistent within a storage pool";
-//       pool_entry_[sid].shape[2] = shape.channel;
-//       CHECK(pool_entry_[sid].dtype.bits == 0 || ::tvm::runtime::TypeEqual(pool_entry_[sid].dtype, t))
-//           << ::tvm::runtime::DLDataType2String(pool_entry_[sid].dtype) << " != " << ::tvm::runtime::DLDataType2String(t)
-//           << ", pool entry for 2d texure allocations must be of the same type;"
-//           << " downstream error from memory planner likely";
-//       pool_entry_[sid].dtype = t;
-//     }
-//   }
-
-//   // for (const auto &pit : pool_entry_) {
-//   // for (size_t sid = 0; sid < pool_entry_.size(); sid++) {
-//   //   const auto &pit = pool_entry_[sid];
-//   //   if (!pit.params_entry) {
-//   //     continue;
-//   //   }
-//   //   const auto &cit = std::find_if(devices_.begin(), devices_.end(), [&pit](const DLDevice &d){
-//   //     return static_cast<int>(d.device_type) == pit.device_type;
-//   //   });
-//   //   DLDevice dev = cit == devices_.end() ? devices_[0] : *cit;
-//   //   std::vector<int64_t> shape = pit.shape;
-//   //   if (shape.size() == 1) {
-//   //     shape[0] = (shape[0] + 3) / 4;
-//   //   }
-//   //   ::tvm::runtime::Optional<::tvm::runtime::String> mem_scope;
-//   //   if (!pit.scope.empty()) {
-//   //     mem_scope = ::tvm::runtime::String(pit.scope);
-//   //   }
-//   //   storage_pool_.push_back(TVMArray::Empty(shape, pit.dtype, dev, mem_scope));
-//   //   param_node_storage_id_map_[sid] = storage_pool_.size() - 1;
-//   // }
-
-//   // for (auto &p : params_) {
-//   //   auto storage_id = attrs_.storage_id[p.first];
-//   //   storage_pool_[param_node_storage_id_map_[storage_id]].CopyFrom(p.second);
-//   // }
-// }
-
 void TVMGraph::LoadGraph(const std::string &graph_json) {
   std::ifstream graph_json_ifs{graph_json};
   std::string graph_json_str{
@@ -247,31 +153,6 @@ void TVMGraph::SetupStorage() {
               << " intermediate " << sta::ByteDisplay(buffer_storage_nbytes_);
   }
 }
-
-// void TVMGraph::SetupHostPinnedIOStorage() {
-//   // setup cpu pin memory
-//   for (auto nid : input_nodes_) {
-//     auto eid = entry_id(nid, 0);
-//     if (!host_params_.count(eid)) {
-//       auto & input_id = nodes_[nid].name;
-//       auto & shape = attrs_.shape[eid];
-//       auto & dtype = attrs_.dltype[eid];
-//       input_cpu_pin_bufs_[input_id] = ::tvm::runtime::NDArray::Empty(
-//           shape, ::tvm::runtime::String2DLDataType(dtype), 
-//           {kDLCUDAHost, 0});
-//     }
-//   }
-//   for (auto e : outputs_) {
-//     auto nid = e.node_id;
-//     auto eid = entry_id(e);
-//     auto & output_id = nodes_[nid].name;
-//     auto & shape = attrs_.shape[eid];
-//     auto & dtype = attrs_.dltype[eid];
-//     output_cpu_pin_bufs_[output_id] = ::tvm::runtime::NDArray::Empty(
-//         shape, ::tvm::runtime::String2DLDataType(dtype), 
-//         {kDLCUDAHost, 0});
-//   }
-// }
 
 void TVMGraph::SetupStorageGroup() {
   CHECK(Config::use_shared_tensor_infer && Config::better_alloc);
