@@ -16,7 +16,7 @@
 
 #include "executor.h"
 #include "graph.h"
-#include "texture.h"
+// #include "texture.h"
 
 
 namespace colserve {
@@ -28,7 +28,7 @@ std::string TVMGraph::mod_params = "mod.params";
 std::string TVMGraph::mod_group = "mod.group";
 
 TVMGraph::TVMGraph(
-    size_t rank, ::colserve::Model *model,
+    size_t rank, Model *model,
     const std::string &model_name,
     const std::filesystem::path &model_path,
     const std::string &graph_json,
@@ -44,7 +44,7 @@ TVMGraph::TVMGraph(
 }
 
 TVMGraph::TVMGraph(
-    size_t rank, ::colserve::Model *model,
+    size_t rank, Model *model,
     const std::string &model_name,
     const std::filesystem::path &model_path,
     const std::string &graph_json,
@@ -208,7 +208,8 @@ void TVMGraph::SetupStorage() {
           << "parameter storage " << sid << " cannot be reused";
     }
     CHECK(CheckNullLinkedParam(module_, sid));
-    CHECK(attrs_.storage_scope[sid].find("texture") == std::string::npos)
+    CHECK(attrs_.storage_scope.empty()
+          || attrs_.storage_scope[sid].find("texture") == std::string::npos)
         << "unsuported texture memory";
 
     DLDataType t = vtype[i];

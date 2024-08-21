@@ -78,7 +78,7 @@ void TensorContainer::SetTensor(
     std::vector<int64_t> shape, std::vector<int64_t> stride, 
     DLDevice device, DLDataType dtype, 
     std::optional<size_t> storage_offset) {
-  CHECK(device.device_type == kDLCUDA);
+  CHECK(device.device_type == kDLCUDA || device.device_type == kDLCUDAHost);
   mdata_ = mdata;
   shape_ = std::move(shape);
   stride_ = std::move(stride);

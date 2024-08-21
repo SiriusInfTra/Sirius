@@ -6,7 +6,7 @@
 #include <server/resource_manager.h>
 #include <server/config.h>
 #include <server/tvm/executor.h>
-#include <server/tvm/texture.h>
+// #include <server/tvm/texture.h>
 #include <server/tvm/graph.h>
 
 #include <tvm/runtime/device_api.h>
@@ -375,9 +375,10 @@ void Executor::AllocStorage() {
 
         // create storage pool
         size_t check_off = 0;
-        for (auto i : boost::irange(tvm_graph_.storage_group_partition_[k], 
-                                    tvm_graph_.storage_group_partition_[k + 1])) {
-          auto offset = tvm_graph_.storage_group_offsets_[k][i];
+        auto group_left = tvm_graph_.storage_group_partition_[k];
+        auto group_right = tvm_graph_.storage_group_partition_[k + 1];
+        for (auto i : boost::irange(group_left, group_right)) {
+          auto offset = tvm_graph_.storage_group_offsets_[k][i - group_left];
           auto tensor = storage_pool_[tvm_graph_.storage_alloc_order_[i]];
           CHECK(tensor.IsNull());
           CHECK_EQ(offset,  check_off);
@@ -391,53 +392,29 @@ void Executor::AllocStorage() {
           check_off += aligned_nbytes;
         }
       }
-
-      // for (size_t k = 0; k < storage_group_parti_.size() - 1; ++k) {
-      //   size_t i = storage_group_parti_[k], j = storage_group_parti_[k + 1];
-      //   auto group_nbytes = storage_group_nbytes_[k];
-      //   std::shared_ptr<sta::CUDAMemPool::PoolEntry> mdata_group;
-      //   if (auto iter = cold_cached_group_.find(k); iter != cold_cached_group_.cend()) {
-      //     mdata_group = iter->second;
-      //   } else {
-      //     mdata_group = sta::CUDAMemPool::Get(devices_[0].device_id)->Alloc(
-      //         group_nbytes, sta::MemType::kInfer, false);
-      //   }
-      //   size_t off = 0;
-      //   for (; i < j; i++) {
-      //     auto tensor = storage_pool_[storage_alloc_order_[i]];
-      //     CHECK(tensor.IsNull());
-      //     auto aligned_nbytes = sta::ComputeStorageNbytes(
-      //         tensor.Shape(), tensor.Stride(), tensor->dtype, tensor.StorageOffset());
-      //     aligned_nbytes = GetAlignedNbytes(aligned_nbytes);
-      //     auto mdata = std::shared_ptr<sta::CUDAMemPool::PoolEntry>(
-      //         new sta::CUDAMemPool::PoolEntry{static_cast<char*>(mdata_group->addr) + off, aligned_nbytes});
-      //     tensor.SetMDataForNull(mdata);
-      //     off += aligned_nbytes;
-      //   }
-      //   storage_group_.push_back(mdata_group);
-      // }
     }
   } else if (Config::infer_raw_blob_alloc) {
     // deprecated
     CHECK(false) << "infer_raw_blob_alloc is deprecated";
-
-    // size_t total_nbytes = 0, off = 0;
-    // // constexpr size_t align = 4 * sizeof(int);
-    // constexpr size_t align = 1;
-    // static_assert(((align - 1) & align) == 0, "align must be power of 2");
-    // for (auto &s : storage_pool_) {
-    //   total_nbytes += (GetDataSize(*s.operator->()) + align - 1) & (~(align - 1));
-    // }
-    // blob_mem_ = sta::CUDAMemPool::Get(devices_[0].device_id)->RawAlloc(
-    //     total_nbytes, sta::MemType::kInfer);
-    // // blob_mem_ = sta::CUDAMemPool::Get()->Alloc(total_nbytes, sta::MemType::kInfer);
-    // for (auto &s : storage_pool_) {
-    //   size_t nbytes = (GetDataSize(*s.operator->()) + align - 1) & (~(align - 1));
-    //   auto mdata = std::shared_ptr<sta::CUDAMemPool::PoolEntry>(
-    //       new sta::CUDAMemPool::PoolEntry{static_cast<char*>(blob_mem_->addr) + off, nbytes});
-    //   s.SetMDataForNull(mdata);
-    //   off += nbytes;
-    // }
+#if 0
+    size_t total_nbytes = 0, off = 0;
+    // constexpr size_t align = 4 * sizeof(int);
+    constexpr size_t align = 1;
+    static_assert(((align - 1) & align) == 0, "align must be power of 2");
+    for (auto &s : storage_pool_) {
+      total_nbytes += (GetDataSize(*s.operator->()) + align - 1) & (~(align - 1));
+    }
+    blob_mem_ = sta::CUDAMemPool::Get(devices_[0].device_id)->RawAlloc(
+        total_nbytes, sta::MemType::kInfer);
+    // blob_mem_ = sta::CUDAMemPool::Get()->Alloc(total_nbytes, sta::MemType::kInfer);
+    for (auto &s : storage_pool_) {
+      size_t nbytes = (GetDataSize(*s.operator->()) + align - 1) & (~(align - 1));
+      auto mdata = std::shared_ptr<sta::CUDAMemPool::PoolEntry>(
+          new sta::CUDAMemPool::PoolEntry{static_cast<char*>(blob_mem_->addr) + off, nbytes});
+      s.SetMDataForNull(mdata);
+      off += nbytes;
+    }
+#endif
   } else {
     for (auto &s: storage_pool_) {
       s.AllocForNull(sta::MemType::kInfer);
@@ -571,7 +548,7 @@ void Executor::SetupStorage(bool alloc) {
   
   for (auto & entry : tvm_graph_.storage_pool_entries_) {
     storage_pool_.push_back(sta::Null({static_cast<int64_t>(entry.nbytes)}, 
-        devices_[0], sta::DLFloat32));
+        devices_[0], sta::DLInt8));
   }
 
   // std::vector<PoolEntry> pool_entry_;
@@ -666,7 +643,7 @@ void Executor::SetupStorage(bool alloc) {
 
   if (alloc) {
     AllocStorage();
-    ResetStorage();
+    RefreshDataEntry();
   }
 
   // setup cpu pin memory
