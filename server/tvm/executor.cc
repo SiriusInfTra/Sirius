@@ -107,9 +107,12 @@ Executor::Executor(TVMGraph &tvm_graph, size_t worker_id,
     //   }
     //   this->host_param_storage_group_.push_back(std::make_pair(param_group, param_eids));
     // }
-    for (auto & param_group : tvm_graph_.host_param_storage_group_) {
-      for (auto param_eid : param_group.second) {
-        param_ready_event_ids_[param_eid] = param_group.second[0];
+    // for (auto & param_group : tvm_graph_.host_param_storage_group_) {
+    auto num_param_groups = tvm_graph_.host_param_group_.size();
+    for (auto pg_id : boost::irange(num_param_groups)) {
+      auto & pg = tvm_graph_.host_param_group_[pg_id];
+      for (auto param_eid : pg.second) {
+        param_ready_event_ids_[param_eid] = pg_id;
       }
     }
   } else {
@@ -160,13 +163,15 @@ void Executor::DeInit(const std::vector<size_t> &keep_cold_cached_group_id) {
   cold_cached_group_.clear();
   size_t cold_cached_nbytes = 0;
   for (size_t k : keep_cold_cached_group_id) {
-    CHECK(cold_cached_group_.emplace(std::make_pair(k, storage_group_.at(k))).second == true);
+    CHECK_EQ(cold_cached_group_.emplace(
+        std::make_pair(k, storage_group_.at(k))).second, true);
     cold_cached_nbytes += storage_group_.at(k)->nbytes;
   }
 
   LOG_IF(INFO, Config::log_infer_model_reclaim) 
       << "[Executor] " << tvm_graph_.model_name_ 
-      << " deinit, cold_cached_nbytes = " << sta::ByteDisplay(cold_cached_nbytes) << ".";
+      << " deinit, cold_cached_nbytes = " 
+      << sta::ByteDisplay(cold_cached_nbytes) << ".";
   cold_cached_nbytes_.store(cold_cached_nbytes, std::memory_order_relaxed);
   if (!Config::colocate_config.skip_malloc) {
     ResetStorage();
@@ -369,8 +374,13 @@ void Executor::AllocStorage() {
     } else {
       for (auto k : boost::irange(tvm_graph_.storage_group_nbytes_.size())) {
         auto group_nbytes = tvm_graph_.storage_group_nbytes_[k];
-        auto mdata_group = sta::CUDAMemPool::Get(devices_[0].device_id)->Alloc(
-            group_nbytes, sta::MemType::kInfer, false);
+        std::shared_ptr<sta::CUDAMemPool::PoolEntry> mdata_group;
+        if (auto it = cold_cached_group_.find(k); it != cold_cached_group_.end()) {
+          mdata_group = it->second;
+        } else {
+          mdata_group = sta::CUDAMemPool::Get(devices_[0].device_id)->Alloc(
+              group_nbytes, sta::MemType::kInfer, false);
+        }
         storage_group_.push_back(mdata_group);
 
         // create storage pool
@@ -431,7 +441,6 @@ void Executor::LoadParams(bool pipeline, bool force) {
   bool cold_cache_hit = false;
   auto t_a = Profiler::Now();
 
-
   auto load_param_t = Profiler::Now();
   auto call_api_t = Profiler::Now();
 
@@ -457,21 +466,26 @@ void Executor::LoadParams(bool pipeline, bool force) {
     size_t sg_off = 0;
     auto storage_group = storage_group_[sg_id++];
     cold_cache_hit = !cold_cached_group_.empty();
-    Profiler::Get()->RecordPerf(Profiler::PerfItem::InferModelColdCacheHit, cold_cache_hit);
+    Profiler::Get()->RecordPerf(Profiler::PerfItem::InferModelColdCacheHit, 
+                                cold_cache_hit);
 
-    for (size_t pg_id = 0; pg_id < host_param_storage_group_.size(); pg_id++) {
-      auto & pg = host_param_storage_group_[pg_id];
+    int num_param_groups = tvm_graph_.host_param_group_.size();
+    for (auto pg_id : boost::irange(num_param_groups)) {
+      auto & pg = tvm_graph_.host_param_group_[pg_id];
       auto & param_group = pg.first;
       auto param_group_nbytes = static_cast<size_t>(param_group->shape[0]);
       auto & param_ids = pg.second;
       for (size_t pg_off = 0; pg_off < param_group_nbytes; ) {
-        auto load_nbytes = std::min(param_group_nbytes - pg_off, storage_group->nbytes - sg_off);
+        auto load_nbytes = std::min(param_group_nbytes - pg_off, 
+                                    storage_group->nbytes - sg_off);
         COL_CUDA_CALL(cudaSetDevice(devices_[0].device_id));
-        if (auto sg_it = cold_cached_group_.find(sg_id - 1); sg_it == cold_cached_group_.cend()) {
+        if (auto sg_it = cold_cached_group_.find(sg_id - 1); 
+            sg_it == cold_cached_group_.cend()) {
           COL_CUDA_CALL(cudaMemcpyAsync(
               static_cast<char*>(storage_group->addr) + sg_off,
               static_cast<char*>(param_group->data) + pg_off,
-              load_nbytes, cudaMemcpyDefault, (cudaStream_t)load_param_stream_));
+              load_nbytes, cudaMemcpyDefault, 
+              (cudaStream_t)load_param_stream_));
           std::stringstream ss;
           for (auto &&[id, arr] : cold_cached_group_) {
             ss << id  << "," << arr->nbytes << "|";
@@ -480,11 +494,17 @@ void Executor::LoadParams(bool pipeline, bool force) {
             ss << nbytes << "@";
           }
           if (Config::cold_cache_ratio == 1.0) {
-            CHECK(cold_cached_group_.empty()) << sg_id << " not cached, cold_cached_group = " << ss.str() << ", storage group size" << storage_group_.size() << ".";
+            CHECK(cold_cached_group_.empty()) 
+                << sg_id << " not cached, cold_cached_group = " 
+                << ss.str() << ", storage group size" 
+                << storage_group_.size() << ".";
           }
         } else {
           CHECK_LE(sg_id, cold_cached_group_.size());
-          CHECK_EQ(sg_it->second, storage_group);
+          CHECK_EQ(sg_it->second, storage_group)
+              << "cached storage group not match, cached addr "
+              << sg_it->second->addr << " required addr "
+              << storage_group->addr;
         }
         sg_off += load_nbytes;
         pg_off += load_nbytes;
@@ -496,8 +516,9 @@ void Executor::LoadParams(bool pipeline, bool force) {
       }
       // because we iterate param group in out loop, 
       // we only need to record after param group transited
-      CHECK(param_ready_event_ids_[param_ids[0]] == pg_id);
-      COL_CUDA_CALL(cudaEventRecord(param_ready_events_[pg_id], (cudaStream_t)load_param_stream_));
+      CHECK_EQ(param_ready_event_ids_[param_ids[0]], pg_id);
+      COL_CUDA_CALL(cudaEventRecord(param_ready_events_[pg_id], 
+                    (cudaStream_t)load_param_stream_));
       if (pipeline) {
         for (auto & pid : param_ids) {
           param_ready_[pid]->store(true);

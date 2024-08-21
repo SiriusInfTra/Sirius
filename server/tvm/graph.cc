@@ -373,7 +373,7 @@ void TVMGraph::SetupParamGroupPartition(const std::string &path) {
             ::tvm::runtime::GetDataSize(*p.second.operator->()));
         off += aligned_nbytes;
       }
-      this->host_param_storage_group_.push_back(
+      this->host_param_group_.push_back(
           std::make_pair(param_group, param_eids));
     }
   }

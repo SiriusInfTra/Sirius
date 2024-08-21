@@ -67,43 +67,7 @@ class Executor {
 
   
   uint32_t GetNumOfNodes() const { return tvm_graph_.nodes_.size(); }
-  // uint32_t entry_id(NodeEntry e) const {
-  //   return tvm_graph_.node_row_ptr_[e.node_id] + e.index;
-  // }
-  // uint32_t entry_id(uint32_t nid, uint32_t index) const {
-  //   return tvm_graph_.node_row_ptr_[nid] + index;
-  // }
-
-  // size_t GetParamStorageSize() const {
-  //   return param_storage_size_;
-  // }
-
-  // size_t GetBufferStorageSize() const {
-  //   return buffer_storage_size_;
-  // }
-
-  // size_t GetStorageSize() const {
-  //   return param_storage_size_ + buffer_storage_size_;
-  // }
-
-  // size_t GetStorageSizeAlign() const {
-  //   if (Config::group_param_load) {
-  //     if (Config::group_param_nbytes_with_fragment) {
-  //       return model_nbytes_with_group_fragment_;
-  //     } else {
-  //       return AlignedNBytes<ALIGN_NBYTES>(GetStorageSize());
-  //     }
-  //   } else {
-  //     return GetStorageSize();
-  //   }
-  // }
-
   size_t GetMissingStorageSizeAlign() const;
-
-  // std::vector<size_t> GetGroupsNbytes() const {
-  //   return storage_group_nbytes_;
-  // }
-
 
  private:
   void SetupStorage(bool alloc);
@@ -120,23 +84,11 @@ class Executor {
 
   std::vector<DLDevice> devices_;
 
-
-  // std::vector<TVMArray> storage_pool_;
-  // std::map<uint32_t, uint32_t> op_node_storage_id_map_;
-  // std::vector<TVMArray> data_entry_;
-
-  // std::vector<PoolEntry> pool_entry_;
-
   std::vector<sta::STensor> storage_pool_;
   std::vector<sta::STensor> data_entry_;
   // if use storage group, storage pool will be view of grouped storage
   std::vector<std::shared_ptr<sta::CUDAMemPool::PoolEntry>> storage_group_;
 
-  // for no shared allocator
-  // std::vector<sta::STensor> raw_storage_pool_;
-  // std::vector<sta::STensor> raw_data_entry_;
-
-  // std::vector<size_t> data_alignment_;
 
   std::vector<std::function<void()>> op_execs_;
   // node input and output dltensors
@@ -161,7 +113,7 @@ class Executor {
   std::mutex pipeline_load_params_mut_;
   std::condition_variable pipeline_load_params_cv_;
 
-  // void* blob_mem_{nullptr};
+  // void* blob_mem_{nullptr};, deprecated
   std::shared_ptr<sta::CUDAMemPool::PoolEntry> blob_mem_{nullptr};
 
   // group storage
@@ -170,24 +122,17 @@ class Executor {
   // better alloc to avoid fragmentation
   // size_t model_nbytes_with_group_fragment_;
   // std::vector<size_t> storage_group_nbytes_;
-  // std::vector<std::shared_ptr<sta::CUDAMemPool::PoolEntry>> storage_group_;
 
   // cached group, used for SetupMemory/Init(false)
-  std::unordered_map<size_t, std::shared_ptr<sta::CUDAMemPool::PoolEntry>> cold_cached_group_;
+  // storage_group_id -> storage_group_entry
+  std::unordered_map<
+      size_t, std::shared_ptr<sta::CUDAMemPool::PoolEntry>
+  > cold_cached_group_;
   std::atomic<size_t> cold_cached_nbytes_;
-
-  // [ param storage group, [param ids ...] ]
-  std::vector<std::pair<TVMArray, std::vector<uint32_t>>> host_param_storage_group_;
-
-  // std::vector<size_t> storage_group_parti_;
-
+  
   
   TVMStreamHandle exec_stream_;
   TVMStreamHandle load_param_stream_;
-
-
-  // size_t param_storage_size_ = 0;
-  // size_t buffer_storage_size_ = 0;
 };
 
 }

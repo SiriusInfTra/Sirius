@@ -394,7 +394,7 @@ class TVMGraph {
   std::map<uint32_t, TVMArray> host_params_; 
   // [ param storage group, [param ids ...] ]
   std::vector<std::pair<sta::STensor, std::vector<uint32_t>>> 
-      host_param_storage_group_;
+      host_param_group_;
 
   
   // std::vector<size_t> storage_group_parti_;
