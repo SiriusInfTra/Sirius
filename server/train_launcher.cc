@@ -93,7 +93,7 @@ bool TrainLauncher::Train() {
     Config::max_warm_cache_nbytes = static_cast<size_t>((
       Config::cuda_memory_pool_gb * 1024 - Config::train_memory_over_predict_mb - base) * 1_MB);
     LOG(INFO) << "[Warm Cache Fallback for Colocation] set max warm cache nbytes to "
-              << sta::ByteDisplay(Config::max_warm_cache_nbytes);
+              << sta::PrintByte(Config::max_warm_cache_nbytes);
   }
 
   std::vector<std::string> args_str;

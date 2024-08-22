@@ -215,7 +215,7 @@ bool Model::ReclaimMemory(size_t rank,
   auto &&[cached_groups_id, evict_group_list, succ] = 
     cold_model_cache->PushCacheItem(name_, rank, 
                                     tvm_graph_->GetGroupsNbytes(), 
-                                    tvm_graph_->GetStorageAlignedNBytes(), 
+                                    tvm_graph_->GetStorageAlignedNbytes(), 
                                     cold_cache_lock, source_model);
   CHECK(succ);
   for (auto &&[name, evict_groups_id] : evict_group_list) {
@@ -323,7 +323,7 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
         << "furthur evict model to make room for model "
         << name_ << " rank " << rank
         << " current cache nbytes " 
-        << sta::ByteDisplay(cold_model_cache->GetCachedNbytes(cold_cache_lock));
+        << sta::PrintByte(cold_model_cache->GetCachedNbytes(cold_cache_lock));
   }
 
 #if 1

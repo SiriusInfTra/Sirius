@@ -78,7 +78,7 @@ void CUDAColAllocator::init(int device_count) {
   initialized_ = true;
   LOG(INFO) << "pytorch CUDAColAllocator Initialized"
             << ", infer memory usage " 
-            << sta::ByteDisplay(sta::CUDAMemPool::Get(device_id)->InferMemUsage());
+            << sta::PrintByte(sta::CUDAMemPool::Get(device_id)->InferMemUsage());
 }
 
 c10::DataPtr CUDAColAllocator::allocate(size_t nbytes) const {
@@ -118,9 +118,9 @@ void* CUDAColAllocator::raw_alloc_with_stream(size_t nbytes, cudaStream_t stream
       nbytes, sta::MemType::kTrain, stream, false);
   DLOG(INFO) << "[CUDAColAllocator] device " << current_device
              << " stream " << stream
-             << " alloc " << sta::ByteDisplay(nbytes) 
+             << " alloc " << sta::PrintByte(nbytes) 
              << " addr " << entry->addr 
-             << " nbytes " << sta::ByteDisplay(entry->nbytes);
+             << " nbytes " << sta::PrintByte(entry->nbytes);
   
   // 2. create extra data structure
   entry->extra_data = new TorchMemBlockExtraData{};
@@ -130,7 +130,7 @@ void* CUDAColAllocator::raw_alloc_with_stream(size_t nbytes, cudaStream_t stream
   auto res = entry_map_.insert(std::make_pair(entry->addr, entry)); 
   CHECK(res.second == true || entry->addr == nullptr)
       << " addr " << entry->addr 
-      << " nbytes " << sta::ByteDisplay(entry->nbytes) 
+      << " nbytes " << sta::PrintByte(entry->nbytes) 
       << " abnormal raw alloc";
   if (train_model_allocating_) {
     train_model_params_.insert(std::make_pair(entry->addr, entry));

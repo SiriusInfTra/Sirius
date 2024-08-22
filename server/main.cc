@@ -212,7 +212,7 @@ void init_config() {
                            - cfg::train_memory_over_predict_mb) * 1_MB
                            - cfg::cold_cache_max_capability_nbytes); // for warmup
     LOG(INFO) << "enable enable_warm_cache_fallback, cache nbytes (used in warmup, conservative estimated) " 
-              << colserve::sta::ByteDisplay(cfg::max_warm_cache_nbytes);
+              << colserve::sta::PrintByte(cfg::max_warm_cache_nbytes);
   }
 
   auto *cuda_device_env = getenv("CUDA_VISIBLE_DEVICES");

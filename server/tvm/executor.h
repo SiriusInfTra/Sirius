@@ -31,7 +31,8 @@ class Executor {
   Executor(TVMGraph &tvm_graph, size_t worker_id, const std::vector<DLDevice> &devs);
   void Init(bool load_param);
   bool Initialized() const { return initialized_; }
-  void FakeInit(bool malloc, bool load_param); // used for simulating unlimted get gpu resource
+  // used for simulating unlimted get gpu resource
+  void FakeInit(bool malloc, bool load_param); 
   void DeInit(const std::vector<size_t> &keep_cold_cached_group_id);
   void ClearColdCached(const std::vector<size_t> &cold_cached_group_id);
 
@@ -52,31 +53,22 @@ class Executor {
     return exec_stream_;
   }
 
-  // void ResetBufStorage();
-  // void ResetParamStorage();
-  // void AllocBufStorage();
-  // void AllocParamStorage();
   void ResetStorage();
   void AllocStorage();
 
-  // deprecated
-  // void AllocStorageMaybeAdjust();
-
   void LoadParams(bool pipeline, bool force);
   void RefreshDataEntry();
-
   
   uint32_t GetNumOfNodes() const { return tvm_graph_.nodes_.size(); }
   size_t GetMissingStorageSizeAlign() const;
 
  private:
   void SetupStorage(bool alloc);
-  // void SetupStorageGroup();
   void SetupHostPinnedIOStorage();
   void LoadParamGroupParti(const std::string &path);
   void SetupOpExecs();
   std::pair<std::function<void()>, std::shared_ptr<OpArgs>> CreateTVMOp(
-    const TVMOpParam &param, const std::vector<DLTensor*>& args);
+      const TVMOpParam &param, const std::vector<DLTensor*>& args);
 
   bool initialized_;
   size_t infer_model_worker_id_;
@@ -89,10 +81,8 @@ class Executor {
   // if use storage group, storage pool will be view of grouped storage
   std::vector<std::shared_ptr<sta::CUDAMemPool::PoolEntry>> storage_group_;
 
-
   std::vector<std::function<void()>> op_execs_;
   std::vector<std::vector<size_t>> input_param_eid_; // node id -> [param data entry ids]
-
 
   // to avoid alloc pin memory during set input/get output
   std::unordered_map<std::string, TVMArray> 
@@ -109,16 +99,15 @@ class Executor {
   std::mutex pipeline_load_params_mut_;
   std::condition_variable pipeline_load_params_cv_;
 
-  // void* blob_mem_{nullptr};, deprecated
+  // deprecated
   std::shared_ptr<sta::CUDAMemPool::PoolEntry> blob_mem_{nullptr};
 
   // cached group, used for SetupMemory/Init(false)
   // storage_group_id -> storage_group_entry
   std::unordered_map<
       size_t, std::shared_ptr<sta::CUDAMemPool::PoolEntry>
-  > cold_cached_group_;
+    > cold_cached_group_;
   std::atomic<size_t> cold_cached_nbytes_;
-  
   
   TVMStreamHandle exec_stream_;
   TVMStreamHandle load_param_stream_;

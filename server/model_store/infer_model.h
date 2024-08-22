@@ -58,7 +58,7 @@ class Model {
 
   size_t GetMemoryNbytes(size_t rank) {
     // return executors_[rank]->GetStorageSizeAlign();
-    return tvm_graph_->GetStorageAlignedNBytes();
+    return tvm_graph_->GetStorageAlignedNbytes();
   }
 
   friend class InferModelStore;

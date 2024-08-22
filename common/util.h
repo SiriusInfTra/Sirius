@@ -98,7 +98,7 @@ inline double ByteToMB(size_t nbytes) {
   return static_cast<double>(nbytes) / 1024 / 1024;
 }
 
-inline std::string ByteDisplay(size_t nbytes) {
+inline std::string PrintByte(size_t nbytes) {
   return str(boost::format("%.2fMB (%dB)") % ByteToMB(nbytes) % nbytes);
 }
 }

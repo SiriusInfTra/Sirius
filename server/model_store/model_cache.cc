@@ -183,7 +183,7 @@ void WarmModelCache::ReserveCacheInternal(
   cached_nbytes_ = nbytes;
   warm_cache_items_[model_name]->cached = true;
   LOG_IF(INFO, Config::log_warm_cache) 
-      << ss.str() << " | now cached_nbytes=" << sta::ByteDisplay(nbytes);
+      << ss.str() << " | now cached_nbytes=" << sta::PrintByte(nbytes);
 }
 
 // ==========================================================================

@@ -277,15 +277,15 @@ class TVMGraph {
   std::tuple<ShapeInfo, DtypeInfo> GetInputInfo() const;
   std::tuple<ShapeInfo, DtypeInfo> GetOutputInfo() const;
 
-  memory_byte_t GetParamStorageNBytes() const {
+  memory_byte_t GetParamStorageNbytes() const {
     return param_storage_nbytes_;
   }
 
-  memory_byte_t GetBufferStorageNBytes() const {
+  memory_byte_t GetBufferStorageNbytes() const {
     return buffer_storage_nbytes_;
   }
 
-  memory_byte_t GetStorageNBytes() const {
+  memory_byte_t GetStorageNbytes() const {
     return param_storage_nbytes_ + buffer_storage_nbytes_;
   }
 
@@ -293,15 +293,15 @@ class TVMGraph {
     return storage_group_nbytes_;
   }
 
-  memory_byte_t GetStorageAlignedNBytes() const {
+  memory_byte_t GetStorageAlignedNbytes() const {
     if (Config::group_param_load) {
       if (Config::group_param_nbytes_with_fragment) {
         return model_nbytes_with_group_fragment_;
       } else {
-        return AlignedNBytes<MEM_BLOCK_ALIGN_NBYTES>(GetStorageNBytes());
+        return AlignedNBytes<MEM_BLOCK_ALIGN_NBYTES>(GetStorageNbytes());
       }
     } else {
-      return GetStorageNBytes();
+      return GetStorageNbytes();
     }
   }
 
@@ -314,11 +314,8 @@ class TVMGraph {
     return node_row_ptr_[nid] + index;
   }
 
-  // void ResetParamStorage();
-  // void AllocParamStorage();
-  // void PipelineLoadParams();
-
   friend class Executor;
+  
  private:
   // void SetupStorage();
   void LoadGraph(const std::string &graph_json);
@@ -359,6 +356,7 @@ class TVMGraph {
     }
     ICHECK_EQ(bitmask, 1 | 2 | 4 | 8 | 16) << "invalid format";
   }
+
   bool CheckNullLinkedParam(::tvm::runtime::Module mod, int64_t storage_id) {
     auto module_lookup_linked_param =
         mod.GetFunction(::tvm::runtime::symbol::tvm_lookup_linked_param, true);
@@ -396,16 +394,6 @@ class TVMGraph {
   std::vector<std::pair<sta::STensor, std::vector<uint32_t>>> 
       host_param_group_;
 
-  
-  // std::vector<size_t> storage_group_parti_;
-  
-  // std::map<uint32_t, uint32_t> param_node_storage_id_map_;
-
-
-  // to avoid alloc pin memory during set input/get output
-  // std::unordered_map<std::string, TVMArray> 
-  //     input_cpu_pin_bufs_, output_cpu_pin_bufs_;
-
   // storage meta data
   std::vector<PoolEntry> storage_pool_entries_;
   // ensure param are allocated together if group param loading is enabled
@@ -417,8 +405,6 @@ class TVMGraph {
   memory_byte_t param_storage_nbytes_,
                 buffer_storage_nbytes_,
                 model_nbytes_with_group_fragment_;
-
-  
 };
 
 } 

@@ -149,8 +149,8 @@ void TVMGraph::SetupStorage() {
   if (!logged.count((model_name_without_dup_id))) {
     logged.insert(model_name_without_dup_id);
     LOG(INFO) << "[Executor] " << model_name_without_dup_id
-              << " params " << sta::ByteDisplay(param_storage_nbytes_)
-              << " intermediate " << sta::ByteDisplay(buffer_storage_nbytes_);
+              << " params " << sta::PrintByte(param_storage_nbytes_)
+              << " intermediate " << sta::PrintByte(buffer_storage_nbytes_);
   }
 }
 
@@ -265,9 +265,9 @@ void TVMGraph::SetupParamGroupPartition(const std::string &path) {
     logged.insert(model_name_without_dup_id);
     LOG_IF(INFO, Config::log_infer_model_init) 
         << "[Executor] " << model_name_ << " internal fragment: " 
-        << sta::ByteDisplay(fragment_nbytes) << " / " << sta::ByteDisplay(model_nbytes)
+        << sta::PrintByte(fragment_nbytes) << " / " << sta::PrintByte(model_nbytes)
         << " | model with group fragment "
-        << sta::ByteDisplay(model_nbytes_with_group_fragment_);
+        << sta::PrintByte(model_nbytes_with_group_fragment_);
   }
 }
 
@@ -345,7 +345,7 @@ TVMGraph::LoadParamsAsTVMArray(const std::string &params_file) {
     params_ret[names[i]] = temp;
     params_size += ::tvm::runtime::GetDataSize(*temp.operator->());
   }
-  VLOG(1) << params_file << " " << sta::ByteDisplay(params_size);
+  VLOG(1) << params_file << " " << sta::PrintByte(params_size);
   return params_ret;
 }
 
