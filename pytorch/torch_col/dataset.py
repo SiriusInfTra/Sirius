@@ -59,11 +59,13 @@ class DynamicBatchDataset(IterableDataset):
         if not fake_data:
             if _vision_task(self.model_name):
                 self.all_inputs = {
-                    'image': torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_inputs.npy')).pin_memory(),
-                    'label': torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_targets.npy')).pin_memory()
+                    # 'image': torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_inputs.npy')).pin_memory(),
+                    # 'label': torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_targets.npy')).pin_memory(),
+                    'image': torch.from_numpy(np.load('workload_data/pet/pet_inputs.npy')).pin_memory(),
+                    'label': torch.from_numpy(np.load('workload_data/pet/pet_targets.npy')).pin_memory()
                 }
                 assert num_class == torch.max(self.all_inputs['label']).item() + 1, \
-                    f"expect num of class: {torch.max(self.all_inputs['label']).item() + 1}."
+                    f"expect num of class: {torch.max(self.all_inputs['label']).item() + 1},."
                 assert size == len(self.all_inputs['image']), f"expect size {len(self.all_inputs['image'])}."
                 assert input_shape == self.all_inputs['image'].shape[1:], \
                     f"expect input shape: {self.all_inputs['image'].shape[1:]}"

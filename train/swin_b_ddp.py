@@ -29,7 +29,7 @@ def cleanup():
 
 def train(rank:int, world_size:int,
           train_mode: TrainMode, 
-          num_epoch: int, batch_size: int, 
+          num_epoch: int, real_data: bool, batch_size: int, 
           global_batch_size: Optional[int] = None):
     setup(rank, world_size)
     torch_col.init_train_info(batch_size, batch_size, model_name='swin_b_ddp')
@@ -41,6 +41,8 @@ def train(rank:int, world_size:int,
 
 
     model = models.swin_b(weights=models.Swin_B_Weights.DEFAULT).cuda()
+    if real_data:
+        model.head = torch.nn.Linear(model.head.in_features, 37).cuda()
     model = DDP(model, device_ids=[rank])
 
     print(f"Train params memory usage: {torch_col.MemoryPool.get_memory_usage() * 1024:.2f}M")
@@ -59,9 +61,10 @@ def train(rank:int, world_size:int,
 
     # dummy data
     train_dataset = DynamicBatchDataset(
-        model_name='swin_b', size=1000, max_batch_size=batch_size, 
+        model_name='swin_b', size=3669 if real_data else 1000, max_batch_size=batch_size, 
         hook=hook, trace=None,
-        input_shape=(3, 224, 224), num_class=10, 
+        input_shape=(3, 224, 224), num_class=37 if real_data else 1000,
+        fake_data=not real_data,
         max_global_batch_size=None,
         checkpoint_micro_batch=checkpoint_micro_batch)
 
@@ -105,7 +108,7 @@ def train(rank:int, world_size:int,
         epoch_stat = trainer.get_last_epoch_stat()
         epoch_duration = trainer.get_last_epoch_duration()
 
-        mem_info = f'mem {MemoryPool.get_memory_usage():.2f}Gb'
+        mem_info = f'mem {MemoryPool.get_memory_usage():.2f}Gb | {MemoryPool.get_memory_peak_usage():.2f}Gb | {MemoryPool.get_allocated_memory():.2f}Gb'
         batch_info = (
             f'batch cnt {epoch_stat.finished_batch} ' 
             + f'avg {epoch_duration/epoch_stat.finished_batch:.1f}ms')
@@ -148,11 +151,13 @@ def main():
     parser.add_argument('--num-epoch', type=int, default=15)
     parser.add_argument('--train-mode', type=str, default=TrainMode.COLOCATE_L1.value, 
                         choices=[train_mode.value for train_mode in TrainMode])
+    parser.add_argument('--real-data', action='store_true')
     args = parser.parse_args()
     
     batch_size = args.batch_size
     global_batch_size = args.global_batch_size
     num_epoch = args.num_epoch
+    real_data = args.real_data or True
     train_mode = [train_mode for train_mode in TrainMode if train_mode.value == args.train_mode][0]
     # hook_mode = [hook_mode for hook_mode in HookMode if hook_mode.value == args.hook_mode][0]
     # hook_mode = torch_col.get_hook_mode()
@@ -163,7 +168,7 @@ def main():
     
     process_context =  torch_mp.spawn(train, 
                    args=(torch.cuda.device_count(),train_mode,
-                         num_epoch, batch_size, global_batch_size), 
+                         num_epoch, real_data, batch_size, global_batch_size), 
                    nprocs=torch.cuda.device_count(), 
                    join=False)
     try:
