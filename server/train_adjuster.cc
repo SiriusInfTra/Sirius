@@ -51,6 +51,9 @@ void TrainAdjuster::ResetTrainInfo() {
 
 memory_mb_t TrainAdjuster::PredictTrainMemUsageMB(int device_id, bool verbose) {
   CHECK(adjuster_ != nullptr);
+  if (!ctrl::InfTraCommunicator::GetIB()->IsTrainInfoValid(ctrl::kTraRank_0)) {
+    return 0;
+  }
   auto target_batch_size_ = 
       adjuster_->cached_target_batch_sizes_[device_id];
   return PredictTrainMemUsageMB(device_id, target_batch_size_, verbose);
@@ -123,6 +126,7 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
   CHECK_GE(adjust_batch_buf_mb, 0);
   int target_batch_size = cur_train_target_bs - delta_batch_size;
 
+  // [Note: adjust plan for imbalance]
   // case 1: all batch size is same 
   //   - adjust all training if not deviate from available memory too much
   //   - otherwise, only adjust the specific device
@@ -224,20 +228,6 @@ TrainAdjuster::GetInferReleaseMemAdjustPlanWithInLock(
     cur_train_target_batches.push_back(
         adjuster_->cached_target_batch_sizes_[device_id]);
   }
-
-  // auto train_avail_mem_mb = 
-  //     std::max(ResourceManager::GetTrainAvailMemoryMB(device_id, false), 0.0);
-  // auto free_mem_mb = 
-  //     std::max(ResourceManager::GetFreeMemoryMB(device_id, false), 0.0);
-  // auto reserve_mem_mb = 
-  //     ColdModelCache::Get(device_id)->GetReleaseReserveMemoryMBUnsafe();
-
-  // auto train_avail_mem_mb = 
-  //     *std::min_element(train_avail_mem_mbs.begin(), train_avail_mem_mbs.end());
-  // auto free_mem_mb =
-  //     *std::min_element(free_mem_mbs.begin(), free_mem_mbs.end());
-  // auto reserve_mem_mb =
-  //     *std::max_element(reserve_mem_mbs.begin(), reserve_mem_mbs.end());
 
   std::vector<int> target_bs_predict_by_avail_mems(train_world_size);
   std::vector<int> target_bs_calcu_by_delta_mems(train_world_size);
@@ -366,6 +356,13 @@ bool TrainAdjuster::IsBalanceViolated(int proposed_same_batch_size) {
     max_waste_mem_mb = std::max(max_waste_mem_mb, waste_mem_mb);
   }
   
+  LOG_IF(INFO, Config::log_memory_adjust) 
+      << "[IsBalanceViolated] "
+      << "proposed_same_batch_size " << proposed_same_batch_size
+      << " max_waste_mem_mb " << max_waste_mem_mb
+      << " train_avail_mem_mb_minus_cold_cache_reserve "
+      << "[" << train_avail_mem_mb_minus_cold_cache_reserve << "]";
+
   return max_waste_mem_mb > Config::train_adjust_balance_threshold;
 }
 
@@ -443,7 +440,10 @@ std::pair<double, double> TrainAdjuster::GetModelMemParam(
       // NOTE: DID NOT consider grad checkpoint
       return {1150, 85};
     } else if (model_name == "swin_b" || model_name == "swin_b_ddp") {
-      return {1700, 140};
+      // return {1700, 140};
+
+      // TODO: remove hard-coded value
+      return {2560, 140};
     } else if (model_name == "gpt2") {
       /*
        

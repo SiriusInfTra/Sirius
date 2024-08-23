@@ -133,7 +133,10 @@ class ColdModelCache {
    *         a vector of pairs representing the names and group sizes,
    *         and a boolean indicating the success of the operation.
    */
-  std::tuple<std::vector<size_t>, std::vector<std::pair<std::string, std::vector<size_t>>>, bool>
+  std::tuple<
+      std::vector<size_t>, 
+      std::vector<std::pair<std::string, std::vector<size_t>>>, 
+      bool>
   PushCacheItem(const std::string& name, size_t rank, 
                 std::vector<size_t> groups_nbytes, size_t total_nbytes, 
                 std::unique_lock<std::mutex> &lock, Model *source_model);

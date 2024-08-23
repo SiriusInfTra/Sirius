@@ -271,6 +271,7 @@ class SwitchHook(HookABC):
 
     def can_exit_after_infer_worklaod_done(self):
         return self._stub.can_exit_after_infer_worklaod_done()
+        
 
 
 
@@ -454,7 +455,8 @@ class ColocateHook(HookABC):
 
 
 class DummyHook(HookABC):
-    def __init__(self, train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size: int):
+    def __init__(self, train_mode: TrainMode, hook_mode: HookMode, 
+                 num_epoch: int, batch_size: int):
         super().__init__(train_mode, hook_mode, batch_size, num_epoch)
         self._stub = torch_col.PyDummyStub()
         assert hook_mode == HookMode.NONE

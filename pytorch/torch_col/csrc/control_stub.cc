@@ -270,7 +270,7 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
     break;
   case ctrl::CtrlEvent::kInferenceWorkloadDone:
     this->infer_workload_done_timestamp_ = torch_col::get_unix_timestamp();
-    LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() << " ColocateStub]" 
+    LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() << " | ColocateStub]" 
               << " Inference workload done, cmd_id " << msg.id;
     break;
   default:

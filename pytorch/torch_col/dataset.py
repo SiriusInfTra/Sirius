@@ -11,10 +11,10 @@ from torch_col.hook import HookABC, HookMode
 from torch_col.util import TrainMode, MemoryPool, EventManager
 import torch_col.xsched
 
-class DatasetState(IntEnum):
-    INIT = 0
-    ITER = 1
-    NEXT = 2
+
+_BATCH_FINISH_TAG = 'finish'
+_BATCH_CANCEL_TAG = 'cancel'
+
 
 def _vision_task(model_name):
     return 'resnet' in model_name or 'vit' in model_name or 'swin' in model_name
@@ -24,6 +24,13 @@ def _text_gen(model_name):
 
 def _text_cls(model_name):
     return 'bert' in model_name
+
+
+class DatasetState(IntEnum):
+    INIT = 0
+    ITER = 1
+    NEXT = 2
+
 
 class DynamicBatchDataset(IterableDataset):
     def __init__(self, model_name, size, max_batch_size,
@@ -115,11 +122,15 @@ class DynamicBatchDataset(IterableDataset):
             raise Exception("not support model")
 
     def record_batch_event(self, epoch, i, batch_size, global_batch_size=None):
-        self.batch_event = EventManager.record_event(f'batch_{epoch:02d}_{i:03d}_{batch_size:02d}')
+        self.batch_event = EventManager.record_event(
+            f'batch_{epoch:02d}_{i:03d}_{batch_size:02d}'
+        )
         if self.enable_accumulation:
             if self.global_batch_event is None:
                 assert global_batch_size is not None
-                self.global_batch_event = EventManager.record_event(f'global_batch_{epoch:02d}_{i:03d}_{global_batch_size:02d}')
+                self.global_batch_event = EventManager.record_event(
+                    f'global_batch_{epoch:02d}_{i:03d}_{global_batch_size:02d}'
+                )
 
     def next_batch(self):
         if self.is_do_step():
@@ -130,11 +141,11 @@ class DynamicBatchDataset(IterableDataset):
                 self.hook.release_and_reply()
 
         assert self.state == DatasetState.ITER
-        self.batch_event.tag = 'finish'
+        self.batch_event.tag = _BATCH_FINISH_TAG
         EventManager.record_event('', self.batch_event)
         self.batch_event = None
         if self.enable_accumulation and self.at_global_batch_end():
-            self.global_batch_event.tag = 'finish'
+            self.global_batch_event.tag = _BATCH_FINISH_TAG
             EventManager.record_event('', self.global_batch_event)
             self.global_batch_event = None
 
@@ -176,12 +187,12 @@ class DynamicBatchDataset(IterableDataset):
         self.micro_batch_iter_idx = self.global_batch_iter_idx
         self.accumulate_iter_idx = 0
 
-        self.global_batch_event.tag = 'cancel'
+        self.global_batch_event.tag = _BATCH_CANCEL_TAG
         EventManager.record_event('', self.global_batch_event)
         self.global_batch_event = None
     
     def cancel_micro_batch(self):
-        self.batch_event.tag = 'cancel'
+        self.batch_event.tag = _BATCH_CANCEL_TAG
         EventManager.record_event('', self.batch_event)
         # self.batch_event = None # to be check 
         if self.enable_accumulation and not self.checkpoint_micro_batch:
@@ -276,12 +287,14 @@ class DynamicBatchDataset(IterableDataset):
     
     def __iter__(self) -> Iterator:
         worker_info = get_worker_info()
-        assert worker_info is None or worker_info.num_workers == 1, "not support multi-process"
+        assert worker_info is None or worker_info.num_workers == 1, \
+            "not support multi-process"
         while True:
             if self.micro_batch_iter_idx == self.size:
                 self.micro_batch_iter_idx = 0
                 if self.global_batch_iter_idx is not None:
-                    assert self.global_batch_iter_idx == self.size, f"{self.global_batch_iter_idx} vs {self.size}"
+                    assert self.global_batch_iter_idx == self.size, \
+                        f"{self.global_batch_iter_idx} vs {self.size}"
                     self.global_batch_iter_idx = 0
                     self.num_rollback_samples_in_epoch = 0
                 break
