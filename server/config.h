@@ -136,6 +136,7 @@ class Config {
   static bool estimate_infer_model_tpc;
   static double infer_exec_time_estimate_scale;
 
+  static bool enable_train_adjust_balance;
   static memory_mb_t train_adjust_balance_threshold;
 
   static bool dummy_adjust;

@@ -144,7 +144,7 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
   std::vector<TrainAdjuster::AdjustPlan> adjust_plan(train_world_size);
   if (all_same) {
     bool imbalance = adjuster_->IsBalanceViolated(target_batch_size);
-    if (!imbalance) {
+    if (imbalance) {
       adjuster_->FillAdjustPlanOnlyAdjustOne(
         device_id, AdjustPlan{.batch_size = target_batch_size}, adjust_plan);
     } else {
@@ -161,7 +161,7 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
     }
 
     bool imbalance = adjuster_->IsBalanceViolated(min_batch_size);
-    if (!imbalance) {
+    if (imbalance) {
       adjuster_->FillAdjustPlanOnlyAdjustOne(
         device_id, AdjustPlan{.batch_size = min_batch_size}, adjust_plan);
     } else {
@@ -340,6 +340,10 @@ void TrainAdjuster::UpdateCachedTrainInfoByAdjustPlan(
 }
 
 bool TrainAdjuster::IsBalanceViolated(int proposed_same_batch_size) {
+  if (!Config::enable_train_adjust_balance) {
+    return false;
+  }
+
   auto train_world_size = cached_train_world_size_;
   std::vector<memory_mb_t> train_avail_mem_mb_minus_cold_cache_reserve;
   for (auto rank : boost::irange(train_world_size)) {

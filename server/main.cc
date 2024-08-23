@@ -289,13 +289,16 @@ void init_config() {
   STREAM_OUTPUT(cold_cache_ratio);
   STREAM_OUTPUT(infer_model_max_idle_ms);
   STREAM_OUTPUT(dynamic_sm_partition);
+  STREAM_OUTPUT(enable_train_adjust_balance);
+  STREAM_OUTPUT(train_adjust_balance_threshold);
   STREAM_OUTPUT(colocate_config.skip_malloc);
   STREAM_OUTPUT(colocate_config.skip_loading);
   std::cerr << std::string(header.size(), '=') << std::endl;
 }
 
 void Shutdown(int sig) {
-  LOG(INFO) <<"signal " <<  strsignal(sig) << "(" << sig << ")" << " received, shutting down...";
+  LOG(INFO) <<"signal " <<  strsignal(sig) << "(" << sig << ")" 
+            << " received, shutting down...";
   colserve::Config::running = false;
   colserve::InferModelStore::Shutdown();
   colserve::TrainLauncher::Shutdown();
