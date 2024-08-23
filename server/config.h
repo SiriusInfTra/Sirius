@@ -1,6 +1,8 @@
 #ifndef COLSERVE_CONFIG_H
 #define COLSERVE_CONFIG_H
 
+#include <common/util.h>
+
 #include <atomic>
 #include <iostream>
 #include <filesystem>
@@ -133,6 +135,8 @@ class Config {
   static bool dynamic_sm_partition;
   static bool estimate_infer_model_tpc;
   static double infer_exec_time_estimate_scale;
+
+  static memory_mb_t train_adjust_balance_threshold;
 
   static bool dummy_adjust;
 

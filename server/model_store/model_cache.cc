@@ -1,3 +1,4 @@
+#include <server/logging_as_glog.h>
 #include <server/model_store/model_cache.h>
 #include <server/model_store/infer_model_store.h>
 
@@ -292,11 +293,13 @@ double ColdModelCache::GetBufferMBUnsafe() {
   auto buffer_mb = ResourceManager::GetFreeMemoryMB(device_id_, false);
   auto cold_cache_nbytes = current_cached_nbytes_;
   if (cold_cache_nbytes > Config::cold_cache_min_capability_nbytes) {
-    buffer_mb += sta::ByteToMB(cold_cache_nbytes - Config::cold_cache_min_capability_nbytes);
+    buffer_mb += sta::ByteToMB(
+      cold_cache_nbytes - Config::cold_cache_min_capability_nbytes);
   }
   double cur_max_buffer_mb = 
       sta::ByteToMB(Config::cold_cache_max_capability_nbytes
-                    - std::min(Config::cold_cache_min_capability_nbytes, current_cached_nbytes_));
+                    - std::min(Config::cold_cache_min_capability_nbytes, 
+                               current_cached_nbytes_));
   buffer_mb = std::min(buffer_mb, cur_max_buffer_mb);
   return std::max(0.0, buffer_mb);
 }
@@ -340,11 +343,13 @@ double ColdModelCache::GetAdjustReserveMemoryMBUnsafe() {
   }
 }
 
-double ColdModelCache::GetReleaseReserveMemoryMB(std::unique_lock<std::mutex> &lock) {
+double ColdModelCache::GetReleaseReserveMemoryMB(
+    std::unique_lock<std::mutex> &lock) {
   return GetReleaseReserveMemoryMBUnsafe();
 }
 
-double ColdModelCache::GetAdjustReserveMemoryMB(std::unique_lock<std::mutex> &lock) {
+double ColdModelCache::GetAdjustReserveMemoryMB(
+    std::unique_lock<std::mutex> &lock) {
   return GetAdjustReserveMemoryMBUnsafe();
 }
 

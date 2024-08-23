@@ -1,5 +1,7 @@
 #include <server/logging_as_glog.h>
 #include <server/model_store/infer_model_store.h>
+#include <server/tvm/graph.h>
+#include <server/tvm/executor.h>
 
 #include <common/tensor/shape_helper.h>
 
@@ -13,10 +15,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <cstdlib>
-
-#include "executor.h"
-#include "graph.h"
-// #include "texture.h"
 
 
 namespace colserve {
@@ -241,8 +239,6 @@ void TVMGraph::SetupParamGroupPartition(const std::string &path) {
         param_eids.push_back(p.first);
         // param_ready_event_ids_[p.first] = host_param_storage_group_.size();
       }
-      // auto param_group = TVMArray::Empty(ShapeTuple({static_cast<int64_t>(total_nbytes)}),
-      //    DLDataType{kDLInt, 8, 1}, DLDevice{kDLCUDAHost, 0});
       auto param_group = sta::HostEmpty({static_cast<int64_t>(total_nbytes)}, 
                                         DLDataType{kDLInt, 8, 1}, 
                                         sta::MemType::kInfer);

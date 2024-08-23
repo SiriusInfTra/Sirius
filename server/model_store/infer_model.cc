@@ -121,11 +121,6 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
   LOG_IF(INFO, Config::log_infer_model_init)
       << "[Model Init] " << name << " initilized " << num_worker << " executor";
 
-  // if (Config::colocate_config.skip_malloc || Config::colocate_config.skip_loading) {
-  //   for (size_t i = 0; i < max_num_worker_; i++) {
-  //     executors_[i].get()->FakeInit(Config::colocate_config.skip_malloc, Config::colocate_config.skip_loading);
-  //   }
-  // }
   if (Config::colocate_config.skip_malloc || Config::colocate_config.skip_loading) {
     LOG(FATAL) << "not support skip_malloc or skip_loading";
   }

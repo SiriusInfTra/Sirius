@@ -82,7 +82,9 @@ class Executor {
   std::vector<std::shared_ptr<sta::CUDAMemPool::PoolEntry>> storage_group_;
 
   std::vector<std::function<void()>> op_execs_;
-  std::vector<std::vector<size_t>> input_param_eid_; // node id -> [param data entry ids]
+  
+  // node id -> [param data entry ids]
+  std::vector<std::vector<size_t>> input_param_eid_; 
 
   // to avoid alloc pin memory during set input/get output
   std::unordered_map<std::string, TVMArray> 

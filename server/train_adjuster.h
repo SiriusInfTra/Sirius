@@ -17,7 +17,8 @@ class TrainAdjuster {
 
   // we assume device_id and training rank are the same
   static void Init(); 
-  static double PredictTrainMemUsageMB(int device_id, bool verbose);
+  static memory_mb_t PredictTrainMemUsageMB(int device_id, bool verbose);
+  static memory_mb_t PredictTrainMemUsageMB(int device_id, int batch_size, bool verbose);
 
   // TODO: adjust for re-balance training
   static std::vector<AdjustPlan> GetTrainRequireMemAdjustPlan(
@@ -54,6 +55,19 @@ class TrainAdjuster {
   void UpdateCachedTrainInfoByAdjustPlan(
       const std::vector<AdjustPlan> &adjust_plans, 
       std::unique_lock<std::mutex> &lock);
+
+  bool IsBalanceViolated(int proposed_same_batch_size);
+  
+  void FillAdjustPlan(const std::vector<int> &target_batch_sizes, 
+                      std::vector<AdjustPlan> &plans);
+  void FillSameAdjustPlan(AdjustPlan plan, 
+                          std::vector<AdjustPlan> &plans);
+  void FillAdjustPlanOnlyAdjustOne(int rank, AdjustPlan plan, 
+                                   std::vector<AdjustPlan> &plans);
+
+  memory_mb_t GetTrainAvailMemMBMinusColdCacheReserve(
+      int device_id, bool verbose);
+
   std::pair<double, double> GetModelMemParam();
   std::pair<double, double> GetModelMemParam(const std::string &model_name);
 
