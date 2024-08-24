@@ -1,4 +1,4 @@
-#include <common/inf_tra_comm/info_board.h>
+#include <common/inf_tra_comm/shared_info.h>
 
 #include <boost/range/irange.hpp>
 
@@ -6,7 +6,7 @@
 namespace colserve {
 namespace ctrl {
 
-InfTraInfoBoard::InfTraInfoBoard(bool is_server, int train_world_size,
+InfTraSharedInfo::InfTraSharedInfo(bool is_server, int train_world_size,
                                  bip::managed_shared_memory &bip_shm,
                                  bip::scoped_lock<bip_mutex> &lock)
     : bip_shm_(bip_shm) {
@@ -41,17 +41,17 @@ InfTraInfoBoard::InfTraInfoBoard(bool is_server, int train_world_size,
   }
 }
 
-void InfTraInfoBoard::SetInferInfo(std::function<void(InferInfo*)> fn) {
+void InfTraSharedInfo::SetInferInfo(std::function<void(InferInfo*)> fn) {
   bip::scoped_lock lock{*infer_info_mut_};
   fn(infer_info_);
 }
 
-void InfTraInfoBoard::SetTrainInfo(int id, std::function<void(TrainInfo*)> fn) {
+void InfTraSharedInfo::SetTrainInfo(int id, std::function<void(TrainInfo*)> fn) {
   bip::scoped_lock lock{*train_info_muts_[id]};
   fn(train_infos_[id]);
 }
 
-void InfTraInfoBoard::SetTrainInfo(
+void InfTraSharedInfo::SetTrainInfo(
     int id, 
     std::optional<pid_t> pid, 
     std::optional<int> rank, 
@@ -105,7 +105,7 @@ void InfTraInfoBoard::SetTrainInfo(
   }
 }
 
-std::vector<pid_t> InfTraInfoBoard::GetTrainPIDs() {
+std::vector<pid_t> InfTraSharedInfo::GetTrainPIDs() {
   std::vector<bip::scoped_lock<bip_mutex>> locks;
   locks.emplace_back(*train_info_muts_[0]);
   

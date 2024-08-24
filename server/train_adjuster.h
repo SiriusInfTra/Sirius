@@ -38,8 +38,6 @@ class TrainAdjuster {
 
   TrainAdjuster();
   
-  // static double Get
-  
  private:
   static std::unique_ptr<TrainAdjuster> adjuster_;
 

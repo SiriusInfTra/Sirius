@@ -11,7 +11,7 @@ add_library(sta SHARED
   sm_partition.cc
   xsched_ctrl.cc
   inf_tra_comm/message_queue.cc
-  inf_tra_comm/info_board.cc
+  inf_tra_comm/shared_info.cc
   inf_tra_comm/communicator.cc
 )
 

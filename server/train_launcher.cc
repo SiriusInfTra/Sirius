@@ -25,7 +25,6 @@
 #include <chrono>
 
 
-
 namespace colserve {
 
 std::unique_ptr<TrainLauncher> TrainLauncher::train_launcher_;
@@ -37,7 +36,7 @@ void TrainLauncher::Init(const std::filesystem::path &train_store_path) {
     if (train_script.is_regular_file()) {
       train_launcher_->train_handles_[train_script.path().stem().string()] = train_script.path();
       LOG_IF(INFO, Config::log_train_init) << "TrainLauncher: Add " 
-                                                << train_script.path().stem().string();
+                                           << train_script.path().stem().string();
     }
   }
 

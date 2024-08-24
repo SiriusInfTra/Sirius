@@ -23,14 +23,16 @@ struct TrainInfo {
 
   int init_batch_size{0};
   int current_batch_size{0};
+
   int target_batch_size{0};
+  int target_batch_size_unpublished{0};
 
   char model_name[256];
 };
 
-class InfTraInfoBoard {
+class InfTraSharedInfo {
  public:
-  InfTraInfoBoard(bool is_server, int train_world_size,
+  InfTraSharedInfo(bool is_server, int train_world_size,
                   bip::managed_shared_memory &bip_shm,
                   bip::scoped_lock<bip_mutex> &lock);
 

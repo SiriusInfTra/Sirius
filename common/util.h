@@ -55,6 +55,9 @@ namespace colserve {
 
 constexpr int MAX_DEVICE_NUM = 8;
 
+template <typename T, size_t dim_1, size_t dim_2>
+using array_2d_t = std::array<std::array<T, dim_2>, dim_1>;
+
 using memory_byte_t = size_t;
 using memory_mb_t = double;
 

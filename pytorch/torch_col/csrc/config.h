@@ -1,6 +1,8 @@
 #ifndef TORCH_COL_CONFIG_H
 #define TORCH_COL_CONFIG_H
 
+#include <common/inf_tra_comm/communicator.h>
+
 #include <iostream>
 
 namespace torch_col {
@@ -56,7 +58,9 @@ class TorchColConfig {
 
   static inline int GetTrainRank() { return train_rank; }
   static inline void SetTrainRank(int rank) { train_rank = rank; }
-  static inline int IsTrainMaster() { return train_rank == 0; }
+  static inline int IsTrainMaster() { 
+      return train_rank == colserve::ctrl::kTraRank_0; 
+  }
   static inline int GetTrainWorldSize() { return train_world_size; }
   static inline void SetTrainWorldSize(int size) { train_world_size = size; }
 

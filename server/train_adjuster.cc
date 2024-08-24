@@ -333,9 +333,12 @@ int TrainAdjuster::GetDeltaBatchSize(int device_id, memory_mb_t memory_mb) {
 void TrainAdjuster::UpdateCachedTrainInfoByAdjustPlan(
     const std::vector<AdjustPlan> &adjust_plans,
     std::unique_lock<std::mutex> &lock) {
+  CHECK(adjust_plans.size() == cached_train_world_size_);
   for (auto rank : boost::irange(adjust_plans.size())) {
     cached_target_batch_sizes_[rank] = 
         adjust_plans[rank].batch_size;
+    ctrl::InfTraCommunicator::GetIB()->GetMutableTrainInfoUnsafe(rank)
+        ->target_batch_size_unpublished = adjust_plans[rank].batch_size;
   }
 }
 
