@@ -1,7 +1,9 @@
+from contextlib import nullcontext
 from enum import IntEnum
 import time
 import numpy as np
 import torch
+import torch.distributed
 from torch.utils.data import IterableDataset, get_worker_info
 from typing import Iterator, Optional
 
@@ -149,8 +151,8 @@ class DynamicBatchDataset(IterableDataset):
                 self.global_batch_iter_idx += self.global_batch_size
                 self.global_batch_size = None
         self.trace_idx += 1
-        # if torch_col.use_shared_tensor():
-        #     torch_col.MemoryPool.empty_cache() # to avoid memory fragmentation
+        if torch_col.is_enable_shared_tensor() and self.last_batch_size != self.batch_size:
+            torch_col.MemoryPool.empty_cache() # to avoid memory fragmentation
 
     def at_global_batch_end(self):
         assert self.enable_accumulation, "only used for accumulation"
@@ -162,6 +164,14 @@ class DynamicBatchDataset(IterableDataset):
             return self.at_global_batch_end()
         else:
             return True
+    
+    def get_context(self, model: torch.nn.parallel.DistributedDataParallel):
+        if self.enable_accumulation and not self.is_do_step():
+            torch_col.info("no sync")
+            return model.no_sync()
+        else:
+            torch_col.info("sync")
+            return nullcontext()
         
     def is_do_checkpoint_micro_batch(self):
         if self.enable_accumulation and self.checkpoint_micro_batch:
@@ -192,6 +202,7 @@ class DynamicBatchDataset(IterableDataset):
     def scale_loss(self, loss):
         if self.enable_accumulation:
             scale_factor = self.global_batch_size / self.last_batch_size
+            # print('scale_factor=', scale_factor)
             loss /= scale_factor
             # loss = loss * self.last_batch_size / self.global_batch_size
         else:
@@ -199,7 +210,7 @@ class DynamicBatchDataset(IterableDataset):
 
     def step_stage(self, hook:torch_col.hook.HookABC, 
                    optimizer: torch.optim.Optimizer, 
-                   scaler: torch.cuda.amp.GradScaler = None, 
+                   scaler: Optional[torch.cuda.amp.GradScaler] = None, 
                    grad_accumulator:torch_col.accumulate.GradAccumulator = None):
         def _step():
             if scaler is not None:
@@ -207,6 +218,7 @@ class DynamicBatchDataset(IterableDataset):
                 scaler.update()
             else:
                 optimizer.step()
+            optimizer.zero_grad(set_to_none=False)
 
         if self.is_do_checkpoint_micro_batch():
             assert grad_accumulator is not None

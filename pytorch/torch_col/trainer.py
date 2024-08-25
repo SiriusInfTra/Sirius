@@ -82,7 +82,6 @@ class Trainer:
                     # ad-hoc code here, handle batch is not killed on adjustment.
                     # should be move to c++ pytorch hook?
                     torch_col.xsched.kill_batch()
-
                 if isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
                     # DDP Training
                     self.model.reducer.finalize_dropped_batch()
