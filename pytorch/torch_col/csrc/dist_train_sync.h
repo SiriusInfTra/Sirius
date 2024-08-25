@@ -17,6 +17,7 @@ using namespace colserve;
 class DistTrainSync {
  public:
   static void Init();
+  static bool IsInitialized();
   static void WaitBarrier();
   static void Send(int dst, const std::string &msg);
   static std::string Recv(int src);
@@ -139,6 +140,7 @@ class DistTrainSync {
 
  private:
   static std::unique_ptr<DistTrainSync> dist_train_sync_;
+  static bool initialized_;
 
   constexpr static size_t kMsgBufSize = 256;
   using dist_train_str_mq_t = 

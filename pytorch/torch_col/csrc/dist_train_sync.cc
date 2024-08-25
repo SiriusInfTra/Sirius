@@ -10,13 +10,19 @@
 
 namespace torch_col {
 
-std::unique_ptr<DistTrainSync> DistTrainSync::dist_train_sync_ = nullptr; 
+std::unique_ptr<DistTrainSync> DistTrainSync::dist_train_sync_ = nullptr;
+bool DistTrainSync::initialized_ = false;
 
 void DistTrainSync::Init() {
   CHECK(DistTrainSync::dist_train_sync_ == nullptr)
       << "DistTrainSync has been initialized";
   DistTrainSync::dist_train_sync_ = std::make_unique<DistTrainSync>();
+  initialized_ = true;
   LOG(INFO) << "DistTrainSync initialized";
+}
+
+bool DistTrainSync::IsInitialized() {
+  return initialized_;
 }
 
 void DistTrainSync::WaitBarrier() {
