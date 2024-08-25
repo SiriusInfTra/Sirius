@@ -41,6 +41,8 @@ def train(rank:int, world_size:int,
 
 
     model = models.swin_b(weights=models.Swin_B_Weights.DEFAULT).cuda()
+    # for param in model.parameters():
+    #     param.requires_grad = False
     if real_data:
         model.head = torch.nn.Linear(model.head.in_features, 37).cuda()
     model = DDP(model, device_ids=[rank])
@@ -48,8 +50,8 @@ def train(rank:int, world_size:int,
     print(f"Train params memory usage: {torch_col.MemoryPool.get_memory_usage() * 1024:.2f}M")
 
     criterion = nn.CrossEntropyLoss().cuda(rank)
-    optimizer = torch.optim.SGD(model.parameters(), 0.1, 
-                                momentum=0.9, weight_decay=1e-4)
+    optimizer = torch.optim.SGD(model.parameters(), 1e-5, 
+                                momentum=0.9, weight_decay=1e-8)
     scaler = torch.cuda.amp.GradScaler()
 
     print(f"Train after init memory pool usage: {MemoryPool.get_memory_usage() * 1024:.2f}M")

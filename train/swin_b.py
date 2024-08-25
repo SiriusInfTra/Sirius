@@ -11,7 +11,7 @@ torch_col.torch_col_init()
 
 from torch_col import MemoryPool, EventManager, TrainMode, HookMode
 from torch_col import ColocateAdjustL1Exception, SwitchL1Exception
-from torch_col import CustomeDynamicBatchDataset
+from torch_col import DynamicBatchDataset
 import train_valiation
 from typing import Optional
 
@@ -54,7 +54,7 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
     checkpoint_micro_batch = hook.train_mode.is_kill_batch()
 
     # dummy data
-    train_dataset = CustomeDynamicBatchDataset(
+    train_dataset = DynamicBatchDataset(
         model_name='swin_b', size=1000, max_batch_size=batch_size, 
         hook=hook, trace=train_valiation.get_trace_input(),
         input_shape=(3, 224, 224), num_class=10, 
