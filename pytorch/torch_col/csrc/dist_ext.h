@@ -88,7 +88,11 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
   }
 
   /////////////////////////////////////////////////////////////////////////////
-  // override the original collective functions to handle the abort flag
+  // override the original collective functions to handle the abort flag.
+  //
+  // if we call NCCL library after set the abort flag, it will cause 
+  // some error, so we override the pytorch NCCL processs group functions
+  // to not call the NCCL functions if the abort flag is set.
   #define REDISPATCH_COLLECTIVE_FUNC(op_type, func, args...) \
     do { \
       if (abort_flag_ != 0) { \

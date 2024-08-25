@@ -39,8 +39,9 @@ void Reducer::autograd_hook(size_t index) {
     torch::autograd::Engine::get_default_engine().queue_callback([=] {
       auto pg = ProcessGroupNCCL::GetDefaultProcessGroupNCCL();
       if (pg.defined() && pg->GetAbortFlag() != 0) {
-        LOG(INFO) << "[Reducer::autograd_hook] ProcessGroupNCCL abort flag is set,"
-                  << " drop the batch";
+        LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() 
+                  << " | Reducer::autograd_hook] ProcessGroupNCCL"
+                  << " abort flag is set, drop the batch";
         throw EngineColocateAdjustL1Exception("TorchColEngine");
       }
     });
