@@ -50,17 +50,19 @@ class Trainer:
         self.overall_stat = TrainStat(0, 0, 0)
         self.epoch_stats = []
         self.epoch_events = []
+        self._cur_epoch_stat = None
 
     def train_one_epoch(self, epoch_idx: int) -> torch.Tensor | None:
         epoch_event_name = f'epoch_{epoch_idx:02d}_{self.dynamic_dataset.size}'
         epoch_event = EventManager.record_event(epoch_event_name)
 
-        epoch_stat = EpochStat()
+        # epoch_stat = EpochStat()
+        self._cur_epoch_stat = EpochStat()
         last_loss = None
 
         for batch_idx, batch in enumerate(self.data_loader):
             try:
-                epoch_stat.tried_batch += 1
+                self._cur_epoch_stat.tried_batch += 1
                 self.overall_stat.tried_batch += 1
 
                 self.dynamic_dataset.record_batch_event(
@@ -73,50 +75,25 @@ class Trainer:
                 ColocateAdjustL1Exception, 
                 SwitchL1Exception, 
                 EngineColocateAdjustL1Exception
-            ) as e:
-                if epoch_idx == 0 and batch_idx == 0:
-                    raise RuntimeError("first micro batch could not be interrupted.")
-                torch_col.info(f'epoch {epoch_idx} batch {batch_idx} dropped due to {e}')
-                torch_col.dist.wait_barrier()
-                if isinstance(e, EngineColocateAdjustL1Exception):
-                    # ad-hoc code here, handle batch is not killed on adjustment.
-                    # should be move to c++ pytorch hook?
-                    torch_col.xsched.kill_batch()
-
-                if isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
-                    # DDP Training
-                    self.model.reducer.finalize_dropped_batch()
-                else:
-                    pass
-                self.dynamic_dataset.cancel_micro_batch()
-
-                batch_size = self.dynamic_dataset.get_batch_size(batch)
-                batch_exception_event = \
-                    f'batch_exception_{epoch_idx:02d}_{batch_idx:03d}_{batch_size:02d}'
-                with EventManager.record_duration_event(batch_exception_event):
-                    # cuda has alreadly synced
-                    self.dynamic_dataset.hook.release_and_reply()
-                    print(f'[{e}] batch_size: {batch_size} -> {self.dynamic_dataset.batch_size}.')
-
-                epoch_stat.killed_batch += 1
-                self.overall_stat.killed_batch += 1
-
-                torch_col.dist.wait_barrier()
-                nccl_backend = torch_dist.GroupMember.WORLD._get_backend(torch.device('cuda'))
-                nccl_backend._restart_nccl_comm([torch.device(f'cuda:{self.rank}')])
+            ) as exception:
+                self.handle_abort_batch(epoch_idx, batch_idx, batch, exception)
             else:
                 # batch passed, go to next batch
                 self.dynamic_dataset.next_batch()
                 if epoch_idx == 0 and batch_idx == 0:
-                    self._default_first_batch_hook()
+                    self._default_first_batch_callback()
 
-                epoch_stat.finished_batch += 1
-                epoch_stat.finished_sample += self.dynamic_dataset.get_batch_size(batch)
+                self._cur_epoch_stat.finished_batch += 1
+                self._cur_epoch_stat.finished_sample += \
+                    self.dynamic_dataset.get_batch_size(batch)
                 self.overall_stat.finished_batch += 1
 
         EventManager.record_event('', epoch_event)
-        self.epoch_stats.append(epoch_stat)
+        self.epoch_stats.append(self._cur_epoch_stat)
         self.epoch_events.append(epoch_event)
+        self._cur_epoch_stat = None
+
+        torch_col.dist._DynamicBatchDistirbutor.next_global_batch()
 
         return last_loss
 
@@ -138,8 +115,56 @@ class Trainer:
         if last_epoch_event is None:
             return None
         return last_epoch_event.duration
+    
+    def handle_abort_batch(self, epoch_idx: int, batch_idx: int, 
+                           batch, exception: Exception):
+        if epoch_idx == 0 and batch_idx == 0:
+            raise RuntimeError("first micro batch could not be interrupted.")
+        
+        # --------------------------
+        # first, finish abort batch
 
-    def _default_first_batch_hook(self):
+        torch_col.info(f'epoch {epoch_idx} batch {batch_idx} dropped due to {exception}')
+        torch_col.dist.wait_barrier()
+
+        if isinstance(exception, EngineColocateAdjustL1Exception):
+            # ad-hoc code here, handle batch is not killed on adjustment.
+            # should be move to c++ pytorch hook?
+            torch_col.xsched.kill_batch()
+
+        if isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
+            # DDP Training
+            self.model.reducer.finalize_dropped_batch()
+        else:
+            pass
+        self.dynamic_dataset.cancel_micro_batch()
+
+        # ---------------------------------------------
+        # second, release memory and reply to inference
+
+        batch_size = self.dynamic_dataset.get_batch_size(batch)
+        batch_exception_event = \
+            f'batch_exception_{epoch_idx:02d}_{batch_idx:03d}_{batch_size:02d}'
+        with EventManager.record_duration_event(batch_exception_event):
+            # cuda has alreadly synced
+            self.dynamic_dataset.hook.release_and_reply()
+            print(f'[{exception}] batch_size: '
+                  f'{batch_size} -> {self.dynamic_dataset.batch_size}.')
+
+        self._cur_epoch_stat.killed_batch += 1
+        self.overall_stat.killed_batch += 1
+
+        # --------------------------------------------------
+        # third, re-configure training and re-start training
+
+        if torch_col.get_train_rank() == 0:
+            torch_col.dist._DynamicBatchDistirbutor.distribute_batch(True)
+        torch_col.dist.wait_barrier()
+        nccl_backend = torch_dist.GroupMember.WORLD._get_backend(torch.device('cuda'))
+        # restart nccl will let all training cpu sync
+        nccl_backend._restart_nccl_comm([torch.device(f'cuda:{self.rank}')])
+
+    def _default_first_batch_callback(self):
         if torch_col.is_enable_shared_tensor():
             torch_col.tag_model_end()
 

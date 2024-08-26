@@ -37,7 +37,9 @@ def register_saved_tensor_hook():
 
 
 class HookABC(abc.ABC):
-    def __init__(self, train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size: int):
+    def __init__(self, train_mode: TrainMode, 
+                 hook_mode: HookMode, 
+                 num_epoch: int, batch_size: int):
         self.train_mode = train_mode
         self.hook_mode = hook_mode
         self.batch_size = batch_size
@@ -106,7 +108,8 @@ class SwitchL1Exception(Exception):
     pass
 
 class SwitchHook(HookABC):
-    def __init__(self, train_mode:TrainMode, hook_mode: HookMode, num_epoch: int, batch_size: int) -> None:
+    def __init__(self, train_mode:TrainMode, hook_mode: HookMode, 
+                 num_epoch: int, batch_size: int) -> None:
         assert train_mode in {TrainMode.TASKSWITCH_L1, TrainMode.TASKSWITCH_L0}
         super().__init__(train_mode, hook_mode, num_epoch, batch_size)
         self._stub = torch_col.PySwitchStub()
@@ -140,7 +143,8 @@ class SwitchHook(HookABC):
     def register_pytorch_hook(self, module_list: List[torch.nn.Module]):
         if self.train_mode == TrainMode.TASKSWITCH_L0:
             return
-        if self.train_mode == TrainMode.TASKSWITCH_L1 and self.hook_mode == HookMode.XSCHED_SYNC2:
+        if (self.train_mode == TrainMode.TASKSWITCH_L1 
+                and self.hook_mode == HookMode.XSCHED_SYNC2):
             print("SetUpTorchColEngine")
             self._stub.EnableTorchColEngine()
         else:
@@ -246,7 +250,10 @@ class SwitchHook(HookABC):
         succ = self.try_reply_interrupt()
         t1 = time.time()
         if succ:
-            print(f'[Switch L1 {(t1-t0)*1e3:.1f} ms] target batch_size: {self.target_batch_size}, memory usage: {old_gpu_mem:.2f}GB -> {cur_gpu_mem:.2f}GB.', flush=True)
+            print(f'[Switch L1 {(t1-t0)*1e3:.1f} ms] ',
+                  f'target batch_size: {self.target_batch_size}, '
+                  f'memory usage: {old_gpu_mem:.2f}GB -> {cur_gpu_mem:.2f}GB.',
+                    flush=True)
 
     def try_reply_interrupt(self):
         return self._stub.try_interrupt_train_done()
@@ -273,8 +280,6 @@ class SwitchHook(HookABC):
         return self._stub.can_exit_after_infer_worklaod_done()
         
 
-
-
 class ColocateAdjustL1Exception(Exception):
     pass
 
@@ -282,7 +287,8 @@ class EngineColocateAdjustL1Exception(Exception):
     pass
 
 class ColocateHook(HookABC):
-    def __init__(self, train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size: int):
+    def __init__(self, train_mode: TrainMode, 
+                 hook_mode: HookMode, num_epoch: int, batch_size: int):
         assert train_mode == TrainMode.COLOCATE_L1 or train_mode == TrainMode.COLOCATE_L2
         super().__init__(train_mode, hook_mode, batch_size, num_epoch)
         self._stub = torch_col.PyColocateStub(batch_size)
@@ -361,28 +367,6 @@ class ColocateHook(HookABC):
         else:
             pass
     
-    # def async_adjust_mem(self):
-    #     with self._block_signal_section():
-    #         assert self.train_mode == TrainMode.COLOCATE_L1
-    #         if self.hook_mode == HookMode.XSCHED_ASYNC_SIGNAL:
-    #             if not self._async_killed_batch:
-    #                 # if already killed, no need to do again
-    #                 xsched.kill_batch(self._torch_stream)
-    #                 xsched.disable_cuda_calls(self._torch_stream)
-    #                 torch_col.cuda_memory_pool_disble_train_alloc()
-    #                 self._async_killed_batch = True
-    #         elif self.hook_mode == HookMode.XSCHED_SYNC:
-    #             xsched.kill_batch()
-            
-    #         old_gpu_mem = MemoryPool.get_memory_usage()
-    #         for fn in self._grad_fn:
-    #             torch_col.release_grad_fn_saved_tensor(fn)
-    #         self._grad_fn = []
-    #         MemoryPool.empty_cache()
-    #         self._stub.adjust_l1_done()
-    #         curr_gpu_mem = MemoryPool.get_memory_usage()
-    #         print(f'[Adjust] target batch_size: {self.target_batch_size}, memory usage: {old_gpu_mem:.2f}GB -> {curr_gpu_mem:.2f}GB.')
-
     def adjust(self):
         # match self.train_mode:
         if self.train_mode == TrainMode.COLOCATE_L1:
@@ -412,10 +396,10 @@ class ColocateHook(HookABC):
             cur_cached_gpu_mem, cur_allocate_gpu_mem = MemoryPool.get_memory_usage(), MemoryPool.get_allocated_memory()
         t4 = time.time()
         print(f'[Rank {torch_col.get_train_rank()} | PID {os.getpid()} | {torch_col.get_unix_timestamp_us()/1000}]'
-                + f' [Adjust L1 {(t1-t0)*1e3:.1f} | {(t2-t1)*1e3:.1f} | {(t3-t2)*1e3:.1f} | {(t4-t3)*1e3:.1f} ms]'
-                + f' target batch_size: {self.target_batch_size},'
-                + f' memory cached: {old_cached_gpu_mem:.2f}GB -> {cur_cached_gpu_mem:.2f}GB,'
-                + f' memory allocated: {old_allocate_gpu_mem:.2f}GB -> {cur_allocate_gpu_mem:.2f}GB.', flush=True)
+              f' [Adjust L1 {(t1-t0)*1e3:.1f} | {(t2-t1)*1e3:.1f} | {(t3-t2)*1e3:.1f} | {(t4-t3)*1e3:.1f} ms]'
+              f' target batch_size: {self.target_batch_size},'
+              f' memory cached: {old_cached_gpu_mem:.2f}GB -> {cur_cached_gpu_mem:.2f}GB,'
+              f' memory allocated: {old_allocate_gpu_mem:.2f}GB -> {cur_allocate_gpu_mem:.2f}GB.', flush=True)
 
     def adjust_l2(self):
         t0 = time.time()
@@ -428,9 +412,9 @@ class ColocateHook(HookABC):
             cur_pytorch_cached = torch.cuda.memory_reserved() / 1024 / 1024 / 1024
         t1 = time.time()
         print(f'[{torch_col.get_unix_timestamp_us()/1000}] [Adjust L2 {(t1-t0)*1e3:.1f} ms] target batch_size: {self.target_batch_size},'
-                + f' memory cached: {old_cached_gpu_mem:.2f}GB -> {cur_cached_gpu_mem:.2f}GB,'
-                + f' memory allocated: {old_allocate_gpu_mem:.2f}GB -> {cur_allocate_gpu_mem:.2f}GB.'
-                + f' pytorch allocated: {old_pytorch_cached:.2f}GB -> {cur_pytorch_cached:.2f}GB', flush=True)
+              f' memory cached: {old_cached_gpu_mem:.2f}GB -> {cur_cached_gpu_mem:.2f}GB,'
+              f' memory allocated: {old_allocate_gpu_mem:.2f}GB -> {cur_allocate_gpu_mem:.2f}GB.'
+              f' pytorch allocated: {old_pytorch_cached:.2f}GB -> {cur_pytorch_cached:.2f}GB', flush=True)
 
     def report_batch_size(self, batch_size):
         self._stub.report_batch_size(batch_size)
@@ -490,7 +474,9 @@ class DummyHook(HookABC):
     def can_exit_after_infer_worklaod_done(self):
         return self._stub.can_exit_after_infer_worklaod_done()
 
-def get_hook(train_mode: TrainMode, hook_mode: HookMode, num_epoch: int, batch_size: int):
+
+def get_hook(train_mode: TrainMode, hook_mode: 
+             HookMode, num_epoch: int, batch_size: int):
     if train_mode == TrainMode.NORMAL:
         return DummyHook(train_mode, hook_mode, num_epoch, batch_size)
     elif train_mode.is_colocate():
