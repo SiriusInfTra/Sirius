@@ -50,7 +50,7 @@ def train(rank:int, world_size:int,
     print(f"Train params memory usage: {torch_col.MemoryPool.get_memory_usage() * 1024:.2f}M")
 
     criterion = nn.CrossEntropyLoss().cuda(rank)
-    optimizer = torch.optim.SGD(model.parameters(), 1e-5, 
+    optimizer = torch.optim.SGD(model.parameters(), 0.1, 
                                 momentum=0.9, weight_decay=1e-8)
     scaler = torch.cuda.amp.GradScaler()
 
@@ -67,7 +67,7 @@ def train(rank:int, world_size:int,
         hook=hook, trace=None,
         input_shape=(3, 224, 224), num_class=37 if real_data else 1000,
         fake_data=not real_data,
-        max_global_batch_size=None,
+        max_global_batch_size=global_batch_size,
         checkpoint_micro_batch=checkpoint_micro_batch)
 
     model.train()
@@ -75,8 +75,7 @@ def train(rank:int, world_size:int,
 
     torch_col.util.initialize_sgd_optimizer(model, optimizer)
     if train_dataset.checkpoint_micro_batch:
-        # grad_accumulator = torch_col.GradAccumulator(model)
-        grad_accumulator = None
+        grad_accumulator = torch_col.GradAccumulator(model)
     else:
         grad_accumulator = None
 
@@ -92,12 +91,14 @@ def train(rank:int, world_size:int,
         targets = batch['label']
         images: torch.Tensor = images.cuda(rank, non_blocking=True)
         targets: torch.Tensor = targets.cuda(rank, non_blocking=True)
-        optimizer.zero_grad(set_to_none=False)
-        with torch.cuda.amp.autocast(cache_enabled=False):
-            output = model(images)
-            loss = criterion(output, targets)
-            # train_dataset.scale_loss(loss)
-        scaler.scale(loss).backward()
+        with train_dataset.get_context(model):
+            with torch.cuda.amp.autocast(cache_enabled=False):
+                output = model(images)
+                loss = criterion(output, targets)
+                train_dataset.scale_loss(loss)
+                scaler.scale(loss).backward()
+                # torch.cuda.synchronize()
+            torch_col.info("backward done")
         train_dataset.step_stage(hook, optimizer, scaler=scaler, 
                                  grad_accumulator=grad_accumulator)
         return loss
