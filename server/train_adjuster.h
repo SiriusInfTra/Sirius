@@ -18,7 +18,8 @@ class TrainAdjuster {
   // we assume device_id and training rank are the same
   static void Init(); 
   static memory_mb_t PredictTrainMemUsageMB(int device_id, bool verbose);
-  static memory_mb_t PredictTrainMemUsageMB(int device_id, int batch_size, bool verbose);
+  static memory_mb_t PredictTrainMemUsageMB(int device_id, int batch_size, 
+                                            bool verbose);
 
   // TODO: adjust for re-balance training
   static std::vector<AdjustPlan> GetTrainRequireMemAdjustPlan(

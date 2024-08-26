@@ -357,13 +357,13 @@ void TrainLauncher::DummyAdjust() {
 }
 
 void TrainLauncher::KillTrain() {
-  if (!ctrl::InfTraCommunicator::GetIB()->IsTrainInfoValid(ctrl::kTraRank_0)) {
+  if (!ctrl::InfTraCommunicator::GetSinfo()->IsTrainInfoValid(ctrl::kTraRank_0)) {
     return;
   }
   int num_train_proc = 
-      ctrl::InfTraCommunicator::GetIB()->GetTrainInfoUnsafe(0)->train_world_size;
+      ctrl::InfTraCommunicator::GetSinfo()->GetTrainInfoUnsafe(0)->train_world_size;
   for (int i = 0; i < num_train_proc; i++) {
-    auto train_info = ctrl::InfTraCommunicator::GetIB()->GetTrainInfoUnsafe(i);
+    auto train_info = ctrl::InfTraCommunicator::GetSinfo()->GetTrainInfoUnsafe(i);
     auto pid = train_info->train_pid;
     auto rank = train_info->train_rank;
     if (pid != -1) {

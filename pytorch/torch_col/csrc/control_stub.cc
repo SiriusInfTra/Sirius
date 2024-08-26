@@ -1,6 +1,7 @@
 #include <common/log_as_glog_sta.h>
 #include <common/cuda_allocator.h>
 #include <common/xsched_ctrl.h>
+#include <common/inf_tra_comm/communicator.h>
 
 #include <torch_col/csrc/control_stub.h>
 #include <torch_col/csrc/config.h>
@@ -195,7 +196,9 @@ bool SwitchStub::TryInterruptTrainDone() {
 
 int ColocateStub::GetTargetBatchSize() {
   std::unique_lock locker{mutex_};
-  return target_bs_;
+  // return target_bs_;
+  return COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
+      TorchColConfig::GetTrainRank(), target_batch_size);
 }
 
 void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
@@ -253,7 +256,8 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
   case ctrl::CtrlEvent::kInferExit: {
     auto old_target_bs = this->target_bs_;
     this->target_bs_ = msg.value;
-    LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() << " | ColocateStub]" 
+    LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() 
+              << " | ColocateStub]" 
               << " Infer Exit adjust, cmd_id " << msg.id
               << " target bs " << old_target_bs << " -> " << this->target_bs_
               << " current " << this->current_bs_
@@ -270,8 +274,10 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
     break;
   case ctrl::CtrlEvent::kInferenceWorkloadDone:
     this->infer_workload_done_timestamp_ = torch_col::get_unix_timestamp();
-    LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() << " | ColocateStub]" 
-              << " Inference workload done, cmd_id " << msg.id;
+    LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() 
+              << " | ColocateStub]" 
+              << " Inference workload done, cmd_id " 
+              << msg.id;
     break;
   default:
     LOG(FATAL) << "[ColocateStub] Unknown command: " << msg.event;
@@ -324,12 +330,14 @@ void ColocateStub::ReportBatchSize(int batch_size) {
 
 void StubProfiler::RecordAdjustRequest() {
   std::unique_lock lock{StubProfiler::mutex_};
-  StubProfiler::adjust_request_time_stamp_.push_back(torch_col::get_unix_timestamp_us());
+  StubProfiler::adjust_request_time_stamp_.push_back(
+      torch_col::get_unix_timestamp_us());
 }
 
 void StubProfiler::RecordAdjustDone() {
   std::unique_lock lock{StubProfiler::mutex_};
-  StubProfiler::adjsut_done_time_stamp_.push_back(torch_col::get_unix_timestamp_us());
+  StubProfiler::adjsut_done_time_stamp_.push_back(
+      torch_col::get_unix_timestamp_us());
 }
 
 }  // namespace torch_col

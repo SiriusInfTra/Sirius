@@ -4,6 +4,7 @@
 #include <common/inf_tra_comm/bip_helper.h>
 #include <common/util.h>
 
+#include <boost/range/irange.hpp>
 #include <optional>
 #include <atomic>
 
@@ -53,6 +54,56 @@ class InfTraSharedInfo {
   }
   std::vector<pid_t> GetTrainPIDs();
 
+  template <typename ValueType>
+  ValueType GetTrainInfoField(int id, size_t field_off) {
+    bip::scoped_lock lock{*train_info_muts_[id]};
+    return GetTrainInfoFieldWithoutLock<ValueType>(id, field_off);
+  }
+
+  template <typename ValueType>
+  std::vector<ValueType> GetTrainInfoFieldVec(size_t field_off) {
+    std::vector<bip::scoped_lock<bip_mutex>> locks;
+    locks.emplace_back(*train_info_muts_[0]);
+
+    int train_world_size = train_infos_[0]->train_world_size;
+    if (train_world_size == 0) {
+      return {};
+    }
+
+    for (int i : boost::irange(1, train_world_size)) {
+      locks.emplace_back(*train_info_muts_[i]);
+    }
+
+    std::vector<ValueType> ret;
+    for (int i : boost::irange(train_world_size)) {
+      ret.push_back(
+          GetTrainInfoFieldWithoutLock<ValueType>(i, field_off));
+    }
+    return ret;
+  }
+
+  template <typename ValueType>
+  void UpdateTrainInfoFieldVec(size_t field_off,
+                               const std::vector<ValueType> &values) {
+    std::vector<bip::scoped_lock<bip_mutex>> locks;
+    locks.emplace_back(*train_info_muts_[0]);
+    int train_world_size = train_infos_[0]->train_world_size;
+    if (train_world_size == 0) {
+      return;
+    }
+    
+    CHECK_EQ(values.size(), train_world_size);
+    for (int i : boost::irange(1, train_world_size)) {
+      locks.emplace_back(*train_info_muts_[i]);
+    }
+
+    for (int i : boost::irange(train_world_size)) {
+      UpdateTrainInfoFieldWithoutLock<ValueType>(
+          i, field_off, values[i]);
+    }
+  }
+
+
   void InvalidateTrainInfo(int id) {
     bip::scoped_lock lock{*train_info_muts_[id]};
     train_infos_[id]->train_pid = -1;
@@ -86,6 +137,22 @@ class InfTraSharedInfo {
     return "train-info-mut-" + std::to_string(id);
   }
 
+  template <typename ValueType>
+  ValueType GetTrainInfoFieldWithoutLock(int id, size_t field_off) {
+    CHECK(IsTrainInfoValid(id));
+    return *reinterpret_cast<ValueType*>(
+        reinterpret_cast<char*>(train_infos_[id]) + field_off);
+  }
+
+  template <typename ValueType>
+  void UpdateTrainInfoFieldWithoutLock(int id, size_t field_off, 
+                                       ValueType value) {
+    CHECK(IsTrainInfoValid(id));
+    ValueType *field_ptr = reinterpret_cast<ValueType*>(
+        reinterpret_cast<char*>(train_infos_[id]) + field_off);
+    *field_ptr = value;
+  }
+
   InferInfo* infer_info_{nullptr};
   std::array<TrainInfo*, MAX_DEVICE_NUM> train_infos_{nullptr};
 
@@ -94,6 +161,27 @@ class InfTraSharedInfo {
 
   bip::managed_shared_memory &bip_shm_;
 };
+
+
+#define COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(id, field) \
+  ::colserve::ctrl::InfTraCommunicator:: \
+  GetSinfo()->GetTrainInfoField< \
+    decltype(::colserve::ctrl::TrainInfo::field) \
+  >(id, offsetof(::colserve::ctrl::TrainInfo, field))
+
+
+#define COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD_VEC(field) \
+  ::colserve::ctrl::InfTraCommunicator:: \
+  GetSinfo()->GetTrainInfoFieldVec< \
+    decltype(::colserve::ctrl::TrainInfo::field) \
+  >(offsetof(::colserve::ctrl::TrainInfo, field))
+
+
+#define COMMUNICATOR_UPDATE_SHARED_TRAIN_INFO_FIELD_VEC(field, values) \
+  ::colserve::ctrl::InfTraCommunicator:: \
+  GetSinfo()->UpdateTrainInfoFieldVec< \
+    decltype(::colserve::ctrl::TrainInfo::field) \
+  >(offsetof(::colserve::ctrl::TrainInfo, field), values)
 
 }
 }

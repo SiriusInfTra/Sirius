@@ -30,7 +30,7 @@ void TrainAdjuster::LoadTrainInfo() {
   CHECK(adjuster_ != nullptr);
 
   std::unique_lock lock{adjuster_->mut_};
-  auto inftra_info = ctrl::InfTraCommunicator::GetIB();
+  auto inftra_info = ctrl::InfTraCommunicator::GetSinfo();
   adjuster_->cached_train_world_size_ = 
       ctrl::InfTraCommunicator::GetTrainWorldSize();
   for (auto rank : boost::irange(adjuster_->cached_train_world_size_)) {
@@ -51,7 +51,7 @@ void TrainAdjuster::ResetTrainInfo() {
 
 memory_mb_t TrainAdjuster::PredictTrainMemUsageMB(int device_id, bool verbose) {
   CHECK(adjuster_ != nullptr);
-  if (!ctrl::InfTraCommunicator::GetIB()->IsTrainInfoValid(ctrl::kTraRank_0)) {
+  if (!ctrl::InfTraCommunicator::GetSinfo()->IsTrainInfoValid(ctrl::kTraRank_0)) {
     return 0;
   }
   auto target_batch_size_ = 
@@ -313,7 +313,7 @@ TrainAdjuster::GetInferReleaseMemAdjustPlanWithInLock(
 
 int TrainAdjuster::PredictTargetBatchSize(int device_id, memory_mb_t memory_mb) {
   auto [base, slope] = GetModelMemParam();
-  auto inftra_info = ctrl::InfTraCommunicator::GetIB();
+  auto inftra_info = ctrl::InfTraCommunicator::GetSinfo();
   auto max_batch_size = 
       inftra_info->GetTrainInfoUnsafe(ctrl::kTraRank_0)->init_batch_size;
   
@@ -337,7 +337,7 @@ void TrainAdjuster::UpdateCachedTrainInfoByAdjustPlan(
   for (auto rank : boost::irange(adjust_plans.size())) {
     cached_target_batch_sizes_[rank] = 
         adjust_plans[rank].batch_size;
-    ctrl::InfTraCommunicator::GetIB()->GetMutableTrainInfoUnsafe(rank)
+    ctrl::InfTraCommunicator::GetSinfo()->GetMutableTrainInfoUnsafe(rank)
         ->target_batch_size_unpublished = adjust_plans[rank].batch_size;
   }
 }
@@ -420,7 +420,7 @@ memory_mb_t TrainAdjuster::GetTrainAvailMemMBMinusColdCacheReserve(
 }
 
 std::pair<double, double> TrainAdjuster::GetModelMemParam() {
-  auto inftra_info = ctrl::InfTraCommunicator::GetIB();
+  auto inftra_info = ctrl::InfTraCommunicator::GetSinfo();
   if (!inftra_info->IsTrainInfoValid(ctrl::kTraRank_0)) {
     LOG(FATAL) << "Train info is not valid";
   }

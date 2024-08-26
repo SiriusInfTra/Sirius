@@ -24,7 +24,7 @@ InfTraMessageQueue* InfTraCommunicator::GetMQ() {
   return communicator_->message_queue_.get();
 }
 
-InfTraSharedInfo* InfTraCommunicator::GetIB() {
+InfTraSharedInfo* InfTraCommunicator::GetSinfo() {
   if (communicator_ == nullptr) {
     LOG(FATAL) << "InfTraCommunicator has not been initialized.";
   }

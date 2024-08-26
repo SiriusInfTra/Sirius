@@ -69,6 +69,9 @@ void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
     bool check_num_unproced_samples) {
   int train_world_size = TorchColConfig::GetTrainWorldSize();
 
+  auto target_bs_unpub = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD_VEC(
+      target_batch_size_unpublished);
+
   int num_unprocessed_samples = 0;
   if (check_num_unproced_samples) {
     for (auto i : boost::irange(train_world_size)) {
@@ -142,6 +145,9 @@ void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
     };
   }
   CHECK(it == global_shared_data_.unproc_sample_queue_->end());
+
+  COMMUNICATOR_UPDATE_SHARED_TRAIN_INFO_FIELD_VEC(
+      target_batch_size, target_bs_unpub);
 }
 
 std::pair<DynamicBatchDistirbutor::batch_index_vec_t, bool>
@@ -208,6 +214,23 @@ DynamicBatchDistirbutor::GetBatch(int batch_size) {
 
   bool require_sync = cursor.first == cursor.second;
   return {indices, require_sync};
+}
+
+int DynamicBatchDistirbutor::QueryNextBatchSize() {
+  CHECK(batch_distributor_ != nullptr);
+  bip::scoped_lock lock{*GLOBAL_SHARED_DATA.mut_};
+  int train_rank = TorchColConfig::GetTrainRank();
+
+  auto &cursor = 
+      GLOBAL_SHARED_DATA.train_batch_cursor_->at(train_rank);
+  
+  int max_batch_size = 
+      GLOBAL_SHARED_DATA.num_unproc_samples_per_train_->at(train_rank);
+
+  int target_batch_size = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
+      train_rank, target_batch_size);
+
+  return std::min(max_batch_size, target_batch_size);
 }
 
 void DynamicBatchDistirbutor::FinishBatch(

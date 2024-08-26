@@ -23,6 +23,9 @@ class DynamicBatchDistirbutor {
   // Get sample indices for a batch, 
   // return the indices and a bool indicating whether the batch is the last one
   static std::pair<batch_index_vec_t, bool> GetBatch(int batch_size);
+
+  // query the next batch size (the number of samples of next `GetBatch` call)
+  static int QueryNextBatchSize();
   
   static void FinishBatch(const batch_index_vec_t &batch_indices);
   static void AbortBatch(const batch_index_vec_t &batch_indices);
@@ -33,7 +36,6 @@ class DynamicBatchDistirbutor {
 
  private:
   static std::unique_ptr<DynamicBatchDistirbutor> batch_distributor_;
-
 
   void MergeBatchIndexInQueue(colserve::bip_set<batch_index_t> *queue);
   void DistributeBatchWithoutLock(bool check_num_unproced_samples);
