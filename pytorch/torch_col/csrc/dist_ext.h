@@ -19,19 +19,20 @@ class Reducer : public ::c10d::Reducer {
   Reducer(T&& ... args) : 
       ::c10d::Reducer(std::forward<T>(args)...) {
     ResetAutoGradHook();
+    first_batch_autograd_hook_called_ = false;
   }
 
   void autograd_hook(size_t index);
   void finalize_dropped_batch();
 
  protected:
-  void finalize_backward();
   void mark_bucket_ready(size_t bucket_index) {
     LOG(INFO) << "[Reducer | mark_bucket_ready] bucket_index: " << bucket_index;
     ::c10d::Reducer::mark_bucket_ready(bucket_index);
   }
 
  private:
+  bool first_batch_autograd_hook_called_;
   void ResetAutoGradHook();
 };
 

@@ -99,7 +99,8 @@ class Trainer:
 
                 epoch_stat.killed_batch += 1
                 self.overall_stat.killed_batch += 1
-
+                if isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
+                    self.model.require_forward_param_sync = True
                 torch_col.dist.wait_barrier()
                 nccl_backend = torch_dist.GroupMember.WORLD._get_backend(torch.device('cuda'))
                 nccl_backend._restart_nccl_comm([torch.device(f'cuda:{self.rank}')])
