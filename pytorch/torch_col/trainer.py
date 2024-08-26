@@ -170,6 +170,9 @@ class Trainer:
 
         self._cur_epoch_stat.killed_batch += 1
         self.overall_stat.killed_batch += 1
+        
+        if isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
+            self.model.require_forward_param_sync = True
 
         # --------------------------------------------------
         # third, re-configure training and re-start training
