@@ -3,6 +3,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as torch_dist
 import torch.multiprocessing as torch_mp
 from torch import nn
+import torch_col.dyanmic_batch
 from torchvision import models
 from torch.utils.data import DataLoader
 import argparse
@@ -11,6 +12,7 @@ import os, sys
 import torch_col
 from torch_col import MemoryPool, EventManager, TrainMode, ColocateCtrlHookMode
 from torch_col import DynamicBatchDataset
+from torch_col import dyanmic_batch
 import torch_col.trainer
 import torch_col.xsched
 from typing import Optional
@@ -52,24 +54,33 @@ def train(rank:int, world_size:int,
 
     print(f"Train after init memory pool usage: {MemoryPool.get_memory_usage() * 1024:.2f}M")
     
-    hook = torch_col.get_hook(train_mode, hook_mode, num_epoch, batch_size)
-    hook.register_pytorch_hook([model, criterion])
-    checkpoint_micro_batch = hook.train_mode.is_kill_batch()
+    col_ctrl = torch_col.create_colocate_ctrl(train_mode, hook_mode, num_epoch, batch_size)
+    col_ctrl.register_pytorch_hook([model, criterion])
+    checkpoint_micro_batch = col_ctrl.train_mode.is_kill_batch()
     # checkpoint_micro_batch = False
 
     # dummy data
-    train_dataset = DynamicBatchDataset(
-        model_name='swin_b', size=1000, max_batch_size=batch_size, 
-        hook=hook, trace=None,
-        input_shape=(3, 224, 224), num_class=10, 
-        max_global_batch_size=None,
-        checkpoint_micro_batch=checkpoint_micro_batch)
+    # train_dataset = DynamicBatchDataset(
+    #     model_name='swin_b', size=1000, max_batch_size=batch_size, 
+    #     hook=hook, trace=None,
+    #     input_shape=(3, 224, 224), num_class=10, 
+    #     max_global_batch_size=None,
+    #     checkpoint_micro_batch=checkpoint_micro_batch)
+
+    dyanmic_dataset, batch_manager = torch_col.init_dynamic_batch(
+        dataset_size=1000, 
+        dataset_type=dyanmic_batch.DatasetType.VISION,
+        dataset_config=dyanmic_batch.VisionDatasetConfig((3, 224, 224), 10),
+        batch_size=batch_size,
+        global_batch_size=None,
+        checkpoint_micro_batch=checkpoint_micro_batch,
+    )   
 
     model.train()
-    hook.train_start()
+    col_ctrl.train_start()
 
     torch_col.util.initialize_sgd_optimizer(model, optimizer)
-    if train_dataset.checkpoint_micro_batch:
+    if batch_manager._checkpoint_micro_batch:
         # grad_accumulator = torch_col.GradAccumulator(model)
         grad_accumulator = None
     else:
@@ -82,9 +93,9 @@ def train(rank:int, world_size:int,
 
     torch_col.dist.wait_barrier()
 
-    def iter_train_fn(batch):
-        images = batch['image']
-        targets = batch['label']
+    def iter_train_fn(batch: dyanmic_batch.Batch):
+        images = batch['images']
+        targets = batch['labels']
         images: torch.Tensor = images.cuda(rank, non_blocking=True)
         targets: torch.Tensor = targets.cuda(rank, non_blocking=True)
         optimizer.zero_grad(set_to_none=False)
@@ -92,12 +103,14 @@ def train(rank:int, world_size:int,
             output = model(images)
             loss = criterion(output, targets)
             # train_dataset.scale_loss(loss)
+            batch_manager.opt
         scaler.scale(loss).backward()
-        train_dataset.step_stage(hook, optimizer, scaler=scaler, 
-                                 grad_accumulator=grad_accumulator)
+        batch_manager.optimizer_step(batch, optimizer, 
+                                     amp_scaler=scaler, 
+                                     grad_accumulator=grad_accumulator)
         return loss
 
-    trainer = torch_col.Trainer(model, train_dataset, iter_train_fn)
+    trainer = torch_col.Trainer(model, dyanmic_dataset, iter_train_fn)
 
     for epoch in range(num_epoch):
         last_loss = trainer.train_one_epoch(epoch)
@@ -112,17 +125,18 @@ def train(rank:int, world_size:int,
         if train_mode.is_kill_batch():
             batch_info += (
                 f' | try {epoch_stat.tried_batch} kill {epoch_stat.killed_batch}, ' 
-                + f'{epoch_stat.killed_time*1e3:.1f}ms finish {epoch_stat.finished_batch}, '
-                + f'{epoch_stat.finished_time*1e3:.1f}ms')
+                f'{epoch_stat.killed_time*1e3:.1f}ms finish {epoch_stat.finished_batch}, '
+                f'{epoch_stat.finished_time*1e3:.1f}ms')
         if global_batch_size is not None:
-            batch_info += f' | num_rollback_sampels {train_dataset.num_rollback_samples_in_epoch}'
-        print('[Rank {} | {} epoch {}] {:.3f}s | {} | batch-size {} | micro-batch-size {} | {} | thpt {:.2f} | loss {:.6f}'.format(
-                rank, model.__class__.__name__, epoch, epoch_duration / 1e3,
-                batch_info, batch_size, train_dataset.batch_size,
-                mem_info, epoch_stat.finished_sample / (epoch_duration / 1e3), 
-                last_loss.item()), flush=True)
+            batch_info += f' | num_rollback_sampels {epoch_stat.num_rollback_batch}'
+
+        print(f'[Rank {rank} | {model.__class__.__name__} epoch {epoch}]'
+              f'{epoch_duration / 1e3:.3f}s | {batch_info} | batch-size {batch_size}'
+              f'| {mem_info} | thpt {epoch_stat.finished_sample / (epoch_duration / 1e3)}'
+              f'| loss {last_loss.item():.6f}', 
+              flush=True)
     
-        if hook.can_exit_after_infer_worklaod_done():
+        if col_ctrl.can_exit_after_infer_worklaod_done():
             print('[hook] inference workload done, will exit training', flush=True)
             torch_col.dist.wait_barrier()
             break
@@ -134,8 +148,8 @@ def train(rank:int, world_size:int,
             num_epoch * batch_size, overall_stat.tried_batch, 
             overall_stat.killed_batch, overall_stat.finished_batch), flush=True)
 
-    hook.train_end()
-    hook.stop()
+    col_ctrl.train_end()
+    col_ctrl.stop()
 
     EventManager.dump(None, train_mode)
     cleanup()
