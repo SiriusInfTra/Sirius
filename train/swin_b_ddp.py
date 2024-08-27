@@ -160,17 +160,14 @@ def main():
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--global-batch-size', type=int, default=500)
     parser.add_argument('--num-epoch', type=int, default=15)
-    parser.add_argument('--train-mode', type=str, default=TrainMode.COLOCATE_L1.value, 
-                        choices=[train_mode.value for train_mode in TrainMode])
     args = parser.parse_args()
     
     batch_size = args.batch_size
     global_batch_size = args.global_batch_size
     num_epoch = args.num_epoch
-    train_mode = [train_mode for train_mode in TrainMode if train_mode.value == args.train_mode][0]
     # hook_mode = [hook_mode for hook_mode in HookMode if hook_mode.value == args.hook_mode][0]
     # hook_mode = torch_col.get_colocate_ctrl_hook_mode()
-    
+    train_mode = torch_col.get_colocate_train_mode()
     
     print(f"Swin Transformer training, batch-size={batch_size}"
           f", num-epoch={num_epoch}, train-mode={train_mode}")

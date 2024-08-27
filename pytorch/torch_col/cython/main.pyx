@@ -1,5 +1,6 @@
 # cython: c_string_type=unicode, c_string_encoding=utf8
 # distutils: language = c++
+include "./util_cls.pxi"
 include "./ctrl_stub.pxi"
 
 from libcpp.string cimport string
@@ -12,6 +13,7 @@ from libc.stdint cimport uint64_t, uint32_t
 from enum import Enum
 import cython
 import os
+import functools
 
 ############################
 #  MARK: Torch Col Init    #
@@ -31,6 +33,8 @@ cdef extern from "<torch_col/csrc/config.h>" namespace "torch_col":
         bint IsEnableXsched()
         @staticmethod
         string GetColocateCtrlHookMode()
+        @staticmethod
+        string GetColocateTrainMode()
         @staticmethod
         bint IsReleaseIntermMemoryByGradFn()
         @staticmethod
@@ -65,18 +69,6 @@ cdef extern from "<torch_col/csrc/init.h>" namespace "torch_col":
     cpdef void TorchDistExtInit()
 
 
-class ColocateCtrlHookMode(Enum):
-    NONE = 'none'
-    SYNC = 'sync'
-    # XSCHED_ASYNC_SIGNAL = 'xsched-async-signal'  
-    XSCHED_SYNC = 'xsched-sync'
-    XSCHED_SYNC2 = 'xsched-sync2'
-
-    def use_xsched(self):
-        return self in {ColocateCtrlHookMode.XSCHED_SYNC, 
-                        ColocateCtrlHookMode.XSCHED_SYNC2}
-
-
 def is_enable_shared_tensor():
     return TorchColConfig.IsEnableSharedTensor()
 
@@ -89,12 +81,22 @@ def is_enable_xsched():
     return TorchColConfig.IsEnableXsched()
 
 
+@functools.lru_cache
 def get_colocate_ctrl_hook_mode():
     cdef hook_mode_cstr = TorchColConfig.GetColocateCtrlHookMode()
     for hook_mode in ColocateCtrlHookMode:
         if hook_mode.value == hook_mode_cstr:
             return hook_mode
     raise Exception(f"Invalid hook mode: {hook_mode_cstr}")
+
+
+@functools.lru_cache
+def get_colocate_train_mode():
+    cdef train_mode_cstr = TorchColConfig.GetColocateTrainMode()
+    for train_mode in TrainMode:
+        if train_mode.value == train_mode_cstr:
+            return train_mode
+    raise Exception(f"Invalid train mode: {train_mode_cstr}")
 
 
 def is_release_interm_memory_v1():
@@ -151,6 +153,7 @@ def has_colocated_infer_server():
 
 def get_train_profile_log_path():
     return TorchColConfig.GetTrainProfileLogPath()
+
 
 #############################
 #  MARK: Memory Management  #
@@ -252,7 +255,6 @@ def untag_interm_memory():
 
 def rearrange_memory():
     RearrangeMemory()
-
 
 
 #############################

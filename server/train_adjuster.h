@@ -67,6 +67,8 @@ class TrainAdjuster {
   memory_mb_t GetTrainAvailMemMBMinusColdCacheReserve(
       int device_id, bool verbose);
 
+  // TODO: change to profile-based method
+  //   to automatically modeling training memory
   std::pair<double, double> GetModelMemParam();
   std::pair<double, double> GetModelMemParam(const std::string &model_name);
 

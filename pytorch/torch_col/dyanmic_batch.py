@@ -262,7 +262,7 @@ class DynamicBatchDataset(IterableDataset):
     def __init__(self, 
                  ds_type: DatasetType, 
                  ds_size: int,
-                 global_batch_size: int,
+                #  global_batch_size: int,
                  colocate_ctrl: DummyCtrl | SwitchCtrl | ColocateCtrl,
                  vision_dataset_config: Optional[VisionDatasetConfig] = None,
                  text_dataset_config: Optional[TextDatasetConfig] = None,
@@ -276,7 +276,7 @@ class DynamicBatchDataset(IterableDataset):
         super().__init__()
         self.ds_type = ds_type
         self.ds_size = ds_size
-        self.global_batch_size = global_batch_size
+        # self.global_batch_size = global_batch_size
         self.col_ctrl = colocate_ctrl
         self.vision_dataset_config = vision_dataset_config
         self.text_dataset_config = text_dataset_config
@@ -440,6 +440,9 @@ def init_dynamic_batch(
     empty_cache_at_larger_batch_size: bool = False,
     fake_data: bool = False
 ) -> Tuple[DynamicBatchDataset, MicroBatchManager]:
+    assert torch_col.colocate_ctrl.CtrlBase._colocate_ctrl is not None, (
+        "colocate control must be initialized before dynamic batch dataset."
+    )
     
     if global_batch_size is None and checkpoint_micro_batch:
         print('Warning: global_batch_size is None, checkpoint_micro_batch will be False.',
@@ -456,6 +459,7 @@ def init_dynamic_batch(
     dynamic_dataset = DynamicBatchDataset(
         ds_type=dataset_type,
         ds_size=dataset_size,
+        colocate_ctrl=torch_col.colocate_ctrl.CtrlBase._colocate_ctrl,
         vision_dataset_config=vision_ds_config,
         text_dataset_config=text_ds_config,
         empty_cache_at_larger_batch_size=empty_cache_at_larger_batch_size,

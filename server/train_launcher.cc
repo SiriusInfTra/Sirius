@@ -116,24 +116,24 @@ bool TrainLauncher::Train() {
     }
     for (i = j + 1; i < args.size() && args[i] == ' '; i++);
   }
-  if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
-    args_str.push_back("--train-mode");
-    args_str.push_back("taskswitch-l1");
-  } else if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
-    args_str.push_back("--train-mode");
-    args_str.push_back("taskswitch-l3");
-  } else if (Config::serve_mode == ServeMode::kColocateL1) {
-    args_str.push_back("--train-mode");
-    args_str.push_back("colocate-l1");
-  } else if (Config::serve_mode == ServeMode::kColocateL2) {
-    args_str.push_back("--train-mode");
-    args_str.push_back("colocate-l2");
-  } else if (Config::serve_mode == ServeMode::kNormal) {
-    args_str.push_back("--train-mode");
-    args_str.push_back("normal");
-  } else {
-    LOG(FATAL) << "Unsupported serve mode: " << static_cast<int>(Config::serve_mode);
-  }
+  // if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
+  //   args_str.push_back("--train-mode");
+  //   args_str.push_back("taskswitch-l1");
+  // } else if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
+  //   args_str.push_back("--train-mode");
+  //   args_str.push_back("taskswitch-l3");
+  // } else if (Config::serve_mode == ServeMode::kColocateL1) {
+  //   args_str.push_back("--train-mode");
+  //   args_str.push_back("colocate-l1");
+  // } else if (Config::serve_mode == ServeMode::kColocateL2) {
+  //   args_str.push_back("--train-mode");
+  //   args_str.push_back("colocate-l2");
+  // } else if (Config::serve_mode == ServeMode::kNormal) {
+  //   args_str.push_back("--train-mode");
+  //   args_str.push_back("normal");
+  // } else {
+  //   LOG(FATAL) << "Unsupported serve mode: " << static_cast<int>(Config::serve_mode);
+  // }
 
   // args_str.push_back("--train-profile");
   // args_str.push_back(Config::train_profile);
@@ -236,6 +236,25 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job,
     } else {
       CHECK_NE(setenv("COL_HOOK_MODE", "none", 1), -1);
       extra_env_ss << "COL_HOOK_MODE=none ";
+    }
+
+    if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
+      CHECK_NE(setenv("COL_TRAIN_MODE", "taskswitch-l1", 1), -1);
+      extra_env_ss << "COL_TRAIN_MODE=taskswitch-l1 ";
+    } else if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
+      CHECK_NE(setenv("COL_TRAIN_MODE", "taskswitch-l3", 1), -1);
+      extra_env_ss << "COL_TRAIN_MODE=taskswitch-l3 ";
+    } else if (Config::serve_mode == ServeMode::kColocateL1) {
+      CHECK_NE(setenv("COL_TRAIN_MODE", "colocate-l1", 1), -1);
+      extra_env_ss << "COL_TRAIN_MODE=colocate-l1 ";
+    } else if (Config::serve_mode == ServeMode::kColocateL2) {
+      CHECK_NE(setenv("COL_TRAIN_MODE", "colocate-l2", 1), -1);
+      extra_env_ss << "COL_TRAIN_MODE=colocate-l2 ";
+    } else if (Config::serve_mode == ServeMode::kNormal) {
+      CHECK_NE(setenv("COL_TRAIN_MODE", "normal", 1), -1);
+      extra_env_ss << "COL_TRAIN_MODE=normal ";
+    } else {
+      LOG(FATAL) << "Unsupported serve mode: " << static_cast<int>(Config::serve_mode);
     }
 
     if (!Config::train_profile.empty()) {

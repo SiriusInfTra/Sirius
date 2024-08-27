@@ -25,6 +25,7 @@ int TorchColConfig::kill_batch_on_recv = 0;
 int TorchColConfig::dynamic_sm_partition = false;
 
 std::string TorchColConfig::colocate_ctrl_hook_mode = "none";
+std::string TorchColConfig::colocate_train_mode = "normal";
 
 int TorchColConfig::release_interm_memory_by_grad_fn = false;
 int TorchColConfig::release_interm_memory_by_tagging = true;
@@ -52,6 +53,7 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
   auto pool_size_env = std::getenv("COL_SHARED_TENSOR_POOL_GB");
   auto dynamic_sm_partition_env = std::getenv("COL_DYNAMIC_SM_PARTITION");
   auto hook_mode_env = std::getenv("COL_HOOK_MODE");
+  auto train_mode_env = std::getenv("COL_TRAIN_MODE");
   auto train_profile_log_path_env = std::getenv("COL_TRAIN_PROFILE_LOG_PATH");
   
   use_shared_tensor = use_shared_tensor_env == nullptr ? 
@@ -66,6 +68,7 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
                          false : (std::string(dynamic_sm_partition_env) == "1");
   dynamic_sm_partition = dynamic_sm_partition && colocate_use_xsched;
   colocate_ctrl_hook_mode = hook_mode_env == nullptr ? "none" : std::string(hook_mode_env);
+  colocate_train_mode = train_mode_env == nullptr ? "normal" : std::string(train_mode_env);
   train_profile_log_path = train_profile_log_path_env == nullptr ? 
                            "" : std::string(train_profile_log_path_env);
 
@@ -106,7 +109,10 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
             << shared_tensor_pool_gb << std::endl;
   config_ss << "TorchColConfig::dynamic_sm_partition=" 
             << dynamic_sm_partition << std::endl;
-  config_ss << "TorchColConfig::hook_mode=" << colocate_ctrl_hook_mode << std::endl;
+  config_ss << "TorchColConfig::colocate_ctrl_hook_mode=" 
+            << colocate_ctrl_hook_mode << std::endl;
+  config_ss << "TorchColConfig::colocate_train_mode=" 
+            << colocate_train_mode << std::endl;
   config_ss << "TorchColConfig::train_profile_log_path=" 
             << train_profile_log_path << std::endl;
   config_ss << std::string(config_head.size(), '=') << std::endl;
