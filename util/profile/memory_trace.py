@@ -42,14 +42,14 @@ num_devices = len([mem for mem in memory_info_strs if mem is not None])
 
 ax_width = 6
 ax_height = 4
-hmargin = 0.5
+hmargin = 0.75
 
 num_subplots = num_devices
 if num_devices > 1:
     num_subplots += 1 # plot infer variance
 
 fig, axes = plt.subplots(num_subplots, 1, 
-                         figsize=(ax_width, ax_height*num_devices + hmargin*(num_subplots)))
+                         figsize=(ax_width, ax_height*num_devices + hmargin*(num_subplots-1)))
 
 print(len(axes))
 
