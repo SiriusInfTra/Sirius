@@ -6,7 +6,7 @@ import time
 import numpy as np
 import torch
 from torch.utils.data import IterableDataset, get_worker_info
-from typing import Iterator, Optional, List, Tuple
+from typing import Iterator, Optional, List, Tuple, Union
 import dataclasses
 
 import torch_col
@@ -22,6 +22,14 @@ from ._C._dist import _DynamicBatchDistirbutor
 
 _BATCH_FINISH_TAG = 'finish'
 _BATCH_CANCEL_TAG = 'cancel'
+
+
+def _num_sample_of_batch_range_vec(batch_range_vec: List[Tuple[int, int]]) -> int:
+    return sum([j - i for i, j in batch_range_vec])
+
+
+def _num_sample_of_batch_range(batch_range: Tuple[int, int]) -> int:
+    return batch_range[1] - batch_range[0]
 
 
 class DatasetType(IntEnum):
@@ -57,6 +65,9 @@ class Batch(dict):
             return self['do_step']
         except KeyError:
             return True
+
+    def get_range(self) -> List[Tuple[int, int]]:
+        return self['range']
         
     def __len__(self) -> int:
         return DynamicBatchDataset._dynamic_batch_dataset.get_batch_size(self)
@@ -68,7 +79,7 @@ class MicroBatchManager:
     such as finishing or canceling the micro batch.
     '''
 
-    _micro_batch_manager = None
+    _micro_batch_manager: Optional[MicroBatchManager] = None
 
     def __init__(self, 
                  dynamic_dataset: DynamicBatchDataset,
@@ -90,8 +101,9 @@ class MicroBatchManager:
         self._last_batch = None
         self._batch_event = None
         self._global_batch_event = None
-        self._past_micro_batch_indices_in_global_batch = []
-        self._last_batch_indices = None
+        self._past_micro_batch_range_vecs_in_global_batch = []
+        self._last_batch_range_vec = None
+
 
     def scale_loss(self, batch: Batch, loss: torch.Tensor):
         if self._enable_grad_accumulate:
@@ -138,9 +150,8 @@ class MicroBatchManager:
                     epoch_idx: int,
                     batch_idx: int,
                     batch: Batch, 
-                    batch_index: List[Tuple[int, int]]):
-        # self._past_micro_batch_indices_in_global_batch.append(batch_index)
-        self._last_batch_indices = batch_index
+                    batch_range_vec: List[Tuple[int, int]]):
+        self._last_batch_range_vec = batch_range_vec
         self._last_batch = batch
         self._record_batch_event(epoch_idx, batch_idx, len(batch))
         
@@ -155,8 +166,8 @@ class MicroBatchManager:
                 col_ctrl.release_and_reply()
         
         self._complete_batch_event(_BATCH_FINISH_TAG)
-        self._past_micro_batch_indices_in_global_batch.append(
-            self._last_batch_indices)
+        self._past_micro_batch_range_vecs_in_global_batch.append(
+            self._last_batch_range_vec)
 
         if self._enable_grad_accumulate:
             if self._should_checkpoint_micro_batch():
@@ -169,7 +180,7 @@ class MicroBatchManager:
             _DynamicBatchDistirbutor.finish_batch()
         
         self._last_batch = None
-        self._last_batch_indices = None
+        self._last_batch_range_vec = None
         self._dynamic_dataset._next_batch()
 
 
@@ -178,9 +189,9 @@ class MicroBatchManager:
         if self._enable_grad_accumulate and not self._checkpoint_micro_batch:
             self._rollback_micro_batch()
         else:
-            _DynamicBatchDistirbutor.abort_batch(self._last_batch_indices)
+            _DynamicBatchDistirbutor.abort_batch(self._last_batch_range_vec)
         self._last_batch = None
-        self._last_batch_indices = None
+        self._last_batch_range_vec = None
 
     def _record_batch_event(self, epoch_idx: int, batch_idx: int, 
                             batch_size: int):
@@ -218,20 +229,25 @@ class MicroBatchManager:
             "only used for accumulation without checkpoint")
         
         self._complate_global_batch_event(_BATCH_CANCEL_TAG)
-        for idx in self._past_micro_batch_indices_in_global_batch:
+        for idx in self._past_micro_batch_range_vecs_in_global_batch:
+            torch_col.Trainer._trainer._cur_epoch_stat.num_rollback_batch += \
+                _num_sample_of_batch_range(idx)
             _DynamicBatchDistirbutor.abort_batch(idx)
-        _DynamicBatchDistirbutor.abort_batch(self._last_batch_indices)
+
+        _DynamicBatchDistirbutor.abort_batch(self._last_batch_range_vec)
+        torch_col.Trainer._trainer._cur_epoch_stat.num_rollback_batch += \
+            _num_sample_of_batch_range(self._last_batch_range_vec)
         
-        self._past_micro_batch_indices_in_global_batch = []
-        self._last_batch_indices = None
+        self._past_micro_batch_range_vecs_in_global_batch = []
+        self._last_batch_range_vec = None
 
     def _next_global_batch(self):
         self._complate_global_batch_event(_BATCH_FINISH_TAG)
         if self._enable_grad_accumulate and not self._checkpoint_micro_batch:
-            for idx in self._past_micro_batch_indices_in_global_batch:
+            for idx in self._past_micro_batch_range_vecs_in_global_batch:
                 _DynamicBatchDistirbutor.finish_batch(idx)
 
-        self._past_micro_batch_indices_in_global_batch = []
+        self._past_micro_batch_range_vecs_in_global_batch = []
         _DynamicBatchDistirbutor.next_global_batch()
 
 
@@ -241,7 +257,7 @@ class DynamicBatchDataset(IterableDataset):
     return the batch with dynamic batch size to training.
     '''
 
-    _dynamic_batch_dataset = None
+    _dynamic_batch_dataset: Optional[DynamicBatchDataset] = None
 
     def __init__(self, 
                  ds_type: DatasetType, 
@@ -343,11 +359,11 @@ class DynamicBatchDataset(IterableDataset):
         self._state = DatasetState.NEXT
 
 
-    def _retrieve_batch(self, batch_index: List[Tuple[int, int]]) -> dict:
+    def _retrieve_batch(self, batch_range_vec: List[Tuple[int, int]]) -> dict:
         batch = {}
         for k in self.all_inputs.keys():
             input_list = []
-            for i, j in batch_index:
+            for i, j in batch_range_vec:
                 input_list.append(self.all_inputs[k][i:j])
             batch[k] = torch.cat(input_list, dim=0).pin_memory()
         return batch
@@ -371,9 +387,9 @@ class DynamicBatchDataset(IterableDataset):
 
     def _get_batch(self) -> Batch:
         _batch_size = self._wait_valid_batch_size()
-        batch_index, last_micro_batch = \
+        batch_range_vec, last_micro_batch = \
                 torch_col.dist._DynamicBatchDistirbutor.get_batch(self.batch_size)
-        batch = self._retrieve_batch(batch_index)
+        batch = self._retrieve_batch(batch_range_vec)
         batch_size = self.get_batch_size(batch)
 
         assert batch_size == _batch_size, (
@@ -384,6 +400,8 @@ class DynamicBatchDataset(IterableDataset):
             batch['do_step'] = False
         else:
             batch['do_step'] = True
+
+        batch['range'] = batch_range_vec
         return batch
 
     def __iter__(self) -> Iterator[Batch]:
@@ -412,17 +430,17 @@ class DynamicBatchDataset(IterableDataset):
             yield batch
 
 
-# 
 def init_dynamic_batch(
     dataset_size: int,
     dataset_type: DatasetType,
-    dataset_config: VisionDatasetConfig | TextDatasetConfig,
+    dataset_config: Union[VisionDatasetConfig | TextDatasetConfig],
     batch_size: int, 
     global_batch_size: Optional[int] = None,
     checkpoint_micro_batch: bool = False,
     empty_cache_at_larger_batch_size: bool = False,
     fake_data: bool = False
 ) -> Tuple[DynamicBatchDataset, MicroBatchManager]:
+    
     if global_batch_size is None and checkpoint_micro_batch:
         print('Warning: global_batch_size is None, checkpoint_micro_batch will be False.',
               file=sys.stderr)

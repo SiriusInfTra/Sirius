@@ -1,17 +1,23 @@
+from __future__ import annotations
+
 import torch
 from torch.utils.data import DataLoader
 import torch.distributed as torch_dist
 
 import torch_col
-from .colocate_ctrl import ColocateAdjustL1Exception, SwitchL1Exception, \
+from .colocate_ctrl import (
+    ColocateAdjustL1Exception, 
+    SwitchL1Exception, 
     EngineColocateAdjustL1Exception
+)
 import torch_col.xsched
 
-from .dataset import DynamicBatchDataset
+# from .dataset import DynamicBatchDataset
+from .dyanmic_batch import DynamicBatchDataset
 from .util import EventManager, Event
 from dataclasses import dataclass
 
-from typing import Callable, Any
+from typing import Callable, Any, Optional
 
 
 @dataclass
@@ -27,15 +33,18 @@ class EpochStat:
     finished_batch: int = 0
     tried_batch: int = 0
     finished_sample: int = 0
+    num_rollback_batch: int = 0
 
     killed_time: float = 0.0
     finished_time: float = 0.0
 
 
 class Trainer:
+    _trainer: Optional[Trainer] = None
+
     def __init__(self, 
                  model: torch.nn.Module,
-                 dynamic_dataset:DynamicBatchDataset, 
+                 dynamic_dataset: DynamicBatchDataset, 
                  iter_train_fn:Callable[[Any], torch.Tensor]):
         self.rank = torch_col.get_train_rank()
         self.model = model
@@ -53,7 +62,7 @@ class Trainer:
         self._cur_epoch_stat = None
 
     def train_one_epoch(self, epoch_idx: int) -> torch.Tensor | None:
-        epoch_event_name = f'epoch_{epoch_idx:02d}_{self.dynamic_dataset.size}'
+        epoch_event_name = f'epoch_{epoch_idx:02d}_{self.dynamic_dataset.ds_size}'
         epoch_event = EventManager.record_event(epoch_event_name)
 
         # epoch_stat = EpochStat()
@@ -65,10 +74,13 @@ class Trainer:
                 self._cur_epoch_stat.tried_batch += 1
                 self.overall_stat.tried_batch += 1
 
-                self.dynamic_dataset.record_batch_event(
-                    epoch_idx, batch_idx, 
-                    self.dynamic_dataset.get_batch_size(batch), 
-                    self.dynamic_dataset.global_batch_size
+                # self.dynamic_dataset.record_batch_event(
+                #     epoch_idx, batch_idx, 
+                #     self.dynamic_dataset.get_batch_size(batch), 
+                #     self.dynamic_dataset.global_batch_size
+                # )
+                torch_col.get_micro_batch_manager().begin_batch(
+                    epoch_idx, batch_idx, batch, batch['range']
                 )
                 last_loss = self.iter_train_fn(batch)
             except (
@@ -79,7 +91,10 @@ class Trainer:
                 self.handle_abort_batch(epoch_idx, batch_idx, batch, exception)
             else:
                 # batch passed, go to next batch
-                self.dynamic_dataset.next_batch()
+                # self.dynamic_dataset.next_batch()
+                torch_col.get_micro_batch_manager().finish_batch(
+                    epoch_idx, batch_idx, batch)
+                
                 if epoch_idx == 0 and batch_idx == 0:
                     self._default_first_batch_callback()
 
@@ -93,7 +108,7 @@ class Trainer:
         self.epoch_events.append(epoch_event)
         self._cur_epoch_stat = None
 
-        torch_col.dist._DynamicBatchDistirbutor.next_global_batch()
+        # torch_col.dist._DynamicBatchDistirbutor.next_global_batch()
 
         return last_loss
 

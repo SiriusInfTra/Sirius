@@ -9,7 +9,7 @@ from .util import (
 )
 from .accumulate import GradAccumulator
 
-from .dataset import DynamicBatchDataset
+# from .dataset import DynamicBatchDataset
 from .colocate_ctrl import (
     register_saved_tensor_hook, create_colocate_ctrl, 
     ColocateCtrlHookMode, DummyCtrl, SwitchCtrl, 
@@ -17,6 +17,11 @@ from .colocate_ctrl import (
     EngineColocateAdjustL1Exception
 )
 from .trainer import Trainer
+from .dyanmic_batch import (
+    DynamicBatchDataset, MicroBatchManager,
+    get_dynamic_dataset, get_micro_batch_manager,
+    init_dynamic_batch
+)
 
 from .debug_server import DebugServer
 
