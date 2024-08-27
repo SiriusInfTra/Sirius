@@ -127,7 +127,7 @@ void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
         cursor_right = it->second;
         it++;
       } else {
-        auto [slice, rest] = SliceBatchIndex(*it, 
+        auto [slice, rest] = SliceBatchRange(*it, 
             train_num_samples - cur_train_num_samples);
         global_shared_data_.unproc_sample_queue_->erase(it);
 
@@ -150,7 +150,7 @@ void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
       target_batch_size, target_bs_unpub);
 }
 
-std::pair<DynamicBatchDistirbutor::batch_index_vec_t, bool>
+std::pair<DynamicBatchDistirbutor::batch_range_vec_t, bool>
 DynamicBatchDistirbutor::GetBatch(int batch_size) {
   CHECK(batch_distributor_ != nullptr);
 
@@ -170,7 +170,7 @@ DynamicBatchDistirbutor::GetBatch(int batch_size) {
       *GLOBAL_SHARED_DATA.num_procing_samples_;
 
   int num_samples = 0;
-  batch_index_vec_t indices;
+  batch_range_vec_t indices;
   
   auto it = batch_distributor_
       ->global_shared_data_.unproc_sample_queue_
@@ -192,7 +192,7 @@ DynamicBatchDistirbutor::GetBatch(int batch_size) {
       it = GLOBAL_SHARED_DATA.unproc_sample_queue_->erase(it);
     } else {
       auto [slice, rest] = batch_distributor_
-          ->SliceBatchIndex(*it, batch_size - num_samples);
+          ->SliceBatchRange(*it, batch_size - num_samples);
       num_samples += batch_distributor_
           ->GetNumSampleOfBatchIndex(slice);
       indices.push_back(slice);
@@ -234,7 +234,7 @@ int DynamicBatchDistirbutor::QueryNextBatchSize() {
 }
 
 void DynamicBatchDistirbutor::FinishBatch(
-    const batch_index_vec_t &batch_indices) {
+    const batch_range_vec_t &batch_range_vec) {
   bip::scoped_lock lock{*GLOBAL_SHARED_DATA.mut_};
   int train_rank = TorchColConfig::GetTrainRank();
 
@@ -249,11 +249,11 @@ void DynamicBatchDistirbutor::FinishBatch(
       *GLOBAL_SHARED_DATA.num_proced_samples_;
   
   int num_samples = 0;
-  for (auto batch_index : batch_indices) {
+  for (auto batch_range : batch_range_vec) {
     num_samples += batch_distributor_
-        ->GetNumSampleOfBatchIndex(batch_index);
+        ->GetNumSampleOfBatchIndex(batch_range);
     auto it = GLOBAL_SHARED_DATA.procing_sample_queue_
-        ->find(batch_index);
+        ->find(batch_range);
     CHECK(it != GLOBAL_SHARED_DATA.procing_sample_queue_->end());
 
     GLOBAL_SHARED_DATA.proced_sample_queue_->insert(*it);
@@ -267,7 +267,7 @@ void DynamicBatchDistirbutor::FinishBatch(
 }
 
 void DynamicBatchDistirbutor::AbortBatch(
-    const batch_index_vec_t &batch_indices) {
+    const batch_range_vec_t &batch_range_vec) {
   bip::scoped_lock lock{*GLOBAL_SHARED_DATA.mut_};
   int train_rank = TorchColConfig::GetTrainRank();
 
@@ -282,11 +282,11 @@ void DynamicBatchDistirbutor::AbortBatch(
       *GLOBAL_SHARED_DATA.num_unproc_samples_;
   
   int num_sampels = 0;
-  for (auto batch_index : batch_indices) {
+  for (auto batch_range : batch_range_vec) {
     num_sampels += batch_distributor_
-        ->GetNumSampleOfBatchIndex(batch_index);
+        ->GetNumSampleOfBatchIndex(batch_range);
     auto it = GLOBAL_SHARED_DATA.procing_sample_queue_
-        ->find(batch_index);
+        ->find(batch_range);
     CHECK(it != GLOBAL_SHARED_DATA.procing_sample_queue_->end());
 
     GLOBAL_SHARED_DATA.unproc_sample_queue_->insert(*it);
@@ -327,22 +327,22 @@ void DynamicBatchDistirbutor::NextGlobalBatch() {
 }
 
 int DynamicBatchDistirbutor::GetNumSampleOfBatchIndex(
-    const batch_index_t &batch_index) {
-  CHECK_GT(batch_index.second, batch_index.first);
-  return batch_index.second - batch_index.first;
+    const batch_range_t &batch_range) {
+  CHECK_GT(batch_range.second, batch_range.first);
+  return batch_range.second - batch_range.first;
 }
 
-std::pair<DynamicBatchDistirbutor::batch_index_t,
-          DynamicBatchDistirbutor::batch_index_t> 
-DynamicBatchDistirbutor::SliceBatchIndex(
-    const batch_index_t &batch_index, int num_samples) {
+std::pair<DynamicBatchDistirbutor::batch_range_t,
+          DynamicBatchDistirbutor::batch_range_t> 
+DynamicBatchDistirbutor::SliceBatchRange(
+    const batch_range_t &batch_range, int num_samples) {
 
   CHECK_GE(num_samples, 0);
-  CHECK_LE(num_samples, GetNumSampleOfBatchIndex(batch_index));
+  CHECK_LE(num_samples, GetNumSampleOfBatchIndex(batch_range));
 
   return {
-    std::make_pair(batch_index.first, batch_index.first + num_samples),
-    std::make_pair(batch_index.first + num_samples, batch_index.second)
+    std::make_pair(batch_range.first, batch_range.first + num_samples),
+    std::make_pair(batch_range.first + num_samples, batch_range.second)
   };
 }
 

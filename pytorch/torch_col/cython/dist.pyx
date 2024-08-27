@@ -39,19 +39,19 @@ def recv_msg(src_rank: int):
 
 cdef extern from "<torch_col/csrc/dynamic_batch.h>" namespace "torch_col":
     cdef cppclass DynamicBatchDistirbutor:
-        ctypedef pair[int, int] batch_index_t
-        ctypedef vector[pair[int, int]] batch_index_vec_t
+        ctypedef pair[int, int] batch_range_t
+        ctypedef vector[pair[int, int]] batch_range_vec_t
 
         @staticmethod
         void Init(int batch_size, int global_batch_size)
         @staticmethod
-        pair[batch_index_vec_t, bool] GetBatch(int batch_size)
+        pair[batch_range_vec_t, bool] GetBatch(int batch_size)
         @staticmethod
         int QueryNextBatchSize()
         @staticmethod
-        void FinishBatch(batch_index_vec_t batch_indices)
+        void FinishBatch(batch_range_vec_t batch_range_vec)
         @staticmethod
-        void AbortBatch(batch_index_vec_t batch_indices)
+        void AbortBatch(batch_range_vec_t batch_range_vec)
         @staticmethod
         void DistributeBatch(bool check_num_unproced_samples)
         @staticmethod
@@ -68,12 +68,12 @@ class _DynamicBatchDistirbutor:
         return DynamicBatchDistirbutor.QueryNextBatchSize()
 
     @staticmethod
-    def finish_batch(batch_indices: List[Tuple[int, int]]):
-        DynamicBatchDistirbutor.FinishBatch(batch_indices)
+    def finish_batch(batch_range_vec: List[Tuple[int, int]]):
+        DynamicBatchDistirbutor.FinishBatch(batch_range_vec)
 
     @staticmethod
-    def abort_batch(batch_indices: List[Tuple[int, int]]):
-        DynamicBatchDistirbutor.AbortBatch(batch_indices)
+    def abort_batch(batch_range_vec: List[Tuple[int, int]]):
+        DynamicBatchDistirbutor.AbortBatch(batch_range_vec)
 
     @staticmethod
     def distribute_batch(check_num_unproced_samples: bool):
