@@ -24,7 +24,7 @@ int TorchColConfig::kill_batch_on_recv = 0;
   
 int TorchColConfig::dynamic_sm_partition = false;
 
-std::string TorchColConfig::hook_mode = "none";
+std::string TorchColConfig::colocate_ctrl_hook_mode = "none";
 
 int TorchColConfig::release_interm_memory_by_grad_fn = false;
 int TorchColConfig::release_interm_memory_by_tagging = true;
@@ -65,11 +65,11 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
   dynamic_sm_partition = dynamic_sm_partition_env == nullptr ? 
                          false : (std::string(dynamic_sm_partition_env) == "1");
   dynamic_sm_partition = dynamic_sm_partition && colocate_use_xsched;
-  hook_mode = hook_mode_env == nullptr ? "none" : std::string(hook_mode_env);
+  colocate_ctrl_hook_mode = hook_mode_env == nullptr ? "none" : std::string(hook_mode_env);
   train_profile_log_path = train_profile_log_path_env == nullptr ? 
                            "" : std::string(train_profile_log_path_env);
 
-  if (hook_mode == "xsched-sync2") {
+  if (colocate_ctrl_hook_mode == "xsched-sync2") {
     kill_batch_on_recv = 1 && colocate_use_xsched;
   } else {
     kill_batch_on_recv = 0;
@@ -106,7 +106,7 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
             << shared_tensor_pool_gb << std::endl;
   config_ss << "TorchColConfig::dynamic_sm_partition=" 
             << dynamic_sm_partition << std::endl;
-  config_ss << "TorchColConfig::hook_mode=" << hook_mode << std::endl;
+  config_ss << "TorchColConfig::hook_mode=" << colocate_ctrl_hook_mode << std::endl;
   config_ss << "TorchColConfig::train_profile_log_path=" 
             << train_profile_log_path << std::endl;
   config_ss << std::string(config_head.size(), '=') << std::endl;

@@ -59,7 +59,8 @@ class TrainMode(Enum):
         return self in {TrainMode.COLOCATE_L1, TrainMode.TASKSWITCH_L1}
 
     def is_taskswitch(self):
-        return self in {TrainMode.TASKSWITCH_L1, TrainMode.TASKSWITCH_L2, TrainMode.TASKSWITCH_L3}
+        return self in {TrainMode.TASKSWITCH_L1, TrainMode.TASKSWITCH_L2, 
+                        TrainMode.TASKSWITCH_L3}
 
 
 class MemoryPool:

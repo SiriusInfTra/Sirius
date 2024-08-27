@@ -7,7 +7,7 @@ from typing import Iterator, Optional
 
 import sys
 import torch_col
-from torch_col.hook import HookABC, HookMode
+from torch_col.colocate_ctrl import CtrlBase, ColocateCtrlHookMode
 from torch_col.util import TrainMode, MemoryPool, EventManager
 import torch_col.xsched
 
@@ -34,7 +34,7 @@ class DatasetState(IntEnum):
 
 class DynamicBatchDataset(IterableDataset):
     def __init__(self, model_name, size, max_batch_size,
-                 hook: HookABC, trace: Optional[list[dict]], 
+                 hook: CtrlBase, trace: Optional[list[dict]], 
                  input_shape = None, num_class = None,
                  seq_len = None, 
                  max_global_batch_size = None,
@@ -94,7 +94,7 @@ class DynamicBatchDataset(IterableDataset):
         self.trace = trace
         self.trace_idx = 0
         if trace is not None:
-            assert hook.train_mode == TrainMode.NORMAL and hook.hook_mode == HookMode.NONE, \
+            assert hook.train_mode == TrainMode.NORMAL and hook.hook_mode == ColocateCtrlHookMode.NONE, \
                 'only normal train can valid trace.'
         self.empty_cache_at_larger_batch_size = empty_cache_at_larger_batch_size
         print(f'Create DynamicBatchDataset, hook={type(hook)}.')
@@ -206,7 +206,7 @@ class DynamicBatchDataset(IterableDataset):
         else:
             pass
 
-    def step_stage(self, hook:torch_col.hook.HookABC, 
+    def step_stage(self, hook:torch_col.colocate_ctrl.CtrlBase, 
                    optimizer: torch.optim.Optimizer, 
                    scaler: torch.cuda.amp.GradScaler = None, 
                    grad_accumulator:torch_col.accumulate.GradAccumulator = None):

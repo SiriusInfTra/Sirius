@@ -30,7 +30,7 @@ cdef extern from "<torch_col/csrc/config.h>" namespace "torch_col":
         @staticmethod
         bint IsEnableXsched()
         @staticmethod
-        string GetHookMode()
+        string GetColocateCtrlHookMode()
         @staticmethod
         bint IsReleaseIntermMemoryByGradFn()
         @staticmethod
@@ -65,7 +65,7 @@ cdef extern from "<torch_col/csrc/init.h>" namespace "torch_col":
     cpdef void TorchDistExtInit()
 
 
-class HookMode(Enum):
+class ColocateCtrlHookMode(Enum):
     NONE = 'none'
     SYNC = 'sync'
     # XSCHED_ASYNC_SIGNAL = 'xsched-async-signal'  
@@ -73,7 +73,8 @@ class HookMode(Enum):
     XSCHED_SYNC2 = 'xsched-sync2'
 
     def use_xsched(self):
-        return self in {HookMode.XSCHED_SYNC, HookMode.XSCHED_SYNC2}
+        return self in {ColocateCtrlHookMode.XSCHED_SYNC, 
+                        ColocateCtrlHookMode.XSCHED_SYNC2}
 
 
 def is_enable_shared_tensor():
@@ -88,10 +89,9 @@ def is_enable_xsched():
     return TorchColConfig.IsEnableXsched()
 
 
-def get_hook_mode():
-    # return TorchColConfig.GetHookMode()
-    cdef hook_mode_cstr = TorchColConfig.GetHookMode()
-    for hook_mode in HookMode:
+def get_colocate_ctrl_hook_mode():
+    cdef hook_mode_cstr = TorchColConfig.GetColocateCtrlHookMode()
+    for hook_mode in ColocateCtrlHookMode:
         if hook_mode.value == hook_mode_cstr:
             return hook_mode
     raise Exception(f"Invalid hook mode: {hook_mode_cstr}")
@@ -375,7 +375,7 @@ cdef extern from "<common/inf_tra_comm/communicator.h>" namespace "colserve::ctr
         @staticmethod
         InfTraMessageQueue* GetMQ()
         @staticmethod
-        InfTraInfoBoard* GetIB()
+        InfTraInfoBoard* GetSinfo()
 
 
 cdef extern from "<common/inf_tra_comm/communicator.h>" namespace "colserve::ctrl::InfTraMessageQueue":
@@ -477,7 +477,7 @@ def init_train_info(init_batch_size,
     else:
         pid_opt = make_optional[pid_t](<pid_t> os.getpid())
 
-    InfTraCommunicator.GetIB().SetTrainInfo(
+    InfTraCommunicator.GetSinfo().SetTrainInfo(
         TorchColConfig.GetTrainRank(), 
         pid_opt,
         make_optional[int](TorchColConfig.GetTrainRank()), 
@@ -492,7 +492,7 @@ def update_current_batch_size(current_batch_size):
     if not TorchColConfig.HasColocatedInferServer():
         return
 
-    InfTraCommunicator.GetIB().SetTrainInfo(
+    InfTraCommunicator.GetSinfo().SetTrainInfo(
         TorchColConfig.GetTrainRank(), 
         optional[pid_t](), optional[int](), 
         optional[int](), optional[int](), 

@@ -3,7 +3,7 @@ from torch.utils.data import DataLoader
 import torch.distributed as torch_dist
 
 import torch_col
-from .hook import ColocateAdjustL1Exception, SwitchL1Exception, \
+from .colocate_ctrl import ColocateAdjustL1Exception, SwitchL1Exception, \
     EngineColocateAdjustL1Exception
 import torch_col.xsched
 

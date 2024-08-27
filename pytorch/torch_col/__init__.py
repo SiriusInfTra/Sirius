@@ -3,23 +3,27 @@ import torch_col.xsched
 from ._C import *
 from ._C import _dist as dist
 
-from .util import MemoryPool, TrainMode, EventManager, \
-      info, dinfo
+from .util import (
+    MemoryPool, TrainMode, EventManager, 
+    info, dinfo
+)
 from .accumulate import GradAccumulator
 
 from .dataset import DynamicBatchDataset
-from .hook import register_saved_tensor_hook, get_hook, \
-    HookMode, DummyHook, SwitchHook, \
-    SwitchL1Exception, ColocateHook, ColocateAdjustL1Exception, \
+from .colocate_ctrl import (
+    register_saved_tensor_hook, create_colocate_ctrl, 
+    ColocateCtrlHookMode, DummyCtrl, SwitchCtrl, 
+    SwitchL1Exception, ColocateCtrl, ColocateAdjustL1Exception, 
     EngineColocateAdjustL1Exception
+)
 from .trainer import Trainer
 
 from .debug_server import DebugServer
 
 
-def setup_colocate_training(rank, world_size,
-                            will_use_nccl_comm:bool, 
-                            init_nccl_process_group:bool):
+def setup_colocate_training(rank: int, world_size: int,
+                            will_use_nccl_comm: bool, 
+                            init_nccl_process_group: bool):
     import torch
     import torch_col
     

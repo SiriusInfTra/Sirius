@@ -20,7 +20,7 @@ class TorchColConfig {
 
   static int dynamic_sm_partition;
 
-  static std::string hook_mode;
+  static std::string colocate_ctrl_hook_mode;
 
   static int release_interm_memory_by_grad_fn;
   static int release_interm_memory_by_tagging;
@@ -36,11 +36,17 @@ class TorchColConfig {
   static void InitConfig(int train_rank, int train_world_size);
   static inline int IsConfigured() { return configured; }
 
-  static inline int HasColocatedInferServer() { return has_colocated_infer_server; }
+  static inline int HasColocatedInferServer() { 
+    return has_colocated_infer_server; 
+  }
   static inline int IsEnableSharedTensor() { return use_shared_tensor; }
-  static inline std::string GetHookMode() { return hook_mode; }
+  static inline std::string GetColocateCtrlHookMode() { 
+    return colocate_ctrl_hook_mode; 
+  }
   static inline int IsEnableXsched() { return colocate_use_xsched; }
-  static inline int IsEnableDynamicSmPartition() { return dynamic_sm_partition; }
+  static inline int IsEnableDynamicSmPartition() { 
+    return dynamic_sm_partition; 
+  }
   static inline int IsReleaseIntermMemoryByGradFn() { 
     return release_interm_memory_by_grad_fn; 
   }

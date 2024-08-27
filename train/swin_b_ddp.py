@@ -9,7 +9,7 @@ import argparse
 import os, sys
 
 import torch_col
-from torch_col import MemoryPool, EventManager, TrainMode, HookMode
+from torch_col import MemoryPool, EventManager, TrainMode, ColocateCtrlHookMode
 from torch_col import DynamicBatchDataset
 import torch_col.trainer
 import torch_col.xsched
@@ -34,7 +34,7 @@ def train(rank:int, world_size:int,
     setup(rank, world_size)
     torch_col.init_train_info(batch_size, batch_size, model_name='swin_b_ddp')
 
-    hook_mode = torch_col.get_hook_mode()
+    hook_mode = torch_col.get_colocate_ctrl_hook_mode()
     
     if torch_col.is_enable_shared_tensor():
         torch_col.tag_model_start()
@@ -155,11 +155,11 @@ def main():
     num_epoch = args.num_epoch
     train_mode = [train_mode for train_mode in TrainMode if train_mode.value == args.train_mode][0]
     # hook_mode = [hook_mode for hook_mode in HookMode if hook_mode.value == args.hook_mode][0]
-    # hook_mode = torch_col.get_hook_mode()
+    # hook_mode = torch_col.get_colocate_ctrl_hook_mode()
     
     
     print(f"Swin Transformer training, batch-size={batch_size}"
-        + f", num-epoch={num_epoch}, train-mode={train_mode}")
+          f", num-epoch={num_epoch}, train-mode={train_mode}")
     
     process_context =  torch_mp.spawn(train, 
                    args=(torch.cuda.device_count(),train_mode,

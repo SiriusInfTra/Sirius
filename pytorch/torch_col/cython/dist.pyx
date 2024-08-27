@@ -84,7 +84,7 @@ class _DynamicBatchDistirbutor:
         DynamicBatchDistirbutor.NextGlobalBatch()
 
 
-def init_dynamic_batch(batch_size: int, global_batch_size: int):
+def init_dynamic_batch_distributor(batch_size: int, global_batch_size: int):
     DynamicBatchDistirbutor.Init(batch_size, global_batch_size)
 
 

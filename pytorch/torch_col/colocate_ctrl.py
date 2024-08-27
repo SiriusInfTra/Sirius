@@ -6,10 +6,10 @@ import os
 
 import torch
 import torch_col
-from torch_col._C import HookMode
+from torch_col._C import ColocateCtrlHookMode
 from .util import TrainMode, EventManager, MemoryPool
 from . import xsched
-from typing import List
+from typing import List, Optional
 
 __dummy_adjust = False
 
@@ -25,21 +25,16 @@ def register_saved_tensor_hook():
         torch._C._autograd._push_saved_tensors_default_hooks(pack_hook, unpack_hook)
 
 
-# class HookMode(Enum):
-#     NONE = 'none'
-#     SYNC = 'sync'
-#     # XSCHED_ASYNC_SIGNAL = 'xsched-async-signal'  
-#     XSCHED_SYNC = 'xsched-sync'
-#     XSCHED_SYNC2 = 'xsched-sync2'
-    
-#     def use_xsched(self):
-        # return self in {HookMode.XSCHED_SYNC, HookMode.XSCHED_SYNC2}
+class CtrlBase(abc.ABC):
+    _colocate_ctrl = None
 
-
-class HookABC(abc.ABC):
     def __init__(self, train_mode: TrainMode, 
-                 hook_mode: HookMode, 
+                 hook_mode: ColocateCtrlHookMode, 
                  num_epoch: int, batch_size: int):
+        if CtrlBase._colocate_ctrl is not None:
+            raise RuntimeError("Only one instance of Colocate Ctrl can be created.")        
+        CtrlBase._colocate_ctrl = self
+
         self.train_mode = train_mode
         self.hook_mode = hook_mode
         self.batch_size = batch_size
@@ -107,8 +102,8 @@ class HookABC(abc.ABC):
 class SwitchL1Exception(Exception):
     pass
 
-class SwitchHook(HookABC):
-    def __init__(self, train_mode:TrainMode, hook_mode: HookMode, 
+class SwitchCtrl(CtrlBase):
+    def __init__(self, train_mode:TrainMode, hook_mode: ColocateCtrlHookMode, 
                  num_epoch: int, batch_size: int) -> None:
         assert train_mode in {TrainMode.TASKSWITCH_L1, TrainMode.TASKSWITCH_L0}
         super().__init__(train_mode, hook_mode, num_epoch, batch_size)
@@ -144,12 +139,12 @@ class SwitchHook(HookABC):
         if self.train_mode == TrainMode.TASKSWITCH_L0:
             return
         if (self.train_mode == TrainMode.TASKSWITCH_L1 
-                and self.hook_mode == HookMode.XSCHED_SYNC2):
+                and self.hook_mode == ColocateCtrlHookMode.XSCHED_SYNC2):
             print("SetUpTorchColEngine")
             self._stub.EnableTorchColEngine()
         else:
             for module in module_list:
-                HookABC.register_fbward_hook(module, self.get_fwd_hook(), self.get_bwd_hook())
+                CtrlBase.register_fbward_hook(module, self.get_fwd_hook(), self.get_bwd_hook())
             if torch_col.is_release_interm_memory_v2():
                 torch_col.register_saved_tensor_hook()
 
@@ -162,7 +157,7 @@ class SwitchHook(HookABC):
         #     elif self._stub.cmd == torch_col.CtrlEvent.kResumeTrain:
         #         self._stub.cmd = None
         # match self.hook_mode:
-        if self.hook_mode == HookMode.SYNC:
+        if self.hook_mode == ColocateCtrlHookMode.SYNC:
             if self.train_mode == TrainMode.TASKSWITCH_L1:
                 def hook(module, input, output):
                     torch.cuda.synchronize()
@@ -175,7 +170,7 @@ class SwitchHook(HookABC):
                         pass
             elif self.train_mode == TrainMode.TASKSWITCH_L0:
                 raise Exception('task switch l0 in cpp workld')
-        elif self.hook_mode == HookMode.XSCHED_SYNC:
+        elif self.hook_mode == ColocateCtrlHookMode.XSCHED_SYNC:
             if self.train_mode == TrainMode.TASKSWITCH_L1:
                 def hook(module, input, output):
                     if torch_col.is_release_interm_memory_v1():
@@ -201,7 +196,7 @@ class SwitchHook(HookABC):
         #         self._stub.cmd = None
         # return hook
         # match self.hook_mode:
-        if self.hook_mode == HookMode.SYNC:
+        if self.hook_mode == ColocateCtrlHookMode.SYNC:
             if self.train_mode == TrainMode.TASKSWITCH_L1:
                 def hook(module, grad_input, grad_output):
                     torch.cuda.synchronize()
@@ -212,7 +207,7 @@ class SwitchHook(HookABC):
                         pass
             elif self.train_mode == TrainMode.TASKSWITCH_L0:
                 raise Exception('task switch l0 in cpp workld')
-        elif self.hook_mode == HookMode.XSCHED_SYNC: # use this for dummy adjust test
+        elif self.hook_mode == ColocateCtrlHookMode.XSCHED_SYNC: # use this for dummy adjust test
             if self.train_mode == TrainMode.TASKSWITCH_L1:
                 def hook(module, grad_input, grad_output):
                     # print(f'{event_name}: {self._stub.cmd}')
@@ -286,9 +281,9 @@ class ColocateAdjustL1Exception(Exception):
 class EngineColocateAdjustL1Exception(Exception):
     pass
 
-class ColocateHook(HookABC):
+class ColocateCtrl(CtrlBase):
     def __init__(self, train_mode: TrainMode, 
-                 hook_mode: HookMode, num_epoch: int, batch_size: int):
+                 hook_mode: ColocateCtrlHookMode, num_epoch: int, batch_size: int):
         assert train_mode == TrainMode.COLOCATE_L1 or train_mode == TrainMode.COLOCATE_L2
         super().__init__(train_mode, hook_mode, batch_size, num_epoch)
         self._stub = torch_col.PyColocateStub(batch_size)
@@ -326,7 +321,7 @@ class ColocateHook(HookABC):
     def register_pytorch_hook(self, module_list: List[torch.nn.Module]):
         if self.train_mode == TrainMode.COLOCATE_L1:
             # match self.hook_mode:
-            if self.hook_mode == HookMode.SYNC:
+            if self.hook_mode == ColocateCtrlHookMode.SYNC:
                 def fwd_hook(module, input, output):
                     with EventManager.record_duration_event('sync_fwd'):
                         torch.cuda.current_stream().synchronize()
@@ -339,7 +334,7 @@ class ColocateHook(HookABC):
                         torch.cuda.current_stream().synchronize()
                         if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
                             raise ColocateAdjustL1Exception('[Adjust SYNC BWD]')
-            elif self.hook_mode == HookMode.XSCHED_SYNC:
+            elif self.hook_mode == ColocateCtrlHookMode.XSCHED_SYNC:
                 def fwd_hook(module, input, output):
                     with EventManager.record_duration_event('xsched_sync_fwd'):
                         if torch_col.is_release_interm_memory_v1():
@@ -354,14 +349,14 @@ class ColocateHook(HookABC):
                             xsched.kill_batch()
                             raise ColocateAdjustL1Exception('[Adjust XSCHED_SYNC BWD]')
                         # torch_col.cuda_memory_pool_reset_train_alloc_ms()
-            elif self.hook_mode == HookMode.XSCHED_SYNC2:
+            elif self.hook_mode == ColocateCtrlHookMode.XSCHED_SYNC2:
                 print("SetUpTorchColEngine")
                 self._stub.EnableTorchColEngine()
                 return
             else:
                 raise RuntimeError(f"Unsupported hook_mode: {self.hook_mode.name}")
             for module in module_list:
-                HookABC.register_fbward_hook(module, fwd_hook, bwd_hook)
+                CtrlBase.register_fbward_hook(module, fwd_hook, bwd_hook)
             if torch_col.is_release_interm_memory_v2():
                 torch_col.register_saved_tensor_hook()
         else:
@@ -438,12 +433,12 @@ class ColocateHook(HookABC):
         return self._stub.can_exit_after_infer_worklaod_done()
 
 
-class DummyHook(HookABC):
-    def __init__(self, train_mode: TrainMode, hook_mode: HookMode, 
+class DummyCtrl(CtrlBase):
+    def __init__(self, train_mode: TrainMode, hook_mode: ColocateCtrlHookMode, 
                  num_epoch: int, batch_size: int):
         super().__init__(train_mode, hook_mode, batch_size, num_epoch)
         self._stub = torch_col.PyDummyStub()
-        assert hook_mode == HookMode.NONE
+        assert hook_mode == ColocateCtrlHookMode.NONE
     
     @contextlib.contextmanager
     def steps_no_interrupt(self):
@@ -475,11 +470,20 @@ class DummyHook(HookABC):
         return self._stub.can_exit_after_infer_worklaod_done()
 
 
-def get_hook(train_mode: TrainMode, hook_mode: 
-             HookMode, num_epoch: int, batch_size: int):
+def create_colocate_ctrl(
+    train_mode: TrainMode, 
+    hook_mode: ColocateCtrlHookMode, 
+    num_epoch: int, 
+    batch_size: int
+) -> DummyCtrl | ColocateCtrl | SwitchCtrl:
     if train_mode == TrainMode.NORMAL:
-        return DummyHook(train_mode, hook_mode, num_epoch, batch_size)
+        return DummyCtrl(train_mode, hook_mode, num_epoch, batch_size)
     elif train_mode.is_colocate():
-        return ColocateHook(train_mode, hook_mode, num_epoch, batch_size)
+        return ColocateCtrl(train_mode, hook_mode, num_epoch, batch_size)
     elif train_mode.is_taskswitch():
-        return SwitchHook(train_mode, hook_mode, num_epoch, batch_size)
+        return SwitchCtrl(train_mode, hook_mode, num_epoch, batch_size)
+
+
+def get_colocate_ctrl() -> DummyCtrl | ColocateCtrl | SwitchCtrl:
+    assert CtrlBase._colocate_ctrl is not None
+    return CtrlBase._colocate_ctrl

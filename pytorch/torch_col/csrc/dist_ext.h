@@ -122,7 +122,7 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
       std::vector<at::Tensor>& tensors,
       const ::c10d::AllreduceOptions& opts = ::c10d::AllreduceOptions()) override {
     REDISPATCH_COLLECTIVE_FUNC(::c10d::OpType::ALLREDUCE, 
-      ::c10d::ProcessGroupNCCL::allreduce, tensors, opts);
+        ::c10d::ProcessGroupNCCL::allreduce, tensors, opts);
   }
 
   ::c10::intrusive_ptr<::c10d::Work> allreduce_coalesced(

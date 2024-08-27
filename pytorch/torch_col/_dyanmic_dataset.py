@@ -10,9 +10,14 @@ from typing import Iterator, Optional, List, Tuple
 import dataclasses
 
 import torch_col
-from torch_col.hook import HookABC, HookMode
+from torch_col.colocate_ctrl import (
+    CtrlBase, DummyCtrl, SwitchCtrl, 
+    ColocateCtrl, ColocateCtrlHookMode,
+    get_colocate_ctrl
+)
 from torch_col.util import TrainMode, MemoryPool, EventManager
 import torch_col.xsched
+from ._C._dist import _DynamicBatchDistirbutor
 
 
 _BATCH_FINISH_TAG = 'finish'
@@ -37,6 +42,7 @@ class VisionDatasetConfig:
     input_shape: tuple
     num_class: int
 
+
 @dataclasses.dataclass
 class TextDatasetConfig:
     seq_len: int    
@@ -46,7 +52,7 @@ class Batch(dict):
     def __init__(self):
         super().__init__()
 
-    def will_do_step(self):
+    def should_update_param(self):
         try:
             return self['do_step']
         except KeyError:
@@ -55,13 +61,13 @@ class Batch(dict):
     def __len__(self) -> int:
         return DynamicBatchDataset._dynamic_batch_dataset.get_batch_size(self)
         
-        
 
 class MicroBatchManager:
     '''
     MicroBatchManager is used to manage the micro batch,
     such as finishing or canceling the micro batch.
     '''
+
     _micro_batch_manager = None
 
     def __init__(self, 
@@ -70,15 +76,24 @@ class MicroBatchManager:
                  checkpoint_micro_batch: bool = False):
         assert MicroBatchManager._micro_batch_manager is None
 
+        # we assume w/ global_batch_size <=> enable_grad_accumulate
+        if enable_grad_accumulate ^ (dynamic_dataset.global_batch_size is not None):
+            raise ValueError(
+                "grad_accumulate and only be use with having global_batch_size."
+            )
+
         MicroBatchManager._micro_batch_manager = self 
         self._dynamic_dataset = dynamic_dataset
         self._enable_grad_accumulate = enable_grad_accumulate
         self._checkpoint_micro_batch = checkpoint_micro_batch
 
         self._last_batch = None
-        self._micro_batch_indices_in_global_batch = []
+        self._batch_event = None
+        self._global_batch_event = None
+        self._past_micro_batch_indices_in_global_batch = []
+        self._last_batch_indices = None
 
-    def scale_loss(self, batch, loss: torch.Tensor):
+    def scale_loss(self, batch: Batch, loss: torch.Tensor):
         if self._enable_grad_accumulate:
             batch_size = self._dynamic_dataset.get_batch_size(batch)
             scale_factor = self._dynamic_dataset.global_batch_size / batch_size
@@ -90,7 +105,7 @@ class MicroBatchManager:
     def optimizer_step(
         self, 
         batch: Batch,
-        optimizer:torch.optim.Optimizer, 
+        optimizer: torch.optim.Optimizer, 
         amp_scaler: Optional[torch.cuda.amp.GradScaler] = None,
         grad_accumulator: Optional[torch_col.accumulate.GradAccumulator] = None
     ):
@@ -101,38 +116,123 @@ class MicroBatchManager:
             else:
                 optimizer.step()
 
-        if self.is_do_checkpoint_micro_batch():
+        if self._should_checkpoint_micro_batch():
             assert grad_accumulator is not None
-            with self._dynamic_dataset.hook.steps_no_interrupt():
+            with get_colocate_ctrl().steps_no_interrupt():
                 step_event = EventManager.record_event('optimizer_step')
                 grad_accumulator.accumulate()
-                if batch.will_do_step():
+                if batch.should_update_param():
                     grad_accumulator.step(optimizer, amp_scaler)
                     step_event.tag = 'global'
                 else:
                     step_event.tag = 'local'
                 EventManager.record_event('', step_event)
         else:
-            if batch.will_do_step():
-                with self._dynamic_dataset.hook.steps_no_interrupt():
+            if batch.should_update_param():
+                with get_colocate_ctrl().steps_no_interrupt():
                     step_event = EventManager.record_event('optimizer_step')
                     _step()
                     EventManager.record_event('', step_event)
 
-    def begin_micro_batch(self, 
-                          batch: Batch, 
-                          batch_index: List[Tuple[int, int]]):
-        self._micro_batch_indices_in_global_batch.append(batch_index)
+    def begin_batch(self, 
+                    epoch_idx: int,
+                    batch_idx: int,
+                    batch: Batch, 
+                    batch_index: List[Tuple[int, int]]):
+        # self._past_micro_batch_indices_in_global_batch.append(batch_index)
+        self._last_batch_indices = batch_index
         self._last_batch = batch
+        self._record_batch_event(epoch_idx, batch_idx, len(batch))
+        
 
-    def finish_micro_batch(self, batch: Batch):
-        pass
+    def finish_batch(self, epoch_idx: int, batch_idx: int, batch: Batch):
+        if batch.should_update_param():
+            torch.cuda.current_stream().synchronize()
 
-    def abort_micro_batch(self, batch: Batch):
-        pass
+        col_ctrl = get_colocate_ctrl()
+        if col_ctrl.train_mode == TrainMode.COLOCATE_L2:
+            if col_ctrl._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL2:
+                col_ctrl.release_and_reply()
+        
+        self._complete_batch_event(_BATCH_FINISH_TAG)
+        self._past_micro_batch_indices_in_global_batch.append(
+            self._last_batch_indices)
+
+        if self._enable_grad_accumulate:
+            if self._should_checkpoint_micro_batch():
+                _DynamicBatchDistirbutor.finish_batch()
+
+            # micro batch update param implys the end of global batch
+            if batch.should_update_param():
+                self._next_global_batch()
+        else:
+            _DynamicBatchDistirbutor.finish_batch()
+        
+        self._last_batch = None
+        self._last_batch_indices = None
+        self._dynamic_dataset._next_batch()
+
+
+    def abort_batch(self, epoch_idx: int, batch_idx: int, batch: Batch):
+        self._complete_batch_event(_BATCH_CANCEL_TAG)
+        if self._enable_grad_accumulate and not self._checkpoint_micro_batch:
+            self._rollback_micro_batch()
+        else:
+            _DynamicBatchDistirbutor.abort_batch(self._last_batch_indices)
+        self._last_batch = None
+        self._last_batch_indices = None
+
+    def _record_batch_event(self, epoch_idx: int, batch_idx: int, 
+                            batch_size: int):
+        self._batch_event = EventManager.record_event(
+            f'batch_{epoch_idx:02d}_{batch_idx:03d}_{batch_size:02d}'
+        )
+        if self._enable_grad_accumulate:
+            if self._global_batch_event is None:
+                global_batch_size = self._dynamic_dataset.global_batch_size
+                assert global_batch_size is not None
+                self._global_batch_event = EventManager.record_event(
+                    f'global_batch_{epoch_idx:02d}_{batch_idx:03d}_{global_batch_size:02d}'
+                )
+
+    def _complete_batch_event(self, tag: str):
+        assert self._batch_event is not None
+        self._batch_event.tag = tag
+        EventManager.record_event('', self._batch_event)
+        self._batch_event = None
+
+    def _complate_global_batch_event(self, tag: str):
+        assert self._global_batch_event is not None
+        self._global_batch_event.tag = tag
+        EventManager.record_event('', self._global_batch_event)
+        self._global_batch_event = None
+
+    def _should_checkpoint_micro_batch(self):
+        if self._enable_grad_accumulate and self._checkpoint_micro_batch:
+            return True
+        else:
+            return False
+        
+    def _rollback_micro_batch(self):
+        assert self._enable_grad_accumulate and not self._checkpoint_micro_batch, (
+            "only used for accumulation without checkpoint")
+        
+        self._complate_global_batch_event(_BATCH_CANCEL_TAG)
+        for idx in self._past_micro_batch_indices_in_global_batch:
+            _DynamicBatchDistirbutor.abort_batch(idx)
+        _DynamicBatchDistirbutor.abort_batch(self._last_batch_indices)
+        
+        self._past_micro_batch_indices_in_global_batch = []
+        self._last_batch_indices = None
 
     def _next_global_batch(self):
-        pass
+        self._complate_global_batch_event(_BATCH_FINISH_TAG)
+        if self._enable_grad_accumulate and not self._checkpoint_micro_batch:
+            for idx in self._past_micro_batch_indices_in_global_batch:
+                _DynamicBatchDistirbutor.finish_batch(idx)
+
+        self._past_micro_batch_indices_in_global_batch = []
+        _DynamicBatchDistirbutor.next_global_batch()
 
 
 class DynamicBatchDataset(IterableDataset):
@@ -140,17 +240,18 @@ class DynamicBatchDataset(IterableDataset):
     DynamicBatchDataset only manage the data and 
     return the batch with dynamic batch size to training.
     '''
+
     _dynamic_batch_dataset = None
 
     def __init__(self, 
                  ds_type: DatasetType, 
                  ds_size: int,
                  global_batch_size: int,
-                 hook: HookABC,
+                 colocate_ctrl: DummyCtrl | SwitchCtrl | ColocateCtrl,
                  vision_dataset_config: Optional[VisionDatasetConfig] = None,
                  text_dataset_config: Optional[TextDatasetConfig] = None,
-                 enable_grad_accumulate: bool = False,
-                 checkpoint_micro_batch: bool = False,
+                #  enable_grad_accumulate: bool = False,
+                #  checkpoint_micro_batch: bool = False,
                  empty_cache_at_larger_batch_size: bool = False,
                  fake_data=False):
         assert DynamicBatchDataset._dynamic_batch_dataset is None
@@ -160,19 +261,21 @@ class DynamicBatchDataset(IterableDataset):
         self.ds_type = ds_type
         self.ds_size = ds_size
         self.global_batch_size = global_batch_size
-        self.hook = hook
+        self.col_ctrl = colocate_ctrl
         self.vision_dataset_config = vision_dataset_config
         self.text_dataset_config = text_dataset_config
 
-        self._last_batch = None
-        self._enable_grad_accumulate = enable_grad_accumulate
-        self._checkpoint_micro_batch = checkpoint_micro_batch
         self._empty_cache_at_larger_batch_size = empty_cache_at_larger_batch_size
         self._state = DatasetState.INIT
-        self._global_batch_event = None
-        self._batch_event = None
 
-        torch_col.dist.init_dynamic_batch(ds_size, global_batch_size)
+        # self._last_batch = None
+        # self._enable_grad_accumulate = enable_grad_accumulate
+        # self._checkpoint_micro_batch = checkpoint_micro_batch
+        
+        # self._global_batch_event = None
+        # self._batch_event = None
+
+        # torch_col.dist.init_dynamic_batch_distributor(ds_size, global_batch_size)
 
         if not ds_type == DatasetType.VISION:
             fake_data = True
@@ -219,10 +322,10 @@ class DynamicBatchDataset(IterableDataset):
                 self.all_inputs['labels'] = self.all_inputs['input_ids']
 
     def get_target_batch_size(self):
-        if self.hook.train_mode.is_colocate():
-            return self.hook.target_batch_size
+        if self.col_ctrl.train_mode.is_colocate():
+            return self.col_ctrl.target_batch_size
         else:
-            self.hook.batch_size
+            self.col_ctrl.batch_size
 
     def get_next_batch_size(self):
         return torch_col.dist._DynamicBatchDistirbutor.query_next_batch_size()
@@ -235,17 +338,10 @@ class DynamicBatchDataset(IterableDataset):
         else:
             raise Exception(f"Unsupported dataset type: {self.ds_type}")
 
-    def record_batch_event(self, epoch_idx:int, batch_idx:int, 
-                           batch_size:int, global_batch_size=None):
-        self._batch_event = EventManager.record_event(
-            f'batch_{epoch_idx:02d}_{batch_idx:03d}_{batch_size:02d}'
-        )
-        if self._enable_grad_accumulate:
-            if self.global_batch_event is None:
-                assert global_batch_size is not None
-                self._global_batch_event = EventManager.record_event(
-                    f'global_batch_{epoch_idx:02d}_{batch_idx:03d}_{global_batch_size:02d}'
-                )
+    def _next_batch(self):
+        assert self._state == DatasetState.ITER
+        self._state = DatasetState.NEXT
+
 
     def _retrieve_batch(self, batch_index: List[Tuple[int, int]]) -> dict:
         batch = {}
@@ -258,18 +354,18 @@ class DynamicBatchDataset(IterableDataset):
 
     def _wait_valid_batch_size(self):
         batch_size = self.get_next_batch_size()
-        if self.hook.train_mode.is_colocate():
+        if self.col_ctrl.train_mode.is_colocate():
             while batch_size <= 0:
                 # self.hook.report_batch_size(batch_size)
                 torch_col.update_current_batch_size(batch_size)
-                if (self.hook._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1
-                    or self.hook._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL2):
-                    self.hook.release_and_reply()
+                if (self.col_ctrl._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1
+                    or self.col_ctrl._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL2):
+                    self.col_ctrl.release_and_reply()
                 time.sleep(1e-3)
                 batch_size = self.get_next_batch_size()
-        elif self.hook.train_mode == TrainMode.TASKSWITCH_L1:
-            while self.hook._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
-                self.hook.switch()
+        elif self.col_ctrl.train_mode == TrainMode.TASKSWITCH_L1:
+            while self.col_ctrl._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
+                self.col_ctrl.switch()
                 time.sleep(1e-3)
         return batch_size    
 
@@ -297,7 +393,7 @@ class DynamicBatchDataset(IterableDataset):
             batch = self._get_batch()
             batch_size = self.get_batch_size(batch)
 
-            if batch.will_do_step():
+            if batch.should_update_param():
                 get_last_micro_batch = True
   
             if (self._state != DatasetState.INIT
@@ -309,10 +405,63 @@ class DynamicBatchDataset(IterableDataset):
 
             self._state = DatasetState.ITER
             self._last_batch = batch
-            if self.hook is not None:
-                self.hook.report_batch_size(batch_size)
+            if self.col_ctrl is not None:
+                self.col_ctrl.report_batch_size(batch_size)
                 torch_col.update_current_batch_size(batch_size)
 
             yield batch
+
+
+# 
+def init_dynamic_batch(
+    dataset_size: int,
+    dataset_type: DatasetType,
+    dataset_config: VisionDatasetConfig | TextDatasetConfig,
+    batch_size: int, 
+    global_batch_size: Optional[int] = None,
+    checkpoint_micro_batch: bool = False,
+    empty_cache_at_larger_batch_size: bool = False,
+    fake_data: bool = False
+) -> Tuple[DynamicBatchDataset, MicroBatchManager]:
+    if global_batch_size is None and checkpoint_micro_batch:
+        print('Warning: global_batch_size is None, checkpoint_micro_batch will be False.',
+              file=sys.stderr)
+        checkpoint_micro_batch = False
+
+    vision_ds_config = None
+    text_ds_config = None
+    if dataset_type == DatasetType.VISION:
+        vision_ds_config = dataset_config
+    elif dataset_type == DatasetType.TEXT_GEN:
+        text_ds_config = dataset_config
+
+    dynamic_dataset = DynamicBatchDataset(
+        ds_type=dataset_type,
+        ds_size=dataset_size,
+        vision_dataset_config=vision_ds_config,
+        text_dataset_config=text_ds_config,
+        empty_cache_at_larger_batch_size=empty_cache_at_larger_batch_size,
+        fake_data=fake_data,
+    )
+    torch_col.dist.init_dynamic_batch_distributor(
+        batch_size, global_batch_size)
+
+    mirco_batch_manager = MicroBatchManager(
+        dynamic_dataset=dynamic_dataset,
+        enable_grad_accumulate=(global_batch_size is not None),
+        checkpoint_micro_batch=checkpoint_micro_batch,
+    )
+    return dynamic_dataset, mirco_batch_manager
+
+
+def get_dynamic_dataset() -> DynamicBatchDataset:
+    assert DynamicBatchDataset._dynamic_batch_dataset is not None
+    return DynamicBatchDataset._dynamic_batch_dataset
+
+
+def get_micro_batch_manager() -> MicroBatchManager:
+    assert MicroBatchManager._micro_batch_manager is not None
+    return MicroBatchManager._micro_batch_manager
+
         
     
