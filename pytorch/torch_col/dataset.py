@@ -152,6 +152,7 @@ class DynamicBatchDataset(IterableDataset):
                 self.global_batch_size = None
         self.trace_idx += 1
         if torch_col.is_enable_shared_tensor() and self.last_batch_size != self.batch_size:
+            torch.cuda.synchronize()
             torch_col.MemoryPool.empty_cache() # to avoid memory fragmentation
 
     def at_global_batch_end(self):
@@ -167,10 +168,10 @@ class DynamicBatchDataset(IterableDataset):
     
     def get_context(self, model: torch.nn.parallel.DistributedDataParallel):
         if self.enable_accumulation and not self.is_do_step():
-            torch_col.info("no sync")
+            # torch_col.info("no sync")
             return model.no_sync()
         else:
-            torch_col.info("sync")
+            # torch_col.info("sync")
             return nullcontext()
         
     def is_do_checkpoint_micro_batch(self):
