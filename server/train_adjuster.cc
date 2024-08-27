@@ -307,8 +307,16 @@ std::pair<double, double> TrainAdjuster::GetModelMemParam(const std::string &mod
       */
       // NOTE: DID NOT consider grad checkpoint
       return {1150, 85};
-    } else if (model_name == "swin_b" || model_name == "swin_b_ddp") {
+    } else if (model_name == "swin_b" ) {
       return {1700, 140};
+    } else if (model_name == "swin_b_ddp") {
+      /*
+      16 5.56  116.19
+      32 7.83  180
+      48 10.09 204.07
+      64 12.46 214.83
+      */
+      return {3260, 143};
     } else if (model_name == "gpt2") {
       /*
        
