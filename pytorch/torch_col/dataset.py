@@ -1,5 +1,6 @@
 from contextlib import nullcontext
 from enum import IntEnum
+import os
 import time
 import numpy as np
 import torch
@@ -241,14 +242,29 @@ class DynamicBatchDataset(IterableDataset):
 
 
     def iter_batch(self) -> Iterator:
-        def _get_batch_size():
-            if self.max_global_batch_size is None: # not use accumulation
-                batch_size = min(self.batch_size, self.size - self.micro_batch_iter_idx)
-            else:
-                if self.global_batch_size is None:
-                    self.global_batch_size = min(self.size - self.global_batch_iter_idx, self.max_global_batch_size)
-                batch_size = min(self.batch_size, self.global_batch_size - self.accumulate_iter_idx)
-            return batch_size
+        if os.environ.get('COL_RAND_BZ', '0') == '1':
+            global random_batch_size_rng
+            if 'random_batch_size_rng' not in globals():
+                random_batch_size_rng = np.random.default_rng(42)
+            def _get_batch_size():
+                batch_size = random_batch_size_rng.integers(16, 64)
+                if self.max_global_batch_size is None: # not use accumulation
+                    batch_size = min(batch_size, self.size - self.micro_batch_iter_idx)
+                else:
+                    if self.global_batch_size is None:
+                        self.global_batch_size = min(self.size - self.global_batch_iter_idx, self.max_global_batch_size)
+                    batch_size = min(batch_size, self.global_batch_size - self.accumulate_iter_idx)
+                return batch_size
+        else:
+            def _get_batch_size():
+                if self.max_global_batch_size is None: # not use accumulation
+                    batch_size = min(self.batch_size, self.size - self.micro_batch_iter_idx)
+                else:
+                    if self.global_batch_size is None:
+                        self.global_batch_size = min(self.size - self.global_batch_iter_idx, self.max_global_batch_size)
+                    batch_size = min(self.batch_size, self.global_batch_size - self.accumulate_iter_idx)
+                return batch_size
+        
         
         batch_size = _get_batch_size()
         if self.hook.train_mode.is_colocate():
