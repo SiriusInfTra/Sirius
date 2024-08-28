@@ -108,7 +108,7 @@ class Trainer:
         self.epoch_events.append(epoch_event)
         self._cur_epoch_stat = None
 
-        # torch_col.dist._DynamicBatchDistirbutor.next_global_batch()
+        torch_col.dist._DynamicBatchDistirbutor.next_epoch()
 
         return last_loss
 

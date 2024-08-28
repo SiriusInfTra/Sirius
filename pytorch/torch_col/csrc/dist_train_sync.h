@@ -83,8 +83,8 @@ class DistTrainSync {
       std::pair<std::string, Args**> ... data_list) {
     CHECK(dist_train_sync_ != nullptr);
 
-    LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() 
-              << " | CreateCustomSharedData]" << prefix_name;
+    DLOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() 
+              << " | CreateCustomSharedData] " << prefix_name;
 
     // check if the data already exists
     auto check_name_conflict = [&](const std::string & name_) -> bool {

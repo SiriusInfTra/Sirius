@@ -1,5 +1,6 @@
 # defined in torch_col/cython/main.pyx
 
+def is_configured() -> bool: ...
 
 def is_enable_shared_tensor() -> bool: ...
 

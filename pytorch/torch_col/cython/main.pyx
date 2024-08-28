@@ -71,6 +71,9 @@ cdef extern from "<torch_col/csrc/init.h>" namespace "torch_col":
     cpdef void TorchDistExtInit()
 
 
+def is_configured():
+    return TorchColConfig.IsConfigured()
+
 def is_enable_shared_tensor():
     return TorchColConfig.IsEnableSharedTensor()
 

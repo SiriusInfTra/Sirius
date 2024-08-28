@@ -9,6 +9,26 @@
 
 namespace torch_col {
 
+// [Note: global batch size]
+// The global batch size is the effective batch size of updating the model.
+// There are three cases of global batch size and grad accumulation:
+// - Case 1: w/o grad accumulation
+//     training provides the batch size, we calculate the global batch size
+//       (global batch size = batch_size * train_world_size),
+//     every training iteration updates model
+// - Case 2: w/ grad accumulation, fixed batch size
+//     training provides the global batch size and micro batch size
+// - Case 3: w/ grad accumulation, dynamic batch size
+//     training provides the global batch size and initial micro batch size
+
+
+// [Note: dynamic batch]
+// DynamicBatchDistirbutor distribute the micro batch within the global batch
+// to balance the workload among devices, i.e., maintaininig the number of 
+// sample to be processed by each device of a global batch (global batch size
+// is fixed).
+// The number of sample of micro batch will be maintained by dataset/data loader.
+
 class DynamicBatchDistirbutor {
  public:
   // each element present sample indices,
@@ -17,7 +37,7 @@ class DynamicBatchDistirbutor {
   using batch_range_vec_t = std::vector<batch_range_t>;
 
   static void Init(int dataset_size, 
-                   std::optional<int> global_batch_size);
+                   int global_batch_size);
  
   static void DistributeBatch(bool check_num_unproced_samples);
 
@@ -30,16 +50,21 @@ class DynamicBatchDistirbutor {
   
   static void FinishBatch(const batch_range_vec_t &batch_range_vec);
   static void AbortBatch(const batch_range_vec_t &batch_range_vec);
+
   static void NextGlobalBatch();
+  static void NextEpoch();
 
   DynamicBatchDistirbutor(int dataset_size, 
-                          std::optional<int> global_batch_size);
+                          int global_batch_size);
 
  private:
   static std::unique_ptr<DynamicBatchDistirbutor> batch_distributor_;
 
   void MergeBatchIndexInQueue(colserve::bip_set<batch_range_t> *queue);
   void DistributeBatchWithoutLock(bool check_num_unproced_samples);
+
+  void NextGlobalBatchImpl();
+  void NextEpochImpl();
 
   int GetNumSampleOfBatchIndex(const batch_range_t &batch_range);
 
@@ -48,8 +73,13 @@ class DynamicBatchDistirbutor {
                   int num_samples);
 
   int dataset_size_;
-  std::optional<int> global_batch_size_;
+  int global_batch_size_;
 
+  // epoch level
+  int num_proced_sample_of_epoch_;
+  int num_proced_global_batches_;
+
+  // global batch level
   struct GlobalSharedData {
     std::array<batch_range_t, colserve::MAX_DEVICE_NUM> 
       *train_batch_cursor_;

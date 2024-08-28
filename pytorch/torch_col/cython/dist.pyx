@@ -44,7 +44,7 @@ cdef extern from "<torch_col/csrc/dynamic_batch.h>" namespace "torch_col":
         ctypedef vector[pair[int, int]] batch_range_vec_t
 
         @staticmethod
-        void Init(int batch_size, optional[int] global_batch_size)
+        void Init(int batch_size, int global_batch_size)
         @staticmethod
         pair[batch_range_vec_t, bool] GetBatch(int batch_size)
         @staticmethod
@@ -55,6 +55,8 @@ cdef extern from "<torch_col/csrc/dynamic_batch.h>" namespace "torch_col":
         void AbortBatch(batch_range_vec_t batch_range_vec)
         @staticmethod
         void DistributeBatch(bool check_num_unproced_samples)
+        @staticmethod
+        void NextEpoch()
         @staticmethod
         void NextGlobalBatch()
 
@@ -81,18 +83,18 @@ class _DynamicBatchDistirbutor:
         DynamicBatchDistirbutor.DistributeBatch(check_num_unproced_samples)
 
     @staticmethod
+    def next_epoch():
+        DynamicBatchDistirbutor.NextEpoch()
+
+    @staticmethod
     def next_global_batch():
         DynamicBatchDistirbutor.NextGlobalBatch()
 
 
 def init_dynamic_batch_distributor(batch_size: int, 
-                                   global_batch_size: Optional[int]):
-    cdef optional[int] global_batch_size_opt
-    if global_batch_size is not None:
-        global_batch_size_opt = make_optional[int](<int> global_batch_size)
-
+                                   global_batch_size: int):
     DynamicBatchDistirbutor.Init(batch_size, 
-                                 global_batch_size_opt)
+                                 global_batch_size)
 
 
 

@@ -10,7 +10,7 @@ std::unique_ptr<DynamicBatchDistirbutor>
 
 void DynamicBatchDistirbutor::Init(
     int dataset_size, 
-    std::optional<int> global_batch_size) {
+    int global_batch_size) {
   CHECK(batch_distributor_ == nullptr);
   CHECK(DistTrainSync::IsInitialized());
   batch_distributor_ = 
@@ -20,9 +20,11 @@ void DynamicBatchDistirbutor::Init(
 
 DynamicBatchDistirbutor::DynamicBatchDistirbutor(
     int dataset_size, 
-    std::optional<int> global_batch_size)
+    int global_batch_size)
     : dataset_size_(dataset_size), 
-      global_batch_size_(global_batch_size) {
+      global_batch_size_(global_batch_size),
+      num_proced_global_batches_(0),
+      num_proced_sample_of_epoch_(0) {
 
   DistTrainSync::CreateCustomSharedData(
     "dist_train_global_shared_data",
@@ -55,9 +57,8 @@ DynamicBatchDistirbutor::DynamicBatchDistirbutor(
         &global_shared_data_.mut_)
   );
 
-  NextGlobalBatch();
+  NextEpochImpl();
 }
-
 
 void DynamicBatchDistirbutor::DistributeBatch(
     bool check_num_unproced_samples) {
@@ -72,8 +73,12 @@ void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
     bool check_num_unproced_samples) {
   int train_world_size = TorchColConfig::GetTrainWorldSize();
 
-  auto target_bs_unpub = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD_VEC(
-      target_batch_size_unpublished);
+  std::vector<int> target_bs_unpub;
+
+  if (TorchColConfig::HasColocatedInferServer()) {
+    target_bs_unpub = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD_VEC(
+        target_batch_size_unpublished);
+  }
 
   int num_unprocessed_samples = 0;
   if (check_num_unproced_samples) {
@@ -149,8 +154,10 @@ void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
   }
   CHECK(it == global_shared_data_.unproc_sample_queue_->end());
 
-  COMMUNICATOR_UPDATE_SHARED_TRAIN_INFO_FIELD_VEC(
-      target_batch_size, target_bs_unpub);
+  if (TorchColConfig::HasColocatedInferServer()) {
+    COMMUNICATOR_UPDATE_SHARED_TRAIN_INFO_FIELD_VEC(
+        target_batch_size, target_bs_unpub);
+  }
 }
 
 std::pair<DynamicBatchDistirbutor::batch_range_vec_t, bool>
@@ -303,30 +310,66 @@ void DynamicBatchDistirbutor::AbortBatch(
 }
 
 void DynamicBatchDistirbutor::NextGlobalBatch() {
-  // TODO: add 
-  bip::scoped_lock lock{*GLOBAL_SHARED_DATA.mut_};
+  CHECK(batch_distributor_ != nullptr);
+  batch_distributor_->NextGlobalBatchImpl();
+}
+
+void DynamicBatchDistirbutor::NextGlobalBatchImpl() {
+  {
+    bip::scoped_lock lock{*global_shared_data_.mut_};
+    LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() 
+              << " | NextGlobalBatchImpl] distribute batch for next global batch," 
+              << " last global batch stat: num_proced_samples_per_train "
+              << global_shared_data_.num_proced_samples_per_train_->at(
+                    TorchColConfig::GetTrainRank());
+  }
+  DistTrainSync::WaitBarrier();
+
+  // TODO: consider imbalance of resources and its impact on
+  //   the training thpt 
+
   if (TorchColConfig::IsTrainMaster()) {
-    *GLOBAL_SHARED_DATA.num_unproc_samples_ = 
-        batch_distributor_->dataset_size_;
-    *GLOBAL_SHARED_DATA.num_procing_samples_ = 0;
-    *GLOBAL_SHARED_DATA.num_procing_samples_ = 0;
+    bip::scoped_lock lock{*global_shared_data_.mut_};
 
-    GLOBAL_SHARED_DATA.unproc_sample_queue_->clear();
-    GLOBAL_SHARED_DATA.procing_sample_queue_->clear();
-    GLOBAL_SHARED_DATA.proced_sample_queue_->clear();
-    GLOBAL_SHARED_DATA.proced_sample_queue_->insert(
-        {0, batch_distributor_->dataset_size_}); 
+    int cur_global_batch_size = 
+        global_batch_size_ + num_proced_sample_of_epoch_ > dataset_size_ 
+        ? dataset_size_ - num_proced_sample_of_epoch_
+        : global_batch_size_;
 
-    batch_distributor_->DistributeBatchWithoutLock(false);
+    *global_shared_data_.num_unproc_samples_ = cur_global_batch_size;
+    *global_shared_data_.num_procing_samples_ = 0;
+    *global_shared_data_.num_procing_samples_ = 0;
+
+    global_shared_data_.unproc_sample_queue_->clear();
+    global_shared_data_.procing_sample_queue_->clear();
+    global_shared_data_.proced_sample_queue_->clear();
+
+    global_shared_data_.unproc_sample_queue_->insert(
+        {num_proced_sample_of_epoch_, 
+        num_proced_sample_of_epoch_ + cur_global_batch_size}); 
+
+    DistributeBatchWithoutLock(false);
 
     int train_world_size = TorchColConfig::GetTrainWorldSize();
     for (auto i : boost::irange(train_world_size)) {
-      GLOBAL_SHARED_DATA.num_procing_samples_per_train_->at(i) = 0;
-      GLOBAL_SHARED_DATA.num_proced_samples_per_train_->at(i) = 0;
+      global_shared_data_.num_procing_samples_per_train_->at(i) = 0;
+      global_shared_data_.num_proced_samples_per_train_->at(i) = 0;
     }
   }
 
   DistTrainSync::WaitBarrier();
+}
+
+void DynamicBatchDistirbutor::NextEpoch() {
+  CHECK(batch_distributor_ != nullptr);
+  batch_distributor_->NextEpochImpl();
+}
+
+void DynamicBatchDistirbutor::NextEpochImpl() {
+  // TODO: add 
+  num_proced_global_batches_ = 0;
+  num_proced_sample_of_epoch_ = 0;
+  NextGlobalBatchImpl();
 }
 
 int DynamicBatchDistirbutor::GetNumSampleOfBatchIndex(
