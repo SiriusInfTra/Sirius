@@ -24,6 +24,8 @@ cdef extern from "<torch_col/csrc/config.h>" namespace "torch_col":
         @staticmethod
         void InitConfig()
         @staticmethod
+        bint IsConfigured()
+        @staticmethod
         bint HasColocatedInferServer()
         @staticmethod
         bint IsEnableSharedTensor()
@@ -83,6 +85,9 @@ def is_enable_xsched():
 
 @functools.lru_cache
 def get_colocate_ctrl_hook_mode():
+    assert TorchColConfig.IsConfigured(), \
+        "TorchColConfig is not configured"
+
     cdef hook_mode_cstr = TorchColConfig.GetColocateCtrlHookMode()
     for hook_mode in ColocateCtrlHookMode:
         if hook_mode.value == hook_mode_cstr:
@@ -92,6 +97,9 @@ def get_colocate_ctrl_hook_mode():
 
 @functools.lru_cache
 def get_colocate_train_mode():
+    assert TorchColConfig.IsConfigured(), \
+        "TorchColConfig is not configured"
+
     cdef train_mode_cstr = TorchColConfig.GetColocateTrainMode()
     for train_mode in TrainMode:
         if train_mode.value == train_mode_cstr:
@@ -406,11 +414,13 @@ cdef class PyCtrlMsgEntry:
         return self._cppclass.value
 
     def __repr__(self):
-        return "PyCtrlMsgEntry(id={}, event={}, value={})".format(self.id, str(self.event), self.value)
+        return "PyCtrlMsgEntry(id={}, event={}, value={})".format(
+                self.id, str(self.event), self.value)
 
 
 class PyInfTraCommunicator:
-    def __init__(self, is_server = None, cleanup = None, train_world_size = None):
+    def __init__(self, is_server = None, cleanup = None, 
+                 train_world_size = None):
         if InfTraCommunicator.IsInitialized():
             return
         if (

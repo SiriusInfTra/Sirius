@@ -8,7 +8,9 @@ namespace torch_col {
 std::unique_ptr<DynamicBatchDistirbutor> 
     DynamicBatchDistirbutor::batch_distributor_ = nullptr;
 
-void DynamicBatchDistirbutor::Init(int dataset_size, int global_batch_size) {
+void DynamicBatchDistirbutor::Init(
+    int dataset_size, 
+    std::optional<int> global_batch_size) {
   CHECK(batch_distributor_ == nullptr);
   CHECK(DistTrainSync::IsInitialized());
   batch_distributor_ = 
@@ -17,7 +19,8 @@ void DynamicBatchDistirbutor::Init(int dataset_size, int global_batch_size) {
 }
 
 DynamicBatchDistirbutor::DynamicBatchDistirbutor(
-    int dataset_size, int global_batch_size)
+    int dataset_size, 
+    std::optional<int> global_batch_size)
     : dataset_size_(dataset_size), 
       global_batch_size_(global_batch_size) {
 

@@ -2,10 +2,11 @@
 # distutils: language = c++
 from libcpp.string cimport string
 from libcpp.vector cimport vector
+from libcpp.optional cimport optional, make_optional
 from libcpp.pair cimport pair
 from libcpp cimport bool
 
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 ######################
 #  MARK: Dist Train  #
@@ -43,7 +44,7 @@ cdef extern from "<torch_col/csrc/dynamic_batch.h>" namespace "torch_col":
         ctypedef vector[pair[int, int]] batch_range_vec_t
 
         @staticmethod
-        void Init(int batch_size, int global_batch_size)
+        void Init(int batch_size, optional[int] global_batch_size)
         @staticmethod
         pair[batch_range_vec_t, bool] GetBatch(int batch_size)
         @staticmethod
@@ -84,8 +85,14 @@ class _DynamicBatchDistirbutor:
         DynamicBatchDistirbutor.NextGlobalBatch()
 
 
-def init_dynamic_batch_distributor(batch_size: int, global_batch_size: int):
-    DynamicBatchDistirbutor.Init(batch_size, global_batch_size)
+def init_dynamic_batch_distributor(batch_size: int, 
+                                   global_batch_size: Optional[int]):
+    cdef optional[int] global_batch_size_opt
+    if global_batch_size is not None:
+        global_batch_size_opt = make_optional[int](<int> global_batch_size)
+
+    DynamicBatchDistirbutor.Init(batch_size, 
+                                 global_batch_size_opt)
 
 
 

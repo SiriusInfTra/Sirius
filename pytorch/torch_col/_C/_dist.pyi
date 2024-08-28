@@ -1,6 +1,6 @@
 # defined in torch_col/cython/dist.pyx
 
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 def wait_barrier(): ...
 
@@ -10,7 +10,7 @@ def recv_msg(src_rank: int) -> str: ...
 
 
 def init_dynamic_batch_distributor(batch_size: int, 
-                                   global_batch_size: int): ...
+                                   global_batch_size: Optional[int]): ...
 
 class _DynamicBatchDistirbutor:
     def get_batch(batch_size: int) -> Tuple[List[Tuple[int, int]], bool]: ...

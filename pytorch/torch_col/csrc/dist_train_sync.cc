@@ -81,7 +81,8 @@ DistTrainSync::DistTrainSync() {
     bip_shm_ = bip::managed_shared_memory{bip::create_only,
                                           shm_name_.c_str(), 1024 * 1024};
     auto atomic_init = [&]() {
-      DLOG(INFO) << "dist train sync init rank " << TorchColConfig::GetTrainRank();
+      DLOG(INFO) << "dist train sync init rank " 
+                 << TorchColConfig::GetTrainRank();
       barrier_ = 
           bip_shm_.find_or_construct<pthread_barrier_t>("barrier")();
       for (int i = 0; i < train_world_size; i++) {
@@ -103,7 +104,14 @@ DistTrainSync::DistTrainSync() {
       init_sem.post();
     }
   } else {
-    init_sem.wait();
+    bool succ = init_sem.timed_wait(
+        std::chrono::system_clock::now() 
+        + std::chrono::seconds(30)
+    );
+    if (!succ) {
+      LOG(FATAL) << "dist train sync init timeout, "
+                 << str(boost::format("`rm -f /dev/shm/%s` and retry") % sem_name);
+    }
     bip_shm_ = bip::managed_shared_memory{bip::open_only, shm_name_.c_str()};
     auto atomic_init = [&]() {
       DLOG(INFO) << "dist train sync init rank " << TorchColConfig::GetTrainRank();

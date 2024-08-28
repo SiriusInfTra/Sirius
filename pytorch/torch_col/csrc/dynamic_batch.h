@@ -3,6 +3,7 @@
 #include <common/util.h>
 #include <common/inf_tra_comm/bip_helper.h>
 
+#include <optional>
 #include <mutex>
 #include <cstdint>
 
@@ -16,7 +17,7 @@ class DynamicBatchDistirbutor {
   using batch_range_vec_t = std::vector<batch_range_t>;
 
   static void Init(int dataset_size, 
-                   int global_batch_size);
+                   std::optional<int> global_batch_size);
  
   static void DistributeBatch(bool check_num_unproced_samples);
 
@@ -32,7 +33,7 @@ class DynamicBatchDistirbutor {
   static void NextGlobalBatch();
 
   DynamicBatchDistirbutor(int dataset_size, 
-                          int global_batch_size);
+                          std::optional<int> global_batch_size);
 
  private:
   static std::unique_ptr<DynamicBatchDistirbutor> batch_distributor_;
@@ -46,7 +47,8 @@ class DynamicBatchDistirbutor {
   SliceBatchRange(const batch_range_t &batch_range, 
                   int num_samples);
 
-  int dataset_size_, global_batch_size_;
+  int dataset_size_;
+  std::optional<int> global_batch_size_;
 
   struct GlobalSharedData {
     std::array<batch_range_t, colserve::MAX_DEVICE_NUM> 

@@ -2,6 +2,7 @@
 
 #include <torch_col/csrc/config.h>
 
+#include <common/log_as_glog_sta.h>
 #include <common/inf_tra_comm/bip_helper.h>
 #include <common/inf_tra_comm/message_queue.h>
 
@@ -81,6 +82,9 @@ class DistTrainSync {
       const std::string &prefix_name,
       std::pair<std::string, Args**> ... data_list) {
     CHECK(dist_train_sync_ != nullptr);
+
+    LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() 
+              << " | CreateCustomSharedData]" << prefix_name;
 
     // check if the data already exists
     auto check_name_conflict = [&](const std::string & name_) -> bool {

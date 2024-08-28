@@ -30,13 +30,13 @@ def cleanup():
 
 
 def train(rank:int, world_size:int,
-          train_mode: TrainMode, 
           num_epoch: int, batch_size: int, 
           global_batch_size: Optional[int] = None):
     setup(rank, world_size)
     torch_col.init_train_info(batch_size, batch_size, model_name='swin_b_ddp')
 
     hook_mode = torch_col.get_colocate_ctrl_hook_mode()
+    train_mode = torch_col.get_colocate_train_mode()
     
     if torch_col.is_enable_shared_tensor():
         torch_col.tag_model_start()
@@ -167,13 +167,13 @@ def main():
     num_epoch = args.num_epoch
     # hook_mode = [hook_mode for hook_mode in HookMode if hook_mode.value == args.hook_mode][0]
     # hook_mode = torch_col.get_colocate_ctrl_hook_mode()
-    train_mode = torch_col.get_colocate_train_mode()
-    
+    # train_mode = torch_col.get_colocate_train_mode()
+
     print(f"Swin Transformer training, batch-size={batch_size}"
-          f", num-epoch={num_epoch}, train-mode={train_mode}")
+          f", num-epoch={num_epoch}")
     
     process_context =  torch_mp.spawn(train, 
-                   args=(torch.cuda.device_count(),train_mode,
+                   args=(torch.cuda.device_count(),
                          num_epoch, batch_size, global_batch_size), 
                    nprocs=torch.cuda.device_count(), 
                    join=False)

@@ -74,7 +74,9 @@ class TorchColConfig {
   static inline int GetTrainWorldSize() { return train_world_size; }
   static inline void SetTrainWorldSize(int size) { train_world_size = size; }
 
-  static inline std::string GetTrainProfileLogPath() { return train_profile_log_path; }
+  static inline std::string GetTrainProfileLogPath() { 
+    return train_profile_log_path; 
+  }
 };
 
 }

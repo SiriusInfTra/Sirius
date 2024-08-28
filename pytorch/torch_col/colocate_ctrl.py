@@ -103,7 +103,8 @@ class SwitchL1Exception(Exception):
     pass
 
 class SwitchCtrl(CtrlBase):
-    def __init__(self, train_mode:TrainMode, hook_mode: ColocateCtrlHookMode, 
+    def __init__(self, train_mode:TrainMode, 
+                 hook_mode: ColocateCtrlHookMode, 
                  num_epoch: int, batch_size: int) -> None:
         assert train_mode in {TrainMode.TASKSWITCH_L1, TrainMode.TASKSWITCH_L0}
         super().__init__(train_mode, hook_mode, num_epoch, batch_size)
@@ -144,7 +145,9 @@ class SwitchCtrl(CtrlBase):
             self._stub.EnableTorchColEngine()
         else:
             for module in module_list:
-                CtrlBase.register_fbward_hook(module, self.get_fwd_hook(), self.get_bwd_hook())
+                CtrlBase.register_fbward_hook(
+                    module, self.get_fwd_hook(), self.get_bwd_hook()
+                )
             if torch_col.is_release_interm_memory_v2():
                 torch_col.register_saved_tensor_hook()
 
@@ -283,8 +286,10 @@ class EngineColocateAdjustL1Exception(Exception):
 
 class ColocateCtrl(CtrlBase):
     def __init__(self, train_mode: TrainMode, 
-                 hook_mode: ColocateCtrlHookMode, num_epoch: int, batch_size: int):
-        assert train_mode == TrainMode.COLOCATE_L1 or train_mode == TrainMode.COLOCATE_L2
+                 hook_mode: ColocateCtrlHookMode, 
+                 num_epoch: int, batch_size: int):
+        assert (train_mode == TrainMode.COLOCATE_L1 
+                or train_mode == TrainMode.COLOCATE_L2)
         super().__init__(train_mode, hook_mode, batch_size, num_epoch)
         self._stub = torch_col.PyColocateStub(batch_size)
         self._grad_fn = []
@@ -376,7 +381,10 @@ class ColocateCtrl(CtrlBase):
         # print(f'[Adjust L1] train alloc cost {torch_col.cuda_memory_pool_train_alloc_ms()}ms', flush=True)
         t0 = time.time()
         with EventManager.record_duration_event('adjust_l1'):
-            old_cached_gpu_mem, old_allocate_gpu_mem = MemoryPool.get_memory_usage(), MemoryPool.get_allocated_memory()
+            old_cached_gpu_mem, old_allocate_gpu_mem = (
+                MemoryPool.get_memory_usage(), 
+                MemoryPool.get_allocated_memory()
+            )
             if torch_col.is_release_interm_memory_v1():
                 for fn in self._grad_fn:
                     torch_col.release_grad_fn_saved_tensor(fn)
@@ -388,28 +396,42 @@ class ColocateCtrl(CtrlBase):
             t2 = time.time()
             self._stub.adjust_l1_done()
             t3 = time.time()
-            cur_cached_gpu_mem, cur_allocate_gpu_mem = MemoryPool.get_memory_usage(), MemoryPool.get_allocated_memory()
+            cur_cached_gpu_mem, cur_allocate_gpu_mem = (
+                MemoryPool.get_memory_usage(), 
+                MemoryPool.get_allocated_memory()
+            )
         t4 = time.time()
-        print(f'[Rank {torch_col.get_train_rank()} | PID {os.getpid()} | {torch_col.get_unix_timestamp_us()/1000}]'
-              f' [Adjust L1 {(t1-t0)*1e3:.1f} | {(t2-t1)*1e3:.1f} | {(t3-t2)*1e3:.1f} | {(t4-t3)*1e3:.1f} ms]'
+        print(f'[Rank {torch_col.get_train_rank()} | PID {os.getpid()}'
+              f' | {torch_col.get_unix_timestamp_us()/1000}]'
+              f' [Adjust L1 {(t1-t0)*1e3:.1f} | {(t2-t1)*1e3:.1f}'
+              f' | {(t3-t2)*1e3:.1f} | {(t4-t3)*1e3:.1f} ms]'
               f' target batch_size: {self.target_batch_size},'
               f' memory cached: {old_cached_gpu_mem:.2f}GB -> {cur_cached_gpu_mem:.2f}GB,'
-              f' memory allocated: {old_allocate_gpu_mem:.2f}GB -> {cur_allocate_gpu_mem:.2f}GB.', flush=True)
+              f' memory allocated: {old_allocate_gpu_mem:.2f}GB -> {cur_allocate_gpu_mem:.2f}GB.', 
+              flush=True)
 
     def adjust_l2(self):
         t0 = time.time()
         with EventManager.record_duration_event('adjust_l2'):
-            old_cached_gpu_mem, old_allocate_gpu_mem = MemoryPool.get_memory_usage(), MemoryPool.get_allocated_memory()
+            (old_cached_gpu_mem, old_allocate_gpu_mem) = (
+                MemoryPool.get_memory_usage(), 
+                MemoryPool.get_allocated_memory()
+            )
             old_pytorch_cached = torch.cuda.memory_reserved() / 1024 / 1024 / 1024
             MemoryPool.empty_cache()
             self._stub.adjust_l2_done()
-            cur_cached_gpu_mem, cur_allocate_gpu_mem = MemoryPool.get_memory_usage(), MemoryPool.get_allocated_memory()
+            cur_cached_gpu_mem, cur_allocate_gpu_mem = (
+                MemoryPool.get_memory_usage(), 
+                MemoryPool.get_allocated_memory()
+            )
             cur_pytorch_cached = torch.cuda.memory_reserved() / 1024 / 1024 / 1024
         t1 = time.time()
-        print(f'[{torch_col.get_unix_timestamp_us()/1000}] [Adjust L2 {(t1-t0)*1e3:.1f} ms] target batch_size: {self.target_batch_size},'
+        print(f'[{torch_col.get_unix_timestamp_us()/1000}] [Adjust L2 {(t1-t0)*1e3:.1f} ms]'
+              f' target batch_size: {self.target_batch_size},'
               f' memory cached: {old_cached_gpu_mem:.2f}GB -> {cur_cached_gpu_mem:.2f}GB,'
               f' memory allocated: {old_allocate_gpu_mem:.2f}GB -> {cur_allocate_gpu_mem:.2f}GB.'
-              f' pytorch allocated: {old_pytorch_cached:.2f}GB -> {cur_pytorch_cached:.2f}GB', flush=True)
+              f' pytorch allocated: {old_pytorch_cached:.2f}GB -> {cur_pytorch_cached:.2f}GB', 
+              flush=True)
 
     def report_batch_size(self, batch_size):
         self._stub.report_batch_size(batch_size)
@@ -434,8 +456,11 @@ class ColocateCtrl(CtrlBase):
 
 
 class DummyCtrl(CtrlBase):
-    def __init__(self, train_mode: TrainMode, hook_mode: ColocateCtrlHookMode, 
-                 num_epoch: int, batch_size: int):
+    def __init__(self, 
+                 train_mode: TrainMode, 
+                 hook_mode: ColocateCtrlHookMode, 
+                 num_epoch: 
+                 int, batch_size: int):
         super().__init__(train_mode, hook_mode, batch_size, num_epoch)
         self._stub = torch_col.PyDummyStub()
         assert hook_mode == ColocateCtrlHookMode.NONE
