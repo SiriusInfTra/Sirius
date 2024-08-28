@@ -9,7 +9,7 @@ import torch_col
 from torch_col._C import ColocateCtrlHookMode
 from .util import TrainMode, EventManager, MemoryPool
 from . import xsched
-from typing import List, Optional
+from typing import List, Optional, Union
 
 __dummy_adjust = False
 
@@ -37,7 +37,7 @@ class CtrlBase(abc.ABC):
 
         self.train_mode = train_mode
         self.hook_mode = hook_mode
-        self.batch_size = batch_size
+        self.input_batch_size = batch_size
         self.num_epoch = num_epoch
         self._stub = None
         self._grad_fn = None
@@ -258,7 +258,7 @@ class SwitchCtrl(CtrlBase):
 
     @property
     def target_batch_size(self):
-        return self.batch_size
+        return self.input_batch_size
 
     def report_batch_size(self, batch_size):
         self._stub.report_batch_size(batch_size)
@@ -480,7 +480,7 @@ class DummyCtrl(CtrlBase):
     
     @property
     def target_batch_size(self):
-        return self.batch_size
+        return self.input_batch_size
     
     def train_start(self):
         self._stub.train_start()
@@ -500,7 +500,7 @@ def create_colocate_ctrl(
     hook_mode: ColocateCtrlHookMode, 
     num_epoch: int, 
     batch_size: int
-) -> DummyCtrl | ColocateCtrl | SwitchCtrl:
+) -> Union[DummyCtrl, ColocateCtrl, SwitchCtrl]:
     if train_mode == TrainMode.NORMAL:
         return DummyCtrl(train_mode, hook_mode, num_epoch, batch_size)
     elif train_mode.is_colocate():
@@ -509,6 +509,6 @@ def create_colocate_ctrl(
         return SwitchCtrl(train_mode, hook_mode, num_epoch, batch_size)
 
 
-def get_colocate_ctrl() -> DummyCtrl | ColocateCtrl | SwitchCtrl:
+def get_colocate_ctrl() -> Union[DummyCtrl, ColocateCtrl, SwitchCtrl]:
     assert CtrlBase._colocate_ctrl is not None
     return CtrlBase._colocate_ctrl

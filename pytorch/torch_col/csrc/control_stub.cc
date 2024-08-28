@@ -197,23 +197,30 @@ bool SwitchStub::TryInterruptTrainDone() {
 int ColocateStub::GetTargetBatchSize() {
   std::unique_lock locker{mutex_};
   // return target_bs_;
-  return COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
-      TorchColConfig::GetTrainRank(), target_batch_size);
+  if (TorchColConfig::HasColocatedInferServer()) {
+    return COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
+        TorchColConfig::GetTrainRank(), target_batch_size);
+  } else {
+    return input_batch_size_;
+  }
 }
 
 void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
   std::unique_lock locker{mutex_};
   switch (static_cast<ctrl::CtrlEvent>(msg.event)) {
   case ctrl::CtrlEvent::kColocateAdjustL1:
-  case ctrl::CtrlEvent::kColocateAdjustL2:
+  case ctrl::CtrlEvent::kColocateAdjustL2: 
+  {
+    auto cur_target_bs = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
+        TorchColConfig::GetTrainRank(), target_batch_size);
     LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() <<  " | ColocateStub]" 
               << " Adjust batch size, target " << msg.value
-              << " cur target " << this->target_bs_
+              << " cur target " << cur_target_bs
               << " current " << this->current_bs_
               << " timestamp: " << torch_col::get_unix_timestamp();
               // << " malloc_ms " << colserve::sta::CUDAMemPool::TrainAllocMs();
     // CHECK_LT(this->target_bs_, this->current_bs_);
-    if (msg.value >= this->target_bs_) {
+    if (msg.value >= cur_target_bs) {
       LOG(INFO) << "[ColocateStub] skip satisfied adjust, reply adjust immediately";
       ctrl::InfTraCommunicator::GetMQ()
           ->Put(ctrl::CtrlMsgEntry{
@@ -226,7 +233,7 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
                 TorchColConfig::GetTrainRank());
       break;
     }
-    this->target_bs_ = msg.value;
+    // this->target_bs_ = msg.value;
 
     // only used for colocate l1
     if (TorchColConfig::kill_batch_on_recv 
@@ -252,14 +259,19 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
     cmd_id_ = msg.id;
     set_cmd_time_ = std::chrono::steady_clock::now();
     StubProfiler::RecordAdjustRequest();
+  }
     break;
-  case ctrl::CtrlEvent::kInferExit: {
-    auto old_target_bs = this->target_bs_;
-    this->target_bs_ = msg.value;
+  case ctrl::CtrlEvent::kInferExit: 
+  {
+    auto cur_target_bs = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
+        TorchColConfig::GetTrainRank(), target_batch_size);
+
+    // auto old_target_bs = this->target_bs_;
+    // this->target_bs_ = msg.value;
     LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() 
               << " | ColocateStub]" 
               << " Infer Exit adjust, cmd_id " << msg.id
-              << " target bs " << old_target_bs << " -> " << this->target_bs_
+              << " cur_target_bs " << cur_target_bs
               << " current " << this->current_bs_
               << " timestamp: " << torch_col::get_unix_timestamp();
     // CHECK_LE(this->target_bs_, this->current_bs_);

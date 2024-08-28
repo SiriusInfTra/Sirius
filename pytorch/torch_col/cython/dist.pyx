@@ -44,13 +44,16 @@ cdef extern from "<torch_col/csrc/dynamic_batch.h>" namespace "torch_col":
         ctypedef vector[pair[int, int]] batch_range_vec_t
 
         @staticmethod
-        void Init(int batch_size, int global_batch_size)
+        void Init(int dataset_size, 
+                  int input_batch_size, 
+                  int global_batch_size)
         @staticmethod
         pair[batch_range_vec_t, bool] GetBatch(int batch_size)
         @staticmethod
-        int QueryNextBatchSize()
+        int QueryNextBatchSize(int batch_size)
         @staticmethod
-        void FinishBatch(batch_range_vec_t batch_range_vec)
+        void FinishBatch(batch_range_vec_t batch_range_vec,
+                         bool end_of_global_batch)
         @staticmethod
         void AbortBatch(batch_range_vec_t batch_range_vec)
         @staticmethod
@@ -59,6 +62,8 @@ cdef extern from "<torch_col/csrc/dynamic_batch.h>" namespace "torch_col":
         void NextEpoch()
         @staticmethod
         void NextGlobalBatch()
+        @staticmethod
+        void GetGlobalBatchSize()
 
 
 class _DynamicBatchDistirbutor:
@@ -67,12 +72,14 @@ class _DynamicBatchDistirbutor:
         return DynamicBatchDistirbutor.GetBatch(batch_size)
 
     @staticmethod
-    def query_next_batch_size() -> int:
-        return DynamicBatchDistirbutor.QueryNextBatchSize()
+    def query_next_batch_size(batch_size: int) -> int:
+        return DynamicBatchDistirbutor.QueryNextBatchSize(batch_size)
 
     @staticmethod
-    def finish_batch(batch_range_vec: List[Tuple[int, int]]):
-        DynamicBatchDistirbutor.FinishBatch(batch_range_vec)
+    def finish_batch(batch_range_vec: List[Tuple[int, int]],
+                     end_of_global_batch: bool):
+        DynamicBatchDistirbutor.FinishBatch(batch_range_vec, 
+                                            end_of_global_batch)
 
     @staticmethod
     def abort_batch(batch_range_vec: List[Tuple[int, int]]):
@@ -90,10 +97,16 @@ class _DynamicBatchDistirbutor:
     def next_global_batch():
         DynamicBatchDistirbutor.NextGlobalBatch()
 
+    @staticmethod
+    def get_global_batch_size() -> int:
+        return DynamicBatchDistirbutor.GetGlobalBatchSize()
 
-def init_dynamic_batch_distributor(batch_size: int, 
+
+def init_dynamic_batch_distributor(dataset_size: int, 
+                                   input_batch_size: int,
                                    global_batch_size: int):
-    DynamicBatchDistirbutor.Init(batch_size, 
+    DynamicBatchDistirbutor.Init(dataset_size, 
+                                 input_batch_size,
                                  global_batch_size)
 
 

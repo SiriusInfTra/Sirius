@@ -31,6 +31,8 @@ class TorchColConfig {
   static int train_world_size;
 
   static std::string train_profile_log_path;
+
+  static bool log_dynamic_batch;
   
   static int configured;
 

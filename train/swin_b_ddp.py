@@ -103,7 +103,6 @@ def train(rank:int, world_size:int,
             output = model(images)
             loss = criterion(output, targets)
             # train_dataset.scale_loss(loss)
-            batch_manager.opt
         scaler.scale(loss).backward()
         batch_manager.optimizer_step(batch, optimizer, 
                                      amp_scaler=scaler, 

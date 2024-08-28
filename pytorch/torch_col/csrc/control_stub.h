@@ -69,7 +69,9 @@ class SwitchStub: public StubBase {
 class ColocateStub: public StubBase {
  public:
   ColocateStub(int batch_size) 
-      : StubBase(), target_bs_(batch_size), current_bs_(batch_size) {};
+      : StubBase(), 
+        input_batch_size_(batch_size), 
+        current_bs_(batch_size) {};
 
   int GetTargetBatchSize();
   void ColocateAdjustL1Done();
@@ -81,7 +83,7 @@ class ColocateStub: public StubBase {
   void ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) override;
 
  private:
-  int target_bs_, current_bs_;
+  int input_batch_size_, current_bs_;
 
   std::chrono::time_point<std::chrono::steady_clock> set_cmd_time_;
 };

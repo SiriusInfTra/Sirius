@@ -36,6 +36,8 @@ int TorchColConfig::train_world_size = 1;
 
 std::string TorchColConfig::train_profile_log_path = "";
 
+bool TorchColConfig::log_dynamic_batch = false;
+
 int TorchColConfig::configured = false;
 
 void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {

@@ -37,6 +37,7 @@ class DynamicBatchDistirbutor {
   using batch_range_vec_t = std::vector<batch_range_t>;
 
   static void Init(int dataset_size, 
+                   int input_batch_size,
                    int global_batch_size);
  
   static void DistributeBatch(bool check_num_unproced_samples);
@@ -46,15 +47,25 @@ class DynamicBatchDistirbutor {
   static std::pair<batch_range_vec_t, bool> GetBatch(int batch_size);
 
   // query the next batch size (the number of samples of next `GetBatch` call)
-  static int QueryNextBatchSize();
+  // as there may do not have enough samples for a batch, 
+  // we need to revise the batch size
+  static int QueryNextBatchSize(int batch_size);
   
-  static void FinishBatch(const batch_range_vec_t &batch_range_vec);
+  static void FinishBatch(const batch_range_vec_t &batch_range_vec, 
+                          bool end_of_global_batch);
   static void AbortBatch(const batch_range_vec_t &batch_range_vec);
 
+  // call on the begining of a epoch and global batch
   static void NextGlobalBatch();
   static void NextEpoch();
 
+  static int GetGlobalBatchSize() {
+    CHECK(batch_distributor_ != nullptr);
+    return batch_distributor_->global_batch_size_;
+  }
+
   DynamicBatchDistirbutor(int dataset_size, 
+                          int input_batch_size,
                           int global_batch_size);
 
  private:
@@ -72,12 +83,16 @@ class DynamicBatchDistirbutor {
   SliceBatchRange(const batch_range_t &batch_range, 
                   int num_samples);
 
+  std::string PrintBatchQueue(const colserve::bip_set<batch_range_t> *queue);
+
   int dataset_size_;
+  int input_batch_size_;
   int global_batch_size_;
 
   // epoch level
-  int num_proced_sample_of_epoch_;
-  int num_proced_global_batches_;
+  int num_proced_sample_of_epoch_; // = num_proced_global_batches_ * global_batch_size_
+  int num_proced_global_batches_; 
+  int next_epoch_idx_;
 
   // global batch level
   struct GlobalSharedData {

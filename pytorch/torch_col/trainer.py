@@ -61,7 +61,7 @@ class Trainer:
         self.epoch_events = []
         self._cur_epoch_stat = None
 
-    def train_one_epoch(self, epoch_idx: int) -> torch.Tensor | None:
+    def train_one_epoch(self, epoch_idx: int) -> Optional[torch.Tensor]:
         epoch_event_name = f'epoch_{epoch_idx:02d}_{self.dynamic_dataset.ds_size}'
         epoch_event = EventManager.record_event(epoch_event_name)
 
@@ -115,17 +115,17 @@ class Trainer:
     def get_overall_stat(self) -> TrainStat:
         return self.overall_stat
 
-    def get_last_epoch_stat(self) -> EpochStat | None:
+    def get_last_epoch_stat(self) -> Optional[EpochStat]:
         if len(self.epoch_stats) == 0:
             return None
         return self.epoch_stats[-1]
     
-    def get_last_epoch_event(self) -> Event | None:
+    def get_last_epoch_event(self) -> Optional[Event]:
         if len(self.epoch_events) == 0:
             return None
         return self.epoch_events[-1]
     
-    def get_last_epoch_duration(self) -> float | None:
+    def get_last_epoch_duration(self) -> Optional[float]:
         last_epoch_event = self.get_last_epoch_event()
         if last_epoch_event is None:
             return None
@@ -190,6 +190,7 @@ class Trainer:
                 assert len(nccl_streams) <= 1, f"nccl streams {nccl_streams}"
                 if len(nccl_streams) == 1:
                     torch_col.xsched.register_stream(nccl_streams[0], False)
+            torch.cuda.current_stream().synchronize()
             torch_col.xsched.initial_kill_batch(0, 0)
 
                 
