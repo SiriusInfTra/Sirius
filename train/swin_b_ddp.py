@@ -7,7 +7,6 @@ from torchvision import models
 from torch.utils.data import DataLoader
 import argparse
 import os, sys
-
 import torch_col
 from torch_col import MemoryPool, EventManager, TrainMode, HookMode
 from torch_col import DynamicBatchDataset
@@ -18,9 +17,10 @@ import time
 
 
 def setup(rank, world_size):
+    cuda_index = torch.cuda._get_nvml_device_index(0)
     torch_col.info(f'[Train rank {rank} PID {os.getpid()} world size {world_size}] setup')
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = str(12345 + os.getuid() % 100)
+    os.environ['MASTER_PORT'] = str(12345 + cuda_index)
     torch_col.setup_colocate_training(rank, world_size, True, True)
 
 def cleanup():
@@ -50,20 +50,20 @@ def train(rank:int, world_size:int,
     print(f"Train params memory usage: {torch_col.MemoryPool.get_memory_usage() * 1024:.2f}M")
 
     criterion = nn.CrossEntropyLoss().cuda(rank)
-    optimizer = torch.optim.SGD(model.parameters(), 0.1, 
-                                momentum=0.9, weight_decay=1e-8)
+    optimizer = torch.optim.SGD(model.parameters(), lr=1e-3, 
+                                momentum=0.9, weight_decay=1e-5)
     scaler = torch.cuda.amp.GradScaler()
 
     print(f"Train after init memory pool usage: {MemoryPool.get_memory_usage() * 1024:.2f}M")
     
     hook = torch_col.get_hook(train_mode, hook_mode, num_epoch, batch_size)
     hook.register_pytorch_hook([model, criterion])
-    checkpoint_micro_batch = hook.train_mode.is_kill_batch()
-    # checkpoint_micro_batch = False
+    # checkpoint_micro_batch = hook.train_mode.is_kill_batch()
+    checkpoint_micro_batch = True
 
     # dummy data
     train_dataset = DynamicBatchDataset(
-        model_name='swin_b', size=3669 if real_data else 1000, max_batch_size=batch_size, 
+        model_name='swin_b', size=3680 if real_data else 1000, max_batch_size=batch_size, 
         hook=hook, trace=None,
         input_shape=(3, 224, 224), num_class=37 if real_data else 1000,
         fake_data=not real_data,
@@ -92,13 +92,14 @@ def train(rank:int, world_size:int,
         images: torch.Tensor = images.cuda(rank, non_blocking=True)
         targets: torch.Tensor = targets.cuda(rank, non_blocking=True)
         with train_dataset.get_context(model):
+            # if grad_accumulator is not None:
+            optimizer.zero_grad(set_to_none=False)
             with torch.cuda.amp.autocast(cache_enabled=False):
                 output = model(images)
                 loss = criterion(output, targets)
                 train_dataset.scale_loss(loss)
-                scaler.scale(loss).backward()
-                # torch.cuda.synchronize()
-            torch_col.info("backward done")
+                # torch_col.info(f"Batch Size is {len(images)}.")
+            scaler.scale(loss).backward()    
         train_dataset.step_stage(hook, optimizer, scaler=scaler, 
                                  grad_accumulator=grad_accumulator)
         return loss
@@ -127,6 +128,14 @@ def train(rank:int, world_size:int,
                 batch_info, batch_size, train_dataset.batch_size,
                 mem_info, epoch_stat.finished_sample / (epoch_duration / 1e3), 
                 last_loss.item()), flush=True)
+        if real_data and torch_col.get_train_rank() == 0:
+            # pass
+            checkpoint_dir = os.environ.get('COL_CP', None)
+            
+            if checkpoint_dir is not None:
+                if not os.path.exists(checkpoint_dir):
+                    os.makedirs(checkpoint_dir)
+                torch.save(model.module.state_dict(), f'{checkpoint_dir}/{os.getpid()}_{epoch}.pth')
     
         if hook.can_exit_after_infer_worklaod_done():
             print('[hook] inference workload done, will exit training', flush=True)
@@ -150,7 +159,7 @@ def train(rank:int, world_size:int,
 def main():
     parser = argparse.ArgumentParser('Train Resnet')    
     parser.add_argument('--batch-size', type=int, default=64)
-    parser.add_argument('--global-batch-size', type=int, default=500)
+    parser.add_argument('--global-batch-size', type=int, default=512)
     parser.add_argument('--num-epoch', type=int, default=15)
     parser.add_argument('--train-mode', type=str, default=TrainMode.COLOCATE_L1.value, 
                         choices=[train_mode.value for train_mode in TrainMode])

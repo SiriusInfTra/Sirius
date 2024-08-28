@@ -219,7 +219,6 @@ class DynamicBatchDataset(IterableDataset):
                 scaler.update()
             else:
                 optimizer.step()
-            optimizer.zero_grad(set_to_none=False)
 
         if self.is_do_checkpoint_micro_batch():
             assert grad_accumulator is not None
@@ -233,6 +232,7 @@ class DynamicBatchDataset(IterableDataset):
                     step_event.tag = 'local'
                 EventManager.record_event('', step_event)
         else:
+            raise RuntimeError("NOT SUPPORT")
             if self.is_do_step():
                 with hook.steps_no_interrupt():
                     step_event = EventManager.record_event('optimizer_step')
@@ -289,6 +289,11 @@ class DynamicBatchDataset(IterableDataset):
         # return inputs, targets
         return inputs
     
+    def shuffule(self):
+        indices = np.random.permutation(self.size)
+        for k in self.all_inputs.keys():
+            self.all_inputs[k] = self.all_inputs[k][indices]
+    
     def __iter__(self) -> Iterator:
         worker_info = get_worker_info()
         assert worker_info is None or worker_info.num_workers == 1, "not support multi-process"
@@ -301,4 +306,5 @@ class DynamicBatchDataset(IterableDataset):
                     self.num_rollback_samples_in_epoch = 0
                 break
             yield self.iter_batch()
+        self.shuffule()
             
