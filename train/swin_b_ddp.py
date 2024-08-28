@@ -4,7 +4,7 @@ import torch.distributed as torch_dist
 import torch.multiprocessing as torch_mp
 from torch import nn
 from torchvision import models
-from torch.utils.data import DataLoader
+from torch.utils.data import TensorDataset, DataLoader
 import argparse
 import os, sys
 import torch_col
@@ -14,6 +14,7 @@ import torch_col.trainer
 import torch_col.xsched
 from typing import Optional
 import time
+from torch.utils.data import Dataset
 
 
 def setup(rank, world_size):
@@ -43,15 +44,21 @@ def train(rank:int, world_size:int,
     model = models.swin_b(weights=models.Swin_B_Weights.DEFAULT).cuda()
     # for param in model.parameters():
     #     param.requires_grad = False
+    if os.environ.get('COL_IMAGENET', '0') == '1':
+        num_class = 100
+    elif real_data:
+        num_class = 37
+    else:
+        num_class = 10
     if real_data:
-        model.head = torch.nn.Linear(model.head.in_features, 37).cuda()
+        model.head = torch.nn.Linear(model.head.in_features, num_class).cuda()
     model = DDP(model, device_ids=[rank])
 
     print(f"Train params memory usage: {torch_col.MemoryPool.get_memory_usage() * 1024:.2f}M")
 
     criterion = nn.CrossEntropyLoss().cuda(rank)
-    optimizer = torch.optim.SGD(model.parameters(), lr=1e-3, 
-                                momentum=0.9, weight_decay=1e-5)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.001, 
+                                momentum=0.9, weight_decay=0.05)
     scaler = torch.cuda.amp.GradScaler()
 
     print(f"Train after init memory pool usage: {MemoryPool.get_memory_usage() * 1024:.2f}M")
@@ -65,7 +72,7 @@ def train(rank:int, world_size:int,
     train_dataset = DynamicBatchDataset(
         model_name='swin_b', size=3680 if real_data else 1000, max_batch_size=batch_size, 
         hook=hook, trace=None,
-        input_shape=(3, 224, 224), num_class=37 if real_data else 1000,
+        input_shape=(3, 224, 224), num_class=num_class,
         fake_data=not real_data,
         max_global_batch_size=global_batch_size,
         checkpoint_micro_batch=checkpoint_micro_batch)
@@ -105,7 +112,12 @@ def train(rank:int, world_size:int,
         return loss
 
     trainer = torch_col.Trainer(model, train_dataset, iter_train_fn)
-
+    if os.environ.get('COL_IMAGENET', '0') == '1':
+        import numpy as np
+        val_images = np.load('imagenet-100/imagenet-100-images-val.npy', mmap_mode='c')
+        val_labels = np.load('imagenet-100/imagenet-100-labels-val.npy', mmap_mode='c')
+        val_dataset = TensorDataset(torch.tensor(val_images, dtype=torch.float32), torch.tensor(val_labels, dtype=torch.long))
+        val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
     for epoch in range(num_epoch):
         last_loss = trainer.train_one_epoch(epoch)
 
@@ -121,6 +133,16 @@ def train(rank:int, world_size:int,
                 f' | try {epoch_stat.tried_batch} kill {epoch_stat.killed_batch}, ' 
                 + f'{epoch_stat.killed_time*1e3:.1f}ms finish {epoch_stat.finished_batch}, '
                 + f'{epoch_stat.finished_time*1e3:.1f}ms')
+        if os.environ.get('COL_IMAGENET', '0') == '1':
+            val_loss = 0.0
+            with torch.no_grad():
+                for images, labels in val_loader:
+                    images = torch.tensor(images).cuda(non_blocking=True)
+                    labels = torch.tensor(labels).cuda(non_blocking=True)
+                    outputs = model(images)
+                    val_loss += criterion(outputs, labels).item()
+            val_loss /= len(val_loader)
+            batch_info += f' | val_loss {val_loss:.6f}'
         if global_batch_size is not None:
             batch_info += f' | num_rollback_sampels {train_dataset.num_rollback_samples_in_epoch}'
         print('[Rank {} | {} epoch {}] {:.3f}s | {} | batch-size {} | micro-batch-size {} | {} | thpt {:.2f} | loss {:.6f}'.format(
