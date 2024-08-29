@@ -1,15 +1,18 @@
-#include <Python.h>
-#include <object.h>
-#include <moduleobject.h>
+#include <torch_col/csrc/torch_allocator_plugin.h>
+#include <torch_col/csrc/mem_tagging.h>
+#include <torch_col/csrc/fake_engine.h>
+
+#include <common/log_as_glog_sta.h>
+
 #include <ATen/Tensor.h>
 #include <torch/csrc/Exceptions.h>
 #include <torch/csrc/autograd/engine.h>
 #include <torch/csrc/autograd/python_variable.h>
 #include <torch/csrc/utils/object_ptr.h>
 
-#include <torch_col/csrc/torch_allocator_plugin.h>
-#include <torch_col/csrc/mem_tagging.h>
-#include <torch_col/csrc/fake_engine.h>
+#include <Python.h>
+#include <object.h>
+#include <moduleobject.h>
 
 namespace torch_col {
 

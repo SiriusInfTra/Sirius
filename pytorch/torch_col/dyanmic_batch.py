@@ -426,15 +426,18 @@ class DynamicBatchDataset(IterableDataset):
         return batch
 
     def __iter__(self) -> Iterator[Batch]:
-        get_last_micro_batch = False
+        num_gotten_global_batch = 0
+        num_global_batch_per_epoch = \
+            _DynamicBatchDistirbutor.get_num_global_batch_per_epoch()
+        
 
-        while not get_last_micro_batch:
+        while num_gotten_global_batch < num_global_batch_per_epoch:
             t0 = time.time()
             batch = self._get_batch()
             batch_size = self.get_batch_size(batch)
 
             if batch.should_update_param():
-                get_last_micro_batch = True
+                num_gotten_global_batch += 1
   
             if (self._state != DatasetState.INIT
                 and torch_col.is_enable_shared_tensor()

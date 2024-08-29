@@ -63,7 +63,9 @@ cdef extern from "<torch_col/csrc/dynamic_batch.h>" namespace "torch_col":
         @staticmethod
         void NextGlobalBatch()
         @staticmethod
-        void GetGlobalBatchSize()
+        int GetGlobalBatchSize()
+        @staticmethod
+        int GetNumGlobalBatchPerEpoch()
 
 
 class _DynamicBatchDistirbutor:
@@ -100,6 +102,10 @@ class _DynamicBatchDistirbutor:
     @staticmethod
     def get_global_batch_size() -> int:
         return DynamicBatchDistirbutor.GetGlobalBatchSize()
+
+    @staticmethod
+    def get_num_global_batch_per_epoch() -> int:
+        return DynamicBatchDistirbutor.GetNumGlobalBatchPerEpoch()
 
 
 def init_dynamic_batch_distributor(dataset_size: int, 

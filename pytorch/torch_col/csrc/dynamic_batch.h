@@ -63,6 +63,10 @@ class DynamicBatchDistirbutor {
     CHECK(batch_distributor_ != nullptr);
     return batch_distributor_->global_batch_size_;
   }
+  static int GetNumGlobalBatchPerEpoch() {
+    CHECK(batch_distributor_ != nullptr);
+    return batch_distributor_->num_global_batches_per_epoch_;
+  }
 
   DynamicBatchDistirbutor(int dataset_size, 
                           int input_batch_size,
@@ -93,11 +97,12 @@ class DynamicBatchDistirbutor {
   int num_proced_sample_of_epoch_; // = num_proced_global_batches_ * global_batch_size_
   int num_proced_global_batches_; 
   int next_epoch_idx_;
+  const int num_global_batches_per_epoch_;
 
   // global batch level
   struct GlobalSharedData {
-    std::array<batch_range_t, colserve::MAX_DEVICE_NUM> 
-      *train_batch_cursor_;
+    // std::array<batch_range_t, colserve::MAX_DEVICE_NUM> 
+    //   *train_batch_cursor_;
 
     std::array<int, colserve::MAX_DEVICE_NUM> 
         *num_unproc_samples_per_train_,

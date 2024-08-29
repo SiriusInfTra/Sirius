@@ -110,7 +110,7 @@ DistTrainSync::DistTrainSync() {
     );
     if (!succ) {
       LOG(FATAL) << "dist train sync init timeout, "
-                 << str(boost::format("`rm -f /dev/shm/%s` and retry") % sem_name);
+                 << str(boost::format("`rm -f /dev/shm/sem.%s` and retry") % sem_name);
     }
     bip_shm_ = bip::managed_shared_memory{bip::open_only, shm_name_.c_str()};
     auto atomic_init = [&]() {

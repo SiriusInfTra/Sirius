@@ -36,7 +36,7 @@ int TorchColConfig::train_world_size = 1;
 
 std::string TorchColConfig::train_profile_log_path = "";
 
-bool TorchColConfig::log_dynamic_batch = false;
+bool TorchColConfig::log_dynamic_batch = true;
 
 int TorchColConfig::configured = false;
 
