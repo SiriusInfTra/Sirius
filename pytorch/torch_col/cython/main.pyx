@@ -176,6 +176,8 @@ cdef extern from "<common/cuda_allocator.h>" namespace "colserve::sta":
         @staticmethod
         size_t TrainMemUsage()
         @staticmethod
+        size_t TrainPeakMemUsage()
+        @staticmethod
         size_t TrainAllMemUsage()
         @staticmethod
         void FreeTrainLocals()
@@ -209,6 +211,9 @@ def cuda_memory_pool_infer_usage(device_id):
 
 def cuda_memory_pool_train_usage(device_id):
     return CUDAMemPool.Get(device_id).TrainMemUsage()
+
+def cuda_memory_pool_train_peak_usage(device_id):
+    return CUDAMemPool.Get(device_id).TrainPeakMemUsage()
 
 
 def cuda_memory_pool_train_all_usage(device_id):
