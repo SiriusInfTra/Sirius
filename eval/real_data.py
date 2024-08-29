@@ -11,9 +11,12 @@ import run_comm
 
 # run_comm.UniformConfig_v2.train_model = 'swin_b_ddp'
 run_comm.UniformConfig_v2.train_batch_size = 48
+run_comm.UniformConfig_v2.train_global_batch_size = 1024
 run_comm.UniformConfig_v2.duration = 7200
+run_comm.UniformConfig_v2.real_data = True
 if torch.cuda.device_count() > 1:
     run_comm.UniformConfig_v2.train_model += "_ddp"
+    run_comm.UniformConfig_v2.wait_train_setup_sec = 60
 dynamic_sm_partition = True
 skip_set_mps_pct = False
 wkld_type = 'NormalA'
@@ -37,9 +40,9 @@ system_config = {
 }
 
 with mps_thread_percent(None):
-                client_model_list, server_model_config = InferModel.get_multi_model(
-                    run_comm.UniformConfig_v2.model_list, run_comm.UniformConfig_v2.num_model, 1)
-                workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
-                system = System(port=run_comm.UniformConfig_v2.port, **system_config)
-                run_comm.run(system, workload, server_model_config, 
-                            "overall-uniform-v2", f'colsys-{wkld_type}')
+    client_model_list, server_model_config = InferModel.get_multi_model(
+        run_comm.UniformConfig_v2.model_list, run_comm.UniformConfig_v2.num_model, 1)
+    workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
+    system = System(port=run_comm.UniformConfig_v2.port, **system_config)
+    run_comm.run(system, workload, server_model_config, 
+                "overall-uniform-v2", f'colsys-{wkld_type}')
