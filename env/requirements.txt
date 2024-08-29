@@ -34,3 +34,4 @@ transformers
 pandas
 matplotlib
 tqdm
+pynvml
