@@ -60,7 +60,25 @@ class DynamicBatchDataset(IterableDataset):
         if not _vision_task(self.model_name):
             fake_data = True
         if not fake_data:
-            if _vision_task(self.model_name):
+            if os.environ.get('COL_IMAGENET', '0') == '1':
+                rng = np.random.default_rng(42)
+                image = np.load('imagenet-100/imagenet-100-images.npy', mmap_mode='c')
+                size = image.shape[0]
+                indices = rng.permutation(size)
+                n = size // torch_col.get_train_world_size()
+                rank = torch_col.get_train_rank()
+                image = image[indices[n*rank:n*(rank+1)]]
+                label = np.load('imagenet-100/imagenet-100-labels.npy', mmap_mode='c')
+                label = label[indices[n*rank:n*(rank+1)]]
+                self.all_inputs = {
+                    # 'image': torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_inputs.npy')).pin_memory(),
+                    # 'label': torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_targets.npy')).pin_memory(),
+                    'image': torch.from_numpy(image).pin_memory(),
+                    'label': torch.from_numpy(label).pin_memory(),
+                } 
+                self.size = len(self.all_inputs['label'])           
+                self.num_class = 100
+            elif _vision_task(self.model_name):
                 self.all_inputs = {
                     # 'image': torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_inputs.npy')).pin_memory(),
                     # 'label': torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_targets.npy')).pin_memory(),
