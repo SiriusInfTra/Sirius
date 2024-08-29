@@ -13,6 +13,7 @@ from .hook import register_saved_tensor_hook, get_hook, \
     SwitchL1Exception, ColocateHook, ColocateAdjustL1Exception, \
     EngineColocateAdjustL1Exception
 from .trainer import Trainer
+from .lr_scheduler import get_imagenet_optimizer_and_scheduler
 
 from .debug_server import DebugServer
 
