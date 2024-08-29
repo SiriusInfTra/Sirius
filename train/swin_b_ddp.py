@@ -57,8 +57,9 @@ def train(rank:int, world_size:int,
     print(f"Train params memory usage: {torch_col.MemoryPool.get_memory_usage() * 1024:.2f}M")
 
     criterion = nn.CrossEntropyLoss().cuda(rank)
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.001, 
-                                momentum=0.9, weight_decay=0.05)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.001, weight_decay=0.05, momentum=0.9)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    # optimizer, scheduler = torch_col.get_imagenet_optimizer_and_scheduler(model, global_batch_size, 90, 5)
     scaler = torch.cuda.amp.GradScaler()
 
     print(f"Train after init memory pool usage: {MemoryPool.get_memory_usage() * 1024:.2f}M")
@@ -120,7 +121,9 @@ def train(rank:int, world_size:int,
         val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
     for epoch in range(num_epoch):
         last_loss = trainer.train_one_epoch(epoch)
-
+        lr = optimizer.param_groups[0]['lr']
+        # scheduler.step(epoch)   
+        scheduler.step(epoch)
         epoch_stat = trainer.get_last_epoch_stat()
         epoch_duration = trainer.get_last_epoch_duration()
 
@@ -142,16 +145,18 @@ def train(rank:int, world_size:int,
                     outputs = model(images)
                     val_loss += criterion(outputs, labels).item()
             val_loss /= len(val_loader)
-            batch_info += f' | val_loss {val_loss:.6f}'
+            batch_info += f' | val {val_loss:.6f}'
         if global_batch_size is not None:
             batch_info += f' | num_rollback_sampels {train_dataset.num_rollback_samples_in_epoch}'
-        print('[Rank {} | {} epoch {}] {:.3f}s | {} | batch-size {} | micro-batch-size {} | {} | thpt {:.2f} | loss {:.6f}'.format(
+        print('[Rank {} | {} epoch {}] {:.3f}s | {} | batch-size {} | micro-batch-size {} | {} | thpt {:.2f} | lr {:.2e} | loss {:.6f}'.format(
                 rank, model.__class__.__name__, epoch, epoch_duration / 1e3,
                 batch_info, batch_size, train_dataset.batch_size,
                 mem_info, epoch_stat.finished_sample / (epoch_duration / 1e3), 
+                lr,
                 last_loss.item()), flush=True)
         if real_data and torch_col.get_train_rank() == 0:
             # pass
+            
             checkpoint_dir = os.environ.get('COL_CP', None)
             
             if checkpoint_dir is not None:
@@ -181,7 +186,7 @@ def train(rank:int, world_size:int,
 def main():
     parser = argparse.ArgumentParser('Train Resnet')    
     parser.add_argument('--batch-size', type=int, default=64)
-    parser.add_argument('--global-batch-size', type=int, default=512)
+    parser.add_argument('--global-batch-size', type=int, default=1024)
     parser.add_argument('--num-epoch', type=int, default=15)
     parser.add_argument('--train-mode', type=str, default=TrainMode.COLOCATE_L1.value, 
                         choices=[train_mode.value for train_mode in TrainMode])
@@ -191,6 +196,7 @@ def main():
     batch_size = args.batch_size
     global_batch_size = args.global_batch_size
     num_epoch = args.num_epoch
+    num_epoch = 90
     real_data = args.real_data or True
     train_mode = [train_mode for train_mode in TrainMode if train_mode.value == args.train_mode][0]
     # hook_mode = [hook_mode for hook_mode in HookMode if hook_mode.value == args.hook_mode][0]
