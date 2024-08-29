@@ -39,11 +39,19 @@ def config_extension():
     cmake_cache_path = pathlib.Path(f'{get_build_path()}/CMakeCache.txt')
     assert cmake_cache_path.exists()
 
+    glog_binary_dir = None
+    glog_source_dir = None
+    glog_include_path = None
     cuda_root_path = None
     for line in cmake_cache_path.read_text().splitlines():
         if line.startswith('CUDA_TOOLKIT_ROOT_DIR'):
             cuda_root_path = line.split('=')[1]
-            break
+        if line.startswith('GLOG_INCLUDE_DIR'):
+            glog_include_path = line.split('=')[1]
+        if line.startswith('glog_BINARY_DIR'):
+            glog_binary_dir = line.split('=')[1]
+        if line.startswith('glog_SOURCE_DIR'):
+            glog_source_dir = line.split('=')[1]
     copy_lib()
 
     compile_args = {
@@ -67,6 +75,13 @@ def config_extension():
             '-Wl,-rpath,$ORIGIN/../lib',
         ],
     }
+
+    if 'NOTFOUND' in glog_include_path:
+        # use third_party glog
+        assert glog_binary_dir is not None
+        assert glog_source_dir is not None
+        compile_args['include_dirs'].append(f"{glog_source_dir}/src")
+        compile_args['include_dirs'].append(f"{glog_binary_dir}")
 
     c_ext = Extension(
         name="torch_col._C._main",

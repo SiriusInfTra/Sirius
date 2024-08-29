@@ -1,8 +1,8 @@
-#include <torch/csrc/autograd/python_engine.h>
-
+#include <common/log_as_glog_sta.h>
 #include <torch_col/csrc/fake_engine.h>
 #include <torch_col/csrc/control_stub.h>
 
+#include <torch/csrc/autograd/python_engine.h>
 
 namespace torch_col {
 

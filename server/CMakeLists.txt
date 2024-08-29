@@ -40,5 +40,5 @@ target_link_libraries(${PROJECT_NAME}
 
 if (DEFINED USE_NVML_V3)
   target_compile_definitions(${PROJECT_NAME} PRIVATE USE_NVML_V3=${USE_NVML_V3})
-  message(STATUS "${PROJECT_NAME} not use nvml v3 api")
-endif()
+  message(STATUS "${PROJECT_NAME} USE_NVML_V3 = ${USE_NVML_V3}")
+endif() 

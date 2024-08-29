@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import Optional
+from typing import Optional, Union
 import torch
 from torch.cuda import Stream
 import torch_col
@@ -66,7 +66,8 @@ import torch_col
 #     __pysched_dll.CritialSectionEnd(stream.__pysched_handle)
 
 
-def register_stream(stream: Stream | int, is_enable_dynamic_sm_partition: bool = True):
+def register_stream(stream: Union[Stream, int], 
+                    is_enable_dynamic_sm_partition: bool = True):
     if isinstance(stream, Stream):
         stream = stream.cuda_stream
     torch_col.RegisterStream(stream)
@@ -79,7 +80,7 @@ def register_stream(stream: Stream | int, is_enable_dynamic_sm_partition: bool =
         torch_col._C.SMPartitionInit(stream)
 
 
-def unregister_stream(stream: Stream | int):
+def unregister_stream(stream: Union[Stream, int]):
     if isinstance(stream, Stream):
         stream = stream.cuda
     torch_col.UnRegisterStream(stream)
@@ -89,7 +90,7 @@ def unregister_all_streams():
     torch_col.UnRegisterAllStreams()
 
 
-def get_xqueue_size(stream: Optional[Stream | int] = None) -> int:
+def get_xqueue_size(stream: Optional[Union[Stream, int]] = None) -> int:
     if stream is None:
         stream = torch.cuda.current_stream()
     if isinstance(stream, Stream):
@@ -98,7 +99,7 @@ def get_xqueue_size(stream: Optional[Stream | int] = None) -> int:
 
 
 def initial_kill_batch(epoch, batch, 
-                       stream: Optional[Stream | int] = None):
+                       stream: Optional[Union[Stream, int]] = None):
     if epoch == 0 and batch == 0:
         t1 = torch_col.get_unix_timestamp()
         # if stream is None:
@@ -129,7 +130,8 @@ def kill_batch(stream: Optional[Stream] = None):
         num_cmds = torch_col.AbortStream(stream)
         torch_col.SyncStream(stream)
     t2 = torch_col.get_unix_timestamp()
-    print(f'kill batch cost {t2 - t1} ms, num_cmds={num_cmds}, total_queue_size={torch_col.GetTotalXQueueSize()}')
+    print(f'kill batch cost {t2 - t1} ms, num_cmds={num_cmds}'
+          f'total_queue_size={torch_col.GetTotalXQueueSize()}')
 
 
 def set_reject_cuda_calls(reject: bool):

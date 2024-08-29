@@ -68,3 +68,22 @@ if(NOT TARGET glog::glog)
       "Caffe2 or a Caffe2 dependent library, the next warning / error will "
       "give you more info.")
 endif()
+
+
+# use glog in third_party
+
+if(NOT TARGET glog::glog)
+FetchContent_Declare(
+  glog
+  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/glog
+)
+# FetchContent_MakeAvailable(glog)
+FetchContent_GetProperties(glog)
+if (NOT glog_POPULATED)
+  FetchContent_Populate(glog)
+  set(BUILD_SHARED_LIBS_OLD ${BUILD_SHARED_LIBS})
+  set(BUILD_SHARED_LIBS ON CACHE INTERNAL "build shared library" FORCE)
+  add_subdirectory(${glog_SOURCE_DIR} ${glog_BINARY_DIR})
+  set(BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS_OLD} CACHE INTERNAL "library build type" FORCE)
+endif()
+endif()

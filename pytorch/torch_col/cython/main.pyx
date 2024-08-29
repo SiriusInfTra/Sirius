@@ -14,6 +14,7 @@ from enum import Enum
 import cython
 import os
 import functools
+from typing import Optional
 
 ############################
 #  MARK: Torch Col Init    #
@@ -472,7 +473,7 @@ class PyInfTraCommunicator:
 
 def init_train_info(init_batch_size, 
                     current_batch_size,
-                    model_name = None | str,
+                    model_name: Optional[str] = None,
                     pid = None):
     if not TorchColConfig.HasColocatedInferServer():
         print("There not exist colocated infer server, skip init train info")

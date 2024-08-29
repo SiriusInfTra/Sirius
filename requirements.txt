@@ -2,7 +2,7 @@
 astunparse
 expecttest
 hypothesis
-numpy
+numpy==1.26.4
 psutil
 pyyaml
 requests
@@ -15,7 +15,7 @@ networkx
 jinja2
 fsspec
 # setuptools was removed from default python install
-setuptools
+setuptools>=69.5.1
 six
 packaging
 optree>=0.9.1
