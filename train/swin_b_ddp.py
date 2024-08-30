@@ -187,4 +187,5 @@ def main():
 
 
 if __name__ == '__main__':
+    torch_col.util.cleanup_previous_shm()
     main()

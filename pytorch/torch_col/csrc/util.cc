@@ -18,7 +18,7 @@ void CallGLOG_INFO(const char* log_str, const char* file, int line) {
 
 void CallGLOG_DINFO(const char* str, const char* file, int line) {
 #ifndef NDEBUG
-  CallGLOG_DINFO(str, file, line);
+  CallGLOG_INFO(str, file, line);
 #endif
 }
 

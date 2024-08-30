@@ -55,6 +55,7 @@ def setup_colocate_training(rank: int, world_size: int,
             raise ValueError('torch.distributed already initialized')
         torch_dist.init_process_group("nccl", rank=rank, world_size=world_size)
         torch_dist.GroupMember.WORLD._get_backend(torch.device('cuda'))._set_as_default_pg()
+        torch_col.dinfo(f'init_nccl_process_group done')
 
 
 def cleanup_colocate_training(destory_nccl_process_group:bool):

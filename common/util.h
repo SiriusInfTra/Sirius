@@ -108,13 +108,13 @@ inline std::string PrintByte(size_t nbytes) {
 
 inline std::string GetDefaultShmNamePrefix(int device_id) {
   CHECK_LT(device_id, sta::DeviceManager::GetNumVisibleGpu());
-  return (boost::format("colserve_%s_%s") % sta::DeviceManager::GetGpuSystemUuid(device_id) 
-                                          % getuid())
-                                          .str();
+  return str(boost::format("colserve_shm_%s_%s") 
+      % sta::DeviceManager::GetGpuSystemUuid(device_id) 
+      % getuid());
 }
 
 inline std::string GetDefaultShmNamePrefix() {
-  return (boost::format("colserve_%s") % getuid()).str();
+  return (boost::format("colserve_shm_%s") % getuid()).str();
 }
 
 } // namespace colserve

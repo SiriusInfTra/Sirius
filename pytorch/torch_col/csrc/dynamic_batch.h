@@ -65,6 +65,8 @@ class DynamicBatchDistirbutor {
   }
   static int GetNumGlobalBatchPerEpoch() {
     CHECK(batch_distributor_ != nullptr);
+    LOG(INFO) << "GetNumGlobalBatchPerEpoch " 
+              << batch_distributor_->num_global_batches_per_epoch_;
     return batch_distributor_->num_global_batches_per_epoch_;
   }
 
@@ -92,6 +94,8 @@ class DynamicBatchDistirbutor {
   int dataset_size_;
   int input_batch_size_;
   int global_batch_size_;
+
+  bool first_epoch_start = false;
 
   // epoch level
   int num_proced_sample_of_epoch_; // = num_proced_global_batches_ * global_batch_size_

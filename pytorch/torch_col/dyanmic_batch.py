@@ -430,11 +430,14 @@ class DynamicBatchDataset(IterableDataset):
         num_global_batch_per_epoch = \
             _DynamicBatchDistirbutor.get_num_global_batch_per_epoch()
         
+        _DynamicBatchDistirbutor.next_epoch()
+        _DynamicBatchDistirbutor.next_global_batch()
 
         while num_gotten_global_batch < num_global_batch_per_epoch:
             t0 = time.time()
             batch = self._get_batch()
             batch_size = self.get_batch_size(batch)
+            torch_col.info(f'get_batch size: {batch_size}')
 
             if batch.should_update_param():
                 num_gotten_global_batch += 1

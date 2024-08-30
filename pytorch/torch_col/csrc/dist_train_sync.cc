@@ -106,7 +106,7 @@ DistTrainSync::DistTrainSync() {
   } else {
     bool succ = init_sem.timed_wait(
         std::chrono::system_clock::now() 
-        + std::chrono::seconds(30)
+        + std::chrono::seconds(10)
     );
     if (!succ) {
       LOG(FATAL) << "dist train sync init timeout, "

@@ -41,27 +41,12 @@ def dinfo(*args):
     torch_col._C.CallGLOG_DINFO(c_msg, c_file, caller.lineno)
 
 
-# class TrainMode(Enum):
-#     NORMAL = 'normal'
-#     COLOCATE_L1 = 'colocate-l1'
-#     COLOCATE_L2 = 'colocate-l2'
-#     TASKSWITCH_L0 = 'taskswitch-l0'
-#     TASKSWITCH_L1 = 'taskswitch-l1'
-#     TASKSWITCH_L2 = 'taskswitch-l2'
-#     TASKSWITCH_L3 = 'taskswitch-l3'
-    
-#     def is_normal(self):
-#         return self == TrainMode.NORMAL
-    
-#     def is_colocate(self):
-#         return self in {TrainMode.COLOCATE_L1, TrainMode.COLOCATE_L2}
-
-#     def is_kill_batch(self):
-#         return self in {TrainMode.COLOCATE_L1, TrainMode.TASKSWITCH_L1}
-
-#     def is_taskswitch(self):
-#         return self in {TrainMode.TASKSWITCH_L1, TrainMode.TASKSWITCH_L2, 
-#                         TrainMode.TASKSWITCH_L3}
+def cleanup_previous_shm():
+    import subprocess
+    subprocess.run(["rm -f /dev/shm/colserve_shm_*"], 
+                   shell=True, capture_output=False)
+    subprocess.run(["rm -f /dev/shm/sem.colserve_shm_*"],
+                   shell=True, capture_output=False)
 
 
 class MemoryPool:
