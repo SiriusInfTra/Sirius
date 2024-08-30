@@ -29,6 +29,10 @@ for i in $@; do
   fi
 done
 
+if [[ -z $TMPDIR ]]; then
+  TMPDIR=/tmp
+fi
+
 mkdir -p $TMPDIR/gpu-$1
 
 export CUDA_VISIBLE_DEVICES=$GPU_UUID

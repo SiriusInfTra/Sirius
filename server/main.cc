@@ -322,7 +322,7 @@ int main(int argc, char *argv[]) {
     Shutdown(SIGINT);
   });
 
-  CHECK_EQ(cuInit(0), CUDA_SUCCESS);
+  COL_CU_CALL(cuInit(0));
   COL_NVML_CALL(nvmlInit());
   colserve::sta::DeviceManager::Init();
   auto free_list_policy = colserve::sta::getFreeListPolicy(
