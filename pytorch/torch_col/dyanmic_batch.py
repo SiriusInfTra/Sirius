@@ -380,11 +380,14 @@ class DynamicBatchDataset(IterableDataset):
 
     def _retrieve_batch(self, batch_range_vec: List[Tuple[int, int]]) -> dict:
         batch = {}
+        t0 = time.time()
         for k in self.all_inputs.keys():
             input_list = []
             for i, j in batch_range_vec:
                 input_list.append(self.all_inputs[k][i:j])
             batch[k] = torch.cat(input_list, dim=0).pin_memory()
+        t1 = time.time()
+        torch_col.info(f'retrieve batch time: {(t1 - t0) * 1e3:.3f}ms')
         return batch
 
     def _wait_valid_batch_size(self):
@@ -437,7 +440,6 @@ class DynamicBatchDataset(IterableDataset):
             t0 = time.time()
             batch = self._get_batch()
             batch_size = self.get_batch_size(batch)
-            torch_col.info(f'get_batch size: {batch_size}')
 
             if batch.should_update_param():
                 num_gotten_global_batch += 1

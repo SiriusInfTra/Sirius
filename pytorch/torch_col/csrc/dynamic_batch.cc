@@ -449,8 +449,9 @@ void DynamicBatchDistirbutor::NextGlobalBatchImpl() {
         global_shared_data_.num_proced_samples_per_train_->at(i) = 0;
       }
     } else {
-      LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() 
-                << " | NextGlobalBatchImpl] no more samples to process";
+      LOG_IF(INFO, TorchColConfig::log_dynamic_batch) 
+          << "[Rank " << TorchColConfig::GetTrainRank() 
+          << " | NextGlobalBatchImpl] no more samples to process";
       for (auto i : boost::irange(TorchColConfig::GetTrainWorldSize())) {
         global_shared_data_.num_unproc_samples_per_train_->at(i) = 0;
         global_shared_data_.num_procing_samples_per_train_->at(i) = 0;
