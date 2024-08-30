@@ -380,14 +380,17 @@ class DynamicBatchDataset(IterableDataset):
 
     def _retrieve_batch(self, batch_range_vec: List[Tuple[int, int]]) -> dict:
         batch = {}
-        t0 = time.time()
+
+        batch_size = _num_sample_of_batch_range_vec(batch_range_vec)
         for k in self.all_inputs.keys():
-            input_list = []
+            batch[k] = torch.empty([batch_size, *self.all_inputs[k].shape[1:]], 
+                                   dtype=self.all_inputs[k].dtype,
+                                   device=f'cuda:{torch_col.get_train_rank()}')
+            off = 0
             for i, j in batch_range_vec:
-                input_list.append(self.all_inputs[k][i:j])
-            batch[k] = torch.cat(input_list, dim=0).pin_memory()
-        t1 = time.time()
-        torch_col.info(f'retrieve batch time: {(t1 - t0) * 1e3:.3f}ms')
+                batch[k][off:off+(j-i)] = self.all_inputs[k][i:j]
+                off += j - i
+
         return batch
 
     def _wait_valid_batch_size(self):
@@ -412,8 +415,11 @@ class DynamicBatchDataset(IterableDataset):
         _batch_size = self._wait_valid_batch_size()
         batch_range_vec, last_micro_batch = \
             torch_col.dist._DynamicBatchDistirbutor.get_batch(_batch_size)
-        batch = Batch(self._retrieve_batch(batch_range_vec))
+        t1 = time.time() 
+        _batch = self._retrieve_batch(batch_range_vec)
+        t2 = time.time()
         # update batch size, as there maybe not enough samples
+        batch = Batch(_batch)
         batch_size = self.get_batch_size(batch)
 
         assert batch_size == _batch_size, (
@@ -424,8 +430,8 @@ class DynamicBatchDataset(IterableDataset):
             batch['do_step'] = True
         else:
             batch['do_step'] = False
-
         batch['range'] = batch_range_vec
+
         return batch
 
     def __iter__(self) -> Iterator[Batch]:
@@ -437,7 +443,6 @@ class DynamicBatchDataset(IterableDataset):
         _DynamicBatchDistirbutor.next_global_batch()
 
         while num_gotten_global_batch < num_global_batch_per_epoch:
-            t0 = time.time()
             batch = self._get_batch()
             batch_size = self.get_batch_size(batch)
 
@@ -457,8 +462,6 @@ class DynamicBatchDataset(IterableDataset):
                 self.col_ctrl.report_batch_size(batch_size)
                 torch_col.update_current_batch_size(batch_size)
 
-            t1 = time.time()
-            torch_col.info('get_batch time: {:.3f}ms'.format((t1 - t0) * 1e3))
             yield batch
 
 

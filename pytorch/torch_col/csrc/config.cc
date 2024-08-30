@@ -1,14 +1,13 @@
-#include <ostream>
 #include <torch_col/csrc/config.h>
 
-#include <boost/format.hpp>
+#include <common/log_as_glog_sta.h>
 
+#include <boost/format.hpp>
 #include <cstdlib>
+#include <ostream>
 #include <iostream>
 #include <sstream>
 #include <string>
-
-#include <glog/logging.h>
 
 
 namespace torch_col {

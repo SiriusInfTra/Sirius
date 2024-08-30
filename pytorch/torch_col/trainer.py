@@ -13,7 +13,7 @@ from .colocate_ctrl import (
 import torch_col.xsched
 
 # from .dataset import DynamicBatchDataset
-from .dyanmic_batch import DynamicBatchDataset
+from .dynamic_batch import DynamicBatchDataset
 from .util import EventManager, Event
 from dataclasses import dataclass
 
@@ -51,7 +51,7 @@ class Trainer:
         self.dynamic_dataset = dynamic_dataset
         self.data_loader = DataLoader(
             dynamic_dataset, batch_size=None, 
-            shuffle=False, pin_memory=True, drop_last=False, num_workers=0
+            shuffle=False, pin_memory=False, drop_last=False, num_workers=0
         )
         self.iter_train_fn = iter_train_fn
 

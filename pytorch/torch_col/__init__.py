@@ -17,7 +17,7 @@ from .colocate_ctrl import (
     EngineColocateAdjustL1Exception
 )
 from .trainer import Trainer
-from .dyanmic_batch import (
+from .dynamic_batch import (
     DynamicBatchDataset, MicroBatchManager,
     get_dynamic_dataset, get_micro_batch_manager,
     init_dynamic_batch
