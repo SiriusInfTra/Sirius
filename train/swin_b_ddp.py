@@ -3,7 +3,6 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as torch_dist
 import torch.multiprocessing as torch_mp
 from torch import nn
-import torch_col.dyanmic_batch
 from torchvision import models
 from torch.utils.data import DataLoader
 import argparse
@@ -12,7 +11,7 @@ import os, sys
 import torch_col
 from torch_col import MemoryPool, EventManager, TrainMode, ColocateCtrlHookMode
 from torch_col import DynamicBatchDataset
-from torch_col import dyanmic_batch
+from torch_col import dynamic_batch
 import torch_col.trainer
 import torch_col.xsched
 from typing import Optional
@@ -67,10 +66,10 @@ def train(rank:int, world_size:int,
     #     max_global_batch_size=None,
     #     checkpoint_micro_batch=checkpoint_micro_batch)
 
-    dyanmic_dataset, batch_manager = torch_col.init_dynamic_batch(
+    dataset, batch_manager = torch_col.init_dynamic_batch(
         dataset_size=1000, 
-        dataset_type=dyanmic_batch.DatasetType.VISION,
-        dataset_config=dyanmic_batch.VisionDatasetConfig((3, 224, 224), 10),
+        dataset_type=dynamic_batch.DatasetType.VISION,
+        dataset_config=dynamic_batch.VisionDatasetConfig((3, 224, 224), 10),
         batch_size=batch_size,
         global_batch_size=None,
         checkpoint_micro_batch=checkpoint_micro_batch,
@@ -93,7 +92,7 @@ def train(rank:int, world_size:int,
 
     torch_col.dist.wait_barrier()
 
-    def iter_train_fn(batch: dyanmic_batch.Batch):
+    def iter_train_fn(batch: dynamic_batch.Batch):
         images = batch['images']
         targets = batch['labels']
         images: torch.Tensor = images.cuda(rank, non_blocking=True)
@@ -109,7 +108,7 @@ def train(rank:int, world_size:int,
                                      grad_accumulator=grad_accumulator)
         return loss
 
-    trainer = torch_col.Trainer(model, dyanmic_dataset, iter_train_fn)
+    trainer = torch_col.Trainer(model, dataset, iter_train_fn)
 
     for epoch in range(num_epoch):
         last_loss = trainer.train_one_epoch(epoch)
@@ -187,5 +186,5 @@ def main():
 
 
 if __name__ == '__main__':
-    torch_col.util.cleanup_previous_shm()
+    # torch_col.util.cleanup_previous_shm()
     main()
