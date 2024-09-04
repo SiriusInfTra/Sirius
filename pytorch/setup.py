@@ -8,10 +8,13 @@ import torch
 import shutil
 
 
-shutil.rmtree("build", ignore_errors=True)
-shutil.rmtree("dist", ignore_errors=True)
-shutil.rmtree("torch_col.egg-info", ignore_errors=True)
+def cleanup_previous():
+    for file in pathlib.Path("./torch_col/_C").glob("*.so"):
+        file.unlink()
 
+cleanup_previous()
+
+# -------------------
 
 def get_build_path():
     return pathlib.Path(os.environ.get('BUILD_DIR', '../build'))

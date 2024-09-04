@@ -59,7 +59,7 @@ cdef extern from "<torch_col/csrc/dynamic_batch.h>" namespace "torch_col":
         @staticmethod
         void DistributeBatch(bool check_num_unproced_samples)
         @staticmethod
-        void NextEpoch()
+        int NextEpoch()
         @staticmethod
         void NextGlobalBatch()
         @staticmethod
@@ -93,7 +93,7 @@ class _DynamicBatchDistirbutor:
 
     @staticmethod
     def next_epoch():
-        DynamicBatchDistirbutor.NextEpoch()
+        return DynamicBatchDistirbutor.NextEpoch()
 
     @staticmethod
     def next_global_batch():

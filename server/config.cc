@@ -92,6 +92,7 @@ bool Config::profile_sm_partition = false;
 
 bool Config::log_all = false;
 bool Config::log_grpc = false;
+bool Config::log_infer_sched = false;
 bool Config::log_train_init = false;
 bool Config::log_warm_cache = false;
 bool Config::log_cold_cache = false;

@@ -48,7 +48,9 @@ class StubBase {
 
 class DummyStub : public StubBase {
  public:
-  DummyStub() : StubBase() {}
+  DummyStub() : StubBase() {
+    DLOG(INFO) << "[DummyStub] initialized";
+  }
 
  protected:
   void ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) override;
@@ -56,7 +58,9 @@ class DummyStub : public StubBase {
 
 class SwitchStub: public StubBase {
  public:
-  SwitchStub() : StubBase() {};
+  SwitchStub() : StubBase() {
+    DLOG(INFO) << "[SwitchStub] initialized";
+  };
   bool TryInterruptTrainDone();
   
  protected:
@@ -71,7 +75,9 @@ class ColocateStub: public StubBase {
   ColocateStub(int batch_size) 
       : StubBase(), 
         input_batch_size_(batch_size), 
-        current_bs_(batch_size) {};
+        current_bs_(batch_size) {
+    DLOG(INFO) << "[ColocateStub] initialized";
+  };
 
   int GetTargetBatchSize();
   void ColocateAdjustL1Done();

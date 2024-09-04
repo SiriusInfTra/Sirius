@@ -149,6 +149,7 @@ class Config {
 
   static  bool log_all;
   static  bool log_grpc;
+  static  bool log_infer_sched;
   static  bool log_train_init;
   static  bool log_warm_cache;
   static  bool log_cold_cache;

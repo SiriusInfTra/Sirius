@@ -472,7 +472,7 @@ void DynamicBatchDistirbutor::NextGlobalBatchImpl() {
   }
 }
 
-void DynamicBatchDistirbutor::NextEpoch() {
+int DynamicBatchDistirbutor::NextEpoch() {
   CHECK(batch_distributor_ != nullptr);
 
   if (batch_distributor_->first_epoch_start) {
@@ -484,20 +484,24 @@ void DynamicBatchDistirbutor::NextEpoch() {
     batch_distributor_->first_epoch_start = true;
   }
   
-  batch_distributor_->NextEpochImpl();
+  return batch_distributor_->NextEpochImpl();
 }
 
-void DynamicBatchDistirbutor::NextEpochImpl() {
+int DynamicBatchDistirbutor::NextEpochImpl() {
   // TODO: add 
   LOG_IF(INFO, TorchColConfig::log_dynamic_batch) 
       << "[Rank " << TorchColConfig::GetTrainRank() 
       << " | NextEpochImpl] start new epoch " 
       << next_epoch_idx_;
 
+  auto ret = next_epoch_idx_;
+
   next_epoch_idx_ += 1;
   num_proced_global_batches_ = 0;
   num_proced_sample_of_epoch_ = 0;
   // NextGlobalBatchImpl();
+
+  return ret;
 }
 
 int DynamicBatchDistirbutor::GetNumSampleOfBatchIndex(

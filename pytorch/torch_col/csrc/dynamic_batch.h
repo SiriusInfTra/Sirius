@@ -57,7 +57,8 @@ class DynamicBatchDistirbutor {
 
   // call on the begining of a epoch and global batch
   static void NextGlobalBatch();
-  static void NextEpoch();
+  // return the current epoch index
+  static int NextEpoch();
 
   static int GetGlobalBatchSize() {
     CHECK(batch_distributor_ != nullptr);
@@ -80,7 +81,7 @@ class DynamicBatchDistirbutor {
   void DistributeBatchWithoutLock(bool check_num_unproced_samples);
 
   void NextGlobalBatchImpl();
-  void NextEpochImpl();
+  int NextEpochImpl();
 
   int GetNumSampleOfBatchIndex(const batch_range_t &batch_range);
 
