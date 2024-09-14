@@ -1,5 +1,6 @@
 #pragma once
 
+#include <common/log_as_glog_sta.h>
 #include <common/sm_partition.h>
 #include <common/inf_tra_comm/bip_helper.h>
 #include <common/util.h>
@@ -111,7 +112,7 @@ class InfTraSharedInfo {
 
   bool IsTrainInfoValid(int id) {
     bip::scoped_lock lock{*train_info_muts_[id]};
-    return train_infos_[id]->train_pid != -1;
+    return IsTrainInfoValidWithoutLock(id);
   }
 
   void SetInferInfo(std::function<void(InferInfo*)> fn);
@@ -139,7 +140,7 @@ class InfTraSharedInfo {
 
   template <typename ValueType>
   ValueType GetTrainInfoFieldWithoutLock(int id, size_t field_off) {
-    CHECK(IsTrainInfoValid(id));
+    CHECK(IsTrainInfoValidWithoutLock(id));
     return *reinterpret_cast<ValueType*>(
         reinterpret_cast<char*>(train_infos_[id]) + field_off);
   }
@@ -147,10 +148,14 @@ class InfTraSharedInfo {
   template <typename ValueType>
   void UpdateTrainInfoFieldWithoutLock(int id, size_t field_off, 
                                        ValueType value) {
-    CHECK(IsTrainInfoValid(id));
+    CHECK(IsTrainInfoValidWithoutLock(id));
     ValueType *field_ptr = reinterpret_cast<ValueType*>(
         reinterpret_cast<char*>(train_infos_[id]) + field_off);
     *field_ptr = value;
+  }
+
+  inline bool IsTrainInfoValidWithoutLock(int id) {
+    return train_infos_[id]->train_pid != -1;
   }
 
   InferInfo* infer_info_{nullptr};

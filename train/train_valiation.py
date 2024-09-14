@@ -8,7 +8,7 @@ import pandas as pd
 from torch import nn
 import torch
 from torch.nn import functional as F
-from torch_col import CustomeDynamicBatchDataset
+from torch_col import DynamicBatchDataset
 
 class SimpleConvNet(nn.Module):
     def __init__(self):
@@ -80,7 +80,7 @@ def recover_rng_state():
         random.setstate(rng_py)
         np.random.set_state(rng_np)
 
-def record_completed_batch(train_dataset: CustomeDynamicBatchDataset, epoch: int, batch: int, batch_size: int, loss: torch.Tensor):
+def record_completed_batch(train_dataset: DynamicBatchDataset, epoch: int, batch: int, batch_size: int, loss: torch.Tensor):
     global trace_input
     global trace_output
     if trace_input is not None:

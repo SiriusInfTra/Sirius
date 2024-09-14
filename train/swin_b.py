@@ -9,9 +9,9 @@ import sys
 import torch_col
 torch_col.torch_col_init()
 
-from torch_col import MemoryPool, EventManager, TrainMode, HookMode
+from torch_col import MemoryPool, EventManager, TrainMode, ColocateCtrlHookMode
 from torch_col import ColocateAdjustL1Exception, SwitchL1Exception
-from torch_col import CustomeDynamicBatchDataset
+from torch_col import DynamicBatchDataset
 import train_valiation
 from typing import Optional
 
@@ -28,11 +28,11 @@ def setup():
 
 def cleanup():
     if torch_col.is_enable_xsched():
-        torch_col.xsched.unregister_stream()
+        torch_col.xsched.unregister_all_streams()
     train_valiation.val_end()
 
 
-def train(train_mode: TrainMode, hook_mode: HookMode, 
+def train(train_mode: TrainMode, hook_mode: ColocateCtrlHookMode, 
           num_epoch: int, batch_size: int, global_batch_size: Optional[int] = None):
     if torch_col.is_enable_shared_tensor():
         torch_col.tag_model_start()
@@ -48,13 +48,13 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
 
     print(f"Train after init memory pool usage: {MemoryPool.get_memory_usage() * 1024:.2f}M")
     
-    hook = torch_col.get_hook(train_mode, hook_mode, num_epoch, batch_size)
+    hook = torch_col.create_colocate_ctrl(train_mode, hook_mode, num_epoch, batch_size)
     torch_col.init_train_info(batch_size, batch_size)
     hook.register_pytorch_hook([model, criterion])
     checkpoint_micro_batch = hook.train_mode.is_kill_batch()
 
     # dummy data
-    train_dataset = CustomeDynamicBatchDataset(
+    train_dataset = DynamicBatchDataset(
         model_name='swin_b', size=1000, max_batch_size=batch_size, 
         hook=hook, trace=train_valiation.get_trace_input(),
         input_shape=(3, 224, 224), num_class=10, 
@@ -195,7 +195,7 @@ def main():
     num_epoch = args.num_epoch
     train_mode = [train_mode for train_mode in TrainMode if train_mode.value == args.train_mode][0]
     # hook_mode = [hook_mode for hook_mode in HookMode if hook_mode.value == args.hook_mode][0]
-    hook_mode = torch_col.get_hook_mode()
+    hook_mode = torch_col.get_colocate_ctrl_hook_mode()
     
 
     print(f"Swin Transformer training, batch-size={batch_size}, num-epoch={num_epoch}, train-mode={train_mode}, hook-mode={hook_mode}.")

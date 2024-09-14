@@ -6,15 +6,15 @@ import argparse
 import sys
 
 import torch_col
-from torch_col import MemoryPool, EventManager, TrainMode, HookMode
+from torch_col import MemoryPool, EventManager, TrainMode, ColocateCtrlHookMode
 from torch_col import ColocateAdjustL1Exception, SwitchL1Exception
-from torch_col import CustomeDynamicBatchDataset
+from torch_col import DynamicBatchDataset
 import train_valiation
 from typing import Optional
 
 checkpoint_micro_batch = True
 
-def train(train_mode: TrainMode, hook_mode: HookMode, 
+def train(train_mode: TrainMode, hook_mode: ColocateCtrlHookMode, 
           num_epoch: int, batch_size: int, global_batch_size: Optional[int] = None):
     if torch_col.use_shared_tensor():
         torch_col.tag_model_start()
@@ -30,17 +30,18 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
 
     print(f"Train after init memory pool usage: {MemoryPool.get_memory_usage() * 1024:.2f}M")
     
-    hook = torch_col.get_hook(train_mode, hook_mode, num_epoch, batch_size)
+    hook = torch_col.create_colocate_ctrl(train_mode, hook_mode, num_epoch, batch_size)
     hook.register_pytorch_hook([model, criterion])
 
     # dummy data
-    train_dataset = CustomeDynamicBatchDataset('resnet152', 1000, batch_size, hook,
-                                               train_valiation.get_trace_input(),
-                                               input_shape=(3, 224, 224), num_class=10, 
-                                               max_global_batch_size=global_batch_size,
-                                               checkpoint_micro_batch=checkpoint_micro_batch)
+    train_dataset = DynamicBatchDataset('resnet152', 1000, batch_size, hook,
+                                        train_valiation.get_trace_input(),
+                                        input_shape=(3, 224, 224), num_class=10, 
+                                        max_global_batch_size=global_batch_size,
+                                        checkpoint_micro_batch=checkpoint_micro_batch)
     train_loader = DataLoader(train_dataset, batch_size=None, 
-                              shuffle=False, pin_memory=True, drop_last=False, num_workers=0)
+                              shuffle=False, pin_memory=True, 
+                              drop_last=False, num_workers=0)
 
     total_killed_batch = 0
     total_finished_batch = 0
@@ -158,7 +159,7 @@ def main():
     parser.add_argument('--num-epoch', type=int, default=15)
     parser.add_argument('--train-mode', type=str, default=TrainMode.COLOCATE_L1.value, choices=[train_mode.value for train_mode in TrainMode])
     parser.add_argument('--train-profile', type=str, default='train-profile.csv')
-    parser.add_argument('--hook-mode', default=HookMode.XSCHED_SYNC.value, choices=[hook_mode.value for hook_mode in HookMode])
+    parser.add_argument('--hook-mode', default=ColocateCtrlHookMode.XSCHED_SYNC.value, choices=[hook_mode.value for hook_mode in ColocateCtrlHookMode])
     parser.add_argument('--use-xsched', type=bool) # not used args
     args = parser.parse_args()
     
@@ -166,7 +167,7 @@ def main():
     global_batch_size = args.global_batch_size
     num_epoch = args.num_epoch
     train_mode = [train_mode for train_mode in TrainMode if train_mode.value == args.train_mode][0]
-    hook_mode = [hook_mode for hook_mode in HookMode if hook_mode.value == args.hook_mode][0]
+    hook_mode = [hook_mode for hook_mode in ColocateCtrlHookMode if hook_mode.value == args.hook_mode][0]
     
 
     print(f"ResNet152 training, batch-size={batch_size}, num-epoch={num_epoch}, train-mode={train_mode}, hook-mode={hook_mode}.")

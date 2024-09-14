@@ -34,13 +34,13 @@ enable_uniform_v2 = False
 enable_skewed_v2 = False
 uniform_v2_workload_types = [
     'NormalA', 
-    'NormalB',
-    'NormalC'
+    # 'NormalB',
+    # 'NormalC'
 ]
 skew_v2_workload_types = [
     'SkewA',
-    'SkewB',
-    'SkewC'
+    # 'SkewB',
+    # 'SkewC'
 ]
 
 # should be false to eval infer-only
@@ -482,7 +482,7 @@ if run_colsys:
         'use_xsched' : True,
         'has_warmup' : True,
         'ondemand_adjust' : True,
-        'cuda_memory_pool_gb' : "12.5",
+        'cuda_memory_pool_gb' : "13",
         'train_memory_over_predict_mb' : 1500,
         'infer_model_max_idle_ms' : 5000,
         'cold_cache_ratio': 0.5, 
