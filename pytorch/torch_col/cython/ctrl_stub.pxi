@@ -35,6 +35,7 @@ cdef extern from "<torch_col/csrc/control_stub.h>" namespace "torch_col":
         int GetCmd()
         void SetCmd(int)
         int GetTargetBatchSize()
+        int GetUnpubTargetBatchSize()
         void ColocateAdjustL1Done()
         void ColocateAdjustL2Done()
         void TrainStart()
@@ -137,6 +138,10 @@ cdef class PyColocateStub:
     @property
     def target_batch_size(self):
         return self._cppclass.GetTargetBatchSize()
+
+    @property
+    def unpub_target_batch_size(self):
+        return self._cppclass.GetUnpubTargetBatchSize()
 
     def adjust_l1_done(self):
         self._cppclass.ColocateAdjustL1Done()

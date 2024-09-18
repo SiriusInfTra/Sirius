@@ -69,6 +69,11 @@ class CtrlBase(abc.ABC):
     @abc.abstractmethod
     def target_batch_size(self):
         pass
+
+    @property
+    @abc.abstractmethod
+    def unpub_target_batch_size(self):
+        pass
     
     @abc.abstractmethod
     def train_start(self):
@@ -259,6 +264,10 @@ class SwitchCtrl(CtrlBase):
     @property
     def target_batch_size(self):
         return self.input_batch_size
+    
+    @property
+    def unpub_target_batch_size(self):
+        return self.input_batch_size
 
     def report_batch_size(self, batch_size):
         self._stub.report_batch_size(batch_size)
@@ -440,6 +449,10 @@ class ColocateCtrl(CtrlBase):
     def target_batch_size(self):
         return self._stub.target_batch_size
     
+    @property
+    def unpub_target_batch_size(self):
+        return self._stub.unpub_target_batch_size
+    
     def train_start(self):
         self._stub.train_start()
 
@@ -480,6 +493,10 @@ class DummyCtrl(CtrlBase):
     
     @property
     def target_batch_size(self):
+        return self.input_batch_size
+
+    @property
+    def unpub_target_batch_size(self):
         return self.input_batch_size
     
     def train_start(self):

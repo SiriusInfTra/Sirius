@@ -396,7 +396,6 @@ class DynamicBatchDataset(IterableDataset):
 
     def _wait_valid_batch_size(self):
         batch_size = self.get_next_batch_size()
-        torch_col.info(f'wait valid batch size: {batch_size}')
         if self.col_ctrl.train_mode.is_colocate():
             while batch_size <= 0:
                 # self.hook.report_batch_size(batch_size)
@@ -436,18 +435,15 @@ class DynamicBatchDataset(IterableDataset):
         return batch
 
     def __iter__(self) -> Iterator[Batch]:
-        torch_col.info("#####")
-
         num_gotten_global_batch = 0
         num_global_batch_per_epoch = \
             _DynamicBatchDistirbutor.get_num_global_batch_per_epoch()
         
         epoch_idx = _DynamicBatchDistirbutor.next_epoch()
 
-        torch_col.info(f'$$$$$')
         _DynamicBatchDistirbutor.next_global_batch()
 
-        torch_col.info(f'[dynamic dataset] epoch {epoch_idx} start')
+        # torch_col.info(f'[dynamic dataset] epoch {epoch_idx} start')
 
         while num_gotten_global_batch < num_global_batch_per_epoch:
             batch = self._get_batch()

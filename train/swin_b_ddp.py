@@ -32,7 +32,8 @@ def train(rank:int, world_size:int,
           num_epoch: int, batch_size: int, 
           global_batch_size: Optional[int] = None):
     setup(rank, world_size)
-    torch_col.init_train_info(batch_size, batch_size, model_name='swin_b_ddp')
+    torch_col.init_train_info(batch_size, batch_size, 
+                              model_name='swin_b_ddp')
 
     hook_mode = torch_col.get_colocate_ctrl_hook_mode()
     train_mode = torch_col.get_colocate_train_mode()
@@ -101,17 +102,17 @@ def train(rank:int, world_size:int,
             output = model(images)
             loss = criterion(output, targets)
             running_loss = loss.item() * images.size(0)
-            batch_manager.scale_loss(loss)
+            batch_manager.scale_loss(batch, loss)
         scaler.scale(loss).backward()
         batch_manager.optimizer_step(batch, optimizer, 
                                      amp_scaler=scaler, 
                                      grad_accumulator=grad_accumulator)
         return running_loss
 
-    trainer = torch_col.Trainer(model, dataset, iter_train_fn)
+    trainer = torch_col.Trainer(model, iter_train_fn)
 
     for epoch in range(num_epoch):
-        last_loss = trainer.train_one_epoch(epoch)
+        running_loss = trainer.train_one_epoch(epoch)
 
         epoch_stat = trainer.get_last_epoch_stat()
         epoch_duration = trainer.get_last_epoch_duration()
@@ -128,10 +129,10 @@ def train(rank:int, world_size:int,
         if global_batch_size is not None:
             batch_info += f' | num_rollback_sampels {epoch_stat.num_rollback_batch}'
 
-        print(f'[Rank {rank} | {model.__class__.__name__} epoch {epoch}]'
+        print(f'[Rank {rank} | {model.__class__.__name__} epoch {epoch}] '
               f'{epoch_duration / 1e3:.3f}s | {batch_info} | batch-size {batch_size}'
               f'| {mem_info} | thpt {epoch_stat.finished_sample / (epoch_duration / 1e3)}'
-              f'| loss {last_loss.item():.6f}', 
+              f'| loss {running_loss:.6f}', 
               flush=True)
     
         if col_ctrl.can_exit_after_infer_worklaod_done():

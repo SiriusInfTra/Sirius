@@ -205,6 +205,16 @@ int ColocateStub::GetTargetBatchSize() {
   }
 }
 
+int ColocateStub::GetUnpubTargetBatchSize() {
+  std::unique_lock locker{mutex_};
+  if (TorchColConfig::HasColocatedInferServer()) {
+    return COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
+        TorchColConfig::GetTrainRank(), target_batch_size_unpublished);
+  } else {
+    return input_batch_size_;
+  }
+}
+
 void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
   std::unique_lock locker{mutex_};
   switch (static_cast<ctrl::CtrlEvent>(msg.event)) {

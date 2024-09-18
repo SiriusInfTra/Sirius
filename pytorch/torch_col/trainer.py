@@ -13,7 +13,7 @@ from .colocate_ctrl import (
 import torch_col.xsched
 
 # from .dataset import DynamicBatchDataset
-from .dynamic_batch import DynamicBatchDataset
+from .dynamic_batch import DynamicBatchDataset, Batch
 from .util import EventManager, Event
 from dataclasses import dataclass
 
@@ -44,14 +44,15 @@ class Trainer:
 
     def __init__(self, 
                  model: torch.nn.Module,
-                 dynamic_dataset: DynamicBatchDataset, 
                  iter_train_fn:Callable[[Any], torch.Tensor]):
         self.rank = torch_col.get_train_rank()
         self.model = model
-        self.dynamic_dataset = dynamic_dataset
+        self.dynamic_dataset = torch_col.get_dynamic_dataset()
+        self.batch_manager = torch_col.get_micro_batch_manager()
         self.data_loader = DataLoader(
-            dynamic_dataset, batch_size=None, 
-            shuffle=False, pin_memory=False, drop_last=False, num_workers=0
+            self.dynamic_dataset, batch_size=None, 
+            shuffle=False, pin_memory=False, 
+            drop_last=False, num_workers=0
         )
         self.iter_train_fn = iter_train_fn
 
@@ -79,7 +80,7 @@ class Trainer:
                 #     self.dynamic_dataset.get_batch_size(batch), 
                 #     self.dynamic_dataset.global_batch_size
                 # )
-                torch_col.get_micro_batch_manager().begin_batch(
+                self.batch_manager.begin_batch(
                     epoch_idx, batch_idx, batch, batch['range']
                 )
                 _running_loss = self.iter_train_fn(batch)
@@ -92,8 +93,7 @@ class Trainer:
             else:
                 # batch passed, go to next batch
                 # self.dynamic_dataset.next_batch()
-                torch_col.get_micro_batch_manager().finish_batch(
-                    epoch_idx, batch_idx, batch)
+                self.batch_manager.finish_batch(epoch_idx, batch_idx, batch)
                 
                 if epoch_idx == 0 and batch_idx == 0:
                     self._default_first_batch_callback()
@@ -132,14 +132,14 @@ class Trainer:
         return last_epoch_event.duration
     
     def handle_abort_batch(self, epoch_idx: int, batch_idx: int, 
-                           batch, exception: Exception):
+                           batch: Batch, exception: Exception):
         if epoch_idx == 0 and batch_idx == 0:
             raise RuntimeError("first micro batch could not be interrupted.")
         
         # --------------------------
         # first, finish abort batch
 
-        torch_col.info(f'epoch {epoch_idx} batch {batch_idx} dropped due to {exception}')
+        # torch_col.info(f'epoch {epoch_idx} batch {batch_idx} dropped due to {exception}')
         torch_col.dist.wait_barrier()
 
         if isinstance(exception, EngineColocateAdjustL1Exception):
@@ -152,7 +152,9 @@ class Trainer:
             self.model.reducer.finalize_dropped_batch()
         else:
             pass
-        self.dynamic_dataset.cancel_micro_batch()
+        # self.dynamic_dataset.cancel_micro_batch()
+        self.batch_manager.abort_batch(epoch_idx, batch_idx, batch)
+        
 
         # ---------------------------------------------
         # second, release memory and reply to inference
@@ -162,9 +164,9 @@ class Trainer:
             f'batch_exception_{epoch_idx:02d}_{batch_idx:03d}_{batch_size:02d}'
         with EventManager.record_duration_event(batch_exception_event):
             # cuda has alreadly synced
-            self.dynamic_dataset.hook.release_and_reply()
-            print(f'[{exception}] batch_size: '
-                  f'{batch_size} -> {self.dynamic_dataset.batch_size}.')
+            self.dynamic_dataset.col_ctrl.release_and_reply()
+            print(f'[{exception}] batch_size: {batch_size} -> '
+                  f'{self.dynamic_dataset.col_ctrl.unpub_target_batch_size}.')
 
         self._cur_epoch_stat.killed_batch += 1
         self.overall_stat.killed_batch += 1

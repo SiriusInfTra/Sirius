@@ -13,7 +13,20 @@ import torch_col
 from ._C import TrainMode
 
 
+
 def info(*args):
+    if len(args) == 1:
+        msg = args[0]
+    else:
+        msg = ' '.join([f'{arg}' for arg in args])
+    if type(msg) != str:
+        msg = f'{msg}'
+
+    c_msg = msg.encode('utf-8')
+    torch_col._C.CallGLOG_INFO(c_msg, 'torch_col', 0)
+
+
+def info_with_frame(*args):
     if len(args) == 1:
         msg = args[0]
     else:
@@ -25,7 +38,7 @@ def info(*args):
     c_msg = msg.encode('utf-8')
     c_file = caller.filename.encode('utf-8')
     torch_col._C.CallGLOG_INFO(c_msg, c_file, caller.lineno)
-
+    
 
 def dinfo(*args):
     if len(args) == 1:

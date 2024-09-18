@@ -95,6 +95,8 @@ void InfTraSharedInfo::SetTrainInfo(
     train_infos_[id]->init_batch_size = init_batch_size.value();
     if (is_initial_set) {
       train_infos_[id]->target_batch_size = init_batch_size.value();
+      train_infos_[id]->target_batch_size_unpublished = 
+          init_batch_size.value();
     }
   }
   if (current_batch_size.has_value()) {

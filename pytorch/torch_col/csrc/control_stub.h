@@ -80,6 +80,7 @@ class ColocateStub: public StubBase {
   };
 
   int GetTargetBatchSize();
+  int GetUnpubTargetBatchSize();
   void ColocateAdjustL1Done();
   void ColocateAdjustL2Done();
   double PassedTimeFromSetCmd();

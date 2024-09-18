@@ -101,7 +101,7 @@ bool Config::log_infer_model_reclaim = false;
 bool Config::log_infer_time = false;
 bool Config::log_infer_pipeline_exec = false;
 bool Config::log_infer_load_param = false;
-bool Config::log_memory_adjust = true;
+bool Config::log_memory_adjust = false;
 bool Config::log_controller = false;
 
 }
