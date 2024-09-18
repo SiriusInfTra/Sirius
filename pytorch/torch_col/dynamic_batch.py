@@ -117,13 +117,6 @@ class MicroBatchManager:
         amp_scaler: Optional[torch.cuda.amp.GradScaler] = None,
         grad_accumulator: Optional[torch_col.accumulate.GradAccumulator] = None
     ):
-        def _step():
-            if amp_scaler is not None:
-                amp_scaler.step(optimizer)
-                amp_scaler.update()
-            else:
-                optimizer.step()
-
         if self._should_checkpoint_micro_batch():
             assert grad_accumulator is not None
             with get_colocate_ctrl().steps_no_interrupt():
@@ -136,6 +129,14 @@ class MicroBatchManager:
                     step_event.tag = 'local'
                 EventManager.record_event('', step_event)
         else:
+            def _step():
+                if amp_scaler is not None:
+                    amp_scaler.step(optimizer)
+                    amp_scaler.update()
+                else:
+                    optimizer.step()
+                optimizer.zero_grad()
+
             if batch.should_update_param():
                 with get_colocate_ctrl().steps_no_interrupt():
                     step_event = EventManager.record_event('optimizer_step')

@@ -61,13 +61,13 @@ class Trainer:
         self.epoch_events = []
         self._cur_epoch_stat = None
 
-    def train_one_epoch(self, epoch_idx: int) -> Optional[torch.Tensor]:
+    def train_one_epoch(self, epoch_idx: int) -> Optional[float]:
         epoch_event_name = f'epoch_{epoch_idx:02d}_{self.dynamic_dataset.ds_size}'
         epoch_event = EventManager.record_event(epoch_event_name)
 
         # epoch_stat = EpochStat()
         self._cur_epoch_stat = EpochStat()
-        last_loss = None
+        running_loss = 0
 
         for batch_idx, batch in enumerate(self.data_loader):
             try:
@@ -82,7 +82,7 @@ class Trainer:
                 torch_col.get_micro_batch_manager().begin_batch(
                     epoch_idx, batch_idx, batch, batch['range']
                 )
-                last_loss = self.iter_train_fn(batch)
+                _running_loss = self.iter_train_fn(batch)
             except (
                 ColocateAdjustL1Exception, 
                 SwitchL1Exception, 
@@ -98,6 +98,8 @@ class Trainer:
                 if epoch_idx == 0 and batch_idx == 0:
                     self._default_first_batch_callback()
 
+                running_loss += _running_loss
+
                 self._cur_epoch_stat.finished_batch += 1
                 self._cur_epoch_stat.finished_sample += \
                     self.dynamic_dataset.get_batch_size(batch)
@@ -108,7 +110,7 @@ class Trainer:
         self.epoch_events.append(epoch_event)
         self._cur_epoch_stat = None
 
-        return last_loss
+        return running_loss / self.dynamic_dataset.ds_size
 
     def get_overall_stat(self) -> TrainStat:
         return self.overall_stat

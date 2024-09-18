@@ -18,6 +18,7 @@ class GradAccumulator:
     def accumulate(self):
         for p in self.param_list:
             self.param_grads[p]['global'] += p.grad 
+            p.grad.zero_()
 
     def step(self, 
              optmizer: torch.optim.Optimizer, 
