@@ -112,24 +112,17 @@ def train(train_mode: TrainMode, hook_mode: ColocateCtrlHookMode,
                 train_valiation.debug_print_loss(len(images), loss)
                 scaler.scale(loss).backward()
                 train_dataset.step_stage(hook, optimizer, scaler=scaler, grad_accumulator=grad_accumulator)
-                # if train_dataset.is_do_checkpoint_micro_batch():
-                #     with hook.steps_no_interrupt():
-                #         grad_accumulator.accumulate()
-                #         if train_dataset.is_do_step():
-                #             grad_accumulator.step(optimizer, scaler)
-                # else:
-                #     if train_dataset.is_do_step():
-                #         with hook.steps_no_interrupt():
-                #             step_event = EventManager.record_event('optimizer_step')
-                #             scaler.step(optimizer)
-                #             scaler.update()
-                #         EventManager.record_event('', step_event)
+
                 finished_batch += 1
                 total_finished_batch += 1
                 batch_cnt += 1
                 finished_imgs += len(images)
 
-            except (ColocateAdjustL1Exception, SwitchL1Exception, torch_col.EngineColocateAdjustL1Exception) as e:
+            except (
+                ColocateAdjustL1Exception, 
+                SwitchL1Exception, 
+                torch_col.EngineColocateAdjustL1Exception
+            ) as e:
                 if epoch == 0 and i == 0:
                     raise RuntimeError("micro batch 0 could not be interrupted.")
                 # for fast develop, should merge to hook.py
