@@ -5,19 +5,12 @@
 #include <tvm/runtime/module.h>
 #include <tvm/runtime/registry.h>
 #include <tvm/runtime/logging.h>
-#include <iostream>
-#include <filesystem>
-#include <csignal>
+
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/health_check_service_interface.h>
 #include <glog/logging.h>
 #include <CLI/CLI.hpp>
-
-#include <common/cuda_allocator.h>
-#include <common/sm_partition.h>
-#include <common/device_manager.h>
-#include <common/util.h>
 
 #include <server/grpc/grpc_server.h>
 #include <server/model_store/infer_model_store.h>
@@ -27,6 +20,18 @@
 #include <server/control/controller.h>
 #include <server/profiler.h>
 #include <server/config.h>
+
+#include <common/cuda_allocator.h>
+#include <common/sm_partition.h>
+#include <common/device_manager.h>
+#include <common/util.h>
+
+#include <boost/range/irange.hpp>
+#include <boost/range/algorithm.hpp>
+#include <boost/range/numeric.hpp>
+#include <iostream>
+#include <filesystem>
+#include <csignal>
 
 #define STREAM_OUTPUT(field) std::cerr << "cfg::" #field "=" << cfg::field << std::endl
 
@@ -335,9 +340,14 @@ int main(int argc, char *argv[]) {
         static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
         true, false, free_list_policy);
       colserve::sta::CUDAMemPool::Get(device_id)->RegisterOOMHandler([]() {
-        LOG(INFO) << "train predict memory " 
-                  <<  colserve::TrainAdjuster::PredictTrainMemUsageMB(0, true) 
-                  << "."; 
+        LOG(INFO) << "[CUDAMmemPool OOM] train predict memory" 
+                  << boost::accumulate(
+                      boost::irange(colserve::sta::DeviceManager::GetNumVisibleGpu()), 
+                      std::string{""}, [](std::string acc, int device_id) {
+                        return acc + " " + std::to_string(
+                            colserve::TrainAdjuster::PredictTrainMemUsageMB(device_id, true));
+                      }) 
+                  << ".";
         }, colserve::sta::MemType::kInfer);
     }
   }

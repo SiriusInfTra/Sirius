@@ -13,7 +13,6 @@ import torch_col
 from ._C import TrainMode
 
 
-
 def info(*args):
     if len(args) == 1:
         msg = args[0]

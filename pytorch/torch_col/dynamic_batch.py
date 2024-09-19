@@ -152,7 +152,6 @@ class MicroBatchManager:
         self._last_batch = batch
         self._record_batch_event(epoch_idx, batch_idx, len(batch))
         
-
     def finish_batch(self, epoch_idx: int, batch_idx: int, batch: Batch):
         if batch.should_update_param():
             torch.cuda.current_stream().synchronize()
@@ -185,7 +184,6 @@ class MicroBatchManager:
         self._last_batch = None
         self._last_batch_range_vec = None
         self._dynamic_dataset._next_batch()
-
 
     def abort_batch(self, epoch_idx: int, batch_idx: int, batch: Batch):
         self._complete_batch_event(_BATCH_CANCEL_TAG)
@@ -378,7 +376,6 @@ class DynamicBatchDataset(IterableDataset):
         assert self._state == DatasetState.ITER
         self._state = DatasetState.NEXT
 
-
     def _retrieve_batch(self, batch_range_vec: List[Tuple[int, int]]) -> dict:
         batch = {}
 
@@ -435,7 +432,7 @@ class DynamicBatchDataset(IterableDataset):
         return batch
 
     def __iter__(self) -> Iterator[Batch]:
-        num_gotten_global_batch = 0
+        # num_gotten_global_batch = 0
         num_global_batch_per_epoch = \
             _DynamicBatchDistirbutor.get_num_global_batch_per_epoch()
         
@@ -445,12 +442,14 @@ class DynamicBatchDataset(IterableDataset):
 
         # torch_col.info(f'[dynamic dataset] epoch {epoch_idx} start')
 
-        while num_gotten_global_batch < num_global_batch_per_epoch:
+        while (_DynamicBatchDistirbutor.get_num_proced_global_batch() 
+               < num_global_batch_per_epoch
+        ):
             batch = self._get_batch()
             batch_size = self.get_batch_size(batch)
 
-            if batch.should_update_param():
-                num_gotten_global_batch += 1
+            # if batch.should_update_param():
+            #     num_gotten_global_batch += 1
   
             if (self._state != DatasetState.INIT
                 and torch_col.is_enable_shared_tensor()

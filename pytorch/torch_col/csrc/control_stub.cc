@@ -261,7 +261,7 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
         
         sta::xsched::SyncAllStreams();
         auto t2 = torch_col::get_unix_timestamp();
-        LOG(INFO) << "Receive adjust request, cancel calls first, "
+        LOG(INFO) << "Receive adjust request, cancel calls first,"
                   << " cost " << t2 - t1 << "ms, remove " << remove 
                   << " cuda command(s).";
     }

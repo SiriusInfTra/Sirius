@@ -429,7 +429,7 @@ void DynamicBatchDistirbutor::NextGlobalBatchImpl() {
 
     *global_shared_data_.num_unproc_samples_ = cur_global_batch_size;
     *global_shared_data_.num_procing_samples_ = 0;
-    *global_shared_data_.num_procing_samples_ = 0;
+    *global_shared_data_.num_proced_samples_ = 0;
 
     global_shared_data_.unproc_sample_queue_->clear();
     global_shared_data_.procing_sample_queue_->clear();

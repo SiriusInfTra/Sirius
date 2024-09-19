@@ -70,6 +70,11 @@ class DynamicBatchDistirbutor {
     return batch_distributor_->num_global_batches_per_epoch_;
   }
 
+  static int GetNumProcedGlobalBatch() {
+    CHECK(batch_distributor_ != nullptr);
+    return batch_distributor_->num_proced_global_batches_;
+  }
+
   DynamicBatchDistirbutor(int dataset_size, 
                           int input_batch_size,
                           int global_batch_size);

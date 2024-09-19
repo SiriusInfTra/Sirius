@@ -70,7 +70,9 @@ double ResourceManager::GetTrainAvailMemoryMB(int device_id, bool verbose) {
     free_memory_mb = ByteToMB(free);
     free_memory_mb = std::min(
         free_memory_mb, 
-        sta::ByteToMB(total) - infer_memory_mb - Config::train_memory_over_predict_mb
+        sta::ByteToMB(total) 
+        - infer_memory_mb 
+        - Config::train_memory_over_predict_mb
     );
   }
 

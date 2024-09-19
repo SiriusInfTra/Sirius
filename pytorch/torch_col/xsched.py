@@ -130,7 +130,7 @@ def kill_batch(stream: Optional[Stream] = None):
         num_cmds = torch_col.AbortStream(stream)
         torch_col.SyncStream(stream)
     t2 = torch_col.get_unix_timestamp()
-    print(f'kill batch cost {t2 - t1} ms, num_cmds={num_cmds}'
+    print(f'kill batch cost {t2 - t1} ms, num_cmds={num_cmds} '
           f'total_queue_size={torch_col.GetTotalXQueueSize()}')
 
 
