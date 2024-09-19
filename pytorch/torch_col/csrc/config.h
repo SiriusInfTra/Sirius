@@ -33,6 +33,7 @@ class TorchColConfig {
   static std::string train_profile_log_path;
 
   static bool log_dynamic_batch;
+  static bool log_control_stub;
   
   static int configured;
 

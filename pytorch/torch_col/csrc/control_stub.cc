@@ -151,11 +151,15 @@ void SwitchStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
                 ctrl::InfTraMessageQueue::Direction::kTra2Inf,
                 TorchColConfig::GetTrainRank());
       cmd_id_ = 0;
-      LOG(INFO) << "[SwitchStub] already interrupting train, done";
+
+      LOG_IF(INFO, TorchColConfig::log_control_stub) 
+          << "[SwitchStub] already interrupting train, done";
     } else {
       cmd_id_ = msg.id;
       cmd_ = static_cast<int>(ctrl::CtrlEvent::kInterruptTrain);
-      LOG(INFO) << "[SwitchStub] Interrupt train";
+
+      LOG_IF(INFO, TorchColConfig::log_control_stub) 
+          << "[SwitchStub] Interrupt train";
     }
     break;
   case (static_cast<int>(ctrl::CtrlEvent::kResumeTrain)):
@@ -163,13 +167,15 @@ void SwitchStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
         && cmd_id_ == 0) {
       // already interrupting train
       cmd_ = static_cast<int>(ctrl::CtrlEvent::kResumeTrain);
-      LOG(INFO) << "[SwitchStub] Resume train";
+      LOG_IF(INFO, TorchColConfig::log_control_stub) 
+          << "[SwitchStub] Resume train";
       ctrl::InfTraCommunicator::GetMQ()
           ->Put({0, static_cast<int>(ctrl::CtrlEvent::kResumeTrainDone)},
                 ctrl::InfTraMessageQueue::Direction::kTra2Inf,
                 TorchColConfig::GetTrainRank());
     } else {
-      LOG(INFO) << "[SwitchStub] Ignore resume train";
+      LOG_IF(INFO, TorchColConfig::log_control_stub) 
+          << "[SwitchStub] Ignore resume train";
     }
   case (static_cast<int>(ctrl::CtrlEvent::kInferenceWorkloadDone)):
     this->infer_workload_done_timestamp_ = torch_col::get_unix_timestamp();
@@ -189,7 +195,8 @@ bool SwitchStub::TryInterruptTrainDone() {
               ctrl::InfTraMessageQueue::Direction::kTra2Inf,
               TorchColConfig::GetTrainRank());
     cmd_id_ = 0;
-    LOG(INFO) << "[SwitchStub] Interrupt train done";
+    LOG_IF(INFO, TorchColConfig::log_control_stub) 
+        << "[SwitchStub] Interrupt train done";
     return true;
   }
   return false;
@@ -226,16 +233,18 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
         TorchColConfig::GetTrainRank(), target_batch_size);
     auto unpub_target_bs = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
         TorchColConfig::GetTrainRank(), target_batch_size_unpublished);
-    LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() <<  " | ColocateStub]" 
-              << " Adjust batch size "
-              << " cur_target_bs " << cur_target_bs
-              << " unpub_target_bs " << unpub_target_bs
-              << " current " << this->current_bs_
-              << " timestamp: " << torch_col::get_unix_timestamp();
-              // << " malloc_ms " << colserve::sta::CUDAMemPool::TrainAllocMs();
-    // CHECK_LT(this->target_bs_, this->current_bs_);
+    LOG_IF(INFO, TorchColConfig::log_control_stub) 
+        << "[Rank " << TorchColConfig::GetTrainRank() <<  " | ColocateStub]" 
+        << " Adjust batch size "
+        << " cur_target_bs " << cur_target_bs
+        << " unpub_target_bs " << unpub_target_bs
+        << " current " << this->current_bs_
+        << " timestamp: " << torch_col::get_unix_timestamp();
+
     if (msg.value >= cur_target_bs) {
-      LOG(INFO) << "[ColocateStub] skip satisfied adjust, reply adjust immediately";
+      LOG_IF(INFO, TorchColConfig::log_control_stub) 
+          << "[ColocateStub] skip satisfied adjust, reply adjust immediately";
+
       ctrl::InfTraCommunicator::GetMQ()
           ->Put(ctrl::CtrlMsgEntry{
                   .id = msg.id,
@@ -291,7 +300,8 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
       auto target_bs_unpub_vec = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD_VEC(
           target_batch_size_unpublished);
 
-      LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() 
+      LOG_IF(INFO, TorchColConfig::log_control_stub) 
+          << "[Rank " << TorchColConfig::GetTrainRank() 
           << " | ColocateStub]" 
           << " Infer Exit adjust, cmd_id " << msg.id
           << " cur_target_bs_vec " << target_bs_vec
@@ -345,8 +355,9 @@ void ColocateStub::ColocateAdjustL1Done() {
     colserve::sta::xsched::SetRejectCudaCalls(false);
     // colserve::sta::CUDAMemPool::EnableTrainAlloc();
     StubProfiler::RecordAdjustDone();
-    LOG(INFO) << "[ColocateStub] Adjust L1 done, timestamp: " 
-              << torch_col::get_unix_timestamp();
+    LOG_IF(INFO, TorchColConfig::log_control_stub) 
+        << "[ColocateStub] Adjust L1 done, timestamp: " 
+        << torch_col::get_unix_timestamp();
   }
 }
 
@@ -360,8 +371,9 @@ void ColocateStub::ColocateAdjustL2Done() {
     cmd_ = -1;
     cmd_id_ = 0;
     StubProfiler::RecordAdjustDone();
-    LOG(INFO) << "[ColocateStub] Adjust L2 done, timestamp: " 
-              << torch_col::get_unix_timestamp();
+    LOG_IF(INFO, TorchColConfig::log_control_stub) 
+        << "[ColocateStub] Adjust L2 done, timestamp: " 
+        << torch_col::get_unix_timestamp();
   }
 }
 

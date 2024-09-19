@@ -8,7 +8,7 @@ import workload_collections as wkld_coll
 import run_comm
 
 # run_comm.UniformConfig_v2.train_model = 'swin_b_ddp'
-run_comm.UniformConfig_v2.train_batch_size = 48
+run_comm.UniformConfig_v2.train_batch_size = 72
 
 use_time_stamp = True
 skip_fail = False
@@ -308,7 +308,8 @@ def azure(rps, client_model_list, infer_only=True, rps_fn=None,
     ))
     return workload
 
-def _run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
+def _run(system: System, workload: HyperWorkload, 
+         server_model_config: str, unit: str, tag: str):
     try:
         system.launch(unit, tag, time_stamp=use_time_stamp,
                       infer_model_config=server_model_config, fake_launch=False)
@@ -340,7 +341,8 @@ def _run(system: System, workload: HyperWorkload, server_model_config: str, unit
     system.calcuate_train_thpt()
     
 
-def run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
+def run(system: System, workload: HyperWorkload, 
+        server_model_config: str, unit: str, tag: str):
     print(f'\x1b[32;1m[{unit} {tag}]\x1b[0m')
     if skip_fail:
         try:
