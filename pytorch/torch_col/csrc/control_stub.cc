@@ -1,13 +1,14 @@
-#include <common/log_as_glog_sta.h>
-#include <common/cuda_allocator.h>
-#include <common/xsched_ctrl.h>
-#include <common/inf_tra_comm/communicator.h>
-
 #include <torch_col/csrc/control_stub.h>
 #include <torch_col/csrc/config.h>
 #include <torch_col/csrc/util.h>
 #include <torch_col/csrc/fake_engine.h>
 #include <torch_col/csrc/dist_ext.h>
+#include <torch_col/csrc/dynamic_batch.h>
+
+#include <common/log_as_glog_sta.h>
+#include <common/cuda_allocator.h>
+#include <common/xsched_ctrl.h>
+#include <common/inf_tra_comm/communicator.h>
 
 #include <cstddef>
 
@@ -223,9 +224,12 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
   {
     auto cur_target_bs = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
         TorchColConfig::GetTrainRank(), target_batch_size);
+    auto unpub_target_bs = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
+        TorchColConfig::GetTrainRank(), target_batch_size_unpublished);
     LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() <<  " | ColocateStub]" 
-              << " Adjust batch size, target " << msg.value
-              << " cur target " << cur_target_bs
+              << " Adjust batch size "
+              << " cur_target_bs " << cur_target_bs
+              << " unpub_target_bs " << unpub_target_bs
               << " current " << this->current_bs_
               << " timestamp: " << torch_col::get_unix_timestamp();
               // << " malloc_ms " << colserve::sta::CUDAMemPool::TrainAllocMs();
@@ -273,17 +277,39 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
     break;
   case ctrl::CtrlEvent::kInferExit: 
   {
-    auto cur_target_bs = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
-        TorchColConfig::GetTrainRank(), target_batch_size);
+    // auto cur_target_bs = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
+    //     TorchColConfig::GetTrainRank(), target_batch_size);
+    // auto unpub_target_bs = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
+    //     TorchColConfig::GetTrainRank(), target_batch_size_unpublished);
 
     // auto old_target_bs = this->target_bs_;
     // this->target_bs_ = msg.value;
-    LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() 
-              << " | ColocateStub]" 
-              << " Infer Exit adjust, cmd_id " << msg.id
-              << " cur_target_bs " << cur_target_bs
-              << " current " << this->current_bs_
-              << " timestamp: " << torch_col::get_unix_timestamp();
+
+    if (TorchColConfig::IsTrainMaster()) {
+      auto target_bs_vec = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD_VEC(
+          target_batch_size);
+      auto target_bs_unpub_vec = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD_VEC(
+          target_batch_size_unpublished);
+
+      LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() 
+          << " | ColocateStub]" 
+          << " Infer Exit adjust, cmd_id " << msg.id
+          << " cur_target_bs_vec " << target_bs_vec
+          << " unpub_target_bs_vec " << target_bs_unpub_vec
+          << " timestamp: " << torch_col::get_unix_timestamp();
+
+      bool all_same = true;
+      for (auto i : boost::irange(TorchColConfig::GetTrainWorldSize())) {
+        if (target_bs_vec[i] != target_bs_unpub_vec[i]) {
+          all_same = false;
+          break;
+        }
+      }
+      if (!all_same) {
+        DynamicBatchDistirbutor::DistributeBatch(true);
+      }
+    }
+
     // CHECK_LE(this->target_bs_, this->current_bs_);
     // if (this->target_bs_ == this->current_bs_) {
     //   if (cmd_ == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)) {
