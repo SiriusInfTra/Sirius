@@ -51,7 +51,8 @@ if num_devices > 1:
 fig, axes = plt.subplots(num_subplots, 1, 
                          figsize=(ax_width, ax_height*num_devices + hmargin*(num_subplots-1)))
 
-print(len(axes))
+if num_subplots == 1:
+    axes = [axes]
 
 infer_mem_all_devices = []
 
