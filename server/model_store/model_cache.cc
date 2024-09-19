@@ -259,31 +259,35 @@ std::pair<std::vector<size_t>, bool> ColdModelCache::PopCacheItem(const std::str
 }
 
 ColdModelCache::evict_list ColdModelCache::GetEvictModels(
-    long capacity, 
+    memory_byte_t capacity, 
     std::array<Model*, 2> ignore_models, 
     std::unique_lock<std::mutex>& lock) {
   const size_t default_rank = 0;
   std::vector<Model*> coldest_model;
   for (auto&& [name, cache_item] : cold_cache_items_) {
+    if (cache_item->model == ignore_models[0] 
+       || cache_item->model == ignore_models[1]) {
+      continue;
+    }
     coldest_model.push_back(cache_item->model);
   }
   std::sort(coldest_model.begin(), coldest_model.end(), [](Model* a, Model* b) {
     return a->GetHotness() > b->GetHotness(); /* descending */
   });
+
   evict_list evict_models;
   while (current_cached_nbytes_ > capacity && !coldest_model.empty()) {
     DLOG(INFO) << "should evict models.";
     auto *model = coldest_model.back();
-    if (model != ignore_models[0] || model != ignore_models[1]) { 
-      auto& model_id = model->GetName();
-      auto&& [cached_groups_id, succ] =
-          PopCacheItem(model_id, default_rank, lock);
-      CHECK(succ);
-      evict_models.emplace_back(model_id, std::move(cached_groups_id));
-    }
+    auto& model_id = model->GetName();
+    auto&& [cached_groups_id, succ] =
+        PopCacheItem(model_id, default_rank, lock);
+    CHECK(succ);
+    evict_models.emplace_back(model_id, std::move(cached_groups_id));
 
     coldest_model.pop_back();
   }
+
   CHECK_LE(current_cached_nbytes_, capacity) 
       << "Unable to evict models to make sure current_cached_nbytes_ > capacity";
   return evict_models;

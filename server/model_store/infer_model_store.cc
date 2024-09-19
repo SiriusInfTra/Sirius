@@ -337,7 +337,7 @@ void InferModelStore::ColocateMonitor() {
         ctrl::Controller::Get()->ColocateInferReleaseAdjust(adjust_plan);
       }
     }
-    std::this_thread::sleep_for(10ms);
+    std::this_thread::sleep_for(100ms);
   }
 }
 

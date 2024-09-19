@@ -251,9 +251,9 @@ void init_config() {
   if (col_log_all_env != nullptr) {
     cfg::log_all = std::string(col_log_all_env) == "1";
   }
-  auto col_log_adjust_evn = getenv("COLSERVE_LOG_MEMORY_ADJUST");
-  if (col_log_adjust_evn != nullptr) {
-    cfg::log_memory_adjust = std::string(col_log_adjust_evn) == "1";
+  auto col_log_adjust_env = getenv("COLSERVE_LOG_MEMORY_ADJUST");
+  if (col_log_adjust_env != nullptr) {
+    cfg::log_memory_adjust = std::string(col_log_adjust_env) == "1";
   }
   if (cfg::log_all) {
     cfg::log_all = true;
@@ -340,7 +340,7 @@ int main(int argc, char *argv[]) {
         static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
         true, false, free_list_policy);
       colserve::sta::CUDAMemPool::Get(device_id)->RegisterOOMHandler([]() {
-        LOG(INFO) << "[CUDAMmemPool OOM] train predict memory" 
+        LOG(INFO) << "[CUDAMemPool OOM] train predict memory" 
                   << boost::accumulate(
                       boost::irange(colserve::sta::DeviceManager::GetNumVisibleGpu()), 
                       std::string{""}, [](std::string acc, int device_id) {
