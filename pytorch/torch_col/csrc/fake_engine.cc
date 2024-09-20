@@ -9,7 +9,8 @@ namespace torch_col {
 static StubBase* stub_ptr_ = nullptr;
 
 Engine& GetTorchColEngine() {
-  static FakeEngine *engine = new FakeEngine(python::PythonEngine::get_python_engine());
+  static FakeEngine *engine = 
+      new FakeEngine(python::PythonEngine::get_python_engine());
   return *engine;
 }
 

@@ -190,7 +190,8 @@ class MicroBatchManager:
         if self._enable_grad_accumulate and not self._checkpoint_micro_batch:
             self._rollback_micro_batch()
         else:
-            _DynamicBatchDistirbutor.abort_batch(self._last_batch_range_vec)
+            _DynamicBatchDistirbutor.abort_batch(self._last_batch_range_vec,
+                                                 batch.should_update_param())
         self._last_batch = None
         self._last_batch_range_vec = None
 
@@ -234,9 +235,10 @@ class MicroBatchManager:
         for idx in self._past_micro_batch_range_vecs_in_global_batch:
             torch_col.Trainer._trainer._cur_epoch_stat.num_rollback_batch += \
                 _num_sample_of_batch_range(idx)
-            _DynamicBatchDistirbutor.abort_batch(idx)
+            _DynamicBatchDistirbutor.abort_batch(idx, False)
 
-        _DynamicBatchDistirbutor.abort_batch(self._last_batch_range_vec)
+        _DynamicBatchDistirbutor.abort_batch(self._last_batch_range_vec, 
+                                             self._last_batch.should_update_param())
         torch_col.Trainer._trainer._cur_epoch_stat.num_rollback_batch += \
             _num_sample_of_batch_range(self._last_batch_range_vec)
         

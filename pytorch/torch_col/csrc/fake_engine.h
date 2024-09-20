@@ -16,6 +16,7 @@ using namespace torch::autograd;
 class FakeEngine: public Engine {
  private:
   Engine &python_engine_;
+  
  public:
   FakeEngine(Engine &python_engine) : python_engine_(python_engine) {}
   virtual variable_list execute(

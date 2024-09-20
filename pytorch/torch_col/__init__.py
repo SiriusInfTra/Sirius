@@ -5,7 +5,8 @@ from ._C import _dist as dist
 
 from .util import (
     MemoryPool, TrainMode, EventManager, 
-    info, dinfo
+    info, dinfo,
+    info_with_frame
 )
 from .accumulate import GradAccumulator
 

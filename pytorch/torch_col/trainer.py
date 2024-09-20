@@ -152,9 +152,7 @@ class Trainer:
             self.model.reducer.finalize_dropped_batch()
         else:
             pass
-        # self.dynamic_dataset.cancel_micro_batch()
         self.batch_manager.abort_batch(epoch_idx, batch_idx, batch)
-        
 
         # ---------------------------------------------
         # second, release memory and reply to inference
@@ -177,12 +175,17 @@ class Trainer:
         # --------------------------------------------------
         # third, re-configure training and re-start training
 
-        if torch_col.get_train_rank() == 0:
-            torch_col.dist._DynamicBatchDistirbutor.distribute_batch(True)
-        torch_col.dist.wait_barrier()
         nccl_backend = torch_dist.GroupMember.WORLD._get_backend(torch.device('cuda'))
         # restart nccl will let all training cpu sync
         nccl_backend._restart_nccl_comm([torch.device(f'cuda:{self.rank}')])
+
+        if isinstance(self.dynamic_dataset.col_ctrl, torch_col.ColocateCtrl):
+            # Ref: [Note: kill batch]
+            self.dynamic_dataset.col_ctrl.set_killed_batch_recover()
+
+        if torch_col.get_train_rank() == 0:
+            torch_col.dist._DynamicBatchDistirbutor.distribute_batch(True)
+        torch_col.dist.wait_barrier()
 
     def _default_first_batch_callback(self):
         if torch_col.is_enable_shared_tensor():
@@ -198,5 +201,3 @@ class Trainer:
             torch.cuda.current_stream().synchronize()
             torch_col.xsched.initial_kill_batch(0, 0)
 
-                
-                

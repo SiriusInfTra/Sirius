@@ -53,7 +53,8 @@ class DynamicBatchDistirbutor {
   
   static void FinishBatch(const batch_range_vec_t &batch_range_vec, 
                           bool end_of_global_batch);
-  static void AbortBatch(const batch_range_vec_t &batch_range_vec);
+  static void AbortBatch(const batch_range_vec_t &batch_range_vec,
+                         bool end_of_global_batch);
 
   // call on the begining of a epoch and global batch
   static void NextGlobalBatch();

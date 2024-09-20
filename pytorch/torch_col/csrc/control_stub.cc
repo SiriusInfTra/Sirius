@@ -36,7 +36,7 @@ StubBase::StubBase() {
           ProcessCtrlMsg(TorchColConfig::GetTrainRank(), msg);
         }
       }
-      LOG(INFO) << "[Ctrl Stub] control thread exit";
+      LOG(INFO) << "[CtrlStub] control thread exit";
     }));
   }
 }
@@ -235,41 +235,62 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
         TorchColConfig::GetTrainRank(), target_batch_size_unpublished);
     LOG_IF(INFO, TorchColConfig::log_control_stub) 
         << "[Rank " << TorchColConfig::GetTrainRank() <<  " | ColocateStub]" 
-        << " Adjust batch size "
+        << " Adjust batch size"
         << " cur_target_bs " << cur_target_bs
         << " unpub_target_bs " << unpub_target_bs
         << " current " << this->current_bs_
         << " timestamp: " << torch_col::get_unix_timestamp();
 
-    if (msg.value >= cur_target_bs) {
+#define COLOCATE_ADJUST_IMMEDIATE_REPLY do { \
+    ctrl::InfTraCommunicator::GetMQ() \
+        ->Put(ctrl::CtrlMsgEntry{ \
+            .id = msg.id, \
+            .event = msg.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1) \
+                     ? static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1Done) \
+                     : static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL2Done) \
+          }, \
+          ctrl::InfTraMessageQueue::Direction::kTra2Inf, \
+          TorchColConfig::GetTrainRank()); \
+ } while (0);
+
+    if (msg.value >= cur_target_bs
+        && msg.value >= current_bs_) {
       LOG_IF(INFO, TorchColConfig::log_control_stub) 
           << "[Rank " << TorchColConfig::GetTrainRank()
           << " | ColocateStub] skip satisfied adjust, "
           << "reply adjust immediately";
 
-      ctrl::InfTraCommunicator::GetMQ()
-          ->Put(ctrl::CtrlMsgEntry{
-                  .id = msg.id,
-                  .event = msg.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1) 
-                           ? static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1Done)
-                           : static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL2Done)
-                },
-                ctrl::InfTraMessageQueue::Direction::kTra2Inf,
-                TorchColConfig::GetTrainRank());
+      COLOCATE_ADJUST_IMMEDIATE_REPLY
       break;
     }
-    // this->target_bs_ = msg.value;
+
+    // [Note: kill batch]
+    // avoid set nccl abort flag while re-creating new nccl comm, 
+    // which long waiting time to get nccl comm before abort.
+    if (!has_killed_batch_recover_.load(std::memory_order_acquire)) {
+      LOG_IF(INFO, TorchColConfig::log_control_stub) 
+          << "[Rank " << TorchColConfig::GetTrainRank() 
+          << " | ColocateStub]" << " Receive adjust request, "
+          << "batch is not recovered yet, reply immediately";
+    
+      COLOCATE_ADJUST_IMMEDIATE_REPLY
+      break;
+    }
+    has_killed_batch_recover_ = false;
 
     // only used for colocate l1
-    if (TorchColConfig::kill_batch_on_recv 
+    bool do_kill_batch = TorchColConfig::kill_batch_on_recv 
         && msg.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)
-        && cmd_ != static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)){
+        && cmd_ != static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1);
+    if (do_kill_batch) {
         std::unique_lock step_lock{step_mutex_};
 
         auto t1 = torch_col::get_unix_timestamp();
         sta::xsched::SetRejectCudaCalls(true);
+        auto _t11 = torch_col::get_unix_timestamp();
         ProcessGroupNCCL::GetDefaultProcessGroupNCCL()->SetNcclCommAbortFlag(
-          {at::Device(at::kCUDA, TorchColConfig::GetTrainRank())});
+            {at::Device(at::kCUDA, TorchColConfig::GetTrainRank())});
+        auto _t12 = torch_col::get_unix_timestamp();
         size_t remove = sta::xsched::AbortAllStreams();
         auto t2 = torch_col::get_unix_timestamp();
 
@@ -279,7 +300,10 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
                   << "Receive adjust request, cancel calls first,"
                   << " cost " << t3 - t1 << "ms (wait kernel "
                   << t3 - t2 << "ms), remove " << remove 
-                  << " cuda command(s).";
+                  << " cuda command(s)"
+                  << " | SetRejectCudaCalls " << _t11 - t1 << "ms"
+                  << " SetNcclCommAbortFlag " << _t12 - _t11 << "ms"
+                  << " AbortAllStreams " << t2 - _t12 << "ms";
     }
     cmd_ = msg.event;
     cmd_id_ = msg.id;

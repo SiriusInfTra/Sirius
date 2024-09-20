@@ -466,6 +466,9 @@ class ColocateCtrl(CtrlBase):
 
     def can_exit_after_infer_worklaod_done(self):
         return self._stub.can_exit_after_infer_worklaod_done()
+    
+    def set_killed_batch_recover(self):
+        self._stub.set_killed_batch_recover()
 
 
 class DummyCtrl(CtrlBase):

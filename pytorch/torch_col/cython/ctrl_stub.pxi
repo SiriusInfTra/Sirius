@@ -45,6 +45,7 @@ cdef extern from "<torch_col/csrc/control_stub.h>" namespace "torch_col":
         void StepsNoInteruptEnd()
         void EnableTorchColEngine()
         bint CanExitAfterInferWorkloadDone()
+        void SetKilledBatchRecover()
 
     cdef cppclass StubProfiler:
         @staticmethod
@@ -169,6 +170,9 @@ cdef class PyColocateStub:
 
     def EnableTorchColEngine(self):
         self._cppclass.EnableTorchColEngine()
+
+    def set_killed_batch_recover(self):
+        self._cppclass.SetKilledBatchRecover()
 
     def __dealloc__(self):
         del self._cppclass

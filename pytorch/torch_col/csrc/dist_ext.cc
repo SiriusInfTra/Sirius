@@ -253,6 +253,7 @@ void ProcessGroupNCCL::RestartNcclCommByRecreating(
 void ProcessGroupNCCL::SetNcclCommAbortFlag(
     const std::vector<at::Device> &devices,
     uint32_t val) {
+  auto t0 = torch_col::get_unix_timestamp();
   auto device_key = getKeyFromDevices(devices);
   std::vector<std::shared_ptr<::c10d::NCCLComm>> ncc_comms;
 
@@ -265,18 +266,21 @@ void ProcessGroupNCCL::SetNcclCommAbortFlag(
               << GetDevNcclCommMapKeySetStrsUnlocked();
     return;
   }
+  auto t1 = torch_col::get_unix_timestamp();
+
   ncc_comms = it->second;
 
-  auto t0 = torch_col::get_unix_timestamp();
   for (auto & comm : ncc_comms) {
     _SetNcclCommAbortFlag(comm->getNcclComm(), val);
   }
-  auto t1 = torch_col::get_unix_timestamp();
+
+  auto t2 = torch_col::get_unix_timestamp();
 
   LOG(INFO) << str(boost::format("[Rank %d | SetNcclCommAbortFlag]") % getRank())
             << " device_key " << device_key
             << " set abort flag " << val << " done"
-            << ", cost " << t1 - t0 << "ms";
+            << ", cost " << t2 - t0 << "ms"
+            << " | _SetNcclCommAbortFlag " << t2 - t1 << "ms";
 }
 
 void ProcessGroupNCCL::_SetNcclCommAbortFlag(ncclComm_t comm, uint32_t val) {

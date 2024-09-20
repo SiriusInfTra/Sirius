@@ -86,11 +86,16 @@ class ColocateStub: public StubBase {
   double PassedTimeFromSetCmd();
   void ReportBatchSize(int batch_size) override;
 
+  void SetKilledBatchRecover() {
+    has_killed_batch_recover_.store(true, std::memory_order_release);
+  }
+
  protected:
   void ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) override;
 
  private:
   int input_batch_size_, current_bs_;
+  std::atomic<bool> has_killed_batch_recover_{true};
 
   std::chrono::time_point<std::chrono::steady_clock> set_cmd_time_;
 };
