@@ -35,6 +35,12 @@ DynamicBatchDistirbutor::DynamicBatchDistirbutor(
       num_global_batches_per_epoch_(
         (dataset_size + global_batch_size - 1) / global_batch_size)
 {
+  LOG_IF(INFO, TorchColConfig::log_dynamic_batch) 
+      << "[Rank " << TorchColConfig::GetTrainRank() 
+      << " | DynamicBatchDistirbutor] init with dataset_size " 
+      << dataset_size << ", input_batch_size " << input_batch_size
+      << ", global_batch_size " << global_batch_size;
+
   DistTrainSync::CreateCustomSharedData(
     "dist_train_global_shared_data",
 
@@ -382,7 +388,8 @@ void DynamicBatchDistirbutor::AbortBatch(
         ->GetNumSampleOfBatchIndex(batch_range);
     auto it = GLOBAL_SHARED_DATA.procing_sample_queue_
         ->find(batch_range);
-    CHECK(it != GLOBAL_SHARED_DATA.procing_sample_queue_->end());
+    CHECK(it != GLOBAL_SHARED_DATA.procing_sample_queue_->end())
+        << "batch_range " << batch_range;
 
     GLOBAL_SHARED_DATA.unproc_sample_queue_->insert(*it);
     GLOBAL_SHARED_DATA.procing_sample_queue_->erase(it);

@@ -243,7 +243,9 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
 
     if (msg.value >= cur_target_bs) {
       LOG_IF(INFO, TorchColConfig::log_control_stub) 
-          << "[ColocateStub] skip satisfied adjust, reply adjust immediately";
+          << "[Rank " << TorchColConfig::GetTrainRank()
+          << " | ColocateStub] skip satisfied adjust, "
+          << "reply adjust immediately";
 
       ctrl::InfTraCommunicator::GetMQ()
           ->Put(ctrl::CtrlMsgEntry{

@@ -119,6 +119,7 @@ size_t AbortAllStreams() {
   size_t total = 0;
 
   std::stringstream ss;
+  auto t0 = std::chrono::steady_clock::now();
   for (auto &kv : stream_map) {
     auto stream_handle = kv.second;
 
@@ -129,7 +130,10 @@ size_t AbortAllStreams() {
     ss << sep << std::hex << "stream 0x" << kv.first << " handle 0x" << stream_handle 
        << " aborted " << std::dec << x << " commands";
   }
-  DLOG(INFO) << "[AbortAllStreams] " << ss.str();
+  auto t1 = std::chrono::steady_clock::now();
+
+  DLOG(INFO) << "[AbortAllStreams] " << ss.str() << ", " 
+            << std::chrono::duration<double, std::milli>(t1 - t0).count() << "ms";
   return total;
 }
 
