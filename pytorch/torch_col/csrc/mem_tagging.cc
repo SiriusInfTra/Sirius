@@ -62,7 +62,8 @@ at::Tensor TorchColSavedVariableHooks::call_unpack_hook() {
   if (static_cast<ctrl::CtrlEvent>(GetColocateStub().GetCmd()) 
       == ctrl::CtrlEvent::kColocateAdjustL1) {
     pybind11::gil_scoped_acquire gil;
-    LOG(INFO) << "throw python exception!";
+    LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank()
+              << "] throw python exception!";
     throw EngineColocateAdjustL1Exception("TorchColEngine");
   }
   return data_;
