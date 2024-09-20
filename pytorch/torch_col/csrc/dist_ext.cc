@@ -35,8 +35,10 @@ void Reducer::autograd_hook(size_t index) {
   // graph task callback which will be executed before 
   // finalize_backward callback.
 
-  if (!first_autograd_hook_called_) {
+  if (!first_batch_autograd_hook_called_) {
     torch::autograd::Engine::get_default_engine().queue_callback([=] {
+      // LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank()  << "]" << "CALL engine callback";
+      first_batch_autograd_hook_called_ = false;
       auto pg = ProcessGroupNCCL::GetDefaultProcessGroupNCCL();
       if (pg.defined() && pg->GetAbortFlag() != 0) {
         LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() 
@@ -44,7 +46,9 @@ void Reducer::autograd_hook(size_t index) {
                   << " abort flag is set, drop the batch";
         throw EngineColocateAdjustL1Exception("TorchColEngine");
       }
+
     });
+    first_batch_autograd_hook_called_ = true;
   }
   ::c10d::Reducer::autograd_hook(index);
 }
@@ -63,6 +67,7 @@ void Reducer::finalize_dropped_batch() {
   } else {
     require_finalize_ = false;
   }
+  first_batch_autograd_hook_called_= false;
   DLOG(INFO) << "Reducer::finalize_dropped_batch() end";
 }
 
