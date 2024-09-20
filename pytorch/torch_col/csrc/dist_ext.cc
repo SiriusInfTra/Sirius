@@ -1,10 +1,11 @@
-#include <common/log_as_glog_sta.h>
-#include <common/util.h>
-
 #include <torch_col/csrc/dist_ext.h>
 #include <torch_col/csrc/mem_tagging.h>
 #include <torch_col/csrc/config.h>
 #include <torch_col/csrc/dist_train_sync.h>
+#include <torch_col/csrc/util.h>
+
+#include <common/log_as_glog_sta.h>
+#include <common/util.h>
 
 #include <torch/csrc/jit/python/pybind_utils.h>
 #include <torch/csrc/distributed/c10d/comm.hpp>
@@ -261,13 +262,16 @@ void ProcessGroupNCCL::SetNcclCommAbortFlag(
   }
   ncc_comms = it->second;
 
+  auto t0 = torch_col::get_unix_timestamp();
   for (auto & comm : ncc_comms) {
     _SetNcclCommAbortFlag(comm->getNcclComm(), val);
   }
+  auto t1 = torch_col::get_unix_timestamp();
 
   LOG(INFO) << str(boost::format("[Rank %d | SetNcclCommAbortFlag]") % getRank())
             << " device_key " << device_key
-            << " set abort flag " << val << " done";
+            << " set abort flag " << val << " done"
+            << ", cost " << t1 - t0 << "ms";
 }
 
 void ProcessGroupNCCL::_SetNcclCommAbortFlag(ncclComm_t comm, uint32_t val) {

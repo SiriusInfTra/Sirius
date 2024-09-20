@@ -41,7 +41,6 @@ def train(rank:int, world_size:int,
     if torch_col.is_enable_shared_tensor():
         torch_col.tag_model_start()
 
-
     model = models.swin_b(weights=models.Swin_B_Weights.DEFAULT).cuda()
     model = DDP(model, device_ids=[rank])
 
@@ -56,8 +55,6 @@ def train(rank:int, world_size:int,
     
     col_ctrl = torch_col.create_colocate_ctrl(train_mode, hook_mode, num_epoch, batch_size)
     col_ctrl.register_pytorch_hook([model, criterion])
-    checkpoint_micro_batch = col_ctrl.train_mode.is_kill_batch()
-    # checkpoint_micro_batch = False
 
     # dummy data
     # train_dataset = DynamicBatchDataset(
@@ -67,12 +64,15 @@ def train(rank:int, world_size:int,
     #     max_global_batch_size=None,
     #     checkpoint_micro_batch=checkpoint_micro_batch)
 
+    enable_grad_accumulate = col_ctrl.train_mode.is_colocate()
+    checkpoint_micro_batch = col_ctrl.train_mode.is_kill_batch()
     dataset, batch_manager = torch_col.init_dynamic_batch(
         dataset_size=1000 * world_size, 
         dataset_type=dynamic_batch.DatasetType.VISION,
         dataset_config=dynamic_batch.VisionDatasetConfig((3, 224, 224), 10),
         batch_size=batch_size,
         global_batch_size=None,
+        enable_grad_accumulate=enable_grad_accumulate,
         checkpoint_micro_batch=checkpoint_micro_batch,
     )   
 

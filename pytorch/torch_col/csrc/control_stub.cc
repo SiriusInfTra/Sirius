@@ -263,19 +263,20 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
         && msg.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)
         && cmd_ != static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)){
         std::unique_lock step_lock{step_mutex_};
+
         auto t1 = torch_col::get_unix_timestamp();
-
         sta::xsched::SetRejectCudaCalls(true);
-
         ProcessGroupNCCL::GetDefaultProcessGroupNCCL()->SetNcclCommAbortFlag(
           {at::Device(at::kCUDA, TorchColConfig::GetTrainRank())});
-
         size_t remove = sta::xsched::AbortAllStreams();
-        
-        sta::xsched::SyncAllStreams();
         auto t2 = torch_col::get_unix_timestamp();
-        LOG(INFO) << "Receive adjust request, cancel calls first,"
-                  << " cost " << t2 - t1 << "ms, remove " << remove 
+
+        sta::xsched::SyncAllStreams();
+        auto t3 = torch_col::get_unix_timestamp();
+        LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() << "] " 
+                  << "Receive adjust request, cancel calls first,"
+                  << " cost " << t3 - t1 << "ms (wait kernel "
+                  << t3 - t2 << "ms), remove " << remove 
                   << " cuda command(s).";
     }
     cmd_ = msg.event;

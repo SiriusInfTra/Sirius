@@ -362,6 +362,10 @@ void DynamicBatchDistirbutor::AbortBatch(
   bip::scoped_lock lock{*GLOBAL_SHARED_DATA.mut_};
   int train_rank = TorchColConfig::GetTrainRank();
 
+  LOG_IF(INFO, TorchColConfig::log_dynamic_batch)
+      << "[Rank " << TorchColConfig::GetTrainRank()
+      << " | AbortBatch] abort batch " << batch_range_vec;
+
   auto &num_procing_samples = 
       GLOBAL_SHARED_DATA.num_procing_samples_per_train_->at(train_rank);
   auto &num_unproc_samples =

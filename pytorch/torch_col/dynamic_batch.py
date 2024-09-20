@@ -100,11 +100,11 @@ class MicroBatchManager:
         self._past_micro_batch_range_vecs_in_global_batch = []
         self._last_batch_range_vec = None
 
-
     def scale_loss(self, batch: Batch, loss: torch.Tensor):
         if self._enable_grad_accumulate:
             batch_size = self._dynamic_dataset.get_batch_size(batch)
-            scale_factor = self._dynamic_dataset.global_batch_size / batch_size
+            scale_factor = \
+                _DynamicBatchDistirbutor.get_global_batch_size() / batch_size
             loss /= scale_factor
             return loss
         else:
@@ -137,7 +137,7 @@ class MicroBatchManager:
                     optimizer.step()
                 optimizer.zero_grad()
 
-            if batch.should_update_param():
+            if not self._enable_grad_accumulate or batch.should_update_param():
                 with get_colocate_ctrl().steps_no_interrupt():
                     step_event = EventManager.record_event('optimizer_step')
                     _step()
@@ -321,11 +321,13 @@ class DynamicBatchDataset(IterableDataset):
                     f"expect ds_size is multiple of {len(self.all_inputs['images'])}"
                 
                 if ds_size != len(self.all_inputs['images']):
-                    print(f'real dataset is small, repeat dataset to {ds_size}')
                     for k in self.all_inputs.keys():
                         rep = ds_size // len(self.all_inputs[k])
                         rep = (rep, ) + (1, ) * (len(self.all_inputs[k].shape) - 1)
                         self.all_inputs[k] = np.tile(self.all_inputs[k], rep)
+                    ds_shapes = {k: v.shape for k, v in self.all_inputs.items()}
+                    print(f'real dataset is small, repeat dataset: {ds_shapes}')
+
                 for k in self.all_inputs.keys():
                     self.all_inputs[k] = torch.from_numpy(self.all_inputs[k]).pin_memory()
 
@@ -479,6 +481,7 @@ def init_dynamic_batch(
     dataset_config: Union[VisionDatasetConfig, TextDatasetConfig],
     batch_size: int, 
     global_batch_size: Optional[int] = None,
+    enable_grad_accumulate: bool = False,
     checkpoint_micro_batch: bool = False,
     empty_cache_at_larger_batch_size: bool = False,
     fake_data: bool = False
@@ -487,11 +490,12 @@ def init_dynamic_batch(
     assert torch_col.colocate_ctrl.CtrlBase._colocate_ctrl is not None, (
         "colocate control must be initialized before dynamic batch dataset."
     )
-
-    enable_grad_accumulate = (
-        global_batch_size is not None
-        and global_batch_size > batch_size * torch_col.get_train_world_size()
-    )
+    assert not (torch_col.get_colocate_train_mode().is_colocate() 
+                and not enable_grad_accumulate), (
+        "enable grad accumulate when colocate training.")
+    
+    if global_batch_size is None:
+        global_batch_size = batch_size * torch_col.get_train_world_size()
     
     if not enable_grad_accumulate and checkpoint_micro_batch:
         print(f'torch_col: Warning: should not accumulate grad '
@@ -500,9 +504,6 @@ def init_dynamic_batch(
               f'checkpoint_micro_batch will be False.',
               file=sys.stderr)
         checkpoint_micro_batch = False
-
-    if global_batch_size is None:
-        global_batch_size = batch_size * torch_col.get_train_world_size()
 
     vision_ds_config = None
     text_ds_config = None
