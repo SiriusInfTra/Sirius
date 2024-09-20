@@ -66,8 +66,8 @@ class DynamicBatchDataset(IterableDataset):
         if not fake_data:
             if _vision_task(self.model_name):
                 self.all_inputs = {
-                    'image': torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_inputs.npy')).pin_memory(),
-                    'label': torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_targets.npy')).pin_memory()
+                    'image': torch.from_numpy(np.load('workload_data/cifar10/cifar10_inputs.npy')).pin_memory(),
+                    'label': torch.from_numpy(np.load('workload_data/cifar10/cifar10_targets.npy')).pin_memory()
                 }
                 assert num_class == torch.max(self.all_inputs['label']).item() + 1, \
                     f"expect num of class: {torch.max(self.all_inputs['label']).item() + 1}."
@@ -76,8 +76,8 @@ class DynamicBatchDataset(IterableDataset):
                     f"expect input shape: {self.all_inputs['image'].shape[1:]}"
             else:
                 raise Exception("not support model")
-            # self.all_inputs = torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_inputs.npy')).pin_memory()
-            # self.all_targets = torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_targets.npy')).pin_memory()
+            # self.all_inputs = torch.from_numpy(np.load('workload_data/cifar10/cifar10_inputs.npy')).pin_memory()
+            # self.all_targets = torch.from_numpy(np.load('workload_data/cifar10/cifar10_targets.npy')).pin_memory()
         else:
             if _vision_task(self.model_name):
                 self.all_inputs = {

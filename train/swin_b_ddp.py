@@ -48,7 +48,7 @@ def train(rank:int, world_size:int,
     print(f"Train params memory usage: {torch_col.MemoryPool.get_memory_usage() * 1024:.2f}M")
 
     criterion = nn.CrossEntropyLoss().cuda(rank)
-    optimizer = torch.optim.SGD(model.parameters(), 0.1, 
+    optimizer = torch.optim.SGD(model.parameters(), 0.001, 
                                 momentum=0.9, weight_decay=1e-4)
     scaler = torch.cuda.amp.GradScaler()
 
@@ -68,7 +68,7 @@ def train(rank:int, world_size:int,
     #     checkpoint_micro_batch=checkpoint_micro_batch)
 
     dataset, batch_manager = torch_col.init_dynamic_batch(
-        dataset_size=1000, 
+        dataset_size=1000 * world_size, 
         dataset_type=dynamic_batch.DatasetType.VISION,
         dataset_config=dynamic_batch.VisionDatasetConfig((3, 224, 224), 10),
         batch_size=batch_size,
@@ -81,8 +81,7 @@ def train(rank:int, world_size:int,
 
     torch_col.util.initialize_sgd_optimizer(model, optimizer)
     if batch_manager._checkpoint_micro_batch:
-        # grad_accumulator = torch_col.GradAccumulator(model)
-        grad_accumulator = None
+        grad_accumulator = torch_col.GradAccumulator(model)
     else:
         grad_accumulator = None
 
@@ -130,8 +129,8 @@ def train(rank:int, world_size:int,
             batch_info += f' | num_rollback_sampels {epoch_stat.num_rollback_batch}'
 
         print(f'[Rank {rank} | {model.__class__.__name__} epoch {epoch}] '
-              f'{epoch_duration / 1e3:.3f}s | {batch_info} | batch-size {batch_size}'
-              f'| {mem_info} | thpt {epoch_stat.finished_sample / (epoch_duration / 1e3)}'
+              f'{epoch_duration / 1e3:.3f}s | {batch_info} | batch-size {batch_size} '
+              f'| {mem_info} | thpt {epoch_stat.finished_sample / (epoch_duration / 1e3):.3f} '
               f'| loss {running_loss:.6f}', 
               flush=True)
     
@@ -164,9 +163,6 @@ def main():
     batch_size = args.batch_size
     global_batch_size = args.global_batch_size
     num_epoch = args.num_epoch
-    # hook_mode = [hook_mode for hook_mode in HookMode if hook_mode.value == args.hook_mode][0]
-    # hook_mode = torch_col.get_colocate_ctrl_hook_mode()
-    # train_mode = torch_col.get_colocate_train_mode()
 
     print(f"Swin Transformer training, batch-size={batch_size}"
           f", num-epoch={num_epoch}")

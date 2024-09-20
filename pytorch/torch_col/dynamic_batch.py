@@ -314,18 +314,24 @@ class DynamicBatchDataset(IterableDataset):
         if not fake_data:
             if ds_type == DatasetType.VISION:
                 self.all_inputs = {
-                    'images': torch.from_numpy(
-                            np.load('workload_data/cifiar10/cifiar10_inputs.npy')
-                        ).pin_memory(),
-                    'labels': torch.from_numpy(
-                            np.load('workload_data/cifiar10/cifiar10_targets.npy')
-                        ).pin_memory()
+                    'images': np.load('workload_data/cifar10/cifar10_inputs.npy'),
+                    'labels': np.load('workload_data/cifar10/cifar10_targets.npy')
                 }
+                assert ds_size % len(self.all_inputs['images']) == 0, \
+                    f"expect ds_size is multiple of {len(self.all_inputs['images'])}"
+                
+                if ds_size != len(self.all_inputs['images']):
+                    print(f'real dataset is small, repeat dataset to {ds_size}')
+                    for k in self.all_inputs.keys():
+                        rep = ds_size // len(self.all_inputs[k])
+                        rep = (rep, ) + (1, ) * (len(self.all_inputs[k].shape) - 1)
+                        self.all_inputs[k] = np.tile(self.all_inputs[k], rep)
+                for k in self.all_inputs.keys():
+                    self.all_inputs[k] = torch.from_numpy(self.all_inputs[k]).pin_memory()
+
                 assert (self.vision_dataset_config.num_class 
                         == torch.max(self.all_inputs['labels']).item() + 1), \
                     f"expect num of class: {torch.max(self.all_inputs['labels']).item() + 1}."
-                assert ds_size == len(self.all_inputs['images']), \
-                    f"expect size {len(self.all_inputs['image'])}."
                 assert (self.vision_dataset_config.input_shape 
                         == self.all_inputs['images'].shape[1:]), \
                     f"expect input shape: {self.all_inputs['images'].shape[1:]}"
