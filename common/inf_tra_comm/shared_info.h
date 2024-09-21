@@ -83,6 +83,26 @@ class InfTraSharedInfo {
     return ret;
   }
 
+  template<typename ... ValueType>
+  void GetTrainInfoMultiFieldVec(
+      std::pair<size_t, std::vector<ValueType> &> ... fields) {
+    std::vector<bip::scoped_lock<bip_mutex>> locks = LockAllTrainInfos();
+
+    if (locks.empty()) {
+      return;
+    }
+
+    ([this, &locks](size_t field_off, auto &values){
+        using value_t = typename 
+            std::remove_reference_t<decltype(values)>::value_type;
+        
+        for (int i : boost::irange(locks.size())) {
+          values.push_back(
+              this->GetTrainInfoFieldWithoutLock<value_t>(i, field_off));
+        }
+    }(fields.first, fields.second), ...);
+  }
+
   template <typename ValueType>
   void UpdateTrainInfoFieldVec(size_t field_off,
                                const std::vector<ValueType> &values) {
@@ -156,6 +176,22 @@ class InfTraSharedInfo {
 
   inline bool IsTrainInfoValidWithoutLock(int id) {
     return train_infos_[id]->train_pid != -1;
+  }
+
+  std::vector<bip::scoped_lock<bip_mutex>> 
+  LockAllTrainInfos() {
+    std::vector<bip::scoped_lock<bip_mutex>> locks;
+    locks.emplace_back(*train_info_muts_[0]);
+
+    int train_world_size = train_infos_[0]->train_world_size;
+    if (train_world_size == 0) {
+      return {};
+    }
+
+    for (int i : boost::irange(1, train_world_size)) {
+      locks.emplace_back(*train_info_muts_[i]);
+    }
+    return locks;
   }
 
   InferInfo* infer_info_{nullptr};

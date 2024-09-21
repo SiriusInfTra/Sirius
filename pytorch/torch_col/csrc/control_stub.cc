@@ -229,17 +229,17 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
   case ctrl::CtrlEvent::kColocateAdjustL1:
   case ctrl::CtrlEvent::kColocateAdjustL2: 
   {
-    auto cur_target_bs = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
-        TorchColConfig::GetTrainRank(), target_batch_size);
-    auto unpub_target_bs = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
-        TorchColConfig::GetTrainRank(), target_batch_size_unpublished);
-    LOG_IF(INFO, TorchColConfig::log_control_stub) 
-        << "[Rank " << TorchColConfig::GetTrainRank() <<  " | ColocateStub]" 
-        << " Adjust batch size"
-        << " cur_target_bs " << cur_target_bs
-        << " unpub_target_bs " << unpub_target_bs
-        << " current " << this->current_bs_
-        << " timestamp: " << torch_col::get_unix_timestamp();
+//     auto cur_target_bs = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
+//         TorchColConfig::GetTrainRank(), target_batch_size);
+//     auto unpub_target_bs = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
+//         TorchColConfig::GetTrainRank(), target_batch_size_unpublished);
+//     LOG_IF(INFO, TorchColConfig::log_control_stub) 
+//         << "[Rank " << TorchColConfig::GetTrainRank() <<  " | ColocateStub]" 
+//         << " Adjust batch size"
+//         << " cur_target_bs " << cur_target_bs
+//         << " unpub_target_bs " << unpub_target_bs
+//         << " current " << this->current_bs_
+//         << " timestamp: " << torch_col::get_unix_timestamp();
 
 #define COLOCATE_ADJUST_IMMEDIATE_REPLY do { \
     ctrl::InfTraCommunicator::GetMQ() \
@@ -253,16 +253,16 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
           TorchColConfig::GetTrainRank()); \
  } while (0);
 
-    if (msg.value >= cur_target_bs
-        && msg.value >= current_bs_) {
-      LOG_IF(INFO, TorchColConfig::log_control_stub) 
-          << "[Rank " << TorchColConfig::GetTrainRank()
-          << " | ColocateStub] skip satisfied adjust, "
-          << "reply adjust immediately";
+//     if (msg.value >= cur_target_bs
+//         || msg.value >= current_bs_) {
+//       LOG_IF(INFO, TorchColConfig::log_control_stub) 
+//           << "[Rank " << TorchColConfig::GetTrainRank()
+//           << " | ColocateStub] skip satisfied adjust, "
+//           << "reply adjust immediately";
 
-      COLOCATE_ADJUST_IMMEDIATE_REPLY
-      break;
-    }
+//       COLOCATE_ADJUST_IMMEDIATE_REPLY
+//       break;
+//     }
 
     // [Note: kill batch]
     // avoid set nccl abort flag while re-creating new nccl comm, 

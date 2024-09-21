@@ -282,7 +282,7 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
       PROFILE_END(TrainAdjust);
 
       LOG_IF(INFO, Config::log_memory_adjust) 
-          << "[Model, Cold Cache Adjust]"
+          << "[Model, Cold Cache Adjust] "
           << "AllocStorageMaybeAdjust: model " << rank
           << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
           << " | before adjust: free memory " << free_memory_MB

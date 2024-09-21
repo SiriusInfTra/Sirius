@@ -119,6 +119,9 @@ class DynamicBatchDistirbutor {
         *num_procing_samples_per_train_,
         *num_proced_samples_per_train_;
 
+    std::array<bool, colserve::MAX_DEVICE_NUM>
+        *has_gotten_last_micro_batch_;
+
     colserve::bip_set<batch_range_t> 
         *unproc_sample_queue_, 
         *procing_sample_queue_,

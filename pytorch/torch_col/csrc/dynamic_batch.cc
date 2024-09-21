@@ -53,6 +53,9 @@ DynamicBatchDistirbutor::DynamicBatchDistirbutor(
         &global_shared_data_.num_procing_samples_per_train_),
     std::make_pair(std::string{"num_proced_samples_per_train_"},
         &global_shared_data_.num_proced_samples_per_train_),
+    
+    std::make_pair(std::string{"has_gotten_last_micro_batch_"},
+        &global_shared_data_.has_gotten_last_micro_batch_),
 
     std::make_pair(std::string{"unprocessed_samples_"},
         &global_shared_data_.unproc_sample_queue_),
@@ -272,6 +275,10 @@ DynamicBatchDistirbutor::GetBatch(int batch_size) {
   // bool require_sync = cursor.first == cursor.second;
   bool last_micro_batch = num_unproc_samples == 0;
 
+  if (last_micro_batch) {
+    GLOBAL_SHARED_DATA.has_gotten_last_micro_batch_->at(train_rank) = 1;
+  }
+
   LOG_IF(INFO, TorchColConfig::log_dynamic_batch) 
       << "[Rank " << TorchColConfig::GetTrainRank() 
       << " | GetBatch] global_batch_idx " 
@@ -279,8 +286,9 @@ DynamicBatchDistirbutor::GetBatch(int batch_size) {
       << " get batch " << indices
       << " batch_size " << (boost::format("%d/%d") % num_samples % batch_size)
       << " num_unproc_samples_per_train " << num_unproc_samples
-      << " g_num_procing_samples " << g_num_procing_samples
-      << " end_of_global_batch " << last_micro_batch;
+      << " | g_num_procing_samples " << g_num_procing_samples
+      << " g_num_unproc_samples " << g_num_unproc_samples
+      << " | end_of_global_batch " << last_micro_batch;
       // << " cursor " << cursor;
 
   return {indices, last_micro_batch};
@@ -462,6 +470,7 @@ void DynamicBatchDistirbutor::NextGlobalBatchImpl() {
         // num_unproc be determine in DistributeBatch
         global_shared_data_.num_procing_samples_per_train_->at(i) = 0;
         global_shared_data_.num_proced_samples_per_train_->at(i) = 0;
+        global_shared_data_.has_gotten_last_micro_batch_->at(i) = 0;
       }
     } else {
       LOG_IF(INFO, TorchColConfig::log_dynamic_batch) 
@@ -471,6 +480,7 @@ void DynamicBatchDistirbutor::NextGlobalBatchImpl() {
         global_shared_data_.num_unproc_samples_per_train_->at(i) = 0;
         global_shared_data_.num_procing_samples_per_train_->at(i) = 0;
         global_shared_data_.num_proced_samples_per_train_->at(i) = 0;
+        global_shared_data_.has_gotten_last_micro_batch_->at(i) = 0;
       }
     }
   }
