@@ -97,12 +97,13 @@ def train(rank:int, world_size:int,
         targets = batch['labels']
         images: torch.Tensor = images.cuda(rank, non_blocking=True)
         targets: torch.Tensor = targets.cuda(rank, non_blocking=True)
-        with torch.cuda.amp.autocast(cache_enabled=False):
-            output = model(images)
-            loss = criterion(output, targets)
-            running_loss = loss.item() * images.size(0)
-            batch_manager.scale_loss(batch, loss)
-        scaler.scale(loss).backward()
+        with batch_manager.ddp_sync_context(model, batch):
+            with torch.cuda.amp.autocast(cache_enabled=False):
+                output = model(images)
+                loss = criterion(output, targets)
+                running_loss = loss.item() * images.size(0)
+                batch_manager.scale_loss(batch, loss)
+            scaler.scale(loss).backward()
         batch_manager.optimizer_step(batch, optimizer, 
                                      amp_scaler=scaler, 
                                      grad_accumulator=grad_accumulator)

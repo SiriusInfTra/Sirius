@@ -5,9 +5,11 @@ import sys
 import time
 import numpy as np
 import torch
+import torch.distributed
 from torch.utils.data import IterableDataset, get_worker_info
 from typing import Iterator, Optional, List, Tuple, Union
 import dataclasses
+import contextlib
 
 import torch_col
 from torch_col.colocate_ctrl import (
@@ -143,6 +145,20 @@ class MicroBatchManager:
                     _step()
                     EventManager.record_event('', step_event)
 
+    @contextlib.contextmanager
+    def ddp_sync_context(
+        self, 
+        model:torch.nn.parallel.DistributedDataParallel, 
+        batch: Batch
+    ):
+        if (not self._enable_grad_accumulate
+            or batch.should_update_param()
+        ):
+            yield
+        else:
+            with model.no_sync():
+                yield
+
     def begin_batch(self, 
                     epoch_idx: int,
                     batch_idx: int,
@@ -153,8 +169,8 @@ class MicroBatchManager:
         self._record_batch_event(epoch_idx, batch_idx, len(batch))
         
     def finish_batch(self, epoch_idx: int, batch_idx: int, batch: Batch):
-        if batch.should_update_param():
-            torch.cuda.current_stream().synchronize()
+        # if batch.should_update_param(): # should sync every batch or not?
+        torch.cuda.current_stream().synchronize()
 
         col_ctrl = get_colocate_ctrl()
         if col_ctrl.train_mode == TrainMode.COLOCATE_L2:
@@ -353,10 +369,10 @@ class DynamicBatchDataset(IterableDataset):
                 }
             elif ds_type == DatasetType.TEXT_GEN:
                 self.all_inputs = {
-                    "input_ids": torch.from_numpy(
-                            np.random.randint(100, 30000, 
-                                              (ds_size, self.text_dataset_config.seq_len))
-                        ).pin_memory(),
+                    "input_ids": torch.from_numpy(np.random.randint(
+                            100, 30000, 
+                            (ds_size, self.text_dataset_config.seq_len)
+                        )).pin_memory(),
                 }
                 self.all_inputs['labels'] = self.all_inputs['input_ids']
 
