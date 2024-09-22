@@ -55,7 +55,7 @@ class TrainAdjuster {
       const std::vector<AdjustPlan> &adjust_plans, 
       std::unique_lock<std::mutex> &lock);
 
-  bool IsBalanceViolated(int proposed_same_batch_size);
+  bool CheckImbalance(int proposed_same_batch_size);
   
   void FillAdjustPlan(const std::vector<int> &target_batch_sizes, 
                       std::vector<AdjustPlan> &plans);

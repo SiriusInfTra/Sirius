@@ -329,7 +329,7 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
         << sta::PrintByte(capacity)
         << " for " << name_ << " rank " << rank
         << " cache nbytes " 
-        << cold_cache_nbytes << " -> "
+        << sta::PrintByte(cold_cache_nbytes) << " -> "
         << sta::PrintByte(cold_model_cache->GetCachedNbytes(cold_cache_lock));
   }
 

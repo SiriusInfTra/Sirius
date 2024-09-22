@@ -212,7 +212,9 @@ uint64_t Controller::ColocateAdjust(
     if (skip_adjust) {
       LOG_IF(INFO, Config::log_controller) 
           << "[Controller] model " << model_rank
-          << " skip satisfied adjust";
+          << " skip satisfied adjust"
+          << " | target_bs " << target_bs
+          << " unpub_target_bs " << unpub_target_bs;
       return 0;
     }
 
@@ -389,7 +391,8 @@ void Controller::InferenceWorkloadDone() {
       1, std::memory_order_relaxed);
 
   if (Config::dummy_adjust) {
-    LOG(INFO) << "[Controller] skip send InferenceWorkloadDone to train to eval dummy adjust";
+    LOG_IF(INFO, Config::log_controller) 
+        << "[Controller] skip send InferenceWorkloadDone to train to eval dummy adjust";
     return;
   }
 

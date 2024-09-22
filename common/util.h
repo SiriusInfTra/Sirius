@@ -101,8 +101,12 @@ inline double ByteToMB(size_t nbytes) {
   return static_cast<double>(nbytes) / 1024 / 1024;
 }
 
-inline std::string PrintByte(size_t nbytes) {
-  return str(boost::format("%.2fMB (%dB)") % ByteToMB(nbytes) % nbytes);
+inline std::string PrintByte(size_t nbytes, bool verbose = false) {
+  if (!verbose) {
+    return str(boost::format("%.2fMB") % ByteToMB(nbytes));
+  } else {
+    return str(boost::format("%.2fMB (%dB)") % ByteToMB(nbytes) % nbytes);
+  }
 }
 }
 
