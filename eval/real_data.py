@@ -10,8 +10,8 @@ import workload_collections as wkld_coll
 import run_comm
 
 # run_comm.UniformConfig_v2.train_model = 'swin_b_ddp'
-run_comm.UniformConfig_v2.train_batch_size = 48
-run_comm.UniformConfig_v2.train_global_batch_size = 1024
+run_comm.UniformConfig_v2.train_batch_size = 64
+run_comm.UniformConfig_v2.train_global_batch_size = 512
 run_comm.UniformConfig_v2.duration = 7200
 run_comm.UniformConfig_v2.real_data = True
 if torch.cuda.device_count() > 1:
