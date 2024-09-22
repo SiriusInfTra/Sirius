@@ -57,6 +57,12 @@ class DynamicBatchDistirbutor {
   static void AbortBatch(const batch_range_vec_t &batch_range_vec,
                          bool end_of_global_batch);
 
+  // last micro batch is batch that sync grad;
+  // return true if the batch should be be should be finished,
+  // otherwise, return false if any worker abort the batch
+  static bool VoteFinishLastMicroBatch();
+  static void VoteAbortLastMicroBatch();
+
   // call on the begining of a epoch and global batch
   static void NextGlobalBatch();
   // return the current epoch index
@@ -82,6 +88,9 @@ class DynamicBatchDistirbutor {
                           int global_batch_size);
 
  private:
+  constexpr static int ABORT_LAST_MICRO_BATCH = 
+      std::numeric_limits<int>::min();
+
   static std::unique_ptr<DynamicBatchDistirbutor> batch_distributor_;
 
   void MergeBatchIndexInQueue(colserve::bip_set<batch_range_t> *queue);
@@ -132,6 +141,9 @@ class DynamicBatchDistirbutor {
     int *num_unproc_samples_, 
         *num_procing_samples_,
         *num_proced_samples_;
+
+    std::atomic<int> *last_micro_batch_finish_vote_cnt_;
+    colserve::bip_cond *last_micro_batch_finish_vote_cv_;
 
     colserve::bip_mutex *mut_;
   } global_shared_data_;

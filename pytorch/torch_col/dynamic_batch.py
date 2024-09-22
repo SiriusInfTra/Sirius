@@ -211,6 +211,12 @@ class MicroBatchManager:
         self._last_batch = None
         self._last_batch_range_vec = None
 
+    def vote_finish_last_micro_batch(self) -> bool:
+        return _DynamicBatchDistirbutor.vote_finish_last_micro_batch()
+    
+    def vote_abort_last_micro_batch(self):
+        _DynamicBatchDistirbutor.vote_abort_last_micro_batch()
+
     def _record_batch_event(self, epoch_idx: int, batch_idx: int, 
                             batch_size: int):
         self._batch_event = EventManager.record_event(

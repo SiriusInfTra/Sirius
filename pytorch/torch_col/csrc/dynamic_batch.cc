@@ -71,6 +71,11 @@ DynamicBatchDistirbutor::DynamicBatchDistirbutor(
     std::make_pair(std::string{"num_processed_samples_"},
         &global_shared_data_.num_proced_samples_),
 
+    std::make_pair(std::string{"last_micro_batch_finish_vote_cnt_"},
+        &global_shared_data_.last_micro_batch_finish_vote_cnt_),
+    std::make_pair(std::string{"last_micro_batch_finish_vote_cv_"},
+        &global_shared_data_.last_micro_batch_finish_vote_cv_),
+
     std::make_pair(std::string{"mut_"},
         &global_shared_data_.mut_)
   );
@@ -438,6 +443,47 @@ void DynamicBatchDistirbutor::AbortBatch(
   num_unproc_samples += num_sampels;
   g_num_procing_samples -= num_sampels;
   g_num_unproc_sampels += num_sampels;
+}
+
+bool DynamicBatchDistirbutor::VoteFinishLastMicroBatch() {
+  CHECK(batch_distributor_ != nullptr);
+  bip::scoped_lock lock{*GLOBAL_SHARED_DATA.mut_};
+
+  int vote_cnt = GLOBAL_SHARED_DATA
+      .last_micro_batch_finish_vote_cnt_->fetch_add(1, 
+        std::memory_order_relaxed);
+    
+  if (vote_cnt + 1 == TorchColConfig::GetTrainWorldSize()) {
+    GLOBAL_SHARED_DATA.last_micro_batch_finish_vote_cv_->notify_all();
+    return true;
+  } else if (vote_cnt < 0) {
+    return false;
+  } else {
+    GLOBAL_SHARED_DATA.last_micro_batch_finish_vote_cv_->wait(lock, 
+        [&]() {
+          auto vote_cnt = GLOBAL_SHARED_DATA
+              .last_micro_batch_finish_vote_cnt_->load(
+                  std::memory_order_relaxed);
+          return vote_cnt == TorchColConfig::GetTrainWorldSize() 
+              || vote_cnt < 0;
+        });
+  }
+
+  if (GLOBAL_SHARED_DATA.last_micro_batch_finish_vote_cnt_->load(
+      std::memory_order_relaxed) < 0) {
+    return false;
+  } else {
+    return true;
+  }
+}
+
+void DynamicBatchDistirbutor::VoteAbortLastMicroBatch() {
+  CHECK(batch_distributor_ != nullptr);
+  bip::scoped_lock lock{*GLOBAL_SHARED_DATA.mut_};
+
+  GLOBAL_SHARED_DATA.last_micro_batch_finish_vote_cnt_->store(
+      ABORT_LAST_MICRO_BATCH, std::memory_order_relaxed);
+  GLOBAL_SHARED_DATA.last_micro_batch_finish_vote_cv_->notify_all();
 }
 
 void DynamicBatchDistirbutor::NextGlobalBatch() {

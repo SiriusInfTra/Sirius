@@ -58,6 +58,10 @@ cdef extern from "<torch_col/csrc/dynamic_batch.h>" namespace "torch_col":
         void AbortBatch(batch_range_vec_t batch_range_vec, 
                         bool end_of_global_batch)
         @staticmethod
+        bool VoteFinishLastMicroBatch()
+        @staticmethod
+        void VoteAbortLastMicroBatch()
+        @staticmethod
         void DistributeBatch(bool check_num_unproced_samples,
                              bool distribute_to_all)
         @staticmethod
@@ -92,6 +96,14 @@ class _DynamicBatchDistirbutor:
                     end_of_global_batch: bool):
         DynamicBatchDistirbutor.AbortBatch(batch_range_vec, 
                                            end_of_global_batch)
+
+    @staticmethod
+    def vote_finish_last_micro_batch():
+        return DynamicBatchDistirbutor.VoteFinishLastMicroBatch()
+
+    @staticmethod
+    def vote_abort_last_micro_batch():
+        DynamicBatchDistirbutor.VoteAbortLastMicroBatch()
 
     @staticmethod
     def distribute_batch(check_num_unproced_samples: bool,

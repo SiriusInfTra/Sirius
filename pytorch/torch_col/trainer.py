@@ -89,10 +89,21 @@ class Trainer:
                 SwitchL1Exception, 
                 EngineColocateAdjustL1Exception
             ) as exception:
+                if batch.should_update_param():
+                    self.batch_manager.vote_abort_last_micro_batch()
                 self.handle_abort_batch(epoch_idx, batch_idx, batch, exception)
             else:
                 # batch passed, go to next batch
                 # self.dynamic_dataset.next_batch()
+
+                # consensus on the sync batch
+                if batch.should_update_param():
+                    if not self.batch_manager.vote_finish_last_micro_batch():
+                        self.handle_abort_batch(
+                            epoch_idx, batch_idx, batch, 
+                            EngineColocateAdjustL1Exception("vote finish failed")
+                        )
+
                 self.batch_manager.finish_batch(epoch_idx, batch_idx, batch)
                 
                 if epoch_idx == 0 and batch_idx == 0:
