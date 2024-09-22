@@ -12,6 +12,26 @@
 
 #include <cstddef>
 
+// [Note: fast training memory adjust]
+// fast training memory adjust contains multiple stages:
+// 1. Receive adjust request from infer           ┬       ┬      ┬ 
+//            |                                   │       │      │ 
+//            |                                   │       │      │ 
+// 2. clear launched cuda kernels                 │       │      │ 
+//    (including nccl for DDP)                    │       │      │ 
+//            |                          cmd=AdjustL1     │      │
+//            |                                   │       │      │ 
+// 3. release memory, then reply to inference     ┴    killed_batch_recover=False
+//            |                                   ┬       │      │
+//            |                                   │       │      will_killed_batch_reconfig=True
+// 4. reconfigure training                        │       │      │
+//    (i.e., distributing batch)                  │       │      ┴
+//            |                          direct_reply     │
+//            |                          skip_kill_batch  │
+//            |                                   │       │
+// 5. [restart nccl (for DDP)]                    ┴       ┴
+// 6. continue training
+
 
 namespace torch_col {
 
@@ -264,10 +284,17 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
 //       break;
 //     }
 
+    // only used for colocate l1
+    bool should_kill_batch = TorchColConfig::kill_batch_on_recv 
+        && msg.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)
+        && cmd_ != static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1);
+
     // [Note: kill batch]
     // avoid set nccl abort flag while re-creating new nccl comm, 
     // which long waiting time to get nccl comm before abort.
-    if (!has_killed_batch_recover_.load(std::memory_order_acquire)) {
+    // Ref: [Note: fast training memory adjust]
+    if (should_kill_batch 
+        && !has_killed_batch_recover_.load(std::memory_order_acquire)) {
       LOG_IF(INFO, TorchColConfig::log_control_stub) 
           << "[Rank " << TorchColConfig::GetTrainRank() 
           << " | ColocateStub]" << " Receive adjust request, "
@@ -277,12 +304,9 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
       break;
     }
     has_killed_batch_recover_ = false;
+    will_killed_batch_reconfig_ = true;
 
-    // only used for colocate l1
-    bool do_kill_batch = TorchColConfig::kill_batch_on_recv 
-        && msg.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)
-        && cmd_ != static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1);
-    if (do_kill_batch) {
+    if (should_kill_batch) {
         std::unique_lock step_lock{step_mutex_};
 
         auto t1 = torch_col::get_unix_timestamp();
@@ -327,13 +351,28 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
       auto target_bs_unpub_vec = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD_VEC(
           target_batch_size_unpublished);
 
-      LOG_IF(INFO, TorchColConfig::log_control_stub) 
-          << "[Rank " << TorchColConfig::GetTrainRank() 
-          << " | ColocateStub]" 
-          << " Infer Exit adjust, cmd_id " << msg.id
-          << " cur_target_bs_vec " << target_bs_vec
-          << " unpub_target_bs_vec " << target_bs_unpub_vec
-          << " timestamp: " << torch_col::get_unix_timestamp();
+      std::stringstream ss;
+      if (TorchColConfig::log_control_stub) {
+        ss << "[Rank " << TorchColConfig::GetTrainRank() 
+           << " | ColocateStub]" 
+           << " Infer Exit adjust, cmd_id " << msg.id
+           << " cur_target_bs_vec " << target_bs_vec
+           << " unpub_target_bs_vec " << target_bs_unpub_vec
+           << " timestamp: " << torch_col::get_unix_timestamp();
+      }
+
+      if (will_killed_batch_reconfig_.load(std::memory_order_acquire)) {
+        // concurrenctly distributing batch with infer require memory adjust
+        // may cause some issues. 
+        // For example:
+        //   kill a sync batch, followed by a infer release memory adjust,
+        //   which triggers distributing batch but counts ongoing 
+        //   training workers will be wrong.
+        LOG_IF(INFO, TorchColConfig::log_control_stub) 
+            << ss.str() 
+            << ", killed batch will be reconfiged, do nothing here";
+        break;
+      }
 
       bool all_same = true;
       for (auto i : boost::irange(TorchColConfig::GetTrainWorldSize())) {
@@ -342,8 +381,12 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
           break;
         }
       }
+      LOG_IF(INFO, TorchColConfig::log_control_stub) 
+          << ss.str()
+          << (all_same ? ", not need to distribute batch" : "");
+
       if (!all_same) {
-        DynamicBatchDistirbutor::DistributeBatch(true);
+        DynamicBatchDistirbutor::DistributeBatch(true, false);
       }
     }
 

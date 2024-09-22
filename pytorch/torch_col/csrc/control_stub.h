@@ -89,6 +89,9 @@ class ColocateStub: public StubBase {
   void SetKilledBatchRecover() {
     has_killed_batch_recover_.store(true, std::memory_order_release);
   }
+  void SetKilledBatchReconfiged() {
+    will_killed_batch_reconfig_.store(false, std::memory_order_release);
+  }
 
  protected:
   void ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) override;
@@ -96,7 +99,7 @@ class ColocateStub: public StubBase {
  private:
   int input_batch_size_, current_bs_;
   std::atomic<bool> has_killed_batch_recover_{true};
-
+  std::atomic<bool> will_killed_batch_reconfig_{false};
   std::chrono::time_point<std::chrono::steady_clock> set_cmd_time_;
 };
 

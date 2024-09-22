@@ -40,7 +40,8 @@ class DynamicBatchDistirbutor {
                    int input_batch_size,
                    int global_batch_size);
  
-  static void DistributeBatch(bool check_num_unproced_samples);
+  static void DistributeBatch(bool check_num_unproced_samples,
+                              bool distribute_to_all);
 
   // Get sample indices for a batch, 
   // return the indices and a bool indicating whether the batch is the last one
@@ -84,7 +85,8 @@ class DynamicBatchDistirbutor {
   static std::unique_ptr<DynamicBatchDistirbutor> batch_distributor_;
 
   void MergeBatchIndexInQueue(colserve::bip_set<batch_range_t> *queue);
-  void DistributeBatchWithoutLock(bool check_num_unproced_samples);
+  void DistributeBatchWithoutLock(bool check_num_unproced_samples,
+                                  bool distribute_to_all);
 
   void NextGlobalBatchImpl();
   int NextEpochImpl();
@@ -120,7 +122,7 @@ class DynamicBatchDistirbutor {
         *num_proced_samples_per_train_;
 
     std::array<bool, colserve::MAX_DEVICE_NUM>
-        *has_gotten_last_micro_batch_;
+        *has_unproc_batches_;
 
     colserve::bip_set<batch_range_t> 
         *unproc_sample_queue_, 

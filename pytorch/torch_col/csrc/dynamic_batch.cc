@@ -54,8 +54,8 @@ DynamicBatchDistirbutor::DynamicBatchDistirbutor(
     std::make_pair(std::string{"num_proced_samples_per_train_"},
         &global_shared_data_.num_proced_samples_per_train_),
     
-    std::make_pair(std::string{"has_gotten_last_micro_batch_"},
-        &global_shared_data_.has_gotten_last_micro_batch_),
+    std::make_pair(std::string{"has_unproc_batches_"},
+        &global_shared_data_.has_unproc_batches_),
 
     std::make_pair(std::string{"unprocessed_samples_"},
         &global_shared_data_.unproc_sample_queue_),
@@ -80,16 +80,19 @@ DynamicBatchDistirbutor::DynamicBatchDistirbutor(
 }
 
 void DynamicBatchDistirbutor::DistributeBatch(
-    bool check_num_unproced_samples) {
+    bool check_num_unproced_samples,
+    bool distribute_to_all) {
   bip::scoped_lock lock{
       *batch_distributor_->global_shared_data_.mut_};
 
   batch_distributor_
-      ->DistributeBatchWithoutLock(check_num_unproced_samples);
+      ->DistributeBatchWithoutLock(check_num_unproced_samples,
+                                   distribute_to_all);
 }
 
 void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
-    bool check_num_unproced_samples) {
+    bool check_num_unproced_samples,
+    bool distribute_to_all) {
   int train_world_size = TorchColConfig::GetTrainWorldSize();
 
   std::vector<int> target_bs_unpub;
@@ -111,66 +114,89 @@ void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
         *global_shared_data_.num_unproc_samples_;
   }
 
-  int num_samples_per_train = 
-      num_unprocessed_samples / train_world_size;
-  int num_sample_remainder =
-      num_unprocessed_samples % train_world_size;
-
-  // calculate the num of samples for each train
-  int sample_offset = 0; 
-  for (auto i : boost::irange(train_world_size)) {
-    int num_samples = num_samples_per_train + 
-        (i < num_sample_remainder ? 1 : 0);
-    sample_offset += num_samples;
-
-    global_shared_data_.num_unproc_samples_per_train_->at(i) = num_samples;
+  if (distribute_to_all) {
+    for (auto i : boost::irange(train_world_size)) {
+      global_shared_data_.has_unproc_batches_->at(i) = true;
+    }
   }
 
-  // update the batch cursor
-  // auto it = global_shared_data_.unproc_sample_queue_->begin();
-  // for (int i = 0; i < train_world_size; i++) {
-  //   int cur_train_num_samples = 0;
-  //   int train_num_samples = 
-  //       global_shared_data_.num_unproc_samples_per_train_->at(i);
+  // we need to skip the worker that has gotten the last micro batch
+  int num_ongoing_worker = 0;
+  for (auto i : boost::irange(train_world_size)) {
+    if (global_shared_data_.has_unproc_batches_->at(i)) {
+      num_ongoing_worker++;
+    }
+  }
 
-  //   int cursor_left = 0, cursor_right = 0;
-  //   if (it != global_shared_data_.unproc_sample_queue_->end()) {
-  //     cursor_left = it->first;
-  //     cursor_right = it->first;
-  //   } else {
-  //     int last_sample_index = 
-  //         num_proced_sample_of_epoch_ + global_batch_size_;
-  //     cursor_left = last_sample_index;
-  //     cursor_right = last_sample_index;
-  //   }
+  if (num_ongoing_worker > 0) {
+    int num_samples_per_train = 
+        num_unprocessed_samples / num_ongoing_worker;
+    int num_sample_remainder =
+        num_unprocessed_samples % num_ongoing_worker;
 
-  //   while (cur_train_num_samples < train_num_samples) {
-  //     int x = GetNumSampleOfBatchIndex(*it);
-  //     CHECK(it != global_shared_data_.unproc_sample_queue_->end());
-  //     if (cur_train_num_samples + x <= train_num_samples) {
-  //       cur_train_num_samples += x;
-  //       cursor_right = it->second;
-  //       it++;
-  //     } else {
-  //       auto [slice, rest] = SliceBatchRange(*it, 
-  //           train_num_samples - cur_train_num_samples);
-  //       global_shared_data_.unproc_sample_queue_->erase(it);
+    // calculate the num of samples for each train
+    int sample_offset = 0; 
+    for (auto i : boost::irange(train_world_size)) {
+      if (!global_shared_data_.has_unproc_batches_->at(i)) {
+        CHECK_EQ(global_shared_data_.num_unproc_samples_per_train_->at(i), 0);
+        continue;
+      }
 
-  //       cursor_right = slice.second;
-  //       global_shared_data_.unproc_sample_queue_->insert(slice);
-  //       auto ins_res = 
-  //           global_shared_data_.unproc_sample_queue_->insert(rest);
-  //       it = ins_res.first;
-  //       CHECK(ins_res.second);
-  //       break;
-  //     }
-  //   }
+      int num_samples = num_samples_per_train + 
+          (i < num_sample_remainder ? 1 : 0);
+      sample_offset += num_samples;
 
-  //   // global_shared_data_.train_batch_cursor_->at(i) = {
-  //   //     cursor_left, cursor_right
-  //   // };
-  // }
-  // CHECK(it == global_shared_data_.unproc_sample_queue_->end());
+      global_shared_data_.num_unproc_samples_per_train_->at(i) = num_samples;
+    }
+
+    // update the batch cursor
+    // auto it = global_shared_data_.unproc_sample_queue_->begin();
+    // for (int i = 0; i < train_world_size; i++) {
+    //   int cur_train_num_samples = 0;
+    //   int train_num_samples = 
+    //       global_shared_data_.num_unproc_samples_per_train_->at(i);
+
+    //   int cursor_left = 0, cursor_right = 0;
+    //   if (it != global_shared_data_.unproc_sample_queue_->end()) {
+    //     cursor_left = it->first;
+    //     cursor_right = it->first;
+    //   } else {
+    //     int last_sample_index = 
+    //         num_proced_sample_of_epoch_ + global_batch_size_;
+    //     cursor_left = last_sample_index;
+    //     cursor_right = last_sample_index;
+    //   }
+
+    //   while (cur_train_num_samples < train_num_samples) {
+    //     int x = GetNumSampleOfBatchIndex(*it);
+    //     CHECK(it != global_shared_data_.unproc_sample_queue_->end());
+    //     if (cur_train_num_samples + x <= train_num_samples) {
+    //       cur_train_num_samples += x;
+    //       cursor_right = it->second;
+    //       it++;
+    //     } else {
+    //       auto [slice, rest] = SliceBatchRange(*it, 
+    //           train_num_samples - cur_train_num_samples);
+    //       global_shared_data_.unproc_sample_queue_->erase(it);
+
+    //       cursor_right = slice.second;
+    //       global_shared_data_.unproc_sample_queue_->insert(slice);
+    //       auto ins_res = 
+    //           global_shared_data_.unproc_sample_queue_->insert(rest);
+    //       it = ins_res.first;
+    //       CHECK(ins_res.second);
+    //       break;
+    //     }
+    //   }
+
+    //   // global_shared_data_.train_batch_cursor_->at(i) = {
+    //   //     cursor_left, cursor_right
+    //   // };
+    // }
+    // CHECK(it == global_shared_data_.unproc_sample_queue_->end());
+  } else {
+    CHECK_EQ(num_unprocessed_samples, 0);
+  }
 
   CHECK_GE(num_unprocessed_samples, 0)
       << "g_num_unproc_samples " 
@@ -276,7 +302,8 @@ DynamicBatchDistirbutor::GetBatch(int batch_size) {
   bool last_micro_batch = num_unproc_samples == 0;
 
   if (last_micro_batch) {
-    GLOBAL_SHARED_DATA.has_gotten_last_micro_batch_->at(train_rank) = 1;
+    GLOBAL_SHARED_DATA
+        .has_unproc_batches_->at(train_rank) = false;
   }
 
   LOG_IF(INFO, TorchColConfig::log_dynamic_batch) 
@@ -438,6 +465,14 @@ void DynamicBatchDistirbutor::NextGlobalBatchImpl() {
   if (TorchColConfig::IsTrainMaster()) {
     bip::scoped_lock lock{*global_shared_data_.mut_};
 
+    int train_world_size = TorchColConfig::GetTrainWorldSize();
+    // CHECK_EQ(GLOBAL_SHARED_DATA
+    //     .last_micro_batch_finish_vote_cnt_->load(std::memory_order_relaxed),
+    //     TorchColConfig::GetTrainWorldSize());
+
+    GLOBAL_SHARED_DATA.last_micro_batch_finish_vote_cnt_->store(0, 
+        std::memory_order_relaxed);
+
     int cur_global_batch_size = 
         global_batch_size_ + num_proced_sample_of_epoch_ > dataset_size_ 
         ? dataset_size_ - num_proced_sample_of_epoch_
@@ -458,19 +493,24 @@ void DynamicBatchDistirbutor::NextGlobalBatchImpl() {
     global_shared_data_.procing_sample_queue_->clear();
     global_shared_data_.proced_sample_queue_->clear();
 
+    // for (auto i : boost::irange(train_world_size)) {
+    //   CHECK(!global_shared_data_.has_unproc_batches_);
+    //   global_shared_data_.has_unproc_batches_->at(i) = true;
+    // }
+
     if (cur_global_batch_size > 0) {
       global_shared_data_.unproc_sample_queue_->insert(
           {num_proced_sample_of_epoch_, 
           num_proced_sample_of_epoch_ + cur_global_batch_size}); 
 
-      DistributeBatchWithoutLock(false);
+      // DistributeBatchWithoutLock(
+      //     false, false /* has_unproc_batches has been set previously */);
+      DistributeBatchWithoutLock(false, true);
 
-      int train_world_size = TorchColConfig::GetTrainWorldSize();
       for (auto i : boost::irange(train_world_size)) {
         // num_unproc be determine in DistributeBatch
         global_shared_data_.num_procing_samples_per_train_->at(i) = 0;
         global_shared_data_.num_proced_samples_per_train_->at(i) = 0;
-        global_shared_data_.has_gotten_last_micro_batch_->at(i) = 0;
       }
     } else {
       LOG_IF(INFO, TorchColConfig::log_dynamic_batch) 
@@ -480,7 +520,6 @@ void DynamicBatchDistirbutor::NextGlobalBatchImpl() {
         global_shared_data_.num_unproc_samples_per_train_->at(i) = 0;
         global_shared_data_.num_procing_samples_per_train_->at(i) = 0;
         global_shared_data_.num_proced_samples_per_train_->at(i) = 0;
-        global_shared_data_.has_gotten_last_micro_batch_->at(i) = 0;
       }
     }
   }

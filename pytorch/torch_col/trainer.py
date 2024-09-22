@@ -138,6 +138,7 @@ class Trainer:
         
         # --------------------------
         # first, finish abort batch
+        # Ref: [Note: fast training memory adjust]
 
         # torch_col.info(f'epoch {epoch_idx} batch {batch_idx} dropped due to {exception}')
         torch_col.dist.wait_barrier()
@@ -175,6 +176,11 @@ class Trainer:
         # --------------------------------------------------
         # third, re-configure training and re-start training
 
+        if torch_col.get_train_rank() == 0:
+            torch_col.dist._DynamicBatchDistirbutor.distribute_batch(True, True)
+            self.dynamic_dataset.col_ctrl.set_killed_batch_reconfiged()
+        torch_col.dist.wait_barrier()
+
         nccl_backend = torch_dist.GroupMember.WORLD._get_backend(torch.device('cuda'))
         # restart nccl will let all training cpu sync
         nccl_backend._restart_nccl_comm([torch.device(f'cuda:{self.rank}')])
@@ -183,8 +189,6 @@ class Trainer:
             # Ref: [Note: kill batch]
             self.dynamic_dataset.col_ctrl.set_killed_batch_recover()
 
-        if torch_col.get_train_rank() == 0:
-            torch_col.dist._DynamicBatchDistirbutor.distribute_batch(True)
         torch_col.dist.wait_barrier()
 
     def _default_first_batch_callback(self):

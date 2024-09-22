@@ -470,6 +470,9 @@ class ColocateCtrl(CtrlBase):
     def set_killed_batch_recover(self):
         self._stub.set_killed_batch_recover()
 
+    def set_killed_batch_reconfiged(self):
+        self._stub.set_killed_batch_reconfiged()
+
 
 class DummyCtrl(CtrlBase):
     def __init__(self, 

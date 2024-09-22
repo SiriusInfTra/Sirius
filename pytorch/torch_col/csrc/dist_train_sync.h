@@ -113,7 +113,7 @@ class DistTrainSync {
         } else {
           *data = dist_train_sync_->bip_shm_.find<data_t>(name.c_str()).first;
         }
-      }  else {
+      } else {
         static_assert(
           !std::experimental::is_detected_v<colserve::cont_allocator_t, data_t>, 
           "data type is not supported");

@@ -25,6 +25,8 @@ bool DistTrainSync::IsInitialized() {
   return initialized_;
 }
 
+// TODO: add name for barrier, 
+//   because there are multiple threads using barrier
 void DistTrainSync::WaitBarrier() {
   CHECK(DistTrainSync::dist_train_sync_ != nullptr);
 

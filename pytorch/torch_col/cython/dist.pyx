@@ -58,7 +58,8 @@ cdef extern from "<torch_col/csrc/dynamic_batch.h>" namespace "torch_col":
         void AbortBatch(batch_range_vec_t batch_range_vec, 
                         bool end_of_global_batch)
         @staticmethod
-        void DistributeBatch(bool check_num_unproced_samples)
+        void DistributeBatch(bool check_num_unproced_samples,
+                             bool distribute_to_all)
         @staticmethod
         int NextEpoch()
         @staticmethod
@@ -93,8 +94,11 @@ class _DynamicBatchDistirbutor:
                                            end_of_global_batch)
 
     @staticmethod
-    def distribute_batch(check_num_unproced_samples: bool):
-        DynamicBatchDistirbutor.DistributeBatch(check_num_unproced_samples)
+    def distribute_batch(check_num_unproced_samples: bool,
+                         distribute_to_all: bool):
+        DynamicBatchDistirbutor.DistributeBatch(
+            check_num_unproced_samples,
+            distribute_to_all)
 
     @staticmethod
     def next_epoch():

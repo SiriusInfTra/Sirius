@@ -23,6 +23,7 @@ from .dynamic_batch import (
     get_dynamic_dataset, get_micro_batch_manager,
     init_dynamic_batch
 )
+from .colocate_ctrl import get_colocate_ctrl
 
 from .debug_server import DebugServer
 
