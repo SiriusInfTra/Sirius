@@ -7,6 +7,11 @@ import torch
 import torch.distributed
 from torch.utils.data import IterableDataset, get_worker_info
 from typing import Iterator, Optional
+import numpy as np
+import torch
+import torchvision
+import torchvision.transforms as transforms
+from torch.utils.data import DataLoader, Subset
 
 import sys
 import torch_col
@@ -77,6 +82,50 @@ class DynamicBatchDataset(IterableDataset):
                     'label': torch.from_numpy(label).pin_memory(),
                 } 
                 self.size = len(self.all_inputs['label'])           
+                self.num_class = 100
+            elif os.environ.get('COL_CIFAR100', '0') == '1':
+                rng = np.random.default_rng(42)
+                transform = transforms.Compose([
+                    transforms.ToTensor(),
+                ])
+
+                # 仅下载训练数据集
+                train_dataset = torchvision.datasets.CIFAR100(root='./data', train=True, download=True, transform=transform)
+                size = len(train_dataset)
+                # 打乱数据索引
+                indices = rng.permutation(size)
+
+                # 计算每个进程需要处理的数据量
+                n = size // torch_col.get_train_world_size()
+                rank = torch_col.get_train_rank()
+
+                # 根据当前进程的 rank 获取该进程需要处理的数据索引
+                subset_indices = indices[n*rank:n*(rank+1)]
+                subset_dataset = Subset(train_dataset, subset_indices)
+
+                # 创建 DataLoader
+                train_loader = DataLoader(subset_dataset, batch_size=64, shuffle=False, num_workers=2, pin_memory=True)
+
+                # 提取图像和标签数据
+                all_images = []
+                all_labels = []
+
+                for images, labels in train_loader:
+                    all_images.append(images)
+                    all_labels.append(labels)
+
+                # 拼接所有批次的数据
+                all_images = torch.cat(all_images)
+                all_labels = torch.cat(all_labels)
+
+                # 将图像和标签数据转换为 PyTorch 张量并固定到内存中
+                self.all_inputs = {
+                    'image': all_images.pin_memory(),
+                    'label': all_labels.pin_memory(),
+                }
+
+                # 设置数据大小和类别数量
+                self.size = len(self.all_inputs['label'])
                 self.num_class = 100
             elif _vision_task(self.model_name):
                 self.all_inputs = {
@@ -261,11 +310,15 @@ class DynamicBatchDataset(IterableDataset):
 
     def iter_batch(self) -> Iterator:
         if os.environ.get('COL_RAND_BZ', '0') == '1':
-            global random_batch_size_rng
-            if 'random_batch_size_rng' not in globals():
-                random_batch_size_rng = np.random.default_rng(42)
+            global np_rng
+            # global torch_rng_cpu
+            # global torch_rng_cuda
+            if 'np_rng' not in globals():
+                np_rng = np.random.default_rng(42)
+                # torch_rng_cpu = torch.random.get_rng_state()
+                # torch_rng_cuda = torch.cuda.random.get_rng_state()
             def _get_batch_size():
-                batch_size = random_batch_size_rng.integers(16, 64)
+                batch_size = np_rng.integers(16, 64)
                 if self.max_global_batch_size is None: # not use accumulation
                     batch_size = min(batch_size, self.size - self.micro_batch_iter_idx)
                 else:
