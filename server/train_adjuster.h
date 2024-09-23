@@ -22,6 +22,8 @@ class TrainAdjuster {
                                             bool verbose);
 
   // TODO: adjust for re-balance training
+  // TODO: guarantee either all worker batch size is greater than 0,
+  //   or all worker batch size less equal to 0
   static std::vector<AdjustPlan> GetTrainRequireMemAdjustPlan(
       int device_id, memory_mb_t required_mem_mb,
       memory_mb_t cold_cache_free_mem_mb);

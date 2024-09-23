@@ -62,6 +62,8 @@ cdef extern from "<torch_col/csrc/dynamic_batch.h>" namespace "torch_col":
         @staticmethod
         void VoteAbortLastMicroBatch()
         @staticmethod
+        void ResetLastMicroBatchFinishVote()
+        @staticmethod
         void DistributeBatch(bool check_num_unproced_samples,
                              bool distribute_to_all)
         @staticmethod
@@ -104,6 +106,10 @@ class _DynamicBatchDistirbutor:
     @staticmethod
     def vote_abort_last_micro_batch():
         DynamicBatchDistirbutor.VoteAbortLastMicroBatch()
+
+    @staticmethod
+    def reset_last_micro_batch_finish_vote():
+        DynamicBatchDistirbutor.ResetLastMicroBatchFinishVote()
 
     @staticmethod
     def distribute_batch(check_num_unproced_samples: bool,

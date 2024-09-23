@@ -62,6 +62,7 @@ class DynamicBatchDistirbutor {
   // otherwise, return false if any worker abort the batch
   static bool VoteFinishLastMicroBatch();
   static void VoteAbortLastMicroBatch();
+  static void ResetLastMicroBatchFinishVote();
 
   // call on the begining of a epoch and global batch
   static void NextGlobalBatch();
@@ -90,6 +91,7 @@ class DynamicBatchDistirbutor {
  private:
   constexpr static int ABORT_LAST_MICRO_BATCH = 
       std::numeric_limits<int>::min();
+  constexpr static int VOTE_FINISH_LAST_MICRO_BATCH = 1;
 
   static std::unique_ptr<DynamicBatchDistirbutor> batch_distributor_;
 
@@ -105,6 +107,9 @@ class DynamicBatchDistirbutor {
   std::pair<batch_range_t, batch_range_t> 
   SliceBatchRange(const batch_range_t &batch_range, 
                   int num_samples);
+
+  int GetLastMicroBatchFinishVoteWithoutLock();
+  void ResetLastMicroBatchFinishVoteWithLock();  
 
   std::string PrintBatchQueue(const colserve::bip_set<batch_range_t> *queue);
 
@@ -142,6 +147,8 @@ class DynamicBatchDistirbutor {
         *num_procing_samples_,
         *num_proced_samples_;
 
+    // std::array<int, colserve::MAX_DEVICE_NUM> 
+    //     *last_micro_batch_finish_vote_;
     std::atomic<int> *last_micro_batch_finish_vote_cnt_;
     colserve::bip_cond *last_micro_batch_finish_vote_cv_;
 

@@ -217,6 +217,9 @@ class MicroBatchManager:
     def vote_abort_last_micro_batch(self):
         _DynamicBatchDistirbutor.vote_abort_last_micro_batch()
 
+    def reset_last_micro_batch_finish_vote(self):
+        _DynamicBatchDistirbutor.reset_last_micro_batch_finish_vote()
+
     def _record_batch_event(self, epoch_idx: int, batch_idx: int, 
                             batch_size: int):
         self._batch_event = EventManager.record_event(

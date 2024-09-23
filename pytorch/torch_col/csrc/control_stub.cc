@@ -23,13 +23,15 @@
 //            |                                   │       │      │ 
 // 3. release memory, then reply to inference     ┴    killed_batch_recover=False
 //            |                                   ┬       │      │
-//            |                                   │       │      will_killed_batch_reconfig=True
-// 4. reconfigure training                        │       │      │
-//    (i.e., distributing batch)                  │       │      ┴
-//            |                          direct_reply     │
-//            |                          skip_kill_batch  │
-//            |                                   │       │
-// 5. [restart nccl (for DDP)]                    ┴       ┴
+//            |                                   │       │      │
+//            |                          direct_reply     │      │
+//            |                          skip_kill_batch  │      │
+//            |                                   │       │      │
+// 4. [restart nccl (for DDP)]                    ┴       ┴      │
+//            |                                              will_killed_batch_reconfig=True
+//            |                                                  │
+// 5. reconfigure training                                       ┴
+//    (i.e., distributing batch) 
 // 6. continue training
 
 

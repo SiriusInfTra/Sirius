@@ -15,8 +15,8 @@ import torch_col.xsched
 # from .dataset import DynamicBatchDataset
 from .dynamic_batch import DynamicBatchDataset, Batch
 from .util import EventManager, Event
-from dataclasses import dataclass
 
+from dataclasses import dataclass
 from typing import Callable, Any, Optional
 
 
@@ -83,6 +83,10 @@ class Trainer:
                 self.batch_manager.begin_batch(
                     epoch_idx, batch_idx, batch, batch['range']
                 )
+                
+                # if batch.should_update_param():
+                #     torch_col.info(f'epoch {epoch_idx} batch {batch_idx} w/ sync')
+
                 _running_loss = self.iter_train_fn(batch)
             except (
                 ColocateAdjustL1Exception, 
@@ -115,6 +119,9 @@ class Trainer:
                 self._cur_epoch_stat.finished_sample += \
                     self.dynamic_dataset.get_batch_size(batch)
                 self.overall_stat.finished_batch += 1
+
+                # if batch.should_update_param():
+                #     torch_col.info(f'epoch {epoch_idx} batch {batch_idx} w/ sync done')
 
         EventManager.record_event('', epoch_event)
         self.epoch_stats.append(self._cur_epoch_stat)
@@ -188,8 +195,9 @@ class Trainer:
         # third, re-configure training and re-start training
 
         if torch_col.get_train_rank() == 0:
-            torch_col.dist._DynamicBatchDistirbutor.distribute_batch(True, True)
-            self.dynamic_dataset.col_ctrl.set_killed_batch_reconfiged()
+            # batch across worker contain at least one sync batch 
+            # or has no sync batch, it is ok to reset all vote counter
+            self.batch_manager.reset_last_micro_batch_finish_vote()
         torch_col.dist.wait_barrier()
 
         nccl_backend = torch_dist.GroupMember.WORLD._get_backend(torch.device('cuda'))
@@ -200,6 +208,13 @@ class Trainer:
             # Ref: [Note: kill batch]
             self.dynamic_dataset.col_ctrl.set_killed_batch_recover()
 
+        if torch_col.get_train_rank() == 0:
+            # because we may directly reply memory adjust 
+            # before recover the killed batch (not killing batch),
+            # distribute batch should be after recover
+            # to configure training for those requests to avoid infer OOM
+            torch_col.dist._DynamicBatchDistirbutor.distribute_batch(True, True)
+            self.dynamic_dataset.col_ctrl.set_killed_batch_reconfiged()
         torch_col.dist.wait_barrier()
 
     def _default_first_batch_callback(self):

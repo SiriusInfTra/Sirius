@@ -71,8 +71,10 @@ DynamicBatchDistirbutor::DynamicBatchDistirbutor(
     std::make_pair(std::string{"num_processed_samples_"},
         &global_shared_data_.num_proced_samples_),
 
+    // std::make_pair(std::string{"last_micro_batch_finish_vote_"},
+    //     &global_shared_data_.last_micro_batch_finish_vote_),
     std::make_pair(std::string{"last_micro_batch_finish_vote_cnt_"},
-        &global_shared_data_.last_micro_batch_finish_vote_cnt_),
+      &global_shared_data_.last_micro_batch_finish_vote_cnt_),
     std::make_pair(std::string{"last_micro_batch_finish_vote_cv_"},
         &global_shared_data_.last_micro_batch_finish_vote_cv_),
 
@@ -449,28 +451,31 @@ bool DynamicBatchDistirbutor::VoteFinishLastMicroBatch() {
   CHECK(batch_distributor_ != nullptr);
   bip::scoped_lock lock{*GLOBAL_SHARED_DATA.mut_};
 
+  // int vote_cnt = batch_distributor_
+  //     ->GetLastMicroBatchFinishVoteWithoutLock();
+  // GLOBAL_SHARED_DATA.last_micro_batch_finish_vote_
+  //     ->at(TorchColConfig::GetTrainRank()) = VOTE_FINISH_LAST_MICRO_BATCH;
   int vote_cnt = GLOBAL_SHARED_DATA
-      .last_micro_batch_finish_vote_cnt_->fetch_add(1, 
-        std::memory_order_relaxed);
+      .last_micro_batch_finish_vote_cnt_->fetch_add(
+        VOTE_FINISH_LAST_MICRO_BATCH, std::memory_order_relaxed);
     
-  if (vote_cnt + 1 == TorchColConfig::GetTrainWorldSize()) {
+  if (vote_cnt + VOTE_FINISH_LAST_MICRO_BATCH 
+      == TorchColConfig::GetTrainWorldSize()) {
     GLOBAL_SHARED_DATA.last_micro_batch_finish_vote_cv_->notify_all();
     return true;
   } else if (vote_cnt < 0) {
     return false;
-  } else {
-    GLOBAL_SHARED_DATA.last_micro_batch_finish_vote_cv_->wait(lock, 
-        [&]() {
-          auto vote_cnt = GLOBAL_SHARED_DATA
-              .last_micro_batch_finish_vote_cnt_->load(
-                  std::memory_order_relaxed);
-          return vote_cnt == TorchColConfig::GetTrainWorldSize() 
-              || vote_cnt < 0;
-        });
   }
 
-  if (GLOBAL_SHARED_DATA.last_micro_batch_finish_vote_cnt_->load(
-      std::memory_order_relaxed) < 0) {
+  vote_cnt = 0;
+  GLOBAL_SHARED_DATA.last_micro_batch_finish_vote_cv_->wait(lock, [&]() {
+      vote_cnt = batch_distributor_
+          ->GetLastMicroBatchFinishVoteWithoutLock();
+      return vote_cnt == TorchColConfig::GetTrainWorldSize() 
+          || vote_cnt < 0;
+    });
+
+  if (vote_cnt < 0) {
     return false;
   } else {
     return true;
@@ -483,7 +488,15 @@ void DynamicBatchDistirbutor::VoteAbortLastMicroBatch() {
 
   GLOBAL_SHARED_DATA.last_micro_batch_finish_vote_cnt_->store(
       ABORT_LAST_MICRO_BATCH, std::memory_order_relaxed);
+  // GLOBAL_SHARED_DATA.last_micro_batch_finish_vote_
+  //     ->at(TorchColConfig::GetTrainRank()) = ABORT_LAST_MICRO_BATCH;
   GLOBAL_SHARED_DATA.last_micro_batch_finish_vote_cv_->notify_all();
+}
+
+void DynamicBatchDistirbutor::ResetLastMicroBatchFinishVote() {
+  CHECK(batch_distributor_ != nullptr);
+  bip::scoped_lock lock{*GLOBAL_SHARED_DATA.mut_};
+  batch_distributor_->ResetLastMicroBatchFinishVoteWithLock();
 }
 
 void DynamicBatchDistirbutor::NextGlobalBatch() {
@@ -516,8 +529,7 @@ void DynamicBatchDistirbutor::NextGlobalBatchImpl() {
     //     .last_micro_batch_finish_vote_cnt_->load(std::memory_order_relaxed),
     //     TorchColConfig::GetTrainWorldSize());
 
-    GLOBAL_SHARED_DATA.last_micro_batch_finish_vote_cnt_->store(0, 
-        std::memory_order_relaxed);
+    batch_distributor_->ResetLastMicroBatchFinishVoteWithLock();
 
     int cur_global_batch_size = 
         global_batch_size_ + num_proced_sample_of_epoch_ > dataset_size_ 
@@ -632,6 +644,29 @@ DynamicBatchDistirbutor::SliceBatchRange(
     std::make_pair(batch_range.first, batch_range.first + num_samples),
     std::make_pair(batch_range.first + num_samples, batch_range.second)
   };
+}
+
+int DynamicBatchDistirbutor::GetLastMicroBatchFinishVoteWithoutLock() {
+  // int vote_cnt = 0;
+  // for (auto i : boost::irange(TorchColConfig::GetTrainWorldSize())) {
+  //   int vote = global_shared_data_
+  //     .last_micro_batch_finish_vote_->at(i);
+  //   if (vote == ABORT_LAST_MICRO_BATCH) {
+  //     return ABORT_LAST_MICRO_BATCH;
+  //   }
+  //   vote_cnt += vote;
+  // }
+  // return vote_cnt;
+  return GLOBAL_SHARED_DATA.last_micro_batch_finish_vote_cnt_->load(
+      std::memory_order_relaxed);
+}
+
+void DynamicBatchDistirbutor::ResetLastMicroBatchFinishVoteWithLock() {
+  // for (auto i : boost::irange(TorchColConfig::GetTrainWorldSize())) {
+  //   GLOBAL_SHARED_DATA.last_micro_batch_finish_vote_->at(i) = 0;
+  // }
+  GLOBAL_SHARED_DATA.last_micro_batch_finish_vote_cnt_->store(
+      0, std::memory_order_relaxed);
 }
 
 std::string DynamicBatchDistirbutor::PrintBatchQueue(
