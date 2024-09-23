@@ -71,7 +71,7 @@ def train(rank:int, world_size:int,
         dataset_type=dynamic_batch.DatasetType.VISION,
         dataset_config=dynamic_batch.VisionDatasetConfig((3, 224, 224), 10),
         batch_size=batch_size,
-        global_batch_size=None,
+        global_batch_size=global_batch_size,
         enable_grad_accumulate=enable_grad_accumulate,
         checkpoint_micro_batch=checkpoint_micro_batch,
     )   
