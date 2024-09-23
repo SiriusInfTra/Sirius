@@ -168,11 +168,11 @@ def main():
     print(f"Swin Transformer training, batch-size={batch_size}"
           f", num-epoch={num_epoch}")
     
-    process_context =  torch_mp.spawn(train, 
-                   args=(torch.cuda.device_count(),
-                         num_epoch, batch_size, global_batch_size), 
-                   nprocs=torch.cuda.device_count(), 
-                   join=False)
+    process_context = torch_mp.spawn(train, 
+        args=(torch.cuda.device_count(),
+                num_epoch, batch_size, global_batch_size), 
+        nprocs=torch.cuda.device_count(), 
+        join=False)
     try:
         process_context.join()
     except Exception as e:
