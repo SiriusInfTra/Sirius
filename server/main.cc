@@ -5,19 +5,12 @@
 #include <tvm/runtime/module.h>
 #include <tvm/runtime/registry.h>
 #include <tvm/runtime/logging.h>
-#include <iostream>
-#include <filesystem>
-#include <csignal>
+
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/health_check_service_interface.h>
 #include <glog/logging.h>
 #include <CLI/CLI.hpp>
-
-#include <common/cuda_allocator.h>
-#include <common/sm_partition.h>
-#include <common/device_manager.h>
-#include <common/util.h>
 
 #include <server/grpc/grpc_server.h>
 #include <server/model_store/infer_model_store.h>
@@ -27,6 +20,18 @@
 #include <server/control/controller.h>
 #include <server/profiler.h>
 #include <server/config.h>
+
+#include <common/cuda_allocator.h>
+#include <common/sm_partition.h>
+#include <common/device_manager.h>
+#include <common/util.h>
+
+#include <boost/range/irange.hpp>
+#include <boost/range/algorithm.hpp>
+#include <boost/range/numeric.hpp>
+#include <iostream>
+#include <filesystem>
+#include <csignal>
 
 #define STREAM_OUTPUT(field) std::cerr << "cfg::" #field "=" << cfg::field << std::endl
 
@@ -211,8 +216,9 @@ void init_config() {
       static_cast<size_t>((cfg::cuda_memory_pool_gb * 1024 
                            - cfg::train_memory_over_predict_mb) * 1_MB
                            - cfg::cold_cache_max_capability_nbytes); // for warmup
-    LOG(INFO) << "enable enable_warm_cache_fallback, cache nbytes (used in warmup, conservative estimated) " 
-              << colserve::sta::ByteDisplay(cfg::max_warm_cache_nbytes);
+    LOG(INFO) << "enable enable_warm_cache_fallback, "
+              << "cache nbytes (used in warmup, conservative estimated) " 
+              << colserve::sta::PrintByte(cfg::max_warm_cache_nbytes);
   }
 
   auto *cuda_device_env = getenv("CUDA_VISIBLE_DEVICES");
@@ -221,16 +227,20 @@ void init_config() {
     LOG(INFO) << "ENV::CUDA_VISIBLE_DEVICES: " << cuda_device_env;
   }
   if (cuda_mps_thread_pct_env != nullptr) {
-    LOG(INFO) << "ENV::CUDA_MPS_ACTIVE_THREAD_PERCENTAGE: " << cuda_mps_thread_pct_env;
+    LOG(INFO) << "ENV::CUDA_MPS_ACTIVE_THREAD_PERCENTAGE: " 
+              << cuda_mps_thread_pct_env;
   }
 
-  if (cuda_mps_thread_pct_env == nullptr && cfg::train_mps_thread_percent == -1) {
-    LOG(INFO) << "no CUDA_MPS_ACTIVE_THREAD_PERCENTAGE set, skip set mps thread percent";
+  if (cuda_mps_thread_pct_env == nullptr 
+      && cfg::train_mps_thread_percent == -1) {
+    LOG(INFO) << "no CUDA_MPS_ACTIVE_THREAD_PERCENTAGE set, "
+                 "skip set mps thread percent";
     cfg::skip_set_mps_thread_percent = true;
   }
 
   if (!cfg::skip_set_mps_thread_percent && cfg::dynamic_sm_partition) {
-    LOG(FATAL) << "Dynamic partition SM may not work correctly with control of MPS thread percent";
+    LOG(FATAL) << "Dynamic partition SM may not work "
+                  "correctly with control of MPS thread percent";
   }
   if (cfg::dynamic_sm_partition && !cfg::use_xsched) {
     LOG(FATAL) << "Dynamic partition SM must work with xsched";
@@ -240,6 +250,10 @@ void init_config() {
   auto col_log_all_env = getenv("COLSERVE_LOG_ALL");
   if (col_log_all_env != nullptr) {
     cfg::log_all = std::string(col_log_all_env) == "1";
+  }
+  auto col_log_adjust_env = getenv("COLSERVE_LOG_MEMORY_ADJUST");
+  if (col_log_adjust_env != nullptr) {
+    cfg::log_memory_adjust = std::string(col_log_adjust_env) == "1";
   }
   if (cfg::log_all) {
     cfg::log_all = true;
@@ -280,13 +294,16 @@ void init_config() {
   STREAM_OUTPUT(cold_cache_ratio);
   STREAM_OUTPUT(infer_model_max_idle_ms);
   STREAM_OUTPUT(dynamic_sm_partition);
+  STREAM_OUTPUT(enable_train_adjust_balance);
+  STREAM_OUTPUT(train_adjust_balance_threshold);
   STREAM_OUTPUT(colocate_config.skip_malloc);
   STREAM_OUTPUT(colocate_config.skip_loading);
   std::cerr << std::string(header.size(), '=') << std::endl;
 }
 
 void Shutdown(int sig) {
-  LOG(INFO) <<"signal " <<  strsignal(sig) << "(" << sig << ")" << " received, shutting down...";
+  LOG(INFO) <<"signal " <<  strsignal(sig) << "(" << sig << ")" 
+            << " received, shutting down...";
   colserve::Config::running = false;
   colserve::InferModelStore::Shutdown();
   colserve::TrainLauncher::Shutdown();
@@ -310,7 +327,7 @@ int main(int argc, char *argv[]) {
     Shutdown(SIGINT);
   });
 
-  CHECK_EQ(cuInit(0), CUDA_SUCCESS);
+  COL_CU_CALL(cuInit(0));
   COL_NVML_CALL(nvmlInit());
   colserve::sta::DeviceManager::Init();
   auto free_list_policy = colserve::sta::getFreeListPolicy(
@@ -323,9 +340,14 @@ int main(int argc, char *argv[]) {
         static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
         true, false, free_list_policy);
       colserve::sta::CUDAMemPool::Get(device_id)->RegisterOOMHandler([]() {
-        LOG(INFO) << "train predict memory " 
-                  <<  colserve::TrainAdjuster::PredictTrainMemUsageMB(0, true) 
-                  << "."; 
+        LOG(INFO) << "[CUDAMemPool OOM] train predict memory" 
+                  << boost::accumulate(
+                      boost::irange(colserve::sta::DeviceManager::GetNumVisibleGpu()), 
+                      std::string{""}, [](std::string acc, int device_id) {
+                        return acc + " " + std::to_string(
+                            colserve::TrainAdjuster::PredictTrainMemUsageMB(device_id, true));
+                      }) 
+                  << ".";
         }, colserve::sta::MemType::kInfer);
     }
   }

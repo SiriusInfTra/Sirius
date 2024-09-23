@@ -35,6 +35,7 @@ cdef extern from "<torch_col/csrc/control_stub.h>" namespace "torch_col":
         int GetCmd()
         void SetCmd(int)
         int GetTargetBatchSize()
+        int GetUnpubTargetBatchSize()
         void ColocateAdjustL1Done()
         void ColocateAdjustL2Done()
         void TrainStart()
@@ -44,6 +45,8 @@ cdef extern from "<torch_col/csrc/control_stub.h>" namespace "torch_col":
         void StepsNoInteruptEnd()
         void EnableTorchColEngine()
         bint CanExitAfterInferWorkloadDone()
+        void SetKilledBatchRecover()
+        void SetKilledBatchReconfiged()
 
     cdef cppclass StubProfiler:
         @staticmethod
@@ -138,6 +141,10 @@ cdef class PyColocateStub:
     def target_batch_size(self):
         return self._cppclass.GetTargetBatchSize()
 
+    @property
+    def unpub_target_batch_size(self):
+        return self._cppclass.GetUnpubTargetBatchSize()
+
     def adjust_l1_done(self):
         self._cppclass.ColocateAdjustL1Done()
 
@@ -164,6 +171,12 @@ cdef class PyColocateStub:
 
     def EnableTorchColEngine(self):
         self._cppclass.EnableTorchColEngine()
+
+    def set_killed_batch_recover(self):
+        self._cppclass.SetKilledBatchRecover()
+
+    def set_killed_batch_reconfiged(self):
+        self._cppclass.SetKilledBatchReconfiged()
 
     def __dealloc__(self):
         del self._cppclass

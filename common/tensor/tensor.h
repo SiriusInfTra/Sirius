@@ -1,12 +1,12 @@
 #ifndef COLSERVE_TENSOR_POOL_H
 #define COLSERVE_TENSOR_POOL_H
 
-#include <c10/core/MemoryFormat.h>
-#include <ATen/Tensor.h>
+// #include <c10/core/MemoryFormat.h>
+// #include <ATen/Tensor.h>
 
-#include <common/dlpack.h>
+#include <common/tensor/dlpack.h>
 #include <common/cuda_allocator.h>
-#include <common/dtype_helper.h>
+#include <common/tensor/dtype_helper.h>
 
 #include <memory>
 #include <unordered_map>
@@ -16,6 +16,12 @@
 
 namespace colserve {
 namespace sta {
+
+using dim_vec_t = std::vector<int64_t>;
+
+enum class MemoryFormat {
+  Contiguous,
+};
 
 class STensor;
 class TensorContainer {
@@ -31,17 +37,24 @@ class TensorContainer {
                   
   TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, 
                   DLDevice device, DLDataType dtype);
-  TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, at::MemoryFormat memory_format, 
+  TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, 
+                  MemoryFormat memory_format, 
                   DLDevice device, DLDataType dtype);
-  TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, std::vector<int64_t> stride, 
-                  DLDevice device, DLDataType dtype, size_t storage_offset);
+  TensorContainer(memory_data_t mdata_, std::vector<int64_t> shape, 
+                  std::vector<int64_t> stride, 
+                  DLDevice device, DLDataType dtype, 
+                  size_t storage_offset);
   virtual ~TensorContainer();
 
-  void SetTensor(TensorContainer::memory_data_t mdata, std::vector<int64_t> shape, 
-                 DLDevice device, DLDataType dtype, std::optional<size_t> storage_offset);
-  void SetTensor(TensorContainer::memory_data_t mdata, std::vector<int64_t> shape, 
+  void SetTensor(TensorContainer::memory_data_t mdata, 
+                 std::vector<int64_t> shape, 
+                 DLDevice device, DLDataType dtype, 
+                 std::optional<size_t> storage_offset);
+  void SetTensor(TensorContainer::memory_data_t mdata, 
+                 std::vector<int64_t> shape, 
                  std::vector<int64_t> stride, 
-                 DLDevice device, DLDataType dtype, std::optional<size_t> storage_offset);
+                 DLDevice device, DLDataType dtype, 
+                 std::optional<size_t> storage_offset);
 
   friend STensor;
  private:
@@ -63,22 +76,24 @@ class STensor : public std::shared_ptr<TensorContainer> {
   STensor(STensor &&tensor) : std::shared_ptr<TensorContainer>(std::move(tensor)) {}
   template<typename... Args>
   STensor(Args&&... args) : 
-      std::shared_ptr<TensorContainer>(std::make_shared<TensorContainer>(std::forward<Args>(args)...)) {}
+      std::shared_ptr<TensorContainer>(
+        std::make_shared<TensorContainer>(std::forward<Args>(args)...)
+      ) {}
 
   TensorContainer::memory_data_t MData() const {
     return get()->mdata_;
   }
-  std::vector<int64_t> ShapeVec() const {
+  // std::vector<int64_t> ShapeVec() const {
+  //   return get()->shape_;
+  // }
+  // std::vector<int64_t> StrideVec() const {
+  //   return get()->stride_;
+  // }
+  const dim_vec_t & Shape() const {
     return get()->shape_;
   }
-  std::vector<int64_t> StrideVec() const {
+  const dim_vec_t & Stride() const {
     return get()->stride_;
-  }
-  at::IntArrayRef Shape() const {
-    return at::IntArrayRef(get()->shape_);
-  }
-  at::IntArrayRef Stride() const {
-    return at::IntArrayRef(get()->stride_);
   }
   inline int64_t StorageOffset() const {
     // return get()->tensor_.byte_offset / (get()->tensor_.dtype.bits >> 3);
@@ -102,10 +117,12 @@ class STensor : public std::shared_ptr<TensorContainer> {
 
   bool ComputeContiguous() const;
   size_t ComputeNumel() const;
+  size_t ComputeNbytes() const;
 
   // void Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride);
   void AllocForNull(MemType mtype);
-  void SetMDataForNull(TensorContainer::memory_data_t mdata, bool check_memory_bound = false);
+  void SetMDataForNull(TensorContainer::memory_data_t mdata, 
+                       bool check_memory_bound = false);
   void DeallocToNull();
   void DeallocToDummy();
   void Rearrange();

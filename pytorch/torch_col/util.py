@@ -10,9 +10,22 @@ from io import StringIO
 
 import torch
 import torch_col
+from ._C import TrainMode
 
 
 def info(*args):
+    if len(args) == 1:
+        msg = args[0]
+    else:
+        msg = ' '.join([f'{arg}' for arg in args])
+    if type(msg) != str:
+        msg = f'{msg}'
+
+    c_msg = msg.encode('utf-8')
+    torch_col._C.CallGLOG_INFO(c_msg, 'torch_col', 0)
+
+
+def info_with_frame(*args):
     if len(args) == 1:
         msg = args[0]
     else:
@@ -24,7 +37,7 @@ def info(*args):
     c_msg = msg.encode('utf-8')
     c_file = caller.filename.encode('utf-8')
     torch_col._C.CallGLOG_INFO(c_msg, c_file, caller.lineno)
-
+    
 
 def dinfo(*args):
     if len(args) == 1:
@@ -40,26 +53,12 @@ def dinfo(*args):
     torch_col._C.CallGLOG_DINFO(c_msg, c_file, caller.lineno)
 
 
-class TrainMode(Enum):
-    NORMAL = 'normal'
-    COLOCATE_L1 = 'colocate-l1'
-    COLOCATE_L2 = 'colocate-l2'
-    TASKSWITCH_L0 = 'taskswitch-l0'
-    TASKSWITCH_L1 = 'taskswitch-l1'
-    TASKSWITCH_L2 = 'taskswitch-l2'
-    TASKSWITCH_L3 = 'taskswitch-l3'
-    
-    def is_normal(self):
-        return self == TrainMode.NORMAL
-    
-    def is_colocate(self):
-        return self in {TrainMode.COLOCATE_L1, TrainMode.COLOCATE_L2}
-
-    def is_kill_batch(self):
-        return self in {TrainMode.COLOCATE_L1, TrainMode.TASKSWITCH_L1}
-
-    def is_taskswitch(self):
-        return self in {TrainMode.TASKSWITCH_L1, TrainMode.TASKSWITCH_L2, TrainMode.TASKSWITCH_L3}
+def cleanup_previous_shm():
+    import subprocess
+    subprocess.run(["rm -f /dev/shm/colserve_shm_*"], 
+                   shell=True, capture_output=False)
+    subprocess.run(["rm -f /dev/shm/sem.colserve_shm_*"],
+                   shell=True, capture_output=False)
 
 
 class MemoryPool:

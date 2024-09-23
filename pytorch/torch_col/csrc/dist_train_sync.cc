@@ -3,21 +3,30 @@
 
 #include <common/log_as_glog_sta.h>
 #include <common/util.h>
+#include <common/inf_tra_comm/communicator.h>
 
 #include <thread>
 
 
 namespace torch_col {
 
-std::unique_ptr<DistTrainSync> DistTrainSync::dist_train_sync_ = nullptr; 
+std::unique_ptr<DistTrainSync> DistTrainSync::dist_train_sync_ = nullptr;
+bool DistTrainSync::initialized_ = false;
 
 void DistTrainSync::Init() {
   CHECK(DistTrainSync::dist_train_sync_ == nullptr)
       << "DistTrainSync has been initialized";
   DistTrainSync::dist_train_sync_ = std::make_unique<DistTrainSync>();
+  initialized_ = true;
   LOG(INFO) << "DistTrainSync initialized";
 }
 
+bool DistTrainSync::IsInitialized() {
+  return initialized_;
+}
+
+// TODO: add name for barrier, 
+//   because there are multiple threads using barrier
 void DistTrainSync::WaitBarrier() {
   CHECK(DistTrainSync::dist_train_sync_ != nullptr);
 
@@ -36,7 +45,7 @@ void DistTrainSync::Send(int dst, const std::string &msg) {
     std::array<char, kMsgBufSize> buf{0};
     std::copy(msg.data() + i, msg.data() + j, buf.begin());
 
-    dist_train_sync_->intra_train_mqs_[src][dst]->BlockPut(buf);
+    dist_train_sync_->intra_train_str_mqs_[src][dst]->BlockPut(buf);
     i = j;
   }
 }
@@ -45,7 +54,7 @@ std::string DistTrainSync::Recv(int src) {
   std::vector<char> ret;
   int rank = TorchColConfig::GetTrainRank();
   while (true) {
-    auto buf = dist_train_sync_->intra_train_mqs_[src][rank]->BlockGet();
+    auto buf = dist_train_sync_->intra_train_str_mqs_[src][rank]->BlockGet();
     auto it = std::find(buf.begin(), buf.end(), 0);
     if (it != buf.end()) {
       ret.insert(ret.end(), buf.begin(), it);
@@ -69,18 +78,19 @@ DistTrainSync::DistTrainSync() {
       bip::open_or_create, sem_name.c_str(), 0};
 
   int train_world_size = TorchColConfig::GetTrainWorldSize();
-  if (TorchColConfig::GetTrainRank() == 0) {
+  if (TorchColConfig::IsTrainMaster()) {
     bip::shared_memory_object::remove(shm_name_.c_str());
     bip_shm_ = bip::managed_shared_memory{bip::create_only,
                                           shm_name_.c_str(), 1024 * 1024};
     auto atomic_init = [&]() {
-      DLOG(INFO) << "dist train sync init rank " << TorchColConfig::GetTrainRank();
+      DLOG(INFO) << "dist train sync init rank " 
+                 << TorchColConfig::GetTrainRank();
       barrier_ = 
           bip_shm_.find_or_construct<pthread_barrier_t>("barrier")();
       for (int i = 0; i < train_world_size; i++) {
         for (int j = 0; j < train_world_size; j++) {
-          intra_train_mqs_[i][j].reset(new dist_train_mq_t(
-              true, GetMqName(i, j), bip_shm_));
+          intra_train_str_mqs_[i][j].reset(new dist_train_str_mq_t(
+              true, GetMqName("str-msg", i, j), bip_shm_));
         }
       }
 
@@ -96,7 +106,14 @@ DistTrainSync::DistTrainSync() {
       init_sem.post();
     }
   } else {
-    init_sem.wait();
+    bool succ = init_sem.timed_wait(
+        std::chrono::system_clock::now() 
+        + std::chrono::seconds(10)
+    );
+    if (!succ) {
+      LOG(FATAL) << "dist train sync init timeout, "
+                 << str(boost::format("`rm -f /dev/shm/sem.%s` and retry") % sem_name);
+    }
     bip_shm_ = bip::managed_shared_memory{bip::open_only, shm_name_.c_str()};
     auto atomic_init = [&]() {
       DLOG(INFO) << "dist train sync init rank " << TorchColConfig::GetTrainRank();
@@ -104,17 +121,20 @@ DistTrainSync::DistTrainSync() {
       barrier_ = bip_shm_.find<pthread_barrier_t>("barrier").first;
       for (int i = 0; i < train_world_size; i++) {
         for (int j = 0; j < train_world_size; j++) {
-          intra_train_mqs_[i][j].reset(new dist_train_mq_t(
-              false, GetMqName(i, j), bip_shm_));
+          intra_train_str_mqs_[i][j].reset(new dist_train_str_mq_t(
+              false, GetMqName("str-msg", i, j), bip_shm_));
         }
       }
     };
     bip_shm_.atomic_func(atomic_init);
   }
 
+  // for avoiding name conflict
+  intra_train_custom_mq_dict_.insert({"str-msg", nullptr});
+
   auto err = pthread_barrier_wait(barrier_);
 
-  if (TorchColConfig::GetTrainRank() == 0) {
+  if (TorchColConfig::IsTrainMaster()) {
     bip::shared_memory_object::remove(sem_name.c_str());
   }
 

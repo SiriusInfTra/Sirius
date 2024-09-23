@@ -1,5 +1,6 @@
 import torch
 from collections import defaultdict
+from typing import Optional
 
 
 class GradAccumulator:
@@ -17,9 +18,13 @@ class GradAccumulator:
     def accumulate(self):
         for p in self.param_list:
             self.param_grads[p]['global'] += p.grad 
+            p.grad.zero_()
 
-    def step(self, optmizer: torch.optim.Optimizer, 
-             scaler: torch.cuda.amp.GradScaler=None, do_zero_grad=True):
+    def step(self, 
+             optmizer: torch.optim.Optimizer, 
+             scaler: Optional[torch.cuda.amp.GradScaler]=None, 
+             do_zero_grad=True
+    ):
         for p in self.param_list:
             assert p.grad is not None
             self.param_grads[p]['local'] = p.grad

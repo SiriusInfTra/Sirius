@@ -1,10 +1,11 @@
-#include <common/log_as_glog_sta.h>
-#include <common/util.h>
-
 #include <torch_col/csrc/dist_ext.h>
 #include <torch_col/csrc/mem_tagging.h>
 #include <torch_col/csrc/config.h>
 #include <torch_col/csrc/dist_train_sync.h>
+#include <torch_col/csrc/util.h>
+
+#include <common/log_as_glog_sta.h>
+#include <common/util.h>
 
 #include <torch/csrc/jit/python/pybind_utils.h>
 #include <torch/csrc/distributed/c10d/comm.hpp>
@@ -35,15 +36,20 @@ void Reducer::autograd_hook(size_t index) {
   // graph task callback which will be executed before 
   // finalize_backward callback.
 
-  if (!first_autograd_hook_called_) {
+  if (!first_batch_autograd_hook_called_) {
     torch::autograd::Engine::get_default_engine().queue_callback([=] {
+      // LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank()  << "]" << "CALL engine callback";
+      first_batch_autograd_hook_called_ = false;
       auto pg = ProcessGroupNCCL::GetDefaultProcessGroupNCCL();
       if (pg.defined() && pg->GetAbortFlag() != 0) {
-        LOG(INFO) << "[Reducer::autograd_hook] ProcessGroupNCCL abort flag is set,"
-                  << " drop the batch";
+        LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() 
+                  << " | Reducer::autograd_hook] ProcessGroupNCCL"
+                  << " abort flag is set, drop the batch";
         throw EngineColocateAdjustL1Exception("TorchColEngine");
       }
+
     });
+    first_batch_autograd_hook_called_ = true;
   }
   ::c10d::Reducer::autograd_hook(index);
 }
@@ -62,6 +68,7 @@ void Reducer::finalize_dropped_batch() {
   } else {
     require_finalize_ = false;
   }
+  first_batch_autograd_hook_called_= false;
   DLOG(INFO) << "Reducer::finalize_dropped_batch() end";
 }
 
@@ -246,6 +253,7 @@ void ProcessGroupNCCL::RestartNcclCommByRecreating(
 void ProcessGroupNCCL::SetNcclCommAbortFlag(
     const std::vector<at::Device> &devices,
     uint32_t val) {
+  auto t0 = torch_col::get_unix_timestamp();
   auto device_key = getKeyFromDevices(devices);
   std::vector<std::shared_ptr<::c10d::NCCLComm>> ncc_comms;
 
@@ -258,15 +266,21 @@ void ProcessGroupNCCL::SetNcclCommAbortFlag(
               << GetDevNcclCommMapKeySetStrsUnlocked();
     return;
   }
+  auto t1 = torch_col::get_unix_timestamp();
+
   ncc_comms = it->second;
 
   for (auto & comm : ncc_comms) {
     _SetNcclCommAbortFlag(comm->getNcclComm(), val);
   }
 
+  auto t2 = torch_col::get_unix_timestamp();
+
   LOG(INFO) << str(boost::format("[Rank %d | SetNcclCommAbortFlag]") % getRank())
             << " device_key " << device_key
-            << " set abort flag " << val << " done";
+            << " set abort flag " << val << " done"
+            << ", cost " << t2 - t0 << "ms"
+            << " | _SetNcclCommAbortFlag " << t2 - t1 << "ms";
 }
 
 void ProcessGroupNCCL::_SetNcclCommAbortFlag(ncclComm_t comm, uint32_t val) {

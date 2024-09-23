@@ -79,8 +79,7 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
       (model_path / "mod.json").c_str(),
       (model_path / "mod.group").c_str(),
       rmod,
-      (model_path / "mod.params").c_str(),
-      std::vector{device}
+      (model_path / "mod.params").c_str()
     );
   } else {
     tvm_graph_ = std::make_unique<tvm::TVMGraph>(
@@ -91,8 +90,7 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
       (model_path / "mod.json").c_str(),
       (model_path / "mod.group").c_str(),
       rmod,
-      params.value(),
-      std::vector{device}
+      params.value()
     );
   }
 
@@ -123,11 +121,6 @@ Model::Model(const std::string &name, const std::filesystem::path &model_path,
   LOG_IF(INFO, Config::log_infer_model_init)
       << "[Model Init] " << name << " initilized " << num_worker << " executor";
 
-  // if (Config::colocate_config.skip_malloc || Config::colocate_config.skip_loading) {
-  //   for (size_t i = 0; i < max_num_worker_; i++) {
-  //     executors_[i].get()->FakeInit(Config::colocate_config.skip_malloc, Config::colocate_config.skip_loading);
-  //   }
-  // }
   if (Config::colocate_config.skip_malloc || Config::colocate_config.skip_loading) {
     LOG(FATAL) << "not support skip_malloc or skip_loading";
   }
@@ -216,8 +209,8 @@ bool Model::ReclaimMemory(size_t rank,
   auto cold_model_cache = ColdModelCache::Get(device_.device_id);
   auto &&[cached_groups_id, evict_group_list, succ] = 
     cold_model_cache->PushCacheItem(name_, rank, 
-                                    executor->GetGroupsNbytes(), 
-                                    executor->GetStorageSizeAlign(), 
+                                    tvm_graph_->GetGroupsNbytes(), 
+                                    tvm_graph_->GetStorageAlignedNbytes(), 
                                     cold_cache_lock, source_model);
   CHECK(succ);
   for (auto &&[name, evict_groups_id] : evict_group_list) {
@@ -240,7 +233,6 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
                                      std::unique_lock<std::mutex> &cold_cache_lock, 
                                      std::unique_lock<std::mutex> &model_lock) {
   CHECK(status_[rank] == Status::kWithoutMemory);
-
 
 #if ADJUST_WITH_FLYING
   // batching adjust with flying adjusts, deprecated currently
@@ -269,7 +261,8 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
 
   auto cold_model_cache = ColdModelCache::Get(device_.device_id);
 
-  double free_memory_MB = ResourceManager::GetFreeMemoryMB(device_.device_id, true);
+  double free_memory_MB = 
+      ResourceManager::GetFreeMemoryMB(device_.device_id, true);
   double cold_cache_free_memory_MB =
       cold_model_cache->GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock);
   double total_storage_MB = 
@@ -289,7 +282,7 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
       PROFILE_END(TrainAdjust);
 
       LOG_IF(INFO, Config::log_memory_adjust) 
-          << "[Model, Cold Cache Adjust]"
+          << "[Model, Cold Cache Adjust] "
           << "AllocStorageMaybeAdjust: model " << rank
           << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
           << " | before adjust: free memory " << free_memory_MB
@@ -298,50 +291,10 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
     } else {
       LOG_IF(INFO, Config::log_memory_adjust) 
           << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " 
-          << rank << "skip adjust";
+          << rank << " skip adjust";
     }
     free_memory_MB = ResourceManager::GetFreeMemoryMB(
         device_.device_id, Config::log_memory_adjust);
-
-    // size_t adjust_batch_buffer_nbytes = std::min(
-    //   Config::cold_cache_max_capability_nbytes - Config::cold_cache_min_capability_nbytes,
-    //   Config::cold_cache_max_capability_nbytes - ColdModelCache::Get().GetCachedNbytes(cold_cache_lock) 
-    // );
-    
-
-    // double adjust_reserve_mb = cold_model_cache->GetAdjustReserveMemoryMB(cold_cache_lock);
-    // double adjust_batch_buffer_mb = total_storage_MB 
-    //                                 - std::max(0.0, cold_cache_free_memory_MB)
-    //                                 + adjust_reserve_mb;
-
-    // if (adjust_batch_buffer_mb > 0) {
-    //   int cur_target_bs = TrainLauncher::Get()->GetTargetBatchSize();
-    //   if (cur_target_bs >= 0) {
-    //     PROFILE_START(TrainAdjust);
-    //     bool is_first_adjust = !ctrl::Controller::Get()->HasFlyingColocateAdjust();
-    //     auto adjust_batch_size = TrainLauncher::Get()->GetAdjustBatchSize(adjust_batch_buffer_mb);
-    //     CHECK_GE(adjust_batch_size, 0);
-    //     int cmd_id = ctrl::Controller::Get()->ColocateAdjust(
-    //         0, device_.device_id, adjust_batch_size);
-    //     // LOG(INFO) << "adjust model " << name_ << " cmd " << cmd_id;
-    //     ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
-    //     PROFILE_END(TrainAdjust);
-    //     if (is_first_adjust) {
-    //       Profiler::Get()->RecordPerf(Profiler::PerfItem::TrainFirstAdjust, 
-    //                                   PROFILE_DURATRION(TrainAdjust));
-    //     }
-    //     LOG_IF(INFO, Config::log_memory_adjust) 
-    //         << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
-    //         << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
-    //         << " | before adjust: free memory " << free_memory_MB
-    //         << " cold cache free memory " << cold_cache_free_memory_MB
-    //         << " reserve memory " << adjust_reserve_mb
-    //         << " adjust_batch_buffer_mb " << adjust_batch_buffer_mb
-    //         << " delta batch size " << adjust_batch_size << ".";
-    //   } else {
-    //     LOG(INFO) << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " << rank
-    //               << ", skip adjust due to negative target batch size (" << cur_target_bs << ")" ; 
-    //   }
   }
   LOG_IF(INFO, Config::log_memory_adjust) 
       << "[Model, Cold Cache Adjust] after adjust, "
@@ -351,10 +304,20 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
       << " model required " << total_storage_MB;
 
   if (total_storage_MB > free_memory_MB) {
-    long capacity = static_cast<long>(cold_model_cache->GetCachedNbytes(cold_cache_lock)) 
-                    - static_cast<long>((total_storage_MB - free_memory_MB) * 1024 * 1024);
-    auto evict_models = cold_model_cache->GetEvictModels(capacity, {this, nullptr}, 
-                                                         cold_cache_lock);
+    memory_byte_t cold_cache_nbytes = 
+        cold_model_cache->GetCachedNbytes(cold_cache_lock);
+    memory_byte_t to_evict_nbytes = static_cast<memory_byte_t>(
+        total_storage_MB * 1024 * 1024 - free_memory_MB);
+
+    memory_byte_t capacity;
+    if (cold_cache_nbytes >= to_evict_nbytes) {
+      capacity = cold_cache_nbytes - to_evict_nbytes;
+    } else {
+      capacity = 0;
+    }
+
+    auto evict_models = cold_model_cache->GetEvictModels(
+        capacity, {this, nullptr}, cold_cache_lock);
     for (auto &&[name, cached_groups_id] : evict_models) {
       InferModelStore::Get()->GetModel(name)->ClearColdCache(
           cached_groups_id, rank, cold_cache_lock);
@@ -362,10 +325,12 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
 
     LOG_IF(INFO, Config::log_memory_adjust) 
         << "[Model, Cold Cache Adjust] after adjust, "
-        << "furthur evict model to make room for model "
-        << name_ << " rank " << rank
-        << " current cache nbytes " 
-        << sta::ByteDisplay(cold_model_cache->GetCachedNbytes(cold_cache_lock));
+        << "furthur evict model until cached nbytes is " 
+        << sta::PrintByte(capacity)
+        << " for " << name_ << " rank " << rank
+        << " cache nbytes " 
+        << sta::PrintByte(cold_cache_nbytes) << " -> "
+        << sta::PrintByte(cold_model_cache->GetCachedNbytes(cold_cache_lock));
   }
 
 #if 1
@@ -382,7 +347,10 @@ bool Model::SetupMemory(size_t rank,
                         std::unique_lock<std::mutex> &cold_cache_lock, 
                         std::unique_lock<std::mutex> &model_lock) {
   CHECK(status_[rank] == Status::kWithoutMemory);
-  ColdModelCache::Get(device_.device_id)->PopCacheItem(name_, rank, cold_cache_lock);
+
+  ColdModelCache::Get(device_.device_id)->PopCacheItem(
+      name_, rank, cold_cache_lock);
+
   if (Config::IsColocateMode() && Config::ondemand_adjust) {
     PROFILE_START(InferAdjustAlloc);
     if (!Config::colocate_config.skip_malloc) {
@@ -390,6 +358,7 @@ bool Model::SetupMemory(size_t rank,
     }
     PROFILE_END(InferAdjustAlloc);
   }
+
   executors_[rank]->Init(false);
   ChangeStatus(rank, Status::kWithoutParam);
   return true;
@@ -447,7 +416,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     auto reserve_cache_ms = Profiler::MilliFrom(reserve_cache_begin);
 
     // [switch mode] before infering, first claim infering execution
-    InferModelStore::InferingInc(executors_[rank].get());
+    InferModelStore::InferingInc(tvm_graph_.get(), executors_[rank].get());
 
     // lock to avoid be interrupted by memory reclaim
     auto cold_cache_lock = cold_model_cache->Lock();
@@ -572,7 +541,7 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
       auto data = job->GetInferData();
       data->GetResponder().Finish(data->GetResponse(), grpc::Status::OK, data);
     }
-    InferModelStore::InferingDec(executors_[rank].get());
+    InferModelStore::InferingDec(tvm_graph_.get(), executors_[rank].get());
     Profiler::InferRespInc(jobs.size());
 
     // estimate tpc after first infer

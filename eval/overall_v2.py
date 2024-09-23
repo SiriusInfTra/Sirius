@@ -8,7 +8,7 @@ import workload_collections as wkld_coll
 import run_comm
 
 # run_comm.UniformConfig_v2.train_model = 'swin_b_ddp'
-run_comm.UniformConfig_v2.train_batch_size = 48
+run_comm.UniformConfig_v2.train_batch_size = 72
 
 use_time_stamp = True
 skip_fail = False
@@ -34,13 +34,13 @@ enable_uniform_v2 = False
 enable_skewed_v2 = False
 uniform_v2_workload_types = [
     'NormalA', 
-    'NormalB',
-    'NormalC'
+    # 'NormalB',
+    # 'NormalC'
 ]
 skew_v2_workload_types = [
     'SkewA',
-    'SkewB',
-    'SkewC'
+    # 'SkewB',
+    # 'SkewC'
 ]
 
 # should be false to eval infer-only
@@ -308,7 +308,8 @@ def azure(rps, client_model_list, infer_only=True, rps_fn=None,
     ))
     return workload
 
-def _run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
+def _run(system: System, workload: HyperWorkload, 
+         server_model_config: str, unit: str, tag: str):
     try:
         system.launch(unit, tag, time_stamp=use_time_stamp,
                       infer_model_config=server_model_config, fake_launch=False)
@@ -340,7 +341,8 @@ def _run(system: System, workload: HyperWorkload, server_model_config: str, unit
     system.calcuate_train_thpt()
     
 
-def run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
+def run(system: System, workload: HyperWorkload, 
+        server_model_config: str, unit: str, tag: str):
     print(f'\x1b[32;1m[{unit} {tag}]\x1b[0m')
     if skip_fail:
         try:
@@ -482,7 +484,7 @@ if run_colsys:
         'use_xsched' : True,
         'has_warmup' : True,
         'ondemand_adjust' : True,
-        'cuda_memory_pool_gb' : "12.5",
+        'cuda_memory_pool_gb' : "13",
         'train_memory_over_predict_mb' : 1500,
         'infer_model_max_idle_ms' : 5000,
         'cold_cache_ratio': 0.5, 

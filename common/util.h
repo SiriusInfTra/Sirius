@@ -55,6 +55,9 @@ namespace colserve {
 
 constexpr int MAX_DEVICE_NUM = 8;
 
+template <typename T, size_t dim_1, size_t dim_2>
+using array_2d_t = std::array<std::array<T, dim_2>, dim_1>;
+
 using memory_byte_t = size_t;
 using memory_mb_t = double;
 
@@ -98,20 +101,24 @@ inline double ByteToMB(size_t nbytes) {
   return static_cast<double>(nbytes) / 1024 / 1024;
 }
 
-inline std::string ByteDisplay(size_t nbytes) {
-  return str(boost::format("%.2fMB (%dB)") % ByteToMB(nbytes) % nbytes);
+inline std::string PrintByte(size_t nbytes, bool verbose = false) {
+  if (!verbose) {
+    return str(boost::format("%.2fMB") % ByteToMB(nbytes));
+  } else {
+    return str(boost::format("%.2fMB (%dB)") % ByteToMB(nbytes) % nbytes);
+  }
 }
 }
 
 inline std::string GetDefaultShmNamePrefix(int device_id) {
   CHECK_LT(device_id, sta::DeviceManager::GetNumVisibleGpu());
-  return (boost::format("colserve_%s_%s") % sta::DeviceManager::GetGpuSystemUuid(device_id) 
-                                          % getuid())
-                                          .str();
+  return str(boost::format("colserve_shm_%s_%s") 
+      % sta::DeviceManager::GetGpuSystemUuid(device_id) 
+      % getuid());
 }
 
 inline std::string GetDefaultShmNamePrefix() {
-  return (boost::format("colserve_%s") % getuid()).str();
+  return (boost::format("colserve_shm_%s") % getuid()).str();
 }
 
 } // namespace colserve

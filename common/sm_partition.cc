@@ -28,7 +28,7 @@ SMPartitioner::SMPartitioner(int device_id) : device_id_(device_id) {
             // << ", "
             // << "shm_name " << shm_name_.c_str();
 
-  tpc_data_ = &ctrl::InfTraCommunicator::GetIB()
+  tpc_data_ = &ctrl::InfTraCommunicator::GetSinfo()
       ->GetMutableInferInfoUnsafe()->tpc_datas[device_id_];
 
   cudaDeviceProp deviceProp;

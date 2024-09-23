@@ -57,7 +57,8 @@ class Model {
   }
 
   size_t GetMemoryNbytes(size_t rank) {
-    return executors_[rank]->GetStorageSizeAlign();
+    // return executors_[rank]->GetStorageSizeAlign();
+    return tvm_graph_->GetStorageAlignedNbytes();
   }
 
   friend class InferModelStore;
@@ -76,7 +77,8 @@ class Model {
                    std::unique_lock<std::mutex> &cold_cache_lock, 
                    std::unique_lock<std::mutex> &model_lock);
   bool Inference(uint32_t rank, pthread_barrier_t* barrier);
-  bool SetInput(tvm::Executor &graph_executor, size_t idx, const std::string &input_id, 
+  bool SetInput(tvm::Executor &graph_executor, size_t idx, 
+                const std::string &input_id, 
                 const std::vector<std::shared_ptr<Job>> &jobs);
   bool GetOutput(tvm::Executor &graph_executor, 
                  size_t idx, const std::string &output_id, 

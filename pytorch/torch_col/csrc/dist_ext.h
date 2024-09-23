@@ -19,19 +19,20 @@ class Reducer : public ::c10d::Reducer {
   Reducer(T&& ... args) : 
       ::c10d::Reducer(std::forward<T>(args)...) {
     ResetAutoGradHook();
+    first_batch_autograd_hook_called_ = false;
   }
 
   void autograd_hook(size_t index);
   void finalize_dropped_batch();
 
  protected:
-  void finalize_backward();
   void mark_bucket_ready(size_t bucket_index) {
     LOG(INFO) << "[Reducer | mark_bucket_ready] bucket_index: " << bucket_index;
     ::c10d::Reducer::mark_bucket_ready(bucket_index);
   }
 
  private:
+  bool first_batch_autograd_hook_called_;
   void ResetAutoGradHook();
 };
 
@@ -88,7 +89,11 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
   }
 
   /////////////////////////////////////////////////////////////////////////////
-  // override the original collective functions to handle the abort flag
+  // override the original collective functions to handle the abort flag.
+  //
+  // if we call NCCL library after set the abort flag, it will cause 
+  // some error, so we override the pytorch NCCL processs group functions
+  // to not call the NCCL functions if the abort flag is set.
   #define REDISPATCH_COLLECTIVE_FUNC(op_type, func, args...) \
     do { \
       if (abort_flag_ != 0) { \
@@ -118,7 +123,7 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
       std::vector<at::Tensor>& tensors,
       const ::c10d::AllreduceOptions& opts = ::c10d::AllreduceOptions()) override {
     REDISPATCH_COLLECTIVE_FUNC(::c10d::OpType::ALLREDUCE, 
-      ::c10d::ProcessGroupNCCL::allreduce, tensors, opts);
+        ::c10d::ProcessGroupNCCL::allreduce, tensors, opts);
   }
 
   ::c10::intrusive_ptr<::c10d::Work> allreduce_coalesced(

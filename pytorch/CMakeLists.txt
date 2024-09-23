@@ -16,6 +16,7 @@ add_library(new_torch_col SHARED
   torch_col/csrc/init.cc
   torch_col/csrc/dist_ext.cc
   torch_col/csrc/dist_train_sync.cc
+  torch_col/csrc/dynamic_batch.cc
 )
 
 add_dependencies(new_torch_col xsched_lib)

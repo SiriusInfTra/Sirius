@@ -1,7 +1,12 @@
 # cython: c_string_type=unicode, c_string_encoding=utf8
 # distutils: language = c++
 from libcpp.string cimport string
+from libcpp.vector cimport vector
+from libcpp.optional cimport optional, make_optional
+from libcpp.pair cimport pair
+from libcpp cimport bool
 
+from typing import List, Tuple, Optional
 
 ######################
 #  MARK: Dist Train  #
@@ -27,3 +32,119 @@ def send_msg(dst_rank: int, msg: str):
 
 def recv_msg(src_rank: int):
     return DistTrainSync.Recv(src_rank)
+
+
+#########################
+#  MARK: Dyanmic Batch  #
+#########################
+
+cdef extern from "<torch_col/csrc/dynamic_batch.h>" namespace "torch_col":
+    cdef cppclass DynamicBatchDistirbutor:
+        ctypedef pair[int, int] batch_range_t
+        ctypedef vector[pair[int, int]] batch_range_vec_t
+
+        @staticmethod
+        void Init(int dataset_size, 
+                  int input_batch_size, 
+                  int global_batch_size)
+        @staticmethod
+        pair[batch_range_vec_t, bool] GetBatch(int batch_size)
+        @staticmethod
+        int QueryNextBatchSize(int batch_size)
+        @staticmethod
+        void FinishBatch(batch_range_vec_t batch_range_vec,
+                         bool end_of_global_batch)
+        @staticmethod
+        void AbortBatch(batch_range_vec_t batch_range_vec, 
+                        bool end_of_global_batch)
+        @staticmethod
+        bool VoteFinishLastMicroBatch()
+        @staticmethod
+        void VoteAbortLastMicroBatch()
+        @staticmethod
+        void ResetLastMicroBatchFinishVote()
+        @staticmethod
+        void DistributeBatch(bool check_num_unproced_samples,
+                             bool distribute_to_all)
+        @staticmethod
+        int NextEpoch()
+        @staticmethod
+        void NextGlobalBatch()
+        @staticmethod
+        int GetGlobalBatchSize()
+        @staticmethod
+        int GetNumGlobalBatchPerEpoch()
+        @staticmethod
+        int GetNumProcedGlobalBatch()
+
+
+class _DynamicBatchDistirbutor:
+    @staticmethod
+    def get_batch(batch_size: int) -> Tuple[List[Tuple[int, int]], bool]:
+        return DynamicBatchDistirbutor.GetBatch(batch_size)
+
+    @staticmethod
+    def query_next_batch_size(batch_size: int) -> int:
+        return DynamicBatchDistirbutor.QueryNextBatchSize(batch_size)
+
+    @staticmethod
+    def finish_batch(batch_range_vec: List[Tuple[int, int]],
+                     end_of_global_batch: bool):
+        DynamicBatchDistirbutor.FinishBatch(batch_range_vec, 
+                                            end_of_global_batch)
+
+    @staticmethod
+    def abort_batch(batch_range_vec: List[Tuple[int, int]], 
+                    end_of_global_batch: bool):
+        DynamicBatchDistirbutor.AbortBatch(batch_range_vec, 
+                                           end_of_global_batch)
+
+    @staticmethod
+    def vote_finish_last_micro_batch():
+        return DynamicBatchDistirbutor.VoteFinishLastMicroBatch()
+
+    @staticmethod
+    def vote_abort_last_micro_batch():
+        DynamicBatchDistirbutor.VoteAbortLastMicroBatch()
+
+    @staticmethod
+    def reset_last_micro_batch_finish_vote():
+        DynamicBatchDistirbutor.ResetLastMicroBatchFinishVote()
+
+    @staticmethod
+    def distribute_batch(check_num_unproced_samples: bool,
+                         distribute_to_all: bool):
+        DynamicBatchDistirbutor.DistributeBatch(
+            check_num_unproced_samples,
+            distribute_to_all)
+
+    @staticmethod
+    def next_epoch():
+        return DynamicBatchDistirbutor.NextEpoch()
+
+    @staticmethod
+    def next_global_batch():
+        DynamicBatchDistirbutor.NextGlobalBatch()
+
+    @staticmethod
+    def get_global_batch_size() -> int:
+        return DynamicBatchDistirbutor.GetGlobalBatchSize()
+
+    @staticmethod
+    def get_num_global_batch_per_epoch() -> int:
+        return DynamicBatchDistirbutor.GetNumGlobalBatchPerEpoch()
+
+    @staticmethod
+    def get_num_proced_global_batch() -> int:
+        return DynamicBatchDistirbutor.GetNumProcedGlobalBatch()
+        
+
+def init_dynamic_batch_distributor(dataset_size: int, 
+                                   input_batch_size: int,
+                                   global_batch_size: int):
+    DynamicBatchDistirbutor.Init(dataset_size, 
+                                 input_batch_size,
+                                 global_batch_size)
+
+
+

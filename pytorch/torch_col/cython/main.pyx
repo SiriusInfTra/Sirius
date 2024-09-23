@@ -1,5 +1,6 @@
 # cython: c_string_type=unicode, c_string_encoding=utf8
 # distutils: language = c++
+include "./util_cls.pxi"
 include "./ctrl_stub.pxi"
 
 from libcpp.string cimport string
@@ -12,6 +13,8 @@ from libc.stdint cimport uint64_t, uint32_t
 from enum import Enum
 import cython
 import os
+import functools
+from typing import Optional
 
 ############################
 #  MARK: Torch Col Init    #
@@ -22,6 +25,8 @@ cdef extern from "<torch_col/csrc/config.h>" namespace "torch_col":
         @staticmethod
         void InitConfig()
         @staticmethod
+        bint IsConfigured()
+        @staticmethod
         bint HasColocatedInferServer()
         @staticmethod
         bint IsEnableSharedTensor()
@@ -30,7 +35,9 @@ cdef extern from "<torch_col/csrc/config.h>" namespace "torch_col":
         @staticmethod
         bint IsEnableXsched()
         @staticmethod
-        string GetHookMode()
+        string GetColocateCtrlHookMode()
+        @staticmethod
+        string GetColocateTrainMode()
         @staticmethod
         bint IsReleaseIntermMemoryByGradFn()
         @staticmethod
@@ -65,16 +72,8 @@ cdef extern from "<torch_col/csrc/init.h>" namespace "torch_col":
     cpdef void TorchDistExtInit()
 
 
-class HookMode(Enum):
-    NONE = 'none'
-    SYNC = 'sync'
-    # XSCHED_ASYNC_SIGNAL = 'xsched-async-signal'  
-    XSCHED_SYNC = 'xsched-sync'
-    XSCHED_SYNC2 = 'xsched-sync2'
-
-    def use_xsched(self):
-        return self in {HookMode.XSCHED_SYNC, HookMode.XSCHED_SYNC2}
-
+def is_configured():
+    return TorchColConfig.IsConfigured()
 
 def is_enable_shared_tensor():
     return TorchColConfig.IsEnableSharedTensor()
@@ -88,13 +87,28 @@ def is_enable_xsched():
     return TorchColConfig.IsEnableXsched()
 
 
-def get_hook_mode():
-    # return TorchColConfig.GetHookMode()
-    cdef hook_mode_cstr = TorchColConfig.GetHookMode()
-    for hook_mode in HookMode:
+@functools.lru_cache
+def get_colocate_ctrl_hook_mode():
+    assert TorchColConfig.IsConfigured(), \
+        "TorchColConfig is not configured"
+
+    cdef hook_mode_cstr = TorchColConfig.GetColocateCtrlHookMode()
+    for hook_mode in ColocateCtrlHookMode:
         if hook_mode.value == hook_mode_cstr:
             return hook_mode
     raise Exception(f"Invalid hook mode: {hook_mode_cstr}")
+
+
+@functools.lru_cache
+def get_colocate_train_mode():
+    assert TorchColConfig.IsConfigured(), \
+        "TorchColConfig is not configured"
+
+    cdef train_mode_cstr = TorchColConfig.GetColocateTrainMode()
+    for train_mode in TrainMode:
+        if train_mode.value == train_mode_cstr:
+            return train_mode
+    raise Exception(f"Invalid train mode: {train_mode_cstr}")
 
 
 def is_release_interm_memory_v1():
@@ -151,6 +165,7 @@ def has_colocated_infer_server():
 
 def get_train_profile_log_path():
     return TorchColConfig.GetTrainProfileLogPath()
+
 
 #############################
 #  MARK: Memory Management  #
@@ -252,7 +267,6 @@ def untag_interm_memory():
 
 def rearrange_memory():
     RearrangeMemory()
-
 
 
 #############################
@@ -375,7 +389,7 @@ cdef extern from "<common/inf_tra_comm/communicator.h>" namespace "colserve::ctr
         @staticmethod
         InfTraMessageQueue* GetMQ()
         @staticmethod
-        InfTraInfoBoard* GetIB()
+        InfTraInfoBoard* GetSinfo()
 
 
 cdef extern from "<common/inf_tra_comm/communicator.h>" namespace "colserve::ctrl::InfTraMessageQueue":
@@ -404,11 +418,13 @@ cdef class PyCtrlMsgEntry:
         return self._cppclass.value
 
     def __repr__(self):
-        return "PyCtrlMsgEntry(id={}, event={}, value={})".format(self.id, str(self.event), self.value)
+        return "PyCtrlMsgEntry(id={}, event={}, value={})".format(
+                self.id, str(self.event), self.value)
 
 
 class PyInfTraCommunicator:
-    def __init__(self, is_server = None, cleanup = None, train_world_size = None):
+    def __init__(self, is_server = None, cleanup = None, 
+                 train_world_size = None):
         if InfTraCommunicator.IsInitialized():
             return
         if (
@@ -457,7 +473,7 @@ class PyInfTraCommunicator:
 
 def init_train_info(init_batch_size, 
                     current_batch_size,
-                    model_name = None | str,
+                    model_name: Optional[str] = None,
                     pid = None):
     if not TorchColConfig.HasColocatedInferServer():
         print("There not exist colocated infer server, skip init train info")
@@ -477,7 +493,7 @@ def init_train_info(init_batch_size,
     else:
         pid_opt = make_optional[pid_t](<pid_t> os.getpid())
 
-    InfTraCommunicator.GetIB().SetTrainInfo(
+    InfTraCommunicator.GetSinfo().SetTrainInfo(
         TorchColConfig.GetTrainRank(), 
         pid_opt,
         make_optional[int](TorchColConfig.GetTrainRank()), 
@@ -492,7 +508,7 @@ def update_current_batch_size(current_batch_size):
     if not TorchColConfig.HasColocatedInferServer():
         return
 
-    InfTraCommunicator.GetIB().SetTrainInfo(
+    InfTraCommunicator.GetSinfo().SetTrainInfo(
         TorchColConfig.GetTrainRank(), 
         optional[pid_t](), optional[int](), 
         optional[int](), optional[int](), 

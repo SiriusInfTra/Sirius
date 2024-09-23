@@ -317,7 +317,8 @@ def _run(system: System, workload: HyperWorkload, server_model_config: str, unit
         system.calcuate_train_thpt()
     
 
-def run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
+def run(system: System, workload: HyperWorkload, 
+        server_model_config: str, unit: str, tag: str):
     print(f'\x1b[32;1m[{unit} {tag}]\x1b[0m')
     if skip_fail:
         try:

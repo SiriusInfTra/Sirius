@@ -16,6 +16,7 @@ using namespace torch::autograd;
 class FakeEngine: public Engine {
  private:
   Engine &python_engine_;
+  
  public:
   FakeEngine(Engine &python_engine) : python_engine_(python_engine) {}
   virtual variable_list execute(
@@ -25,14 +26,16 @@ class FakeEngine: public Engine {
       bool create_graph,
       bool accumulate_grad,
       const edge_list& outputs = {}) {
-    return python_engine_.execute(roots, inputs, keep_graph, create_graph, accumulate_grad, outputs);
+    return python_engine_.execute(roots, inputs, keep_graph, 
+                                  create_graph, accumulate_grad, outputs);
   }
 
   virtual c10::intrusive_ptr<at::ivalue::Future> execute_with_graph_task(
     const std::shared_ptr<GraphTask>& graph_task,
     std::shared_ptr<Node> graph_root,
     InputBuffer&& input_buffer) {
-    return python_engine_.execute_with_graph_task(graph_task, graph_root, std::move(input_buffer));
+    return python_engine_.execute_with_graph_task(graph_task, graph_root, 
+                                                  std::move(input_buffer));
   }
 
   virtual std::unique_ptr<AnomalyMetadata> make_anomaly_metadata() {

@@ -51,7 +51,7 @@ def eval_throughput_by_epoch(train_timeline: pd.DataFrame, infer_timeline: pd.Da
 
 def read_dataframe(log_dir: Path, 
                    train_timeline_name: str, 
-                   infer_timeline_name: str) -> List[List[pd.DataFrame | None]]:
+                   infer_timeline_name: str) -> List[List[Optional[pd.DataFrame]]]:
     train_timeline = log_dir / f"{train_timeline_name}"
     infer_timeline = log_dir / f"{infer_timeline_name}"
 

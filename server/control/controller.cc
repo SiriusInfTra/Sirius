@@ -77,7 +77,8 @@ Controller::Controller() {
   InfTraCommunicator::Init(true, true, 
                            sta::DeviceManager::GetNumVisibleGpu());
 
-  monitor_train_thread_ = std::make_unique<std::thread>(&Controller::TrainMonitor, this);
+  monitor_train_thread_ = 
+      std::make_unique<std::thread>(&Controller::TrainMonitor, this);
 }
 
 void Controller::TrainMonitor() {
@@ -178,7 +179,8 @@ uint64_t Controller::ResumeTrain() {
   return cmd_id;
 }
 
-uint64_t Controller::ColocateAdjust(size_t model_rank, int device_id, size_t batch_size) {
+uint64_t Controller::ColocateAdjust(
+    size_t model_rank, int device_id, size_t batch_size) {
   static std::mutex adjust_batch_mutex; // for quick fix concurrency
 
   auto cmd_id = Controller::adjust_cmd_id.fetch_add(
@@ -188,6 +190,35 @@ uint64_t Controller::ColocateAdjust(size_t model_rank, int device_id, size_t bat
 #if ADJUST_WITH_FLYING
     std::lock_guard lock{adjust_batch_mutex};
 #endif
+    // 1. check if the adjust is necessary
+    std::vector<int> target_bs, unpub_target_bs, current_bs;
+    InfTraCommunicator::GetSinfo()->GetTrainInfoMultiFieldVec(
+      std::make_pair(offsetof(TrainInfo, target_batch_size), 
+                     std::ref(target_bs)),
+      std::make_pair(offsetof(TrainInfo, target_batch_size_unpublished), 
+                     std::ref(unpub_target_bs)),
+      std::make_pair(offsetof(TrainInfo, current_batch_size), 
+                     std::ref(current_bs))
+    );
+
+    bool skip_adjust = true;
+    for (auto i : boost::irange(target_bs.size())) {
+      if (unpub_target_bs[i] < target_bs[i]) {
+        skip_adjust = false;
+        break;
+      } 
+    }
+
+    if (skip_adjust) {
+      LOG_IF(INFO, Config::log_controller) 
+          << "[Controller] model " << model_rank
+          << " skip satisfied adjust"
+          << " | target_bs " << target_bs
+          << " unpub_target_bs " << unpub_target_bs;
+      return 0;
+    }
+
+    // 2. send adjust request to training
     TrainLauncher::Get()->AddTargetBatchSize(-batch_size);
     auto msg = CtrlMsgEntry{
       .id = cmd_id,
@@ -200,10 +231,11 @@ uint64_t Controller::ColocateAdjust(size_t model_rank, int device_id, size_t bat
     InfTraCommunicator::GetMQ()->PutAll(
         msg, InfTraMessageQueue::Direction::kInf2Tra);
 
-    LOG(INFO) << "[Controller] model " << model_rank 
-              << " send ColocateAdjust cmd_id: " << cmd_id 
-              << " batch_size: " << batch_size
-              << " train idle " << IsTrainIdle();
+    LOG_IF(INFO, Config::log_controller) 
+        << "[Controller] model " << model_rank 
+        << " send ColocateAdjust cmd_id: " << cmd_id 
+        << " batch_size: " << batch_size
+        << " train idle " << IsTrainIdle();
   }
   return cmd_id;
 }
@@ -359,7 +391,8 @@ void Controller::InferenceWorkloadDone() {
       1, std::memory_order_relaxed);
 
   if (Config::dummy_adjust) {
-    LOG(INFO) << "[Controller] skip send InferenceWorkloadDone to train to eval dummy adjust";
+    LOG_IF(INFO, Config::log_controller) 
+        << "[Controller] skip send InferenceWorkloadDone to train to eval dummy adjust";
     return;
   }
 

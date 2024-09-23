@@ -1,7 +1,6 @@
 #ifndef COLSERVE_INFER_MODEL_STORE_H
 #define COLSERVE_INFER_MODEL_STORE_H
 
-#include <server/logging_as_glog.h>
 #include <server/resource_manager.h>
 #include <server/tvm/executor.h>
 #include <server/grpc/grpc_server.h>
@@ -45,8 +44,8 @@ class InferModelStore {
     return Get()->model_rank_.fetch_add(1, std::memory_order_relaxed); 
   }
 
-  static void InferingInc(tvm::Executor *executor);
-  static void InferingDec(tvm::Executor *executor);
+  static void InferingInc(tvm::TVMGraph *graph, tvm::Executor *executor);
+  static void InferingDec(tvm::TVMGraph *graph, tvm::Executor *executor);
   static int GetNumInferingModel() { 
     return Get()->num_infering_model_.load(std::memory_order_relaxed); 
   }

@@ -1,41 +1,57 @@
-#include "log_as_glog_sta.h"
-#include <ATen/core/ATen_fwd.h>
-#include <ATen/native/TensorConversions.h>
-#include <cuda_runtime_api.h>
+#include <common/log_as_glog_sta.h>
+// #include <ATen/core/ATen_fwd.h>
+// #include <ATen/native/TensorConversions.h>
+#include <common/tensor/tensor_methods.h>
+#include <common/tensor/tensor.h>
+#include <common/tensor/shape_helper.h>
+#include <common/tensor/dtype_helper.h>
 
-#include <common/tensor_methods.h>
-#include <common/tensor.h>
-#include <common/shape_helper.h>
-#include <common/dtype_helper.h>
+#include <cuda_runtime_api.h>
 
 namespace colserve {
 namespace sta {
 
-STensor Null(at::IntArrayRef size, DLDevice device, DLDataType dtype) {
-  return STensor(size.vec(), device, dtype);
+STensor Null(const dim_vec_t &size, DLDevice device, DLDataType dtype) {
+  return STensor(size, device, dtype);
 }
 
-STensor Empty(at::IntArrayRef size, at::MemoryFormat memory_format, 
+STensor Empty(const dim_vec_t &size, MemoryFormat memory_format, 
               DLDevice device, DLDataType dtype, MemType mtype) {
-  CHECK(device.device_type == kDLCUDA);
+  CHECK(device.device_type == kDLCUDA || device.device_type == kDLCUDAHost);
   auto storage_nbytes = ComputeStorageNbytes(size, dtype);
   std::shared_ptr<CUDAMemPool::PoolEntry> entry;
-  if (CUDAMemPool::IsEnable()) {
-    entry = CUDAMemPool::Get(device.device_id)->Alloc(storage_nbytes, mtype, false);
+  if (device.device_type == kDLCUDAHost) {
+    entry = CUDAMemPool::HostAlloc(storage_nbytes, mtype);
   } else {
-    entry = CUDAMemPool::Get(device.device_id)->RawAlloc(storage_nbytes, mtype);
+    if (CUDAMemPool::IsEnable()) {
+      entry = CUDAMemPool::Get(device.device_id)->Alloc(
+          storage_nbytes, mtype, false);
+    } else {
+      entry = CUDAMemPool::Get(device.device_id)->RawAlloc(
+          storage_nbytes, mtype);
+    }
   }
   CHECK(entry != nullptr && entry->nbytes >= storage_nbytes);
-  return STensor(entry, size.vec(), memory_format, device, dtype);
+  return STensor(entry, size, memory_format, device, dtype);
 }
 
-// STensor RawEmpty(at::IntArrayRef size, DLDataType dtype, MemType mtype) {
+STensor Empty(const dim_vec_t &size, DLDevice device, DLDataType dtype,
+              MemType mtype) {
+  return Empty(size, MemoryFormat::Contiguous, device, dtype, mtype);
+}
+
+STensor HostEmpty(const dim_vec_t &size, DLDataType dtype, MemType mtype) {
+  return Empty(size, DLDevice{kDLCUDAHost, 0}, dtype, mtype);
+}
+
+
+// STensor RawEmpty(const dim_vec_t &size, DLDataType dtype, MemType mtype) {
 //   auto storage_nbytes = ComputeStorageNbytes(size, dtype);
 //   auto entry = CUDAMemPool::RawAlloc(storage_nbytes, mtype);
 //   return STensor(entry, size.vec(), dtype);
 // }
 
-STensor EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride,
+STensor EmptyStrided(const dim_vec_t &size, const dim_vec_t &stride,
                       DLDevice device, DLDataType dtype, MemType mtype) {
   CHECK(device.device_type == kDLCUDA);
   auto storage_nbytes = ComputeStorageNbytes(size, stride, dtype);
@@ -46,7 +62,7 @@ STensor EmptyStrided(at::IntArrayRef size, at::IntArrayRef stride,
     entry = CUDAMemPool::Get(device.device_id)->RawAlloc(storage_nbytes, mtype);
   }
   CHECK(entry != nullptr && entry->nbytes >= storage_nbytes);
-  return STensor(entry, size.vec(), stride.vec(), device, dtype, 0);
+  return STensor(entry, size, stride, device, dtype, 0);
 }
 
 STensor ViewDtype(const STensor tensor, DLDataType dtype) {
@@ -56,10 +72,11 @@ STensor ViewDtype(const STensor tensor, DLDataType dtype) {
   int64_t new_elem_size = GetDataTypeNbytes(dtype);
   CHECK(!tensor.IsNull());
   if (self_elem_size == new_elem_size) {
-    return STensor(tensor.MData(), tensor.ShapeVec(), tensor.StrideVec(), 
+    return STensor(tensor.MData(), tensor.Shape(), tensor.Stride(), 
                    tensor->device, dtype, tensor.StorageOffset());
   } else if (tensor->ndim == 0) {
-    LOG(FATAL) << "tensor " << tensor << " 0 dim to view " << tensor->dtype << " to " << dtype;
+    LOG(FATAL) << "tensor " << tensor << " 0 dim to view " 
+               << tensor->dtype << " to " << dtype;
   } else if (self_elem_size > new_elem_size) {
     // Downsizing element size
     int64_t size_ratio = self_elem_size / new_elem_size;
@@ -74,9 +91,11 @@ STensor ViewDtype(const STensor tensor, DLDataType dtype) {
     // Upsizing element size
     int64_t size_ratio = new_elem_size / self_elem_size;
     CHECK_EQ(tensor->shape[tensor->ndim - 1] % size_ratio, 0)
-        << "size[-1] must to be divisible to view " << tensor->dtype << " as " << dtype;
+        << "size[-1] must to be divisible to view " 
+        << tensor->dtype << " as " << dtype;
     CHECK_EQ(tensor.StorageOffset() % size_ratio, 0)
-        << "storage_offset must to be divisible to view " << tensor->dtype << " as " << dtype;
+        << "storage_offset must to be divisible to view " 
+        << tensor->dtype << " as " << dtype;
 
     auto new_stride = ComputeStridesForViewDtypeDownsize(
         tensor.Stride(), size_ratio, tensor->dtype, dtype);
@@ -88,7 +107,9 @@ STensor ViewDtype(const STensor tensor, DLDataType dtype) {
   }
 }
 
-STensor ViewShapeDtype(const STensor tensor, at::IntArrayRef size, DLDataType dtype) {
+STensor ViewShapeDtype(const STensor tensor, 
+                       const dim_vec_t &size, 
+                       DLDataType dtype) {
   auto new_stride = ComputeStrides(size);
   // int64_t new_elem_size = dtype.bits >> 3;
   int64_t new_elem_size = sta::GetDataTypeNbytes(dtype);
@@ -98,90 +119,54 @@ STensor ViewShapeDtype(const STensor tensor, at::IntArrayRef size, DLDataType dt
   if (!tensor.IsNull()) {
     CheckMemoryBound(tensor.Shape(), new_stride, dtype, 
                      new_storage_offset, tensor.MData());
-    return STensor(tensor.MData(), size.vec(), std::move(new_stride), 
+    return STensor(tensor.MData(), size, std::move(new_stride), 
                    tensor->device, dtype, new_storage_offset);
   } else {
-    return STensor(size.vec(), std::move(new_stride), 
+    return STensor(size, std::move(new_stride), 
                    tensor->device, dtype, new_storage_offset);
   }
 }
 
-STensor AsStrided(const STensor tensor, at::IntArrayRef size,
-                   at::IntArrayRef stride, c10::optional<int64_t> storage_offset) {
+STensor AsStrided(const STensor tensor, const dim_vec_t &size,
+                   const dim_vec_t &stride, 
+                   std::optional<int64_t> storage_offset) {
   DLOG(INFO) << "sta::AsStrided"
              << " size " << size << " stride " << stride 
-             << " storage_offset " <<  storage_offset.value_or(tensor.StorageOffset());
+             << " storage_offset " 
+             << storage_offset.value_or(tensor.StorageOffset());
   if (!tensor.IsNull()) {
     CheckMemoryBound(size, stride, tensor->dtype, 
         storage_offset.value_or(tensor.StorageOffset()), tensor.MData());
-    return STensor(tensor.MData(), size.vec(), stride.vec(), 
+    return STensor(tensor.MData(), size, stride, 
                    tensor->device, tensor->dtype, 
                    storage_offset.value_or(tensor.StorageOffset()));
   } else {
-    return STensor(size.vec(), stride.vec(), 
+    return STensor(size, stride, 
                    tensor->device, tensor->dtype, 
                    storage_offset.value_or(tensor.StorageOffset()));
   }
 }
 
-void AsStrided_(STensor tensor, at::IntArrayRef size,
-                at::IntArrayRef stride, c10::optional<int64_t> storage_offset) {
+void AsStrided_(STensor tensor, const dim_vec_t &size,
+                const dim_vec_t &stride, 
+                std::optional<int64_t> storage_offset) {
   DLOG(INFO) << "sta::AsStrided_"
              << " size " << size << " stride " << stride 
-             << " storage_offset " <<  storage_offset.value_or(tensor.StorageOffset());
+             << " storage_offset " 
+             << storage_offset.value_or(tensor.StorageOffset());
   if (!tensor.IsNull()) {
     CheckMemoryBound(size, stride, tensor->dtype, 
         storage_offset.value_or(tensor.StorageOffset()), tensor.MData());
-    tensor.get()->SetTensor(tensor.MData(), size.vec(), 
-                            stride.vec(), tensor->device, tensor->dtype, 
+    tensor.get()->SetTensor(tensor.MData(), size, 
+                            stride, tensor->device, tensor->dtype, 
         storage_offset.value_or(tensor.StorageOffset()));
   } else {
-    tensor.get()->SetTensor(nullptr, size.vec(), 
-                            stride.vec(), tensor->device, tensor->dtype, 
+    tensor.get()->SetTensor(nullptr, size, 
+                            stride, tensor->device, tensor->dtype, 
         storage_offset.value_or(tensor.StorageOffset()));
   }
   tensor.UpdateVersion();
 }
-
-// void STensor::Resize(at::IntArrayRef size, at::OptionalIntArrayRef stride) {
-//   // std::cout << "resize tensor " << size << std::endl;
-//   CHECK(!IsNull());
-//   bool same_size = (Shape() == size) && (!stride.has_value() || Shape() == stride.value());
-//   if (same_size) {
-//     return;
-//   }
-
-//   size_t storage_nbytes;
-//   if (stride.has_value()) {
-//     storage_nbytes = ComputeStorageNbytes(size, stride.value(), get()->tensor_.dtype) 
-//         + get()->tensor_.byte_offset;
-//   } else {
-//     storage_nbytes = ComputeStorageNbytes(size, get()->tensor_.dtype) 
-//         + get()->tensor_.byte_offset;
-//   }
-
-//   // std::stringstream ss;
-//   // ss << "Resize storage_nbytes: " << storage_nbytes;
-//   TensorContainer::memory_data_t mdata = MData();
-//   if (mdata->addr == nullptr || mdata->nbytes < storage_nbytes) {
-//     auto new_mdata = CUDAMemPool::Get()->Resize(mdata, storage_nbytes);
-//     CUDAMemPool::Get()->CopyFromTo(mdata, new_mdata);
-//     mdata = new_mdata;
-//   }
-//   // if (mdata) {
-//   //   ss << " mdata:" << mdata->addr << " " << mdata->nbytes;
-//   // }
-//   // std::cout << ss.str() << std::endl;
-//   DLOG(INFO) << "Resize storage_nbytes: " << storage_nbytes << " addr " << (mdata ? mdata->addr : 0);
-
-//   if (stride.has_value()) {
-//     get()->SetTensor(mdata, size.vec(), stride.value().vec(), 
-//         get()->tensor_.dtype, std::nullopt);
-//   } else {
-//     get()->SetTensor(mdata, size.vec(), get()->tensor_.dtype, std::nullopt);
-//   }
-//   this->UpdateVersion();
-// }
 
 void STensor::AllocForNull(MemType mtype) {
   CHECK(IsNull());
@@ -204,7 +189,8 @@ void STensor::AllocForNull(MemType mtype) {
   this->UpdateVersion();
 }
 
-void STensor::SetMDataForNull(TensorContainer::memory_data_t mdata, bool check_memory_bound) {
+void STensor::SetMDataForNull(TensorContainer::memory_data_t mdata, 
+                              bool check_memory_bound) {
   CHECK(IsNull());
   if (check_memory_bound) {
     CheckMemoryBound(get()->shape_, get()->stride_, 

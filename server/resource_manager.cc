@@ -25,11 +25,12 @@ double ResourceManager::GetFreeMemoryMB(int device_id, bool verbose) {
   double free_memory_mb;
   double infer_memory_mb = GetInferMemoryMB(device_id);
   double train_memory_mb = GetTrainMemoryMB(device_id);
-  // double train_predict_memory_mb = TrainLauncher::Get()->PredictMemUsageMB(verbose);
-  double train_predict_memory_mb = TrainAdjuster::PredictTrainMemUsageMB(device_id, verbose);
+  double train_predict_memory_mb = 
+      TrainAdjuster::PredictTrainMemUsageMB(device_id, verbose);
 
   if (Config::use_shared_tensor) {
-    free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::Get(device_id)->PoolNbytes());
+    free_memory_mb = 
+        sta::ByteToMB(sta::CUDAMemPool::Get(device_id)->PoolNbytes());
     free_memory_mb -= infer_memory_mb;
     free_memory_mb -= std::max(train_memory_mb, train_predict_memory_mb);
     free_memory_mb -= Config::train_memory_over_predict_mb;
@@ -62,7 +63,8 @@ double ResourceManager::GetTrainAvailMemoryMB(int device_id, bool verbose) {
 
   double free_memory_mb;
   if (Config::use_shared_tensor) {
-    free_memory_mb = sta::ByteToMB(sta::CUDAMemPool::Get(0)->PoolNbytes());
+    free_memory_mb = 
+        sta::ByteToMB(sta::CUDAMemPool::Get(device_id)->PoolNbytes());
     free_memory_mb -= infer_memory_mb;
     free_memory_mb -= Config::train_memory_over_predict_mb;
   } else {
@@ -70,7 +72,9 @@ double ResourceManager::GetTrainAvailMemoryMB(int device_id, bool verbose) {
     free_memory_mb = ByteToMB(free);
     free_memory_mb = std::min(
         free_memory_mb, 
-        sta::ByteToMB(total) - infer_memory_mb - Config::train_memory_over_predict_mb
+        sta::ByteToMB(total) 
+        - infer_memory_mb 
+        - Config::train_memory_over_predict_mb
     );
   }
 
@@ -94,12 +98,10 @@ double ResourceManager::GetInferMemoryMB(int device_id) {
 double ResourceManager::GetTrainMemoryMB(int device_id) {
   using namespace sta;
   if (Config::use_shared_tensor_train) {
-    return ByteToMB(CUDAMemPool::Get(0)->TrainAllMemUsage());
+    return ByteToMB(CUDAMemPool::Get(device_id)->TrainAllMemUsage());
   } else {
     return ByteToMB(Profiler::GetLastTrainMem(device_id));
   }
 }
-
-
 
 }

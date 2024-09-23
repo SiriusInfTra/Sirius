@@ -1,3 +1,4 @@
+#include <server/logging_as_glog.h>
 #include <server/model_store/model_cache.h>
 #include <server/model_store/infer_model_store.h>
 
@@ -183,7 +184,7 @@ void WarmModelCache::ReserveCacheInternal(
   cached_nbytes_ = nbytes;
   warm_cache_items_[model_name]->cached = true;
   LOG_IF(INFO, Config::log_warm_cache) 
-      << ss.str() << " | now cached_nbytes=" << sta::ByteDisplay(nbytes);
+      << ss.str() << " | now cached_nbytes=" << sta::PrintByte(nbytes);
 }
 
 // ==========================================================================
@@ -258,31 +259,35 @@ std::pair<std::vector<size_t>, bool> ColdModelCache::PopCacheItem(const std::str
 }
 
 ColdModelCache::evict_list ColdModelCache::GetEvictModels(
-    long capacity, 
+    memory_byte_t capacity, 
     std::array<Model*, 2> ignore_models, 
     std::unique_lock<std::mutex>& lock) {
   const size_t default_rank = 0;
   std::vector<Model*> coldest_model;
   for (auto&& [name, cache_item] : cold_cache_items_) {
+    if (cache_item->model == ignore_models[0] 
+       || cache_item->model == ignore_models[1]) {
+      continue;
+    }
     coldest_model.push_back(cache_item->model);
   }
   std::sort(coldest_model.begin(), coldest_model.end(), [](Model* a, Model* b) {
     return a->GetHotness() > b->GetHotness(); /* descending */
   });
+
   evict_list evict_models;
   while (current_cached_nbytes_ > capacity && !coldest_model.empty()) {
     DLOG(INFO) << "should evict models.";
     auto *model = coldest_model.back();
-    if (model != ignore_models[0] || model != ignore_models[1]) { 
-      auto& model_id = model->GetName();
-      auto&& [cached_groups_id, succ] =
-          PopCacheItem(model_id, default_rank, lock);
-      CHECK(succ);
-      evict_models.emplace_back(model_id, std::move(cached_groups_id));
-    }
+    auto& model_id = model->GetName();
+    auto&& [cached_groups_id, succ] =
+        PopCacheItem(model_id, default_rank, lock);
+    CHECK(succ);
+    evict_models.emplace_back(model_id, std::move(cached_groups_id));
 
     coldest_model.pop_back();
   }
+
   CHECK_LE(current_cached_nbytes_, capacity) 
       << "Unable to evict models to make sure current_cached_nbytes_ > capacity";
   return evict_models;
@@ -292,11 +297,13 @@ double ColdModelCache::GetBufferMBUnsafe() {
   auto buffer_mb = ResourceManager::GetFreeMemoryMB(device_id_, false);
   auto cold_cache_nbytes = current_cached_nbytes_;
   if (cold_cache_nbytes > Config::cold_cache_min_capability_nbytes) {
-    buffer_mb += sta::ByteToMB(cold_cache_nbytes - Config::cold_cache_min_capability_nbytes);
+    buffer_mb += sta::ByteToMB(
+      cold_cache_nbytes - Config::cold_cache_min_capability_nbytes);
   }
   double cur_max_buffer_mb = 
       sta::ByteToMB(Config::cold_cache_max_capability_nbytes
-                    - std::min(Config::cold_cache_min_capability_nbytes, current_cached_nbytes_));
+                    - std::min(Config::cold_cache_min_capability_nbytes, 
+                               current_cached_nbytes_));
   buffer_mb = std::min(buffer_mb, cur_max_buffer_mb);
   return std::max(0.0, buffer_mb);
 }
@@ -340,11 +347,13 @@ double ColdModelCache::GetAdjustReserveMemoryMBUnsafe() {
   }
 }
 
-double ColdModelCache::GetReleaseReserveMemoryMB(std::unique_lock<std::mutex> &lock) {
+double ColdModelCache::GetReleaseReserveMemoryMB(
+    std::unique_lock<std::mutex> &lock) {
   return GetReleaseReserveMemoryMBUnsafe();
 }
 
-double ColdModelCache::GetAdjustReserveMemoryMB(std::unique_lock<std::mutex> &lock) {
+double ColdModelCache::GetAdjustReserveMemoryMB(
+    std::unique_lock<std::mutex> &lock) {
   return GetAdjustReserveMemoryMBUnsafe();
 }
 

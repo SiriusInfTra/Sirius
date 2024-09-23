@@ -2,8 +2,9 @@
 #define COLSERVE_SHAPE_HELPER_H
 
 // #include <dlpack/dlpack.h>
-#include <ATen/Tensor.h>
-#include "log_as_glog_sta.h"
+// #include <ATen/Tensor.h>
+
+#include <common/log_as_glog_sta.h>
 
 #include <vector>
 #include <cstdint>
@@ -15,17 +16,17 @@
 namespace colserve {
 namespace sta {
 
-size_t ComputeStorageNbytes(at::IntArrayRef size,
+size_t ComputeStorageNbytes(const dim_vec_t &size,
                             DLDataType dtype,
                             size_t storage_offset = 0);
 
-size_t ComputeStorageNbytes(at::IntArrayRef size, 
-                            at::IntArrayRef stride, 
+size_t ComputeStorageNbytes(const dim_vec_t &size, 
+                            const dim_vec_t &stride, 
                             DLDataType dtype,
                             size_t storage_offset = 0);
 
-inline void CheckMemoryBound(at::IntArrayRef size,
-                             at::IntArrayRef stride,
+inline void CheckMemoryBound(const dim_vec_t &size,
+                             const dim_vec_t &stride,
                              DLDataType dtype,
                              size_t storage_offset,
                              const TensorContainer::memory_data_t mdata) {
@@ -35,7 +36,7 @@ inline void CheckMemoryBound(at::IntArrayRef size,
 }
 
 inline std::vector<int64_t> 
-ComputeStridesForViewDtypeDownsize(at::IntArrayRef old_strides, int64_t size_ratio, 
+ComputeStridesForViewDtypeDownsize(const dim_vec_t &old_strides, int64_t size_ratio, 
     DLDataType old_dtype, DLDataType new_dtype) {
   const int64_t ndim = old_strides.size();
 
@@ -51,7 +52,7 @@ ComputeStridesForViewDtypeDownsize(at::IntArrayRef old_strides, int64_t size_rat
 }
 
 inline std::vector<int64_t> 
-ComputeStridesForViewDtypeUpsize(at::IntArrayRef old_strides, int64_t size_ratio, 
+ComputeStridesForViewDtypeUpsize(const dim_vec_t &old_strides, int64_t size_ratio, 
     DLDataType old_dtype, DLDataType new_dtype) {
   const int64_t ndim = old_strides.size();
   CHECK_EQ(old_strides[ndim - 1], 1) << "stride[-1] must be 1 to view " 
@@ -69,7 +70,7 @@ ComputeStridesForViewDtypeUpsize(at::IntArrayRef old_strides, int64_t size_ratio
   return new_strides;
 }
 
-inline std::vector<int64_t> ComputeStrides(at::IntArrayRef size) {
+inline std::vector<int64_t> ComputeStrides(const dim_vec_t &size) {
   std::vector<int64_t> stride(size.size());
   if (size.size() > 0) {
     stride.rbegin()[0] = 1;

@@ -62,16 +62,19 @@ def alias_as(name):
     return register_config
 
 
-def combine_rps_major_config_by_markov(cls_name: str, 
-                                       parents: tuple[type], 
-                                       attr: Dict, 
-                                       config_a: NormalRpsMajorConfigBase,
-                                       config_b: NormalRpsMajorConfigBase, 
-                                       trans_prob: List[float] = [0.3, 0.7],
-                                       acf=dist.AutoCorrelationGenerator('inverse', 5, inverse_decay_param=1), 
-                                       acf_mse_err=0.4):
-    assert parents == (NormalRpsMajorConfigBase,), \
-        f"class parents should be ({NormalRpsMajorConfigBase.__name__},), but got {parents}"
+def combine_rps_major_config_by_markov(
+    cls_name: str, 
+    parents: tuple[type], 
+    attr: Dict, 
+    config_a: NormalRpsMajorConfigBase,
+    config_b: NormalRpsMajorConfigBase, 
+    trans_prob: List[float] = [0.3, 0.7],
+    acf=dist.AutoCorrelationGenerator('inverse', 5, inverse_decay_param=1), 
+    acf_mse_err=0.4
+):
+    assert parents == (NormalRpsMajorConfigBase,), (
+        f"class parents should be ({NormalRpsMajorConfigBase.__name__},), "
+        f"but got {parents}")
     assert isinstance(config_a, NormalRpsMajorConfigBase)
     assert isinstance(config_b, NormalRpsMajorConfigBase)
     def init_fn(self):
@@ -88,14 +91,16 @@ def combine_rps_major_config_by_markov(cls_name: str,
     return type(cls_name, parents, attr)
 
 
-def combine_model_major_config_by_markov(cls_name:str,
-                                         parents: tuple[type],
-                                         attr: dict,
-                                         config_a: NormalModelMajorConfigBase,
-                                         config_b: NormalModelMajorConfigBase,
-                                         trans_prob: List[float] = [0.3, 0.7],
-                                         acf=dist.AutoCorrelationGenerator('inverse', 5, inverse_decay_param=1),
-                                         acf_mse_err=0.3):
+def combine_model_major_config_by_markov(
+    cls_name:str,
+    parents: tuple[type],
+    attr: dict,
+    config_a: NormalModelMajorConfigBase,
+    config_b: NormalModelMajorConfigBase,
+    trans_prob: List[float] = [0.3, 0.7],
+    acf=dist.AutoCorrelationGenerator('inverse', 5, inverse_decay_param=1),
+    acf_mse_err=0.3
+):
     assert parents == (NormalModelMajorConfigBase,), \
         f"class parents should be ({NormalModelMajorConfigBase.__name__},), but got {parents}"
     assert isinstance(config_a, NormalModelMajorConfigBase)
@@ -134,9 +139,10 @@ def normal_model_major(name):
 
 
 def get_all_normal_workload(
-        name_filter:str=None, 
-        base_type_filter:type=None) \
-        -> Dict[str, Callable[[], MicrobenchmarkInferWorkload_RpsMajor | MicrobenchmarkInferWorkload_ModelMajor]]:
+    name_filter:str=None, 
+    base_type_filter:type=None
+) -> Dict[str, Callable[[], Union[MicrobenchmarkInferWorkload_RpsMajor, 
+                                  MicrobenchmarkInferWorkload_ModelMajor]]]:
     wkld_dict = {}
     for cfg_name, obj in inspect.getmembers(sys.modules[__name__]):
         try:
