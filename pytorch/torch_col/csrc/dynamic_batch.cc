@@ -115,7 +115,15 @@ void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
           global_shared_data_.num_unproc_samples_per_train_->at(i);
     }
     CHECK_EQ(num_unprocessed_samples, 
-            *global_shared_data_.num_unproc_samples_);
+            *global_shared_data_.num_unproc_samples_)
+      << "num_unproc_samples_per_train_ "
+      << boost::accumulate(boost::irange(train_world_size), 
+          std::string{}, 
+          [&](std::string &acc, int i) {
+            auto num = global_shared_data_.
+                num_unproc_samples_per_train_->at(i);
+            return acc + " " + std::to_string(num);
+          });
   } else {
     num_unprocessed_samples = 
         *global_shared_data_.num_unproc_samples_;
@@ -143,17 +151,18 @@ void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
 
     // calculate the num of samples for each train
     int sample_offset = 0; 
-    for (auto i : boost::irange(train_world_size)) {
+    for (int i = 0, j = 0; i < train_world_size; i++) {
       if (!global_shared_data_.has_unproc_batches_->at(i)) {
         CHECK_EQ(global_shared_data_.num_unproc_samples_per_train_->at(i), 0);
         continue;
       }
 
       int num_samples = num_samples_per_train + 
-          (i < num_sample_remainder ? 1 : 0);
+          (j < num_sample_remainder ? 1 : 0);
       sample_offset += num_samples;
 
       global_shared_data_.num_unproc_samples_per_train_->at(i) = num_samples;
+      j++;
     }
 
     // update the batch cursor
