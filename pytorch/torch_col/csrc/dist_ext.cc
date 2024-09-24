@@ -283,6 +283,26 @@ void ProcessGroupNCCL::SetNcclCommAbortFlag(
             << " | _SetNcclCommAbortFlag " << t2 - t1 << "ms";
 }
 
+// void ProcessGroupNCCL::LaunchDebugFn() {
+//   debug_thread.reset(new std::thread([this]() {
+//       // std 
+//       // this->SetNcclCommAbortFlag(this->getDeviceList(
+//       //     {torch::empty({getRank()}, torch::kCUDA)}), 0);
+
+//       std::this_thread::sleep_for(std::chrono::seconds(10));
+//       this->SetNcclCommAbortFlag(this->getDeviceList(
+//           {torch::empty({getRank()}, torch::kCUDA)}));
+//       LOG(INFO) << "[Rank " << getRank() << " | ProcessGroupNCCL | LaunchDebugFn] "
+//                 << "abort flag " << abort_flag_.load();
+      
+//       auto t0 = torch_col::get_unix_timestamp();
+//       at::cuda::device_synchronize();
+//       auto t1 = torch_col::get_unix_timestamp();
+//       LOG(INFO) << "[Rank " << getRank() << " | ProcessGroupNCCL | LaunchDebugFn] "
+//                 << "cuda device synchronize cost " << t1 - t0 << "ms";
+//   }));
+// }
+
 void ProcessGroupNCCL::_SetNcclCommAbortFlag(ncclComm_t comm, uint32_t val) {
   auto abort_flag_ptr = _GetNcclCommAbortFlagPtr(comm);
   volatile uint32_t *abort_flag = abort_flag_ptr.first;
@@ -696,6 +716,12 @@ void TorchDistExtInit() {
             ProcessGroupNCCL::SetDefaultProcessGroupNCCL(self);
           },
           py::call_guard<py::gil_scoped_release>());
+
+      // .def("_launch_debug_fn",
+      //      [](const c10::intrusive_ptr<ProcessGroupNCCL> &self) {
+      //       LOG(INFO) << "[TorchDistExt] launch debug function";
+      //       self->LaunchDebugFn();
+      //      });
 
     // ProcessGroupNCCL.Options
     auto c10d_processGroupNcclOptions = 
