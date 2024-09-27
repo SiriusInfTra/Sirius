@@ -5,30 +5,22 @@
 #include <cstddef>
 #include <iostream>
 #include <ostream>
-#include <random>
-#include <tuple>
-#include <unordered_map>
 #include <vector>
 #include <memory>
 #include <fstream>
 #include <thread>
 #include <chrono>
-#include <iomanip>
 #include <future>
-#include <map>
 #include <pthread.h>
-#include <grpcpp/grpcpp.h>
 #include <glog/logging.h>
 #include <CLI/CLI.hpp>
-#include <queue>
-#include <list>
 #include <mutex>
 #include <shared_mutex>
 #include <memory>
 #include <unordered_set>
 
 #include "util.h"
-#include "colserve.grpc.pb.h"
+#include "unified_grpc.h"
 
 
 namespace colserve {
@@ -139,7 +131,7 @@ struct AzureTrace {
 class Workload {
  public:
   Workload(std::shared_ptr<grpc::Channel> channel, std::chrono::seconds duration, double delay_before_profile, const std::string &infer_timeline)
-      : stub_(ColServe::NewStub(channel)), duration_(duration), delay_before_profile_(delay_before_profile), timeline_handle_(infer_timeline) {
+      : stub_(NewStub(channel)), duration_(duration), delay_before_profile_(delay_before_profile), timeline_handle_(infer_timeline) {
     ready_future_ = std::shared_future<void>{ready_promise_.get_future()};
     CHECK(timeline_handle_.is_open());
     timeline_handle_ << "model_name,start_time,end_time" << std::endl;
@@ -218,7 +210,7 @@ class Workload {
   std::vector<std::unique_ptr<InferWorker>> infer_workers_;
   std::vector<std::unique_ptr<TrainWorker>> train_workers_;
 
-  std::unique_ptr<ColServe::Stub> stub_;
+  std::unique_ptr<ServeStub> stub_;
 
   std::unordered_map<std::string, AzureTrace> azure_model_index_;
 

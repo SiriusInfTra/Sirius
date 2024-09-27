@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include "colserve.grpc.pb.h"
+#include <colserve.pb.h>
 #include "workload/util.h"
 #include "workload/workload.h"
 

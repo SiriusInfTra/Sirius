@@ -8,9 +8,10 @@
 #include <utility>
 #include <mutex>
 
-#include "colserve.pb.h"
+
 #include "glog/logging.h"
 #include "workload.h"
+#include "unified_grpc.h"
 
 
 namespace colserve {
@@ -36,7 +37,7 @@ void Workload::WarmupModel(const std::string& model_name, int warmup) {
   LOG(INFO) << "Start to send " <<  warmup << " warmup infer request(s) for " << model_name << ".";
   auto set_request_fn = GetSetRequestFn(model_name);
   for(decltype(warmup) k = 0; k < warmup; ++k) {
-    grpc::ClientContext context;
+    InferClientContext context;
     InferResult result;
     InferRequest request;
     set_request_fn(request);
@@ -47,7 +48,7 @@ void Workload::WarmupModel(const std::string& model_name, int warmup) {
 }
 
 void Workload::WarmupDone() {
-  grpc::ClientContext context;
+  InferClientContext context;
   EmptyRequest request;
   EmptyResult result;
   grpc::Status status = stub_->WarmupDone(&context, request, &result);
@@ -55,7 +56,7 @@ void Workload::WarmupDone() {
 }
 
 void Workload::InferenceWorkloadDone() {
-  grpc::ClientContext context;
+  InferClientContext context;
   InferWorkloadDoneRequest request;
   EmptyResult result;
 
@@ -533,14 +534,7 @@ std::function<void(InferRequest&)> Workload::SetResnetRequestFn(const std::strin
 
   auto set_resnet_request_fn = [&](InferRequest &request) {
     static uint32_t i = 0;
-    request.set_model(model);
-    request.add_inputs();
-    request.mutable_inputs(0)->set_dtype("float32");
-    request.mutable_inputs(0)->add_shape(1);
-    request.mutable_inputs(0)->add_shape(3);
-    request.mutable_inputs(0)->add_shape(224);
-    request.mutable_inputs(0)->add_shape(224);
-    request.mutable_inputs(0)->set_data(resnet_input_datas[0]);
+    SetResnetRequest(request, model, resnet_input_datas[0]);
     i++;
   };
   return set_resnet_request_fn;
@@ -562,14 +556,7 @@ std::function<void(InferRequest&)> Workload::SetInceptionRequestFn(const std::st
 
   auto set_resnet_request_fn = [&](InferRequest &request) {
     static uint32_t i = 0;
-    request.set_model(model);
-    request.add_inputs();
-    request.mutable_inputs(0)->set_dtype("float32");
-    request.mutable_inputs(0)->add_shape(1);
-    request.mutable_inputs(0)->add_shape(3);
-    request.mutable_inputs(0)->add_shape(299);
-    request.mutable_inputs(0)->add_shape(299);
-    request.mutable_inputs(0)->set_data(resnet_input_datas[0]);
+    SetInceptionRequest(request, model, resnet_input_datas[0]);
     i++;
   };
   return set_resnet_request_fn;
@@ -592,17 +579,7 @@ std::function<void(InferRequest&)> Workload::SetBertRequestFn(const std::string 
   
   auto set_bert_request_fn = [&](InferRequest &request) {
     static uint32_t i = 0;
-    request.set_model(model);
-    request.add_inputs();
-    request.mutable_inputs(0)->set_dtype("int64");
-    request.mutable_inputs(0)->add_shape(1);
-    request.mutable_inputs(0)->add_shape(64);
-    request.mutable_inputs(0)->set_data(bert_input_datas[0]);
-    request.add_inputs();
-    request.mutable_inputs(1)->set_dtype("int64");
-    request.mutable_inputs(1)->add_shape(1);
-    request.mutable_inputs(1)->add_shape(64);
-    request.mutable_inputs(1)->set_data(bert_mask_datas[0]);
+    SetBertRequest(request, model, data);
     i++;
   };
   return set_bert_request_fn;
@@ -623,12 +600,7 @@ std::function<void(InferRequest&)> Workload::SetGPTRequestFn(const std::string &
   
   auto set_gpt_request_fn = [&](InferRequest &request) {
     static uint32_t i = 0;
-    request.set_model(model);
-    request.add_inputs();
-    request.mutable_inputs(0)->set_dtype("int64");
-    request.mutable_inputs(0)->add_shape(1);
-    request.mutable_inputs(0)->add_shape(64);
-    request.mutable_inputs(0)->set_data(gpt_input_datas[0]);
+    SetGPTRequest(&request, model, gpt_input_datas[0]);
     i++;
   };
   return set_gpt_request_fn;

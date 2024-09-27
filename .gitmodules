@@ -18,5 +18,5 @@
 	path = third_party/mpool
 	url = git@ipads.se.sjtu.edu.cn:infer-train/mpool.git
 [submodule "third_party/triton-client"]
-	path = third_party/triton-client
+	path = client/third_party/triton-client
 	url = git@github.com:triton-inference-server/client.git

@@ -5,7 +5,8 @@
 #include <glog/logging.h>
 #include <numeric>
 
-#include "colserve.grpc.pb.h"
+#include "workload/unified_grpc.h"
+// #include <grpc_client.h>
 
 std::string ReadInput(const std::string &data_path) {
   std::ifstream data_file{data_path, std::ios::binary};
@@ -18,7 +19,7 @@ std::string ReadInput(const std::string &data_path) {
 class Client {
  public:
   Client(std::shared_ptr<grpc::Channel> channel)
-      : stub_(ColServe::NewStub(channel)) {};
+      : stub_(NewStub(channel)) {};
 
   std::string Hello() {
     EmptyRequest request;
@@ -40,9 +41,9 @@ class Client {
     InferRequest request;
     InferResult infer_result;
 
-    request.set_model("dummy");
-    request.add_inputs();
-    request.mutable_inputs(0)->set_data("dummy_input");
+    // request.set_model("dummy");
+    // request.add_inputs();
+    // request.mutable_inputs(0)->set_data("dummy_input");
     
     grpc::ClientContext context;
     grpc::Status status = stub_->Inference(&context, request, &infer_result);
@@ -61,16 +62,8 @@ class Client {
     InferResult infer_result;
 
     // auto input = std::vector<float>(224 * 224 * 3, 1.0);
-    
+    SetMnistRequest(request, "mnist", data);
 
-    request.set_model("mnist");
-    request.add_inputs();
-    request.mutable_inputs(0)->set_dtype("float32");
-    request.mutable_inputs(0)->add_shape(1);
-    request.mutable_inputs(0)->add_shape(1);
-    request.mutable_inputs(0)->add_shape(28);
-    request.mutable_inputs(0)->add_shape(28);
-    request.mutable_inputs(0)->set_data(data.data(), data.size() * sizeof(char));
 
     LOG(INFO) << "set input done";
 
@@ -104,16 +97,7 @@ class Client {
   std::string InferResnet(const std::string &data) {
     InferRequest request;
     InferResult infer_result;
-
-    request.set_model("resnet152");
-    request.add_inputs();
-    request.mutable_inputs(0)->set_dtype("float32");
-    request.mutable_inputs(0)->add_shape(1);
-    request.mutable_inputs(0)->add_shape(3);
-    request.mutable_inputs(0)->add_shape(224);
-    request.mutable_inputs(0)->add_shape(224);
-    request.mutable_inputs(0)->set_data(data.data(), data.size());
-
+    SetResnetRequest(request, "resnet152", data);
     grpc::ClientContext context;
     grpc::Status status = stub_->Inference(&context, request, &infer_result);
 
@@ -156,7 +140,7 @@ class Client {
   }
 
  private:
-  std::unique_ptr<ColServe::Stub> stub_;
+  std::unique_ptr<ServeStub> stub_;
 };
 
 int main() {
