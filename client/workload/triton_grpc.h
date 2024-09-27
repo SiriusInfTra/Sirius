@@ -1,7 +1,7 @@
 #ifndef COLSYS_TRITON_GRPC_H_
 #define COLSYS_TRITON_GRPC_H_
 
-#include "colserve.pb.h"
+#include <colserve.pb.h>
 #include <cstdint>
 #include <grpc_service.pb.h>
 #include <grpcpp/channel.h>

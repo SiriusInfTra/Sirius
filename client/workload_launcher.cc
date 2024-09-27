@@ -7,6 +7,9 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <grpcpp/grpcpp.h>
+#include <grpcpp/channel.h>
+#include <grpcpp/support/status.h>
 
 #include "workload/util.h"
 #include "workload/workload.h"

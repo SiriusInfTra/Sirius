@@ -1,17 +1,12 @@
-#include <algorithm>
 #include <fstream>
-#include <iterator>
-#include <limits>
-#include <numeric>
 #include <random>
-#include <regex>
 #include <string>
-#include <tuple>
-#include <unordered_map>
-#include <utility>
 #include <vector>
-
+#include <grpcpp/grpcpp.h>
+#include <grpcpp/channel.h>
+#include <grpcpp/support/status.h>
 #include <colserve.pb.h>
+
 #include "workload/util.h"
 #include "workload/workload.h"
 
