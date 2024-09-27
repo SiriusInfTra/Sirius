@@ -43,7 +43,7 @@ int main(int argc, char** argv) {
   }
 
 
-  std::string target = "localhost:" + app.port;
+  std::string target = app.ip + ":" + app.port;
   colserve::workload::Workload workload(
       grpc::CreateChannel(target, grpc::InsecureChannelCredentials()),
       std::chrono::seconds(app.duration),

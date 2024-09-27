@@ -94,7 +94,8 @@ int main(int argc, char** argv) {
     app.duration = min_duration;
   }
 
-  std::string target = "localhost:" + app.port;
+  std::string target = app.ip + ":" + app.port;
+  LOG(INFO) << "Connect to " << target;
   colserve::workload::Workload workload(
       grpc::CreateChannel(target, grpc::InsecureChannelCredentials()),
       std::chrono::seconds(app.duration),

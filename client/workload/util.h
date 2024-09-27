@@ -36,6 +36,7 @@ class AppBase {
   AppBase(const std::string &name = "ColServe Workload");
 
   CLI::App app;
+  std::string ip = "localhost";
   std::string port;
   bool enable_train{true}, enable_infer{true};
   std::set<std::string> train_models;

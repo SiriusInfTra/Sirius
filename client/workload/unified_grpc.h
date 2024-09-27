@@ -70,13 +70,13 @@ inline void SetGPTRequest(InferRequest &request, const std::string &model, const
     // request.req.set_raw_input_contents()
     auto* input = request.value.add_inputs();
     input->set_name("input0");
-    input->set_datatype("int64");
+    input->set_datatype("INT64");
     input->add_shape(1);
     input->add_shape(64);
     
     auto contents = input->mutable_contents();
     for (int k = 0; k < 64; ++k) {
-        contents->set_int64_contents(k, reinterpret_cast<const int64_t*>(data.data())[k]);
+        contents->add_int64_contents(reinterpret_cast<const int64_t*>(data.data())[k]);
     }
     
 }
@@ -85,24 +85,24 @@ inline void SetBertRequest(InferRequest &request, const std::string &model, cons
     request.value.set_model_name(model);
     auto* input = request.value.add_inputs();
     input->set_name("input0");
-    input->set_datatype("int64");
+    input->set_datatype("INT64");
     input->add_shape(1);
     input->add_shape(64);
     
     auto contents = input->mutable_contents();
     for (int k = 0; k < 64; ++k) {
-        contents->set_int64_contents(k, reinterpret_cast<const int64_t*>(ids.data())[k]);
+        contents->add_int64_contents( reinterpret_cast<const int64_t*>(ids.data())[k]);
     }
     
     auto* input1 = request.value.add_inputs();
     input1->set_name("input1");
-    input1->set_datatype("int64");
+    input1->set_datatype("INT64");
     input1->add_shape(1);
     input1->add_shape(64);
     
     auto contents1 = input1->mutable_contents();
     for (int k = 0; k < 64; ++k) {
-        contents1->set_int64_contents(k, reinterpret_cast<const int64_t*>(mask.data())[k]);
+        contents1->add_int64_contents(reinterpret_cast<const int64_t*>(mask.data())[k]);
     }
 }
 
@@ -110,21 +110,21 @@ inline void SetMnistRequest(InferRequest &request, const std::string &model, con
     request.value.set_model_name(model);
     auto* input = request.value.add_inputs();
     input->set_name("input0");
-    input->set_datatype("float32");
+    input->set_datatype("FP32");
     input->add_shape(1);
     input->add_shape(28);
     input->add_shape(28);
 
     auto contents = input->mutable_contents();
     for (int k = 0; k < 28 * 28; ++k) {
-        contents->set_fp32_contents(k, reinterpret_cast<const float*>(data.data())[k]);
+        contents->add_fp32_contents(reinterpret_cast<const float*>(data.data())[k]);
     }
 }
 inline void SetResnetRequest(InferRequest &request, const std::string &model, const std::string &data) {
     request.value.set_model_name(model);
     auto* input = request.value.add_inputs();
     input->set_name("input0");
-    input->set_datatype("float32");
+    input->set_datatype("FP32");
     input->add_shape(1);
     input->add_shape(3);
     input->add_shape(224);
@@ -132,7 +132,7 @@ inline void SetResnetRequest(InferRequest &request, const std::string &model, co
 
     auto contents = input->mutable_contents();
     for (int k = 0; k < 3 * 224 * 224; ++k) {
-        contents->set_fp32_contents(k, reinterpret_cast<const float*>(data.data())[k]);
+        contents->add_fp32_contents(reinterpret_cast<const float*>(data.data())[k]);
     }
 }
 
@@ -140,7 +140,7 @@ inline void SetInceptionRequest(InferRequest &request, const std::string &model,
     request.value.set_model_name(model);
     auto* input = request.value.add_inputs();
     input->set_name("input0");
-    input->set_datatype("float32");
+    input->set_datatype("FP32");
     input->add_shape(1);
     input->add_shape(3);
     input->add_shape(299);
@@ -149,7 +149,7 @@ inline void SetInceptionRequest(InferRequest &request, const std::string &model,
     auto contents = input->mutable_contents();
     // contents->ParseFromString(data);
     for (int k = 0; k < 3 * 299 * 299; ++k) {
-        contents->set_fp32_contents(k, reinterpret_cast<const float*>(data.data())[k]);
+        contents->add_fp32_contents(reinterpret_cast<const float*>(data.data())[k]);
     }
 }
 

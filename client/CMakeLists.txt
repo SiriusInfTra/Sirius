@@ -97,7 +97,6 @@ target_link_libraries(client
   CLI11::CLI11
 )
 
-
 add_executable(workload_launcher 
   workload_launcher.cc
   workload/workload.cc
