@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package colsys;
+
 service ColServe {
     rpc GetServerStatus(EmptyRequest) returns (ServerStatus) {}
 

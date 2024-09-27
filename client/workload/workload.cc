@@ -1,9 +1,12 @@
 #include <algorithm>
 #include <chrono>
+#include <exception>
+#include <grpcpp/client_context.h>
 #include <numeric>
 #include <random>
 #include <ratio>
 #include <sstream>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 #include <mutex>
@@ -37,7 +40,7 @@ void Workload::WarmupModel(const std::string& model_name, int warmup) {
   LOG(INFO) << "Start to send " <<  warmup << " warmup infer request(s) for " << model_name << ".";
   auto set_request_fn = GetSetRequestFn(model_name);
   for(decltype(warmup) k = 0; k < warmup; ++k) {
-    InferClientContext context;
+    grpc::ClientContext context;
     InferResult result;
     InferRequest request;
     set_request_fn(request);
@@ -48,7 +51,7 @@ void Workload::WarmupModel(const std::string& model_name, int warmup) {
 }
 
 void Workload::WarmupDone() {
-  InferClientContext context;
+  grpc::ClientContext context;
   EmptyRequest request;
   EmptyResult result;
   grpc::Status status = stub_->WarmupDone(&context, request, &result);
@@ -56,7 +59,7 @@ void Workload::WarmupDone() {
 }
 
 void Workload::InferenceWorkloadDone() {
-  InferClientContext context;
+  grpc::ClientContext context;
   InferWorkloadDoneRequest request;
   EmptyResult result;
 
@@ -438,7 +441,7 @@ bool Workload::Hello() {
   grpc::CompletionQueue cq;
   grpc::Status status;
 
-  std::unique_ptr<grpc::ClientAsyncResponseReader<ServerStatus>> rpc(
+  std::unique_ptr<AsyncServerStatus> rpc(
       stub_->AsyncGetServerStatus(&context, request, &cq));
   rpc->Finish(&server_status, &status, (void*)1);
 
@@ -487,6 +490,7 @@ std::function<void(InferRequest&)> Workload::GetSetRequestFn(const std::string &
     return SetGPTRequestFn(model);
   } else {
     LOG(FATAL) << "unable to find SetRequestFn for " << model;
+    throw std::runtime_error("unable to find SetRequestFn for " + model);
   }
 }
 
@@ -505,14 +509,7 @@ std::function<void(InferRequest&)> Workload::SetMnistRequestFn(const std::string
 
   auto set_mnist_request_fn = [&](InferRequest &request) {
     static uint32_t i = 0;
-    request.set_model(model);
-    request.add_inputs();
-    request.mutable_inputs(0)->set_dtype("float32");
-    request.mutable_inputs(0)->add_shape(1);
-    request.mutable_inputs(0)->add_shape(1);
-    request.mutable_inputs(0)->add_shape(28);
-    request.mutable_inputs(0)->add_shape(28);
-    request.mutable_inputs(0)->set_data(mnist_input_datas[i % 10]);
+    SetMnistRequest(request, model, mnist_input_datas[0]);
     i++;
   };
   return set_mnist_request_fn;
@@ -579,7 +576,7 @@ std::function<void(InferRequest&)> Workload::SetBertRequestFn(const std::string 
   
   auto set_bert_request_fn = [&](InferRequest &request) {
     static uint32_t i = 0;
-    SetBertRequest(request, model, data);
+    SetBertRequest(request, model, bert_input_datas[0], bert_mask_datas[0]);
     i++;
   };
   return set_bert_request_fn;
@@ -600,7 +597,7 @@ std::function<void(InferRequest&)> Workload::SetGPTRequestFn(const std::string &
   
   auto set_gpt_request_fn = [&](InferRequest &request) {
     static uint32_t i = 0;
-    SetGPTRequest(&request, model, gpt_input_datas[0]);
+    SetGPTRequest(request, model, gpt_input_datas[0]);
     i++;
   };
   return set_gpt_request_fn;

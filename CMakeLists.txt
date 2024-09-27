@@ -69,9 +69,16 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/mpool)
 # building
 add_subdirectory(common)
 add_subdirectory(server)
-add_subdirectory(client)
 add_subdirectory(pytorch)
 
+
+include(ExternalProject)
+ExternalProject_Add(client
+    SOURCE_DIR ${CMAKE_SOURCE_DIR}/client
+    CMAKE_ARGS 
+      -DCOLSYS_ROOT_DIR=${CMAKE_SOURCE_DIR}
+    INSTALL_COMMAND ""
+)
 
 # link release/debug build directory to ./build
 if (NOT ${CMAKE_BINARY_DIR} STREQUAL ${CMAKE_SOURCE_DIR}/build)

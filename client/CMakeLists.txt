@@ -91,34 +91,33 @@ protobuf_generate(
 
 add_executable(client client.cc)
 target_link_libraries(client
-  PUBLIC colsys_proto
-  PRIVATE TritonClient::grpcclient_static
+  colsys_proto
+  TritonClient::grpcclient_static
   glog::glog 
   CLI11::CLI11
 )
 
 
-# add_executable(workload_launcher 
-#   workload_launcher.cc
-#   workload/workload.cc
-#   workload/util.cc
-# )
-# target_link_libraries(workload_launcher PUBLIC
-#   colsys_proto
-#   glog::glog 
-#   CLI11::CLI11
-# )
+add_executable(workload_launcher 
+  workload_launcher.cc
+  workload/workload.cc
+  workload/util.cc
+)
+target_link_libraries(workload_launcher PUBLIC
+  colsys_proto
+  TritonClient::grpcclient_static
+  glog::glog 
+  CLI11::CLI11
+)
 
-# add_executable(busy_loop_launcher 
-#   busy_loop_launcher.cc
-#   workload/workload.cc
-#   workload/util.cc
-# )
-# target_link_libraries(busy_loop_launcher PUBLIC
-#   colsys_proto
-#   glog::glog 
-#   CLI11::CLI11
-# )
-# add_dependencies(client triton-client)
-# add_dependencies(workload_launcher triton-client)
-# add_dependencies(busy_loop_launcher triton-client)
+add_executable(busy_loop_launcher 
+  busy_loop_launcher.cc
+  workload/workload.cc
+  workload/util.cc
+)
+target_link_libraries(busy_loop_launcher PUBLIC
+  colsys_proto
+  TritonClient::grpcclient_static
+  glog::glog 
+  CLI11::CLI11
+)

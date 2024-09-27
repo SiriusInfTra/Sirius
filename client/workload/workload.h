@@ -85,7 +85,7 @@ private:
     InferReqStatus req_status_;
     grpc::Status rpc_status_;
     std::unique_ptr<grpc::ClientContext> rpc_context_;
-    std::unique_ptr<grpc::ClientAsyncResponseReader<InferResult>> rpc_;
+    std::unique_ptr<AsyncInferResult> rpc_;
   };
 
   std::string model_;
