@@ -516,7 +516,7 @@ def init_dynamic_batch(
     enable_grad_accumulate: bool = False,
     checkpoint_micro_batch: bool = False,
     empty_cache_at_larger_batch_size: bool = False,
-    lazy_batch_distributing: bool = True,
+    lazy_batch_distributing: bool = False,
     fake_data: bool = False
 ) -> Tuple[DynamicBatchDataset, MicroBatchManager]:
     assert torch_col.is_configured(), "torch_col is not initialized"

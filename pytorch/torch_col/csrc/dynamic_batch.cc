@@ -43,7 +43,8 @@ DynamicBatchDistirbutor::DynamicBatchDistirbutor(
       << "[Rank " << TorchColConfig::GetTrainRank() 
       << " | DynamicBatchDistirbutor] init with dataset_size " 
       << dataset_size << ", input_batch_size " << input_batch_size
-      << ", global_batch_size " << global_batch_size;
+      << ", global_batch_size " << global_batch_size
+      << ", lazy_distributing " << lazy_distributing;
 
   DistTrainSync::CreateCustomSharedData(
     "dist_train_global_shared_data",
@@ -102,18 +103,21 @@ DynamicBatchDistirbutor::DynamicBatchDistirbutor(
 
 void DynamicBatchDistirbutor::DistributeBatch(
     bool check_num_unproced_samples,
-    bool distribute_to_all) {
+    bool distribute_to_all,
+    bool at_global_batch_begin) {
   bip::scoped_lock lock{
       *batch_distributor_->global_shared_data_.mut_};
 
   batch_distributor_
       ->DistributeBatchWithoutLock(check_num_unproced_samples,
-                                   distribute_to_all);
+                                   distribute_to_all,
+                                   at_global_batch_begin);
 }
 
 void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
     bool check_num_unproced_samples,
-    bool distribute_to_all) {
+    bool distribute_to_all,
+    bool at_global_batch_begin) {
   int train_world_size = TorchColConfig::GetTrainWorldSize();
 
   std::vector<int> target_bs_unpub;
@@ -122,8 +126,11 @@ void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
         target_batch_size_unpublished);
   }
 
+  bool do_distribute_batch = !(lazy_distributing_ ||
+      (!at_global_batch_begin && DISTRIBUTE_POLICY == DistributePolicy::FIX));
+
   int num_unprocessed_samples = 0;
-  if (check_num_unproced_samples && !lazy_distributing_) {
+  if (check_num_unproced_samples && do_distribute_batch) {
     for (auto i : boost::irange(train_world_size)) {
       num_unprocessed_samples += 
           global_shared_data_.num_unproc_samples_per_train_->at(i);
@@ -149,15 +156,15 @@ void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
     }
   }
 
-  // we need to skip the worker that has gotten the last micro batch
-  int num_ongoing_worker = 0;
-  for (auto i : boost::irange(train_world_size)) {
-    if (global_shared_data_.has_unproc_batches_->at(i)) {
-      num_ongoing_worker++;
+  if (do_distribute_batch) {
+    // we need to skip the worker that has gotten the last micro batch
+    int num_ongoing_worker = 0;
+    for (auto i : boost::irange(train_world_size)) {
+      if (global_shared_data_.has_unproc_batches_->at(i)) {
+        num_ongoing_worker++;
+      }
     }
-  }
 
-  if (!lazy_distributing_) {
     if (num_ongoing_worker > 0) {
       int num_samples_per_train = 
           num_unprocessed_samples / num_ongoing_worker;
@@ -411,7 +418,7 @@ void DynamicBatchDistirbutor::FinishBatch(
 
   if (end_of_global_batch) {
     CHECK(batch_distributor_->lazy_distributing_ 
-          || num_proced_samples == 0);
+          || num_procing_samples == 0) << num_procing_samples;
     batch_distributor_->num_proced_global_batches_++;
 
     int num_proced_sample_of_epoch = (
@@ -594,7 +601,7 @@ void DynamicBatchDistirbutor::NextGlobalBatchImpl() {
 
       // DistributeBatchWithoutLock(
       //     false, false /* has_unproc_batches has been set previously */);
-      DistributeBatchWithoutLock(false, true);
+      DistributeBatchWithoutLock(false, true, true);
 
       if (!lazy_distributing_) {
         for (auto i : boost::irange(train_world_size)) {

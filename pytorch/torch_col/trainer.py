@@ -213,7 +213,8 @@ class Trainer:
             # before recover the killed batch (not killing batch),
             # distribute batch should be after recover
             # to configure training for those requests to avoid infer OOM
-            torch_col.dist._DynamicBatchDistirbutor.distribute_batch(True, True)
+            torch_col.dist._DynamicBatchDistirbutor.distribute_batch(
+                True, True, False)
             self.dynamic_dataset.col_ctrl.set_killed_batch_reconfiged()
         torch_col.dist.wait_barrier()
 

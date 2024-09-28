@@ -388,7 +388,7 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
           << (all_same ? ", not need to distribute batch" : "");
 
       if (!all_same) {
-        DynamicBatchDistirbutor::DistributeBatch(true, false);
+        DynamicBatchDistirbutor::DistributeBatch(true, false, false);
       }
     }
 

@@ -66,7 +66,8 @@ cdef extern from "<torch_col/csrc/dynamic_batch.h>" namespace "torch_col":
         void ResetLastMicroBatchFinishVote()
         @staticmethod
         void DistributeBatch(bool check_num_unproced_samples,
-                             bool distribute_to_all)
+                             bool distribute_to_all,
+                             bool at_global_batch_begin)
         @staticmethod
         int NextEpoch()
         @staticmethod
@@ -116,10 +117,12 @@ class _DynamicBatchDistirbutor:
 
     @staticmethod
     def distribute_batch(check_num_unproced_samples: bool,
-                         distribute_to_all: bool):
+                         distribute_to_all: bool,
+                         at_global_batch_begin: bool):
         DynamicBatchDistirbutor.DistributeBatch(
             check_num_unproced_samples,
-            distribute_to_all)
+            distribute_to_all,
+            at_global_batch_begin)
 
     @staticmethod
     def next_epoch():
