@@ -79,13 +79,12 @@ DynamicBatchDistirbutor::DynamicBatchDistirbutor(
       num_global_batches_per_epoch_(
         (dataset_size + global_batch_size - 1) / global_batch_size)
 {
-  LOG_IF(INFO, TorchColConfig::log_dynamic_batch) 
-      << "[Rank " << TorchColConfig::GetTrainRank() 
-      << " | DynamicBatchDistirbutor] init with dataset_size " 
-      << dataset_size << ", input_batch_size " << input_batch_size
-      << ", global_batch_size " << global_batch_size
-      << ", lazy_distributing " << lazy_distributing
-      << ", distributed policy " << DISTRIBUTE_POLICY;
+  LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() 
+            << " | DynamicBatchDistirbutor] init with dataset_size " 
+            << dataset_size << ", input_batch_size " << input_batch_size
+            << ", global_batch_size " << global_batch_size
+            << ", lazy_distributing " << lazy_distributing
+            << ", distributed policy " << DISTRIBUTE_POLICY;
 
   DistTrainSync::CreateCustomSharedData(
     "dist_train_global_shared_data",
