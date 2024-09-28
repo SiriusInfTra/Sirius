@@ -46,7 +46,8 @@ cdef extern from "<torch_col/csrc/dynamic_batch.h>" namespace "torch_col":
         @staticmethod
         void Init(int dataset_size, 
                   int input_batch_size, 
-                  int global_batch_size)
+                  int global_batch_size,
+                  bool lazy_distributing)
         @staticmethod
         pair[batch_range_vec_t, bool] GetBatch(int batch_size)
         @staticmethod
@@ -79,6 +80,8 @@ cdef extern from "<torch_col/csrc/dynamic_batch.h>" namespace "torch_col":
 
 
 class _DynamicBatchDistirbutor:
+    _lazy_distributing: bool = False
+
     @staticmethod
     def get_batch(batch_size: int) -> Tuple[List[Tuple[int, int]], bool]:
         return DynamicBatchDistirbutor.GetBatch(batch_size)
@@ -141,10 +144,13 @@ class _DynamicBatchDistirbutor:
 
 def init_dynamic_batch_distributor(dataset_size: int, 
                                    input_batch_size: int,
-                                   global_batch_size: int):
+                                   global_batch_size: int,
+                                   lazy_distributing: bool):
+    _DynamicBatchDistirbutor._lazy_distributing = lazy_distributing
     DynamicBatchDistirbutor.Init(dataset_size, 
                                  input_batch_size,
-                                 global_batch_size)
+                                 global_batch_size,
+                                 lazy_distributing)
 
 
 

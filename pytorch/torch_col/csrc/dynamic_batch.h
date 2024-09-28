@@ -38,7 +38,8 @@ class DynamicBatchDistirbutor {
 
   static void Init(int dataset_size, 
                    int input_batch_size,
-                   int global_batch_size);
+                   int global_batch_size,
+                   bool lazy_distributing);
  
   static void DistributeBatch(bool check_num_unproced_samples,
                               bool distribute_to_all);
@@ -86,14 +87,25 @@ class DynamicBatchDistirbutor {
 
   DynamicBatchDistirbutor(int dataset_size, 
                           int input_batch_size,
-                          int global_batch_size);
+                          int global_batch_size,
+                          bool lazy_distributing);
 
  private:
+  enum class DistributePolicy {
+    FIX,
+    SIMPLE,
+    BY_PERFORMANCE,
+  };
+
   constexpr static int ABORT_LAST_MICRO_BATCH = 
       std::numeric_limits<int>::min();
   constexpr static int VOTE_FINISH_LAST_MICRO_BATCH = 1;
 
+  constexpr static DistributePolicy DISTRIBUTE_POLICY = 
+      DistributePolicy::SIMPLE;
+
   static std::unique_ptr<DynamicBatchDistirbutor> batch_distributor_;
+
 
   void MergeBatchIndexInQueue(colserve::bip_set<batch_range_t> *queue);
   void DistributeBatchWithoutLock(bool check_num_unproced_samples,
@@ -111,7 +123,12 @@ class DynamicBatchDistirbutor {
   int GetLastMicroBatchFinishVoteWithoutLock();
   void ResetLastMicroBatchFinishVoteWithLock();  
 
+  std::pair<int, bool> LazyDistributingGetBatchSize(
+      int train_rank, int batch_size);
+
   std::string PrintBatchQueue(const colserve::bip_set<batch_range_t> *queue);
+
+  bool lazy_distributing_; 
 
   int dataset_size_;
   int input_batch_size_;

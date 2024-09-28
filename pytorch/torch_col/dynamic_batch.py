@@ -454,9 +454,14 @@ class DynamicBatchDataset(IterableDataset):
         batch = Batch(_batch)
         batch_size = self.get_batch_size(batch)
 
-        assert batch_size == _batch_size, (
-            f"batch size mismatch: {batch_size} != {_batch_size}, "
-            f"check batch distirbutor and dataset implementation.")
+        if not _DynamicBatchDistirbutor._lazy_distributing:
+            assert batch_size == _batch_size, (
+                f"batch size mismatch: {batch_size} != {_batch_size}, "
+                f"check batch distirbutor and dataset implementation.")
+        else:
+            assert 1 <= batch_size <= _batch_size, (
+                f"batch size mismatch: 1 <= {batch_size} <= {_batch_size}, "
+                f"check lazy batch distributing implementation.")
 
         if last_micro_batch:
             batch['do_step'] = True
@@ -511,6 +516,7 @@ def init_dynamic_batch(
     enable_grad_accumulate: bool = False,
     checkpoint_micro_batch: bool = False,
     empty_cache_at_larger_batch_size: bool = False,
+    lazy_batch_distributing: bool = True,
     fake_data: bool = False
 ) -> Tuple[DynamicBatchDataset, MicroBatchManager]:
     assert torch_col.is_configured(), "torch_col is not initialized"
@@ -549,7 +555,8 @@ def init_dynamic_batch(
         fake_data=fake_data,
     )
     torch_col.dist.init_dynamic_batch_distributor(
-        dataset_size, batch_size, global_batch_size)
+        dataset_size, batch_size, global_batch_size,
+        lazy_batch_distributing)
 
     mirco_batch_manager = MicroBatchManager(
         dynamic_dataset=dynamic_dataset,
