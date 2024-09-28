@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from enum import IntEnum
+from enum import IntEnum, Enum
 import sys
 import time
 import numpy as np
@@ -19,12 +19,19 @@ from torch_col.colocate_ctrl import (
 )
 from torch_col.util import TrainMode, MemoryPool, EventManager
 import torch_col.xsched
+
 from ._C._dist import _DynamicBatchDistirbutor
+from ._C._dist import _PerfModel
 
 
 _BATCH_FINISH_TAG = 'finish'
 _BATCH_CANCEL_TAG = 'cancel'
 
+
+class BatchDistributePolicy(Enum):
+    FIX = 'fix'
+    SIMPLE = 'simple'
+    BY_PERFORMANCE = 'by_performance'
 
 def _num_sample_of_batch_range_vec(batch_range_vec: List[Tuple[int, int]]) -> int:
     return sum([j - i for i, j in batch_range_vec])
@@ -177,7 +184,7 @@ class MicroBatchManager:
             if col_ctrl._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL2:
                 col_ctrl.release_and_reply()
         
-        self._complete_batch_event(_BATCH_FINISH_TAG)
+        self._complete_batch_event(_BATCH_FINISH_TAG, batch)
         self._past_micro_batch_range_vecs_in_global_batch.append(
             self._last_batch_range_vec)
 
@@ -202,7 +209,7 @@ class MicroBatchManager:
         self._dynamic_dataset._next_batch()
 
     def abort_batch(self, epoch_idx: int, batch_idx: int, batch: Batch):
-        self._complete_batch_event(_BATCH_CANCEL_TAG)
+        self._complete_batch_event(_BATCH_CANCEL_TAG, batch)
         if self._enable_grad_accumulate and not self._checkpoint_micro_batch:
             self._rollback_micro_batch()
         else:
@@ -234,10 +241,12 @@ class MicroBatchManager:
                     f'global_batch_{epoch_idx:02d}_{batch_idx:03d}_{global_batch_size:02d}'
                 )
 
-    def _complete_batch_event(self, tag: str):
+    def _complete_batch_event(self, tag: str, batch: Batch):
         assert self._batch_event is not None
         self._batch_event.tag = tag
         EventManager.record_event('', self._batch_event)
+        if torch_col.get_train_rank() == 0 and tag == _BATCH_FINISH_TAG:
+            _PerfModel.record_thpt(len(batch), self._batch_event.duration)
         self._batch_event = None
 
     def _complate_global_batch_event(self, tag: str):
@@ -516,6 +525,7 @@ def init_dynamic_batch(
     enable_grad_accumulate: bool = False,
     checkpoint_micro_batch: bool = False,
     empty_cache_at_larger_batch_size: bool = False,
+    batch_distribute_policy: BatchDistributePolicy = BatchDistributePolicy.SIMPLE,
     lazy_batch_distributing: bool = False,
     fake_data: bool = False
 ) -> Tuple[DynamicBatchDataset, MicroBatchManager]:
@@ -556,13 +566,16 @@ def init_dynamic_batch(
     )
     torch_col.dist.init_dynamic_batch_distributor(
         dataset_size, batch_size, global_batch_size,
-        lazy_batch_distributing)
+        lazy_batch_distributing, batch_distribute_policy.value)
 
     mirco_batch_manager = MicroBatchManager(
         dynamic_dataset=dynamic_dataset,
         enable_grad_accumulate=enable_grad_accumulate,
         checkpoint_micro_batch=checkpoint_micro_batch,
     )
+
+    torch_col.dist.init_train_performance_model()
+
     return dynamic_dataset, mirco_batch_manager
 
 

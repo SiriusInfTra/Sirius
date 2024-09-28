@@ -39,7 +39,8 @@ class DynamicBatchDistirbutor {
   static void Init(int dataset_size, 
                    int input_batch_size,
                    int global_batch_size,
-                   bool lazy_distributing);
+                   bool lazy_distributing,
+                   std::string distribute_policy);
  
   static void DistributeBatch(bool check_num_unproced_samples,
                               bool distribute_to_all,
@@ -98,12 +99,14 @@ class DynamicBatchDistirbutor {
     BY_PERFORMANCE,
   };
 
+  friend std::ostream &operator<<(std::ostream &os, 
+                                  const DistributePolicy &policy);
+
   constexpr static int ABORT_LAST_MICRO_BATCH = 
       std::numeric_limits<int>::min();
   constexpr static int VOTE_FINISH_LAST_MICRO_BATCH = 1;
 
-  constexpr static DistributePolicy DISTRIBUTE_POLICY = 
-      DistributePolicy::SIMPLE;
+  static DistributePolicy DISTRIBUTE_POLICY;
 
   static std::unique_ptr<DynamicBatchDistirbutor> batch_distributor_;
 
@@ -112,7 +115,9 @@ class DynamicBatchDistirbutor {
   void DistributeBatchWithoutLock(bool check_num_unproced_samples,
                                   bool distribute_to_all,
                                   bool at_global_batch_begin);
-  void DistributeBatchImpl();
+  void DistributeBatchImpl(const std::vector<int> &ongoing_workers,
+                            const std::vector<int> &target_bs_vec,
+                           int num_unprocessed_samples);
 
   void NextGlobalBatchImpl();
   int NextEpochImpl();

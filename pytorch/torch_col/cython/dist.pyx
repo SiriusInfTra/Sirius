@@ -47,7 +47,8 @@ cdef extern from "<torch_col/csrc/dynamic_batch.h>" namespace "torch_col":
         void Init(int dataset_size, 
                   int input_batch_size, 
                   int global_batch_size,
-                  bool lazy_distributing)
+                  bool lazy_distributing,
+                  string distribute_policy)
         @staticmethod
         pair[batch_range_vec_t, bool] GetBatch(int batch_size)
         @staticmethod
@@ -148,12 +149,46 @@ class _DynamicBatchDistirbutor:
 def init_dynamic_batch_distributor(dataset_size: int, 
                                    input_batch_size: int,
                                    global_batch_size: int,
-                                   lazy_distributing: bool):
+                                   lazy_distributing: bool,
+                                   distribute_policy: str):
     _DynamicBatchDistirbutor._lazy_distributing = lazy_distributing
     DynamicBatchDistirbutor.Init(dataset_size, 
                                  input_batch_size,
                                  global_batch_size,
-                                 lazy_distributing)
+                                 lazy_distributing,
+                                 distribute_policy)
 
 
+####################
+# MARK: Perf Model #
+####################
+
+cdef extern from "<torch_col/csrc/perf_model.h>" namespace "torch_col":
+    cdef cppclass PerfModel:
+        @staticmethod
+        void Init()
+        @staticmethod
+        void RecordThpt(int batch_size, double batch_time_ms)
+        @staticmethod
+        double GetThpt(int batch_size)
+        @staticmethod
+        vector[double] GetThptVec(const vector[int] &batch_sizes)
+
+
+def init_train_performance_model():
+    PerfModel.Init()
+
+
+class _PerfModel:
+    @staticmethod
+    def record_thpt(batch_size: int, batch_time_ms: float):
+        PerfModel.RecordThpt(batch_size, batch_time_ms)
+
+    @staticmethod
+    def get_thpt(batch_size: int) -> float:
+        return PerfModel.GetThpt(batch_size)
+
+    @staticmethod
+    def get_thpt_vec(batch_sizes: List[int]) -> List[float]:
+        return PerfModel.GetThptVec(batch_sizes)
 

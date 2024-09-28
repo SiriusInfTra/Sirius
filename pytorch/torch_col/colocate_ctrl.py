@@ -3,13 +3,14 @@ import abc
 import contextlib
 import time
 import os
+from typing import List, Optional, Union
 
 import torch
 import torch_col
 from torch_col._C import ColocateCtrlHookMode
+
 from .util import TrainMode, EventManager, MemoryPool
 from . import xsched
-from typing import List, Optional, Union
 
 __dummy_adjust = False
 
