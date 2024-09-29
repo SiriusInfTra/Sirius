@@ -388,6 +388,7 @@ for tag, item in {
         continue
     if tag == 'I' and not run_static_partition_I:
         continue
+
     system_config, workload_config = item
     if UniformConfig.enable and UniformConfig.high_load.enable:
         with mps_thread_percent(UniformConfig.high_load.mps_infer):
@@ -400,7 +401,6 @@ for tag, item in {
             system = System(train_mps_thread_percent=UniformConfig.high_load.mps_train,
                             port=UniformConfig.port, **system_config)
             run(system, workload, server_model_config, "overall-uniform", f"static-partition-high-{tag}")
-
 
     if UniformConfig.enable and UniformConfig.low_load.enable:
         with mps_thread_percent(UniformConfig.low_load.mps_infer):

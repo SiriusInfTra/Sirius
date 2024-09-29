@@ -105,7 +105,8 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
   config_ss << config_head << std::endl;
   config_ss << "TorchColConfig::rank=" << train_rank 
             << "|world_size=" << train_world_size << std::endl;;
-  config_ss << "TorchColConfig::use_shared_tensor=" << use_shared_tensor << std::endl;
+  config_ss << "TorchColConfig::use_shared_tensor=" 
+            << use_shared_tensor << std::endl;
   config_ss << "TorchColConfig::colocate_use_xsched=" << colocate_use_xsched 
             << "|LD_LIBRARY_PATh=" 
             << (getenv("LD_LIBRARY_PATH") != nullptr ? getenv("LD_LIBRARY_PATH") : "")
