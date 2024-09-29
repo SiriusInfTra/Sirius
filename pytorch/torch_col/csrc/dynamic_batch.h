@@ -38,10 +38,13 @@ class DynamicBatchDistirbutor {
 
   static void Init(int dataset_size, 
                    int input_batch_size,
-                   int global_batch_size);
+                   int global_batch_size,
+                   bool lazy_distributing,
+                   std::string distribute_policy);
  
   static void DistributeBatch(bool check_num_unproced_samples,
-                              bool distribute_to_all);
+                              bool distribute_to_all,
+                              bool at_global_batch_begin);
 
   // Get sample indices for a batch, 
   // return the indices and a bool indicating whether the batch is the last one
@@ -86,18 +89,35 @@ class DynamicBatchDistirbutor {
 
   DynamicBatchDistirbutor(int dataset_size, 
                           int input_batch_size,
-                          int global_batch_size);
+                          int global_batch_size,
+                          bool lazy_distributing);
 
  private:
+  enum class DistributePolicy {
+    FIX,
+    SIMPLE,
+    BY_PERFORMANCE,
+  };
+
+  friend std::ostream &operator<<(std::ostream &os, 
+                                  const DistributePolicy &policy);
+
   constexpr static int ABORT_LAST_MICRO_BATCH = 
       std::numeric_limits<int>::min();
   constexpr static int VOTE_FINISH_LAST_MICRO_BATCH = 1;
 
+  static DistributePolicy DISTRIBUTE_POLICY;
+
   static std::unique_ptr<DynamicBatchDistirbutor> batch_distributor_;
+
 
   void MergeBatchIndexInQueue(colserve::bip_set<batch_range_t> *queue);
   void DistributeBatchWithoutLock(bool check_num_unproced_samples,
-                                  bool distribute_to_all);
+                                  bool distribute_to_all,
+                                  bool at_global_batch_begin);
+  void DistributeBatchImpl(const std::vector<int> &ongoing_workers,
+                            const std::vector<int> &target_bs_vec,
+                           int num_unprocessed_samples);
 
   void NextGlobalBatchImpl();
   int NextEpochImpl();
@@ -111,7 +131,12 @@ class DynamicBatchDistirbutor {
   int GetLastMicroBatchFinishVoteWithoutLock();
   void ResetLastMicroBatchFinishVoteWithLock();  
 
+  std::pair<int, bool> LazyDistributingGetBatchSize(
+      int train_rank, int batch_size);
+
   std::string PrintBatchQueue(const colserve::bip_set<batch_range_t> *queue);
+
+  bool lazy_distributing_; 
 
   int dataset_size_;
   int input_batch_size_;

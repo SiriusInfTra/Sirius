@@ -1,32 +1,76 @@
 #include <torch_col/csrc/dynamic_batch.h>
 #include <torch_col/csrc/dist_train_sync.h>
+#include <torch_col/csrc/perf_model.h>
 
 #include <boost/range/irange.hpp>
 #include <boost/range/algorithm.hpp>
 #include <boost/range/numeric.hpp>
+#include <boost/algorithm/string.hpp>
 
 namespace torch_col {
 
 std::unique_ptr<DynamicBatchDistirbutor> 
     DynamicBatchDistirbutor::batch_distributor_ = nullptr;
 
+DynamicBatchDistirbutor::DistributePolicy 
+    DynamicBatchDistirbutor::DISTRIBUTE_POLICY = 
+    DynamicBatchDistirbutor::DistributePolicy::SIMPLE;
+
+std::ostream& operator << (
+    std::ostream& os, 
+    const DynamicBatchDistirbutor::DistributePolicy& policy) {
+  switch (policy) {
+    case DynamicBatchDistirbutor::DistributePolicy::FIX:
+      os << "fix";
+      break;
+    case DynamicBatchDistirbutor::DistributePolicy::SIMPLE:
+      os << "simple";
+      break;
+    case DynamicBatchDistirbutor::DistributePolicy::BY_PERFORMANCE:
+      os << "by_performance";
+      break;
+    default:
+      LOG(FATAL) << "Unknown batch distributing policy " 
+                 << static_cast<int>(policy);
+      break;
+  }
+  return os;
+}
+
 void DynamicBatchDistirbutor::Init(
     int dataset_size, 
     int input_batch_size,
-    int global_batch_size) {
+    int global_batch_size,
+    bool lazy_distributing,
+    std::string distribute_policy) {
 
   CHECK(batch_distributor_ == nullptr);
   CHECK(DistTrainSync::IsInitialized());
+  
+  boost::algorithm::to_lower(distribute_policy);
+  if (distribute_policy == "fix") {
+    DISTRIBUTE_POLICY = DistributePolicy::FIX;
+  } else if (distribute_policy == "simple") {
+    DISTRIBUTE_POLICY = DistributePolicy::SIMPLE;
+  } else if (distribute_policy == "by_performance") {
+    DISTRIBUTE_POLICY = DistributePolicy::BY_PERFORMANCE;
+  } else {
+    LOG(FATAL) << "Unknown distribute policy " << distribute_policy;
+  }
+
   batch_distributor_ = 
       std::make_unique<DynamicBatchDistirbutor>(
-          dataset_size, input_batch_size, global_batch_size);
+          dataset_size, input_batch_size, 
+          global_batch_size, lazy_distributing);
 }
 
 DynamicBatchDistirbutor::DynamicBatchDistirbutor(
     int dataset_size, 
     int input_batch_size,
-    int global_batch_size)
-    : dataset_size_(dataset_size), 
+    int global_batch_size,
+    bool lazy_distributing)
+    : lazy_distributing_(lazy_distributing),
+      dataset_size_(dataset_size), 
       input_batch_size_(input_batch_size),
       global_batch_size_(global_batch_size),
       num_proced_global_batches_(0),
@@ -35,11 +79,12 @@ DynamicBatchDistirbutor::DynamicBatchDistirbutor(
       num_global_batches_per_epoch_(
         (dataset_size + global_batch_size - 1) / global_batch_size)
 {
-  LOG_IF(INFO, TorchColConfig::log_dynamic_batch) 
-      << "[Rank " << TorchColConfig::GetTrainRank() 
-      << " | DynamicBatchDistirbutor] init with dataset_size " 
-      << dataset_size << ", input_batch_size " << input_batch_size
-      << ", global_batch_size " << global_batch_size;
+  LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() 
+            << " | DynamicBatchDistirbutor] init with dataset_size " 
+            << dataset_size << ", input_batch_size " << input_batch_size
+            << ", global_batch_size " << global_batch_size
+            << ", lazy_distributing " << lazy_distributing
+            << ", distributed policy " << DISTRIBUTE_POLICY;
 
   DistTrainSync::CreateCustomSharedData(
     "dist_train_global_shared_data",
@@ -84,22 +129,35 @@ DynamicBatchDistirbutor::DynamicBatchDistirbutor(
 
   // NextEpochImpl();
   // NextGlobalBatchImpl();
+  if (lazy_distributing_) {
+    if (TorchColConfig::GetTrainRank() == 0) {
+      for (auto i : boost::irange(TorchColConfig::GetTrainWorldSize())) {
+        global_shared_data_.num_unproc_samples_per_train_->at(i) = -1;
+        global_shared_data_.num_procing_samples_per_train_->at(i) = -1;
+        global_shared_data_.num_proced_samples_per_train_->at(i) = -1;
+      }
+    }
+    DistTrainSync::WaitBarrier();
+  }
 }
 
 void DynamicBatchDistirbutor::DistributeBatch(
     bool check_num_unproced_samples,
-    bool distribute_to_all) {
+    bool distribute_to_all,
+    bool at_global_batch_begin) {
   bip::scoped_lock lock{
       *batch_distributor_->global_shared_data_.mut_};
 
   batch_distributor_
       ->DistributeBatchWithoutLock(check_num_unproced_samples,
-                                   distribute_to_all);
+                                   distribute_to_all,
+                                   at_global_batch_begin);
 }
 
 void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
     bool check_num_unproced_samples,
-    bool distribute_to_all) {
+    bool distribute_to_all,
+    bool at_global_batch_begin) {
   int train_world_size = TorchColConfig::GetTrainWorldSize();
 
   std::vector<int> target_bs_unpub;
@@ -108,8 +166,11 @@ void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
         target_batch_size_unpublished);
   }
 
+  bool do_distribute_batch = !(lazy_distributing_ ||
+      (!at_global_batch_begin && DISTRIBUTE_POLICY == DistributePolicy::FIX));
+
   int num_unprocessed_samples = 0;
-  if (check_num_unproced_samples) {
+  if (check_num_unproced_samples && do_distribute_batch) {
     for (auto i : boost::irange(train_world_size)) {
       num_unprocessed_samples += 
           global_shared_data_.num_unproc_samples_per_train_->at(i);
@@ -135,83 +196,23 @@ void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
     }
   }
 
-  // we need to skip the worker that has gotten the last micro batch
-  int num_ongoing_worker = 0;
-  for (auto i : boost::irange(train_world_size)) {
-    if (global_shared_data_.has_unproc_batches_->at(i)) {
-      num_ongoing_worker++;
-    }
-  }
-
-  if (num_ongoing_worker > 0) {
-    int num_samples_per_train = 
-        num_unprocessed_samples / num_ongoing_worker;
-    int num_sample_remainder =
-        num_unprocessed_samples % num_ongoing_worker;
-
-    // calculate the num of samples for each train
-    int sample_offset = 0; 
-    for (int i = 0, j = 0; i < train_world_size; i++) {
-      if (!global_shared_data_.has_unproc_batches_->at(i)) {
-        CHECK_EQ(global_shared_data_.num_unproc_samples_per_train_->at(i), 0);
-        continue;
+  if (do_distribute_batch) {
+    // we need to skip the worker that has gotten the last micro batch
+    std::vector<int> ongoing_workers, 
+                     target_bs_vec;
+    for (auto i : boost::irange(TorchColConfig::GetTrainWorldSize())) {
+      if (global_shared_data_.has_unproc_batches_->at(i)) {
+        ongoing_workers.push_back(i);
+        target_bs_vec.push_back(target_bs_unpub[i]);
       }
-
-      int num_samples = num_samples_per_train + 
-          (j < num_sample_remainder ? 1 : 0);
-      sample_offset += num_samples;
-
-      global_shared_data_.num_unproc_samples_per_train_->at(i) = num_samples;
-      j++;
     }
 
-    // update the batch cursor
-    // auto it = global_shared_data_.unproc_sample_queue_->begin();
-    // for (int i = 0; i < train_world_size; i++) {
-    //   int cur_train_num_samples = 0;
-    //   int train_num_samples = 
-    //       global_shared_data_.num_unproc_samples_per_train_->at(i);
-
-    //   int cursor_left = 0, cursor_right = 0;
-    //   if (it != global_shared_data_.unproc_sample_queue_->end()) {
-    //     cursor_left = it->first;
-    //     cursor_right = it->first;
-    //   } else {
-    //     int last_sample_index = 
-    //         num_proced_sample_of_epoch_ + global_batch_size_;
-    //     cursor_left = last_sample_index;
-    //     cursor_right = last_sample_index;
-    //   }
-
-    //   while (cur_train_num_samples < train_num_samples) {
-    //     int x = GetNumSampleOfBatchIndex(*it);
-    //     CHECK(it != global_shared_data_.unproc_sample_queue_->end());
-    //     if (cur_train_num_samples + x <= train_num_samples) {
-    //       cur_train_num_samples += x;
-    //       cursor_right = it->second;
-    //       it++;
-    //     } else {
-    //       auto [slice, rest] = SliceBatchRange(*it, 
-    //           train_num_samples - cur_train_num_samples);
-    //       global_shared_data_.unproc_sample_queue_->erase(it);
-
-    //       cursor_right = slice.second;
-    //       global_shared_data_.unproc_sample_queue_->insert(slice);
-    //       auto ins_res = 
-    //           global_shared_data_.unproc_sample_queue_->insert(rest);
-    //       it = ins_res.first;
-    //       CHECK(ins_res.second);
-    //       break;
-    //     }
-    //   }
-
-    //   // global_shared_data_.train_batch_cursor_->at(i) = {
-    //   //     cursor_left, cursor_right
-    //   // };
-    // }
-    // CHECK(it == global_shared_data_.unproc_sample_queue_->end());
-  } else {
-    CHECK_EQ(num_unprocessed_samples, 0);
+    if (ongoing_workers.size() > 0) {
+      DistributeBatchImpl(ongoing_workers, target_bs_vec, 
+                          num_unprocessed_samples);
+    } else {
+      CHECK_EQ(num_unprocessed_samples, 0);
+    }
   }
 
   CHECK_GE(num_unprocessed_samples, 0)
@@ -233,11 +234,10 @@ void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
       << " num_proced_global_batches "
       << num_proced_global_batches_
       << " g_num_unproc_samples " << num_unprocessed_samples
-      << ", ";
+      << " | train_num_unproc_samples ";
     for (auto i : boost::irange(train_world_size)) {
-      ss << "train " << i << " num_unproc_samples "
-         << global_shared_data_.num_unproc_samples_per_train_->at(i)
-         << (i == train_world_size - 1 ? "" : " | ");
+      ss << " " << global_shared_data_
+          .num_unproc_samples_per_train_->at(i);
     }
     LOG(INFO) << ss.str();
   }
@@ -248,8 +248,70 @@ void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
   }
 }
 
+void DynamicBatchDistirbutor::DistributeBatchImpl(
+    const std::vector<int> &ongoing_workers,
+    const std::vector<int> &target_bs_vec,
+    int num_unprocessed_samples) {
+  CHECK_GT(ongoing_workers.size(), 0);
+
+  if (DISTRIBUTE_POLICY == DistributePolicy::FIX
+      || DISTRIBUTE_POLICY == DistributePolicy::SIMPLE) {
+    int num_samples_per_train = 
+        num_unprocessed_samples / ongoing_workers.size();
+    int num_sample_remainder =
+        num_unprocessed_samples % ongoing_workers.size();
+
+    int sample_offset = 0;
+    for (int i = 0; i < ongoing_workers.size(); ++i) {
+      int worker_id = ongoing_workers[i];
+      int num_samples = num_samples_per_train 
+          + (i < num_sample_remainder ? 1 : 0);
+
+      global_shared_data_
+          .num_unproc_samples_per_train_->at(worker_id) = num_samples;
+    }
+  } else { // BY_PERFORMANCE
+    auto perf_vec = PerfModel::GetThptVec(target_bs_vec);
+    double perf_sum = std::accumulate(perf_vec.begin(), perf_vec.end(), 0.0);
+
+    LOG_IF(INFO, TorchColConfig::log_dynamic_batch) 
+        << "[Rank " << TorchColConfig::GetTrainRank() 
+        << " | DistributeBatchImpl] target_bs_vec "
+        <<  target_bs_vec << " perf_vec " << perf_vec;
+    
+    int num_distributed_samples = 0;
+    for (int i = 0; i < ongoing_workers.size(); ++i) {
+      int worker_id = ongoing_workers[i];
+      double ratio = (perf_sum == 0) 
+                     ? 1.0 / ongoing_workers.size() 
+                     : perf_vec[i] / perf_sum;
+      int num_samples = std::max(1, 
+          static_cast<int>(num_unprocessed_samples * ratio));
+      global_shared_data_
+          .num_unproc_samples_per_train_->at(worker_id) = num_samples;
+      num_distributed_samples += num_samples;
+    }
+
+    // CHECK_LE(num_distributed_samples, num_unprocessed_samples);
+    int diff = num_unprocessed_samples - num_distributed_samples;
+    for (int i = 0; diff != 0; ++i) {
+      if (i >= ongoing_workers.size()) { i = 0; }
+      int worker_id = ongoing_workers[i];
+      auto &num_unproc_samples = global_shared_data_
+          .num_unproc_samples_per_train_->at(worker_id);
+      if (diff > 0) {
+        num_unproc_samples += 1, diff--;
+      } else {
+        if (num_unproc_samples > 1) {
+          num_unproc_samples -= 1, diff++;
+        }
+      }
+    }
+  }
+}
+
 std::pair<DynamicBatchDistirbutor::batch_range_vec_t, bool>
-DynamicBatchDistirbutor::GetBatch(int batch_size) {
+DynamicBatchDistirbutor::GetBatch(int batch_size_) {
   CHECK(batch_distributor_ != nullptr);
 
   bip::scoped_lock lock{*GLOBAL_SHARED_DATA.mut_};
@@ -266,6 +328,17 @@ DynamicBatchDistirbutor::GetBatch(int batch_size) {
       *GLOBAL_SHARED_DATA.num_unproc_samples_;
   auto &g_num_procing_samples = 
       *GLOBAL_SHARED_DATA.num_procing_samples_;
+
+  int batch_size = batch_size_;
+  bool last_micro_batch;
+  if (batch_distributor_->lazy_distributing_) {
+    auto bs = batch_distributor_->LazyDistributingGetBatchSize(
+        train_rank, batch_size);
+    batch_size = bs.first;
+    last_micro_batch = bs.second;
+  } else {
+    batch_size = std::min(batch_size, num_unproc_samples);  
+  }
 
   int num_samples = 0;
   batch_range_vec_t indices;
@@ -306,17 +379,21 @@ DynamicBatchDistirbutor::GetBatch(int batch_size) {
     // CHECK_LE(cursor.first, cursor.second);
   }
 
-  num_unproc_samples -= num_samples;
-  num_procing_samples += num_samples;
+  if (!batch_distributor_->lazy_distributing_) {
+    num_unproc_samples -= num_samples;
+    num_procing_samples += num_samples;
+    CHECK_GE(num_unproc_samples, 0);
+  }
+  
   g_num_unproc_samples -= num_samples;
   g_num_procing_samples += num_samples;
-
-  CHECK_GE(num_unproc_samples, 0);
   CHECK_GE(g_num_unproc_samples, 0);
 
   // bool require_sync = cursor.first == cursor.second;
-  bool last_micro_batch = num_unproc_samples == 0;
-
+  if (!batch_distributor_->lazy_distributing_) {
+    last_micro_batch = num_unproc_samples == 0;
+  }
+  
   if (last_micro_batch) {
     GLOBAL_SHARED_DATA
         .has_unproc_batches_->at(train_rank) = false;
@@ -327,7 +404,7 @@ DynamicBatchDistirbutor::GetBatch(int batch_size) {
       << " | GetBatch] global_batch_idx " 
       << batch_distributor_->num_proced_global_batches_
       << " get batch " << indices
-      << " batch_size " << (boost::format("%d/%d") % num_samples % batch_size)
+      << " batch_size " << (boost::format("%d/%d") % num_samples % batch_size_)
       << " num_unproc_samples_per_train " << num_unproc_samples
       << " | g_num_procing_samples " << g_num_procing_samples
       << " g_num_unproc_samples " << g_num_unproc_samples
@@ -335,6 +412,32 @@ DynamicBatchDistirbutor::GetBatch(int batch_size) {
       // << " cursor " << cursor;
 
   return {indices, last_micro_batch};
+}
+
+std::pair<int, bool> 
+DynamicBatchDistirbutor::LazyDistributingGetBatchSize(
+    int train_rank, int batch_size) {
+  auto &g_num_unproc_samples = 
+      *GLOBAL_SHARED_DATA.num_unproc_samples_;
+  auto &g_num_procing_samples = 
+      *GLOBAL_SHARED_DATA.num_procing_samples_;
+
+  std::vector<int> ongoing_workers;
+  for (auto i : boost::irange(TorchColConfig::GetTrainWorldSize())) {
+    if (GLOBAL_SHARED_DATA.has_unproc_batches_->at(i)) {
+      ongoing_workers.push_back(i);
+    }
+  }
+  CHECK_GT(ongoing_workers.size(), 0);
+
+  int max_batch_size = g_num_unproc_samples - 
+      ongoing_workers.size() + 1;
+  
+  if (batch_size >= max_batch_size) {
+    return {max_batch_size, true};
+  } else {
+    return {batch_size, false};
+  }
 }
 
 int DynamicBatchDistirbutor::QueryNextBatchSize(
@@ -346,11 +449,15 @@ int DynamicBatchDistirbutor::QueryNextBatchSize(
   // auto &cursor = 
   //     GLOBAL_SHARED_DATA.train_batch_cursor_->at(train_rank);
   
-  int max_batch_size = 
-      GLOBAL_SHARED_DATA.num_unproc_samples_per_train_->at(train_rank);
-
-  // int target_batch_size = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
-  //     train_rank, target_batch_size);
+  int max_batch_size;
+  if (!batch_distributor_->lazy_distributing_) {
+    max_batch_size = 
+        GLOBAL_SHARED_DATA.num_unproc_samples_per_train_->at(train_rank);
+    // int target_batch_size = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
+    //     train_rank, target_batch_size);
+  } else {
+    max_batch_size = *GLOBAL_SHARED_DATA.num_unproc_samples_;  
+  } 
 
   return std::min(max_batch_size, batch_size);
 }
@@ -385,14 +492,18 @@ void DynamicBatchDistirbutor::FinishBatch(
     GLOBAL_SHARED_DATA.procing_sample_queue_->erase(it);
   }
 
-  num_procing_samples -= num_samples;
-  num_proced_samples += num_samples;
+  if (!batch_distributor_->lazy_distributing_) {
+    num_procing_samples -= num_samples;
+    num_proced_samples += num_samples;
+  }
+
   g_num_procing_samples -= num_samples;
   g_num_proced_samples += num_samples;
 
 
   if (end_of_global_batch) {
-    CHECK_EQ(num_procing_samples, 0);
+    CHECK(batch_distributor_->lazy_distributing_ 
+          || num_procing_samples == 0) << num_procing_samples;
     batch_distributor_->num_proced_global_batches_++;
 
     int num_proced_sample_of_epoch = (
@@ -450,8 +561,11 @@ void DynamicBatchDistirbutor::AbortBatch(
     GLOBAL_SHARED_DATA.procing_sample_queue_->erase(it);
   }
 
-  num_procing_samples -= num_sampels;
-  num_unproc_samples += num_sampels;
+  if (!batch_distributor_->lazy_distributing_) {
+    num_procing_samples -= num_sampels;
+    num_unproc_samples += num_sampels;
+  }
+  
   g_num_procing_samples -= num_sampels;
   g_num_unproc_sampels += num_sampels;
 }
@@ -572,21 +686,25 @@ void DynamicBatchDistirbutor::NextGlobalBatchImpl() {
 
       // DistributeBatchWithoutLock(
       //     false, false /* has_unproc_batches has been set previously */);
-      DistributeBatchWithoutLock(false, true);
+      DistributeBatchWithoutLock(false, true, true);
 
-      for (auto i : boost::irange(train_world_size)) {
-        // num_unproc be determine in DistributeBatch
-        global_shared_data_.num_procing_samples_per_train_->at(i) = 0;
-        global_shared_data_.num_proced_samples_per_train_->at(i) = 0;
+      if (!lazy_distributing_) {
+        for (auto i : boost::irange(train_world_size)) {
+          // num_unproc be determine in DistributeBatch
+          global_shared_data_.num_procing_samples_per_train_->at(i) = 0;
+          global_shared_data_.num_proced_samples_per_train_->at(i) = 0;
+        }
       }
     } else {
       LOG_IF(INFO, TorchColConfig::log_dynamic_batch) 
           << "[Rank " << TorchColConfig::GetTrainRank() 
           << " | NextGlobalBatchImpl] no more samples to process";
-      for (auto i : boost::irange(TorchColConfig::GetTrainWorldSize())) {
-        global_shared_data_.num_unproc_samples_per_train_->at(i) = 0;
-        global_shared_data_.num_procing_samples_per_train_->at(i) = 0;
-        global_shared_data_.num_proced_samples_per_train_->at(i) = 0;
+      if (!lazy_distributing_) {
+        for (auto i : boost::irange(TorchColConfig::GetTrainWorldSize())) {
+          global_shared_data_.num_unproc_samples_per_train_->at(i) = 0;
+          global_shared_data_.num_procing_samples_per_train_->at(i) = 0;
+          global_shared_data_.num_proced_samples_per_train_->at(i) = 0;
+        }
       }
     }
   }

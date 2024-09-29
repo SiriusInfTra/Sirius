@@ -1,14 +1,16 @@
 #pragma once
 
-#include <common/log_as_glog_sta.h>
-#include <common/inf_tra_comm/bip_helper.h>
-#include <pthread.h>
-
 #include <torch/csrc/distributed/c10d/reducer.hpp>
 #include <torch/csrc/distributed/c10d/logger.hpp>
 #include <torch/csrc/distributed/c10d/ProcessGroupNCCL.hpp>
 #include <torch/csrc/distributed/c10d/Work.hpp>
 #include <torch/csrc/distributed/c10d/Types.hpp>
+
+#include <common/log_as_glog_sta.h>
+#include <common/inf_tra_comm/bip_helper.h>
+
+#include <thread>
+#include <pthread.h>
 
 
 namespace torch_col {
@@ -240,6 +242,8 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
   void SetNcclCommAbortFlag(const std::vector<at::Device> &devices, 
                             uint32_t val = 1 /* default to abort */);
 
+  // void LaunchDebugFn();
+
  private:
   // from torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp
   // but as the static methods
@@ -302,6 +306,8 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
   // our own maintained abort flag outside of NCCL, 
   // therefore we can check abort flag without get the NCCLComm
   std::atomic<uint32_t> abort_flag_{0};
+
+  // std::unique_ptr<std::thread> debug_thread;
 };
 
 } // namespace torch_col

@@ -21,7 +21,7 @@ from .trainer import Trainer
 from .dynamic_batch import (
     DynamicBatchDataset, MicroBatchManager,
     get_dynamic_dataset, get_micro_batch_manager,
-    init_dynamic_batch
+    init_dynamic_batch, BatchDistributePolicy
 )
 from .colocate_ctrl import get_colocate_ctrl
 

@@ -3,13 +3,14 @@ import abc
 import contextlib
 import time
 import os
+from typing import List, Optional, Union
 
 import torch
 import torch_col
 from torch_col._C import ColocateCtrlHookMode
+
 from .util import TrainMode, EventManager, MemoryPool
 from . import xsched
-from typing import List, Optional, Union
 
 __dummy_adjust = False
 
@@ -316,8 +317,12 @@ class ColocateCtrl(CtrlBase):
             torch.cuda.current_stream().synchronize()
             if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
                 raise ColocateAdjustL1Exception('before_critical_section')
-            # make sure we will not interrupt step
             self._stub.StepsNoInteruptBegin()
+            if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
+                self._stub.StepsNoInteruptEnd()
+                raise ColocateAdjustL1Exception('before_critical_section')
+            
+            # make sure we will not interrupt step
             yield
             torch.cuda.current_stream().synchronize()
             self._stub.StepsNoInteruptEnd()

@@ -4,6 +4,7 @@
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <boost/interprocess/containers/deque.hpp>
 #include <boost/interprocess/containers/set.hpp>
+#include <boost/interprocess/containers/map.hpp>
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
 #include <boost/interprocess/sync/interprocess_condition.hpp>
 #include <boost/interprocess/sync/interprocess_semaphore.hpp>
@@ -24,6 +25,10 @@ using bip_deque = bip::deque<T, bip_shm_allocator<T> >;
 template<typename T>
 using bip_set = bip::set<T, std::less<T>, bip_shm_allocator<T> >;
 
+template<typename K, typename V>
+using bip_map = bip::map<K, V, std::less<K>, 
+    bip_shm_allocator<std::pair<const K, V> > >;
+
 using bip_mutex = bip::interprocess_mutex;
 using bip_cond = bip::interprocess_condition;
 using bip_sem = bip::interprocess_semaphore;
@@ -38,6 +43,9 @@ struct is_bip_container<bip_deque<ElemType>> : std::true_type {};
 
 template <typename ElemType>
 struct is_bip_container<bip_set<ElemType>> : std::true_type {};
+
+template <typename KeyType, typename ValueType>
+struct is_bip_container<bip_map<KeyType, ValueType>> : std::true_type {};
 
 
 template <typename SyncVarType>
