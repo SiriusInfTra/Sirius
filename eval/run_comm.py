@@ -89,7 +89,8 @@ class UniformConfig_v2:
     model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
                   InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
                   InferModel.ResNet152, InferModel.DistilGPT2] 
-    num_model = 64
+    # num_model = 64
+    num_model = 60 * get_num_gpu()
     interval_sec = 20  # 10/20 sec seem to be good choice
     duration = 300
     port = str(get_unique_port())
