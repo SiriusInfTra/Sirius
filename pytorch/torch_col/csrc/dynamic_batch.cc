@@ -203,7 +203,10 @@ void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
     for (auto i : boost::irange(TorchColConfig::GetTrainWorldSize())) {
       if (global_shared_data_.has_unproc_batches_->at(i)) {
         ongoing_workers.push_back(i);
-        target_bs_vec.push_back(target_bs_unpub[i]);
+        target_bs_vec.push_back(
+            TorchColConfig::HasColocatedInferServer()
+            ? target_bs_unpub[i]
+            : input_batch_size_);
       }
     }
 

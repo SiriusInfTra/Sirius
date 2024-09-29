@@ -288,6 +288,7 @@ void init_config() {
   STREAM_OUTPUT(has_warmup);
   STREAM_OUTPUT(enable_warm_cache_fallback);
   STREAM_OUTPUT(max_warm_cache_nbytes);
+  STREAM_OUTPUT(train_memory_over_predict_mb);
   STREAM_OUTPUT(cold_cache_max_capability_nbytes);
   STREAM_OUTPUT(cold_cache_min_capability_nbytes);
   STREAM_OUTPUT(train_over_adjust_nbytes);

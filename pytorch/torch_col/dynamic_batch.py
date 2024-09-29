@@ -525,7 +525,7 @@ def init_dynamic_batch(
     enable_grad_accumulate: bool = False,
     checkpoint_micro_batch: bool = False,
     empty_cache_at_larger_batch_size: bool = False,
-    batch_distribute_policy: BatchDistributePolicy = BatchDistributePolicy.SIMPLE,
+    batch_distribute_policy: BatchDistributePolicy = BatchDistributePolicy.FIX,
     lazy_batch_distributing: bool = False,
     fake_data: bool = False
 ) -> Tuple[DynamicBatchDataset, MicroBatchManager]:
@@ -548,6 +548,14 @@ def init_dynamic_batch(
               file=sys.stderr)
         checkpoint_micro_batch = False
 
+    if (not torch_col.get_colocate_train_mode().is_colocate()
+        and batch_distribute_policy != BatchDistributePolicy.FIX
+    ):
+        print(f'torch_col: Warning: batch_distribute_policy will be '
+              f'{BatchDistributePolicy.FIX} when not colocate with inference.',
+              file=sys.stderr)
+        batch_distribute_policy = BatchDistributePolicy.FIX
+
     vision_ds_config = None
     text_ds_config = None
     if dataset_type == DatasetType.VISION:
@@ -564,6 +572,7 @@ def init_dynamic_batch(
         empty_cache_at_larger_batch_size=empty_cache_at_larger_batch_size,
         fake_data=fake_data,
     )
+
     torch_col.dist.init_dynamic_batch_distributor(
         dataset_size, batch_size, global_batch_size,
         lazy_batch_distributing, batch_distribute_policy.value)
