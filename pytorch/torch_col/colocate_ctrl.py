@@ -317,8 +317,12 @@ class ColocateCtrl(CtrlBase):
             torch.cuda.current_stream().synchronize()
             if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
                 raise ColocateAdjustL1Exception('before_critical_section')
-            # make sure we will not interrupt step
             self._stub.StepsNoInteruptBegin()
+            if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
+                self._stub.StepsNoInteruptEnd()
+                raise ColocateAdjustL1Exception('before_critical_section')
+            
+            # make sure we will not interrupt step
             yield
             torch.cuda.current_stream().synchronize()
             self._stub.StepsNoInteruptEnd()
