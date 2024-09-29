@@ -113,7 +113,10 @@ class SwitchCtrl(CtrlBase):
                  hook_mode: ColocateCtrlHookMode, 
                  num_epoch: int, batch_size: int) -> None:
         assert train_mode in {TrainMode.TASKSWITCH_L1, TrainMode.TASKSWITCH_L0}
-        super().__init__(train_mode, hook_mode, num_epoch, batch_size)
+        super().__init__(train_mode=train_mode, 
+                         hook_mode=hook_mode, 
+                         num_epoch=num_epoch, 
+                         batch_size=batch_size)
         self._stub = torch_col.PySwitchStub()
         self._grad_fn = []
 
@@ -300,7 +303,10 @@ class ColocateCtrl(CtrlBase):
                  num_epoch: int, batch_size: int):
         assert (train_mode == TrainMode.COLOCATE_L1 
                 or train_mode == TrainMode.COLOCATE_L2)
-        super().__init__(train_mode, hook_mode, batch_size, num_epoch)
+        super().__init__(train_mode=train_mode, 
+                         hook_mode=hook_mode, 
+                         num_epoch=num_epoch, 
+                         batch_size=batch_size)
         self._stub = torch_col.PyColocateStub(batch_size)
         self._grad_fn = []
         self._torch_stream = torch.cuda.current_stream()
@@ -485,7 +491,10 @@ class DummyCtrl(CtrlBase):
                  hook_mode: ColocateCtrlHookMode, 
                  num_epoch: 
                  int, batch_size: int):
-        super().__init__(train_mode, hook_mode, batch_size, num_epoch)
+        super().__init__(train_mode=train_mode, 
+                         hook_mode=hook_mode, 
+                         num_epoch=num_epoch, 
+                         batch_size=batch_size)
         self._stub = torch_col.PyDummyStub()
         assert hook_mode == ColocateCtrlHookMode.NONE
     
