@@ -97,15 +97,17 @@ int main(int argc, char** argv) {
     app.duration = min_duration;
   }
 
-  std::string target = app.ip + ":" + app.port;
-  LOG(INFO) << "Connect to " << target;
-  colserve::workload::Workload workload(
-      grpc::CreateChannel(target, grpc::InsecureChannelCredentials()),
+  std::string colsys_target = app.colsys_ip + ":" + app.colsys_port;
+  std::string triton_target = app.triton_ip + ":" + app.triton_port;
+  LOG(INFO) << "Connect to " << colsys_target;
+  colserve::workload::Workload train_workload(
+      grpc::CreateChannel(colsys_target, grpc::InsecureChannelCredentials()),
       std::chrono::seconds(app.duration),
       app.wait_train_setup_sec + app.wait_stable_before_start_profiling_sec,
       app.infer_timeline
   );
-  CHECK(workload.Hello());
+  // colserve::workload
+  CHECK(train_workload.Hello());
 
 
   if (app.enable_infer && !app.infer_trace.empty()) {
@@ -116,8 +118,8 @@ int main(int argc, char** argv) {
       for (auto &[model_id, _] : groups) {
         auto &model = trace_cfg.models[model_id];
         warm_up_futures.emplace_back(std::async(std::launch::async, 
-            [&workload, &model, &app](){
-              workload.WarmupModel(model.model_name, app.warmup);
+            [&train_workload, &model, &app](){
+              train_workload.WarmupModel(model.model_name, app.warmup);
             }
         ));
       }
@@ -126,13 +128,13 @@ int main(int argc, char** argv) {
       }
       if (app.wait_warmup_done_sec > 0) {
         std::this_thread::sleep_for(std::chrono::duration<double>(app.wait_warmup_done_sec));
-        workload.WarmupDone();
+        train_workload.WarmupDone();
       }
     }
 
     for(auto &&[model_id, start_points] : groups) {
       auto &model = trace_cfg.models[model_id];
-      workload.InferTrace(model.model_name, app.concurrency, 
+      train_workload.InferTrace(model.model_name, app.concurrency, 
                           start_points, app.wait_train_setup_sec,
                           app.warmup, app.show_result);
     }
@@ -144,19 +146,19 @@ int main(int argc, char** argv) {
     CHECK(app.train_models.size() <= 1);
     if (!app.train_models.empty()) {
       auto model_name = *app.train_models.begin();
-      workload.Train(model_name, app.num_epoch, app.batch_size);
+      train_workload.Train(model_name, app.num_epoch, app.batch_size);
     }
   }
 
-  workload.Run();
+  train_workload.Run();
 
   LOG(INFO) << "report result ...";
   if (app.log.empty()) {
-    workload.Report(app.verbose);
+    train_workload.Report(app.verbose);
   } else {
     std::fstream ofs{app.log, std::ios::out};
     CHECK(ofs.good());
-    workload.Report(app.verbose, ofs);
+    train_workload.Report(app.verbose, ofs);
     ofs.close();
   }
   return 0;
