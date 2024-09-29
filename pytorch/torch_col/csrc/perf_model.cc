@@ -42,6 +42,10 @@ void PerfModel::RecordThpt(int batch_size, double batch_time_ms) {
 double PerfModel::GetThpt(int batch_size) {
   CHECK(perf_model_ != nullptr);
 
+  if (batch_size <= 0) {
+    return 0;
+  }
+
   bip::scoped_lock lock{*perf_model_->mut_};
   return perf_model_->GetThptWithLock(batch_size);
 }
@@ -61,6 +65,10 @@ std::vector<double> PerfModel::GetThptVec(
 double PerfModel::GetThptWithLock(int batch_size) {
   if (batch_thpt_->empty()) {
     return -1;
+  }
+
+  if (batch_size <= 0) {
+    return 0;
   }
 
   auto it = batch_thpt_->lower_bound(batch_size);

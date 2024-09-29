@@ -36,3 +36,7 @@ from .config import get_global_seed, get_global_seed_by_hash, set_global_seed, \
 from .runner import *
 from .hyper_workload import *
 
+
+def get_num_gpu():
+    cuda_device_env = os.environ['CUDA_VISIBLE_DEVICES']
+    return len(cuda_device_env.split(','))

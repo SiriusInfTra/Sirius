@@ -143,7 +143,9 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
 
   std::vector<TrainAdjuster::AdjustPlan> adjust_plan(train_world_size);
   if (all_same) {
-    bool imbalance = adjuster_->CheckImbalance(target_batch_size);
+    bool imbalance = 
+        target_batch_size > 0 /* avoid partial training workers executing */
+        && adjuster_->CheckImbalance(target_batch_size);
     if (imbalance) {
       adjuster_->FillAdjustPlanOnlyAdjustOne(
         device_id, AdjustPlan{.batch_size = target_batch_size}, adjust_plan);
@@ -160,7 +162,9 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
           : adjuster_->cached_target_batch_sizes_[rank]);
     }
 
-    bool imbalance = adjuster_->CheckImbalance(min_batch_size);
+    bool imbalance = 
+        min_batch_size > 0 /* avoid partial training workers executing */
+        && adjuster_->CheckImbalance(min_batch_size);
     if (imbalance) {
       adjuster_->FillAdjustPlanOnlyAdjustOne(
         device_id, AdjustPlan{.batch_size = min_batch_size}, adjust_plan);
@@ -175,7 +179,7 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
   adjuster_lock.unlock();
 
   if (Config::log_memory_adjust) {
-    std::stringstream ss;
+    std::stringstream ss; 
     ss << "[InferRequireMemAdjust]"
       << " cur_train_target_bs " << cur_train_target_bs
       << " cold cache free memory " << cold_cache_free_mem_mb
@@ -278,7 +282,8 @@ TrainAdjuster::GetInferReleaseMemAdjustPlanWithInLock(
   int min_target_bs = *std::min_element(
       target_batch_sizes.begin(), target_batch_sizes.end());
 
-  if (!adjuster_->CheckImbalance(min_target_bs)) {
+  if (min_target_bs <= 0 /* avoid partial training workers executing */
+      || !adjuster_->CheckImbalance(min_target_bs)) {
     adjuster_->FillSameAdjustPlan(
         AdjustPlan{.batch_size = min_target_bs}, adjust_plan);
   } else {

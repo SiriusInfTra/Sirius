@@ -10,7 +10,7 @@ import os, sys
 
 import torch_col
 from torch_col import MemoryPool, EventManager, TrainMode, ColocateCtrlHookMode
-from torch_col import DynamicBatchDataset
+from torch_col import DynamicBatchDataset, BatchDistributePolicy
 from torch_col import dynamic_batch
 import torch_col.trainer
 import torch_col.xsched
@@ -74,6 +74,8 @@ def train(rank:int, world_size:int,
         global_batch_size=global_batch_size,
         enable_grad_accumulate=enable_grad_accumulate,
         checkpoint_micro_batch=checkpoint_micro_batch,
+        lazy_batch_distributing=False,
+        batch_distribute_policy=BatchDistributePolicy.BY_PERFORMANCE
     )   
 
     model.train()
@@ -95,8 +97,8 @@ def train(rank:int, world_size:int,
     def iter_train_fn(batch: dynamic_batch.Batch):
         images = batch['images']
         targets = batch['labels']
-        images: torch.Tensor = images.cuda(rank, non_blocking=True)
-        targets: torch.Tensor = targets.cuda(rank, non_blocking=True)
+        # images: torch.Tensor = images.cuda(rank, non_blocking=True)
+        # targets: torch.Tensor = targets.cuda(rank, non_blocking=True)
         with batch_manager.ddp_sync_context(model, batch):
             with torch.cuda.amp.autocast(cache_enabled=False):
                 output = model(images)
@@ -136,7 +138,7 @@ def train(rank:int, world_size:int,
               flush=True)
     
         if col_ctrl.can_exit_after_infer_worklaod_done():
-            print('[hook] inference workload done, will exit training', flush=True)
+            torch_col.info('[hook] inference workload done, will exit training')
             torch_col.dist.wait_barrier()
             break
 

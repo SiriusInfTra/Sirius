@@ -282,7 +282,9 @@ void DynamicBatchDistirbutor::DistributeBatchImpl(
     int num_distributed_samples = 0;
     for (int i = 0; i < ongoing_workers.size(); ++i) {
       int worker_id = ongoing_workers[i];
-      double ratio = perf_vec[i] / perf_sum;
+      double ratio = (perf_sum == 0) 
+                     ? 1.0 / ongoing_workers.size() 
+                     : perf_vec[i] / perf_sum;
       int num_samples = std::max(1, 
           static_cast<int>(num_unprocessed_samples * ratio));
       global_shared_data_
@@ -290,16 +292,19 @@ void DynamicBatchDistirbutor::DistributeBatchImpl(
       num_distributed_samples += num_samples;
     }
 
-    CHECK_LE(num_distributed_samples, num_unprocessed_samples);
+    // CHECK_LE(num_distributed_samples, num_unprocessed_samples);
     int diff = num_unprocessed_samples - num_distributed_samples;
-    for (int i = 0; diff > 0; ++i) {
+    for (int i = 0; diff != 0; ++i) {
       if (i >= ongoing_workers.size()) { i = 0; }
-
       int worker_id = ongoing_workers[i];
-      if (global_shared_data_.num_unproc_samples_per_train_->at(worker_id) > 1) {
-        global_shared_data_
-            .num_unproc_samples_per_train_->at(worker_id) += 1;
-        diff--;
+      auto &num_unproc_samples = global_shared_data_
+          .num_unproc_samples_per_train_->at(worker_id);
+      if (diff > 0) {
+        num_unproc_samples += 1, diff--;
+      } else {
+        if (num_unproc_samples > 1) {
+          num_unproc_samples -= 1, diff++;
+        }
       }
     }
   }
