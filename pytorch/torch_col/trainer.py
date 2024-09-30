@@ -194,29 +194,31 @@ class Trainer:
         # --------------------------------------------------
         # third, re-configure training and re-start training
 
-        if torch_col.get_train_rank() == 0:
-            # batch across worker contain at least one sync batch 
-            # or has no sync batch, it is ok to reset all vote counter
-            self.batch_manager.reset_last_micro_batch_finish_vote()
-        torch_col.dist.wait_barrier()
+        train_restart_event = f'batch_restart_{epoch_idx:02d}_{batch_idx:03d}'
+        with EventManager.record_duration_event(train_restart_event):
+            if torch_col.get_train_rank() == 0:
+                # batch across worker contain at least one sync batch 
+                # or has no sync batch, it is ok to reset all vote counter
+                self.batch_manager.reset_last_micro_batch_finish_vote()
+            torch_col.dist.wait_barrier()
 
-        nccl_backend = torch_dist.GroupMember.WORLD._get_backend(torch.device('cuda'))
-        # restart nccl will let all training cpu sync
-        nccl_backend._restart_nccl_comm([torch.device(f'cuda:{self.rank}')])
+            nccl_backend = torch_dist.GroupMember.WORLD._get_backend(torch.device('cuda'))
+            # restart nccl will let all training cpu sync
+            nccl_backend._restart_nccl_comm([torch.device(f'cuda:{self.rank}')])
 
-        if isinstance(self.dynamic_dataset.col_ctrl, torch_col.ColocateCtrl):
-            # Ref: [Note: kill batch]
-            self.dynamic_dataset.col_ctrl.set_killed_batch_recover()
+            if isinstance(self.dynamic_dataset.col_ctrl, torch_col.ColocateCtrl):
+                # Ref: [Note: kill batch]
+                self.dynamic_dataset.col_ctrl.set_killed_batch_recover()
 
-        if torch_col.get_train_rank() == 0:
-            # because we may directly reply memory adjust 
-            # before recover the killed batch (not killing batch),
-            # distribute batch should be after recover
-            # to configure training for those requests to avoid infer OOM
-            torch_col.dist._DynamicBatchDistirbutor.distribute_batch(
-                True, True, False)
-            self.dynamic_dataset.col_ctrl.set_killed_batch_reconfiged()
-        torch_col.dist.wait_barrier()
+            if torch_col.get_train_rank() == 0:
+                # because we may directly reply memory adjust 
+                # before recover the killed batch (not killing batch),
+                # distribute batch should be after recover
+                # to configure training for those requests to avoid infer OOM
+                torch_col.dist._DynamicBatchDistirbutor.distribute_batch(
+                    True, True, False)
+                self.dynamic_dataset.col_ctrl.set_killed_batch_reconfiged()
+            torch_col.dist.wait_barrier()
 
     def _default_first_batch_callback(self):
         if torch_col.is_enable_shared_tensor():

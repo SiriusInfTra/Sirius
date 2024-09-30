@@ -454,7 +454,8 @@ class DynamicBatchDataset(IterableDataset):
         return batch_size    
 
     def _get_batch(self) -> Batch:
-        _batch_size = self._wait_valid_batch_size()
+        with EventManager.record_duration_event('wait_valid_batch'):
+            _batch_size = self._wait_valid_batch_size()
         batch_range_vec, last_micro_batch = \
             torch_col.dist._DynamicBatchDistirbutor.get_batch(_batch_size)
         _batch = self._retrieve_batch(batch_range_vec)
