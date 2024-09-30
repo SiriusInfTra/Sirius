@@ -1,4 +1,6 @@
 #include <fstream>
+#include <future>
+#include <memory>
 #include <random>
 #include <string>
 #include <vector>
@@ -39,13 +41,13 @@ int main(int argc, char** argv) {
 
 
   std::string target = app.colsys_ip + ":" + app.colsys_port;
-  colserve::workload::Workload workload(
+  auto workload = colserve::workload::GetColsysWorkload(
       grpc::CreateChannel(target, grpc::InsecureChannelCredentials()),
       std::chrono::seconds(app.duration),
       app.wait_train_setup_sec + app.wait_stable_before_start_profiling_sec,
       app.infer_timeline
   );
-  CHECK(workload.Hello());
+  CHECK(workload->Hello());
 
   if (app.enable_infer && !app.infer_models.empty()) {
     if (app.warmup > 0) {
@@ -54,7 +56,7 @@ int main(int argc, char** argv) {
       for (auto &model : app.infer_models) {
         warm_up_futures.push_back(std::async(std::launch::async, 
             [&workload, &model, &app](){
-              workload.WarmupModel(model, app.warmup);
+              workload->WarmupModel(model, app.warmup);
             }
         ));
       }
@@ -63,29 +65,29 @@ int main(int argc, char** argv) {
       }
       if (app.wait_warmup_done_sec > 0) {
         std::this_thread::sleep_for(std::chrono::duration<double>(app.wait_warmup_done_sec));
-        workload.WarmupDone();
+        workload-> WarmupDone();
       }
     }
     for(auto &model : app.infer_models) {
-      workload.InferBusyLoop(model, app.concurrency, nullptr, app.wait_train_setup_sec, 
+      workload-> InferBusyLoop(model, app.concurrency, nullptr, app.wait_train_setup_sec, 
                              app.warmup, app.show_result);
     }
   }
   
   if (app.enable_train) {
     if (app.train_models.count("resnet"))
-      workload.TrainResnet(app.num_epoch, app.batch_size);
+      workload->Train("resnet", app.num_epoch, app.batch_size);
   }
 
-  workload.Run();
+  workload-> Run();
 
   LOG(INFO) << "report result ...";
   if (app.log.empty()) {
-    workload.Report(app.verbose);
+    workload->Report(app.verbose);
   } else {
     std::fstream ofs{app.log, std::ios::out};
     CHECK(ofs.good());
-    workload.Report(app.verbose, ofs);
+    workload->Report(app.verbose, ofs);
     ofs.close();
   }
   return 0;

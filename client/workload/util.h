@@ -1,12 +1,7 @@
 #ifndef COLSYS_WORKLOAD_UTIL_H_
 #define COLSYS_WORKLOAD_UTIL_H_
 
-#include <condition_variable>
-#include <iostream>
-#include <fstream>
 #include <CLI/CLI.hpp>
-#include <limits>
-#include <mutex>
 #include <glog/logging.h>
 
 namespace colserve {
@@ -36,8 +31,10 @@ class AppBase {
   AppBase(const std::string &name = "ColServe Workload");
 
   CLI::App app;
-  std::string ip = "localhost";
-  std::string port;
+  std::string colsys_ip = "localhost";
+  std::string colsys_port;
+  std::string triton_ip = "localhost";
+  std::string triton_port;
   bool enable_train{true}, enable_infer{true};
   std::set<std::string> train_models;
   int duration{10}, concurrency{10};

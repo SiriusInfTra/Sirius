@@ -1,3 +1,4 @@
+#include "workload.h.in"
 #include <algorithm>
 #include <chrono>
 #include <exception>
@@ -14,12 +15,8 @@
 
 #include "glog/logging.h"
 #include "workload.h"
-#include "unified_grpc.h"
 
-
-namespace colserve {
-namespace workload {
-namespace {
+namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE {
 double ComputeThpt(const std::vector<Record> &records) {
   auto first_resp_time = std::min_element(records.begin(), records.end(), [](const Record &a, const Record &b) {
     return a.response_time_ < b.response_time_;
@@ -33,7 +30,6 @@ double ComputeThpt(const std::vector<Record> &records) {
       });
   auto thpt_duration = std::chrono::duration<double>(last_request_time - first_resp_time).count();
   return 1.0 * thpt_req_cnt / thpt_duration;
-}
 }
 
 void Workload::WarmupModel(const std::string& model_name, int warmup) {
@@ -717,6 +713,4 @@ void Workload::InferOverallReport(std::ostream &os) {
      << "p50 " << all_records[all_records.size() * 50 / 100].latency_ << "\n"
      << std::endl;
 }
-
-}  // namespace workload
 }
