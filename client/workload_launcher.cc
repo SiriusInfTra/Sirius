@@ -167,8 +167,22 @@ int main(int argc, char** argv) {
       auto model_name = *app.train_models.begin();
       train_workload->Train(model_name, app.num_epoch, app.batch_size);
     }
-    train_workload->Run();
   }
+
+  if (infer_workload != nullptr) {
+    infer_workload->PreRun();
+  }
+  if (train_workload != nullptr) {
+    train_workload->PreRun();
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(app.duration));
+  if (infer_workload != nullptr) {
+    infer_workload->PostRun();
+  }
+  if (train_workload != nullptr) {
+    train_workload->PostRun();
+  }
+
 
 
   // TODO: merge output

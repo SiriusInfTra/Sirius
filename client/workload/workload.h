@@ -17,7 +17,8 @@ public:
   virtual bool Hello() = 0;
   virtual bool InferenceWorkloadStart() = 0;
   virtual void InferenceWorkloadDone() = 0;
-  virtual void Run() = 0;
+  virtual void PreRun() = 0;
+  virtual void PostRun() = 0;
   virtual void WarmupModel(const std::string& model_name, int warmup) = 0;
   virtual void WarmupDone() = 0;
   virtual void InferBusyLoop(const std::string &model, size_t concurrency, 

@@ -142,7 +142,7 @@ class Workload : public IWorkload {
   bool InferenceWorkloadStart();
   void InferenceWorkloadDone();
 
-  void Run() {
+  void PreRun() {
     running_ = true;
     ready_promise_.set_value();
     run_btime_ = std::chrono::steady_clock::now();
@@ -151,8 +151,9 @@ class Workload : public IWorkload {
     LOG(INFO) << "Workload start at " << start_time_stamp_ 
               << " profiling will begin after " << delay_before_profile_
               << " sec from this time point";
+  }
 
-    std::this_thread::sleep_for(duration_);
+  void PostRun() {
     LOG(INFO) << "Workload timeout ...";
     running_ = false;
     for (auto &thread : infer_threads_) {

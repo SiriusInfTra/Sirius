@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <fstream>
 #include <future>
 #include <memory>
@@ -98,7 +99,20 @@ int main(int argc, char** argv) {
   if (app.enable_train) {
     if (app.train_models.count("resnet"))
       train_workload->Train("resnet", app.num_epoch, app.batch_size);
-    train_workload-> Run();
+  }
+
+  if (infer_workload != nullptr) {
+    infer_workload->PreRun();
+  }
+  if (train_workload != nullptr) {
+    train_workload->PreRun();
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(app.duration));
+  if (infer_workload != nullptr) {
+    infer_workload->PostRun();
+  }
+  if (train_workload != nullptr) {
+    train_workload->PostRun();
   }
 
 
