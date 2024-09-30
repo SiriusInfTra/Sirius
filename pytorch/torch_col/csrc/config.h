@@ -35,6 +35,7 @@ class TorchColConfig {
   static bool log_all;
   static bool log_dynamic_batch;
   static bool log_control_stub;
+  static bool log_nccl_process_group;
   
   static int configured;
 

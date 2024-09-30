@@ -154,9 +154,10 @@ void ProcessGroupNCCL::RestartNcclComm(
     nccl_comms = it->second;
   }
 
-  LOG(INFO) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
-            << " find device_key " << device_key
-            << " nccl_comms.size() " << nccl_comms.size();
+  LOG_IF(INFO, TorchColConfig::log_nccl_process_group) 
+      << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
+      << " find device_key " << device_key
+      << " nccl_comms.size() " << nccl_comms.size();
 
   std::vector<std::pair<uint32_t, uint32_t>> abort_flags(nccl_comms.size());
   for (int i = 0; i < nccl_comms.size(); i++) {
@@ -276,11 +277,12 @@ void ProcessGroupNCCL::SetNcclCommAbortFlag(
 
   auto t2 = torch_col::get_unix_timestamp();
 
-  LOG(INFO) << str(boost::format("[Rank %d | SetNcclCommAbortFlag]") % getRank())
-            << " device_key " << device_key
-            << " set abort flag " << val << " done"
-            << ", cost " << t2 - t0 << "ms"
-            << " | _SetNcclCommAbortFlag " << t2 - t1 << "ms";
+  LOG_IF(INFO, TorchColConfig::log_nccl_process_group) 
+      << str(boost::format("[Rank %d | SetNcclCommAbortFlag]") % getRank())
+      << " device_key " << device_key
+      << " set abort flag " << val << " done"
+      << ", cost " << t2 - t0 << "ms"
+      << " | _SetNcclCommAbortFlag " << t2 - t1 << "ms";
 }
 
 // void ProcessGroupNCCL::LaunchDebugFn() {

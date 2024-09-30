@@ -38,6 +38,7 @@ std::string TorchColConfig::train_profile_log_path = "";
 bool TorchColConfig::log_all = false;
 bool TorchColConfig::log_dynamic_batch = false;
 bool TorchColConfig::log_control_stub = false;
+bool TorchColConfig::log_nccl_process_group = false;
 
 int TorchColConfig::configured = false;
 
@@ -61,6 +62,7 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
   auto log_all_env = std::getenv("COL_LOG_ALL");
   auto log_dynamic_batch_env = std::getenv("COL_LOG_DYNAMIC_BATCH");
   auto log_control_stub_env = std::getenv("COL_LOG_CONTROL_STUB");
+  auto log_nccl_process_group_env = std::getenv("COL_LOG_NCCL_PROCESS_GROUP");
 
   use_shared_tensor = use_shared_tensor_env == nullptr ? 
                       false : (std::string(use_shared_tensor_env) == "1");
@@ -84,6 +86,8 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
                       false : (std::string(log_dynamic_batch_env) == "1"));
   log_control_stub = log_all || (log_control_stub_env == nullptr ?
                       false : (std::string(log_control_stub_env) == "1"));
+  log_nccl_process_group = log_all || (log_nccl_process_group_env == nullptr ?
+                           false : (std::string(log_nccl_process_group_env) == "1"));
 
   if (colocate_ctrl_hook_mode == "xsched-sync2") {
     kill_batch_on_recv = 1 && colocate_use_xsched;

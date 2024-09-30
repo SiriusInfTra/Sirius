@@ -6,6 +6,8 @@
 #include <torch/csrc/distributed/c10d/Work.hpp>
 #include <torch/csrc/distributed/c10d/Types.hpp>
 
+#include <torch_col/csrc/config.h>
+
 #include <common/log_as_glog_sta.h>
 #include <common/inf_tra_comm/bip_helper.h>
 
@@ -99,8 +101,9 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
   #define REDISPATCH_COLLECTIVE_FUNC(op_type, func, args...) \
     do { \
       if (abort_flag_ != 0) { \
-        LOG(INFO) << "[Rank " << rank_ << " | ProcessGroupNCCL | REDISPATCH_COLLECTIVE_FUNC]" \
-                  << " abort " << #func;  \
+        LOG_IF(INFO, TorchColConfig::log_nccl_process_group) \
+            << "[Rank " << rank_ << " | ProcessGroupNCCL | REDISPATCH_COLLECTIVE_FUNC]" \
+            << " abort " << #func;  \
         return ::c10::make_intrusive<WorkDummy>(rank_, op_type); \
       } else { \
         return func(args); \
