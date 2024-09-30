@@ -102,30 +102,32 @@ int main(int argc, char** argv) {
 
   std::string colsys_target = app.colsys_ip + ":" + app.colsys_port;
   std::string triton_target = app.triton_ip + ":" + app.triton_port;
-  LOG(INFO) << "Connect to " << colsys_target;
-  std::shared_ptr train_workload = GetColsysWorkload(
-      grpc::CreateChannel(colsys_target, grpc::InsecureChannelCredentials()),
-      std::chrono::seconds(app.duration),
-      app.wait_train_setup_sec + app.wait_stable_before_start_profiling_sec,
-      app.infer_timeline
-  );
-  std::shared_ptr<IWorkload> infer_workload;
-  if (app.triton_port.empty()) {
-    infer_workload = train_workload;
-  } else {
-    infer_workload = GetTritonWorkload(
+
+  std::shared_ptr<IWorkload> train_workload;
+  if (!app.colsys_port.empty()) {
+    LOG(INFO) << "Connect to " << colsys_target;
+    train_workload = GetColsysWorkload(
       grpc::CreateChannel(colsys_target, grpc::InsecureChannelCredentials()),
       std::chrono::seconds(app.duration),
       app.wait_train_setup_sec + app.wait_stable_before_start_profiling_sec,
       app.infer_timeline
     );
   }
-  // colserve::workload
-  CHECK(train_workload->Hello());
-  if (!app.triton_port.empty()) {
-    CHECK(infer_workload->Hello());
+  std::shared_ptr<IWorkload> infer_workload;
+  if (app.triton_port.empty()) {
+    infer_workload = train_workload;
+  } else {
+    LOG(INFO) << "Connect to " << triton_target;
+    infer_workload = GetTritonWorkload(
+      grpc::CreateChannel(triton_target, grpc::InsecureChannelCredentials()),
+      std::chrono::seconds(app.duration),
+      app.wait_train_setup_sec + app.wait_stable_before_start_profiling_sec,
+      app.infer_timeline
+    );
   }
-
+  // colserve::workload
+  CHECK(train_workload == nullptr || train_workload->Hello());
+  CHECK(infer_workload == nullptr || train_workload == infer_workload || infer_workload->Hello());
 
   if (app.enable_infer && !app.infer_trace.empty()) {
     auto groups = GroupByModel(trace_cfg);
@@ -165,16 +167,19 @@ int main(int argc, char** argv) {
       auto model_name = *app.train_models.begin();
       train_workload->Train(model_name, app.num_epoch, app.batch_size);
     }
+    train_workload->Run();
   }
 
-  train_workload->Run();
+
   // TODO: merge output
   LOG(INFO) << "report result ...";
   std::fstream fstream;
   auto &&ofs = app.log.empty() ? std::cout : (fstream = std::fstream{app.log, std::ios::out});
   CHECK(ofs.good());
-  train_workload->Report(app.verbose, ofs);
-  if (!app.triton_port.empty()) {
+  if (train_workload != nullptr) {
+    train_workload->Report(app.verbose, ofs);
+  }
+  if (infer_workload != nullptr && train_workload != infer_workload) {
     infer_workload->Report(app.verbose, ofs);
   }
   if (fstream.is_open()) {
