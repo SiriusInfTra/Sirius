@@ -12,6 +12,8 @@
 #include "workload/util.h"
 #include "workload/workload.h"
 
+using namespace colserve::workload;
+
 struct App : public colserve::workload::AppBase {
   App(): colserve::workload::AppBase() {
     app.add_option("--infer-model", infer_models, "models of infer workload");
@@ -40,14 +42,30 @@ int main(int argc, char** argv) {
   }
 
 
-  std::string target = app.colsys_ip + ":" + app.colsys_port;
-  auto workload = colserve::workload::GetColsysWorkload(
-      grpc::CreateChannel(target, grpc::InsecureChannelCredentials()),
+  std::string colsys_target = app.colsys_ip + ":" + app.colsys_port;
+  std::string triton_target = app.triton_ip + ":" + app.triton_port;
+  LOG(INFO) << "Connect to " << colsys_target;
+  std::shared_ptr train_workload = GetColsysWorkload(
+      grpc::CreateChannel(colsys_target, grpc::InsecureChannelCredentials()),
       std::chrono::seconds(app.duration),
       app.wait_train_setup_sec + app.wait_stable_before_start_profiling_sec,
       app.infer_timeline
   );
-  CHECK(workload->Hello());
+  std::shared_ptr<IWorkload> infer_workload;
+  if (app.triton_port.empty()) {
+    infer_workload = train_workload;
+  } else {
+    infer_workload = GetTritonWorkload(
+      grpc::CreateChannel(colsys_target, grpc::InsecureChannelCredentials()),
+      std::chrono::seconds(app.duration),
+      app.wait_train_setup_sec + app.wait_stable_before_start_profiling_sec,
+      app.infer_timeline
+    );
+  }
+  CHECK(train_workload->Hello());
+  if (!app.triton_port.empty()) {
+    CHECK(infer_workload->Hello());
+  }
 
   if (app.enable_infer && !app.infer_models.empty()) {
     if (app.warmup > 0) {
@@ -55,8 +73,8 @@ int main(int argc, char** argv) {
       warm_up_futures.reserve(app.infer_models.size());
       for (auto &model : app.infer_models) {
         warm_up_futures.push_back(std::async(std::launch::async, 
-            [&workload, &model, &app](){
-              workload->WarmupModel(model, app.warmup);
+            [&infer_workload, &model, &app](){
+              infer_workload->WarmupModel(model, app.warmup);
             }
         ));
       }
@@ -65,30 +83,32 @@ int main(int argc, char** argv) {
       }
       if (app.wait_warmup_done_sec > 0) {
         std::this_thread::sleep_for(std::chrono::duration<double>(app.wait_warmup_done_sec));
-        workload-> WarmupDone();
+        infer_workload-> WarmupDone();
       }
     }
     for(auto &model : app.infer_models) {
-      workload-> InferBusyLoop(model, app.concurrency, nullptr, app.wait_train_setup_sec, 
+      infer_workload-> InferBusyLoop(model, app.concurrency, nullptr, app.wait_train_setup_sec, 
                              app.warmup, app.show_result);
     }
   }
   
   if (app.enable_train) {
     if (app.train_models.count("resnet"))
-      workload->Train("resnet", app.num_epoch, app.batch_size);
+      train_workload->Train("resnet", app.num_epoch, app.batch_size);
   }
 
-  workload-> Run();
+  train_workload-> Run();
 
   LOG(INFO) << "report result ...";
-  if (app.log.empty()) {
-    workload->Report(app.verbose);
-  } else {
-    std::fstream ofs{app.log, std::ios::out};
-    CHECK(ofs.good());
-    workload->Report(app.verbose, ofs);
-    ofs.close();
+  std::fstream fstream;
+  auto &&ofs = app.log.empty() ? std::cout : (fstream = std::fstream{app.log, std::ios::out});
+  CHECK(ofs.good());
+  train_workload->Report(app.verbose, ofs);
+  if (!app.triton_port.empty()) {
+    infer_workload->Report(app.verbose, ofs);
+  }
+  if (fstream.is_open()) {
+    fstream.close();
   }
   return 0;
 }

@@ -3,6 +3,7 @@
 #include <future>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <random>
 #include <string>
 #include <unordered_map>
@@ -102,14 +103,28 @@ int main(int argc, char** argv) {
   std::string colsys_target = app.colsys_ip + ":" + app.colsys_port;
   std::string triton_target = app.triton_ip + ":" + app.triton_port;
   LOG(INFO) << "Connect to " << colsys_target;
-  auto train_workload = GetColsysWorkload(
+  std::shared_ptr train_workload = GetColsysWorkload(
       grpc::CreateChannel(colsys_target, grpc::InsecureChannelCredentials()),
       std::chrono::seconds(app.duration),
       app.wait_train_setup_sec + app.wait_stable_before_start_profiling_sec,
       app.infer_timeline
   );
+  std::shared_ptr<IWorkload> infer_workload;
+  if (app.triton_port.empty()) {
+    infer_workload = train_workload;
+  } else {
+    infer_workload = GetTritonWorkload(
+      grpc::CreateChannel(colsys_target, grpc::InsecureChannelCredentials()),
+      std::chrono::seconds(app.duration),
+      app.wait_train_setup_sec + app.wait_stable_before_start_profiling_sec,
+      app.infer_timeline
+    );
+  }
   // colserve::workload
   CHECK(train_workload->Hello());
+  if (!app.triton_port.empty()) {
+    CHECK(infer_workload->Hello());
+  }
 
 
   if (app.enable_infer && !app.infer_trace.empty()) {
@@ -120,8 +135,8 @@ int main(int argc, char** argv) {
       for (auto &[model_id, _] : groups) {
         auto &model = trace_cfg.models[model_id];
         warm_up_futures.emplace_back(std::async(std::launch::async, 
-            [&train_workload, &model, &app](){
-              train_workload->WarmupModel(model.model_name, app.warmup);
+            [&infer_workload, &model, &app](){
+              infer_workload->WarmupModel(model.model_name, app.warmup);
             }
         ));
       }
@@ -130,13 +145,13 @@ int main(int argc, char** argv) {
       }
       if (app.wait_warmup_done_sec > 0) {
         std::this_thread::sleep_for(std::chrono::duration<double>(app.wait_warmup_done_sec));
-        train_workload->WarmupDone();
+        infer_workload->WarmupDone();
       }
     }
 
     for(auto &&[model_id, start_points] : groups) {
       auto &model = trace_cfg.models[model_id];
-      train_workload->InferTrace(model.model_name, app.concurrency, 
+      infer_workload->InferTrace(model.model_name, app.concurrency, 
                           start_points, app.wait_train_setup_sec,
                           app.warmup, app.show_result);
     }
@@ -153,15 +168,17 @@ int main(int argc, char** argv) {
   }
 
   train_workload->Run();
-
+  // TODO: merge output
   LOG(INFO) << "report result ...";
-  if (app.log.empty()) {
-    train_workload->Report(app.verbose);
-  } else {
-    std::fstream ofs{app.log, std::ios::out};
-    CHECK(ofs.good());
-    train_workload->Report(app.verbose, ofs);
-    ofs.close();
+  std::fstream fstream;
+  auto &&ofs = app.log.empty() ? std::cout : (fstream = std::fstream{app.log, std::ios::out});
+  CHECK(ofs.good());
+  train_workload->Report(app.verbose, ofs);
+  if (!app.triton_port.empty()) {
+    infer_workload->Report(app.verbose, ofs);
+  }
+  if (fstream.is_open()) {
+    fstream.close();
   }
   return 0;
 }
