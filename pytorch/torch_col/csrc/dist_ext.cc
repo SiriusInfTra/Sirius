@@ -18,9 +18,29 @@
 #include <Python.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/chrono.h>
-
+#include <dlfcn.h>
 
 namespace torch_col {
+
+void* NcclExt::nccl_comm_reset_channel_fn_ = nullptr;
+
+void NcclExt::Init() {
+  std::string libtorch_str = "libtorch_cuda.so";
+  auto handle = dlopen(libtorch_str.c_str(), RTLD_LAZY);
+  if (!handle) {
+    LOG(FATAL) << "[NcclExt] dlopen " << libtorch_str << " failed, "
+               << dlerror();
+  }
+
+  // ncclCommResetChannels
+  nccl_comm_reset_channel_fn_ = dlsym(RTLD_DEFAULT, "ncclCommResetChannels");
+  LOG_IF(INFO, nccl_comm_reset_channel_fn_ != nullptr) 
+      << "[NcclExt] find ncclCommResetChannels " 
+      << nccl_comm_reset_channel_fn_;
+
+}
+
+///////////////////////////////////////////////////////////////////////////////
 
 ::c10::intrusive_ptr<ProcessGroupNCCL> ProcessGroupNCCL::default_pg_ = nullptr;
 
@@ -194,7 +214,7 @@ void ProcessGroupNCCL::RestartNcclComm(
   }
 
   // then restart the nccl comm
-  RestartNcclCommByRecreating(devices, device_key, nccl_comms, lock);
+  // RestartNcclCommByRecreating(devices, device_key, nccl_comms, lock);
 }
 
 void ProcessGroupNCCL::RestartNcclCommByRecreating(
@@ -452,13 +472,14 @@ void TorchDistExtInit() {
   CHECK(TorchColConfig::IsConfigured());
   DistTrainSync::Init();
 
+  NcclExt::Init();
+
   /////////////////////////////////////////////////////////////////////////////
   // define torch ext class
 
   auto c_module = py::module::import("torch_col._C");
   auto module = c_module.def_submodule("_dist");
   
-    
   try {
     // Reducer
     DLOG(INFO) << "[TorchDistExtInit] Reducer";
@@ -718,7 +739,18 @@ void TorchDistExtInit() {
                       << self.get();
             ProcessGroupNCCL::SetDefaultProcessGroupNCCL(self);
           },
-          py::call_guard<py::gil_scoped_release>());
+          py::call_guard<py::gil_scoped_release>())
+      .def("_reset_channel", 
+           [](const c10::intrusive_ptr<ProcessGroupNCCL> &self) {
+            if (NcclExt::nccl_comm_reset_channel_fn_) {
+              auto nccl_comms = self->GetNcclComm(
+                {at::Device(at::kCUDA, TorchColConfig::GetTrainRank())});
+              reinterpret_cast<void(*)(ncclComm_t)>
+                (NcclExt::nccl_comm_reset_channel_fn_)(nccl_comms[0]);
+            } else {
+              LOG(FATAL) << "[TorchDistExt] nccl_comm_reset_channel_fn_ is nullptr";
+            }
+          });
 
       // .def("_launch_debug_fn",
       //      [](const c10::intrusive_ptr<ProcessGroupNCCL> &self) {

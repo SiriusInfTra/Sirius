@@ -17,6 +17,12 @@
 
 namespace torch_col {
 
+class NcclExt {
+ public: 
+  static void Init();
+  static void* nccl_comm_reset_channel_fn_;
+};
+
 class Reducer : public ::c10d::Reducer {
  public:
   template<typename ... T>
@@ -248,6 +254,8 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
   // void LaunchDebugFn();
 
  private:
+  static ::c10::intrusive_ptr<ProcessGroupNCCL> default_pg_;
+
   // from torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp
   // but as the static methods
   static std::string getKeyFromDevices(const std::vector<at::Device>& devices) {
@@ -303,9 +311,7 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
 
   std::string GetDevNcclCommMapKeySetStrs();
   std::string GetDevNcclCommMapKeySetStrsUnlocked() const;
-
-  static ::c10::intrusive_ptr<ProcessGroupNCCL> default_pg_;
-  
+    
   // our own maintained abort flag outside of NCCL, 
   // therefore we can check abort flag without get the NCCLComm
   std::atomic<uint32_t> abort_flag_{0};
