@@ -3,6 +3,12 @@ import numpy as np
 import contextlib
 import hashlib
 
+class RunnerConfig:
+    _global_seed = None
+    _binary_dir = 'build'
+    _multi_gpu_scale_up_workload = True
+    
+
 __global_seed = None
 __binary_dir = 'build'
 

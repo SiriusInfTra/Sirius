@@ -12,6 +12,8 @@ from scipy.signal import correlate
 from .config import get_global_seed
 from . import distribution as dist
 
+import runner
+
 class InferModel:
     ResNet152 = "resnet152"
     ResNet50 = "resnet50"
@@ -692,6 +694,9 @@ class MicrobenchmarkInferWorkload_RpsMajor(MicrobenchmarkInferWorkloadBase):
         tot_rps_arr = cur_rps_arr
 
         for i, rps in enumerate(tot_rps_arr):
+            # rps *= runner.get_num_gpu()
+            rps = runner.scale_up_by_num_gpu(rps)
+
             model_rps = self._split_request(rps, self.total_num_model(), self.model_hotness)
             poisson_param_arr[:, i] = model_rps
             num_request_model_arr[i] = np.sum(model_rps > 0)
@@ -753,6 +758,9 @@ class MicrobenchmarkInferWorkload_ModelMajor(MicrobenchmarkInferWorkloadBase):
             noise = noise_rs.normal(0, 0.1 * rps)
             rps += noise
             rps = max(0, rps)
+
+            # rps *= runner.get_num_gpu()
+            rps = runner.scale_up_by_num_gpu(rps)
 
             model_rps = np.zeros(len(self.model_list))
             if self.model_hotness is None:
