@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 import datetime
+import signal
 import time
 import numpy as np
 import os, io
@@ -63,8 +64,10 @@ class System:
                  memory_pool_policy: str = MemoryPoolPolicy.BestFit,
                  profile_log: str = "profile-log", 
                  server_log: str = "server-log", 
+                 triton_log: str = "triton_log",
                  train_profile:str = "train-profile", 
                  port: str = "18080",
+                 use_triton: bool = False,
                  infer_model_config: List[InferModelConfig] | InferModelConfig = None,
                  mps: bool = True,
                  skip_set_mps_thread_percent: bool = False,
@@ -100,8 +103,11 @@ class System:
         self.memory_pool_policy = memory_pool_policy
         self.profile_log = profile_log
         self.server_log = server_log
+        self.triton_log = triton_log
         self.train_profile = train_profile
         self.port = str(int(port) + os.getuid() % 10)
+        self.triton_port = str(int(self.port) + 1000)
+        self.use_triton = use_triton
         self.server:Optional[subprocess.Popen]= None
         self.log_dir:Optional[str] = None
         self.cmd_trace = []
@@ -162,6 +168,7 @@ class System:
                 self.log_dir = pathlib.Path("log") / f'{name}' / subdir
         pathlib.Path(self.log_dir).mkdir(parents=True, exist_ok=True)
         server_log = f"{self.log_dir}/{self.server_log}.log"
+        triton_log = f"{self.log_dir}/{self.triton_log}.log"
         profile_log = f"{self.log_dir}/{self.profile_log}.log"
         train_profile = f"{self.log_dir}/{self.train_profile}.csv"
 
@@ -311,7 +318,28 @@ class System:
             self.cmd_trace.append(" ".join(cmd))
             self.server = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=env_copy)
 
+        if self.use_triton:
+            with open(triton_log, "w") as log_file:
+                cmd = ['docker', 'run', '-it', 
+                       '--name', f'colsys-triton-{self.triton_port}',
+                       '--rm', '--gpus=all',
+                       '-p', f'{self.triton_port}:8001',
+                       '-v', os.path.join(os.path.abspath(__file__), 
+                                          os.path.pardir, 
+                                          os.path.pardir, 
+                                          os.path.pardir) + ':/colsys',
+                       '-v', os.environ['HOME'] + ':/userhome',
+                       'nvcr.io/nvidia/tritonserver:24.07-py3-sdk'
+                       ]
+                for key, value in os.environ.items():
+                    if key.startswith('CUDA_'):
+                        cmd += ['-e', f'{key}={value}']
+                cmd += ['tritonserver --model-repository=/colsys/server/triton_models']
+                self.cmd_trace.append(" ".join(cmd))
+                self.triton_server = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT)
         print('\n')
+        with open(f'{self.log_dir}/cmd-trace', 'w') as f:
+            f.write("\n\n".join(self.cmd_trace))
 
         while True:
             with open(server_log, "r") as log_file:
@@ -326,8 +354,11 @@ class System:
     
     def stop(self, kill_train: bool = False):
         if self.server is not None:
-            self.server.send_signal(subprocess.signal.SIGINT)
+            self.server.send_signal(signal.SIGINT)
             self.server = None
+        if self.use_triton and self.triton_server is not None:
+            self.triton_server.send_signal(signal.SIGINT)
+            self.triton_log = None
         if kill_train and self.log_dir is not None:
             train_pids = set()
             print('Force to kill train.')
@@ -349,10 +380,10 @@ class System:
             self.mps_server.wait()
             self.mps_server = None
         if self.dcgmi_monitor is not None:
-            self.dcgmi_monitor.send_signal(subprocess.signal.SIGINT)
+            self.dcgmi_monitor.send_signal(signal.SIGINT)
             self.dcgmi_monitor = None
         if self.smi_monitor is not None:
-            self.smi_monitor.send_signal(subprocess.signal.SIGINT)
+            self.smi_monitor.send_signal(signal.SIGINT)
             self.smi_monitor = None
         if self.log_dir is not None:
             self.cmd_trace.append(" ".join([
@@ -490,6 +521,8 @@ class HyperWorkload:
             "-p", server.port,
             "-c", str(self.concurrency),
         ]
+        if server.use_triton:
+            cmd += ["--triton-port", str(server.triton_port)]
         if self.duration is not None:
             cmd += ["-d", str(self.duration)]
 
