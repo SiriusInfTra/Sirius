@@ -217,7 +217,8 @@ class Trainer:
                 # to configure training for those requests to avoid infer OOM
                 torch_col.dist._DynamicBatchDistirbutor.distribute_batch(
                     True, True, False)
-                self.dynamic_dataset.col_ctrl.set_killed_batch_reconfiged()
+                if isinstance(self.dynamic_dataset.col_ctrl, torch_col.ColocateCtrl):
+                    self.dynamic_dataset.col_ctrl.set_killed_batch_reconfiged()
             torch_col.dist.wait_barrier()
 
     def _default_first_batch_callback(self):

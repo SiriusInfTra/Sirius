@@ -199,6 +199,7 @@ void SwitchStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
       LOG_IF(INFO, TorchColConfig::log_control_stub) 
           << "[SwitchStub] Ignore resume train";
     }
+    break;
   case (static_cast<int>(ctrl::CtrlEvent::kInferenceWorkloadDone)):
     this->infer_workload_done_timestamp_ = torch_col::get_unix_timestamp();
     LOG(INFO) << "[SwitchStub] Inference workload done";
