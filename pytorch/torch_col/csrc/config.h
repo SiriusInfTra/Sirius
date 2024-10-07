@@ -27,6 +27,8 @@ class TorchColConfig {
   static int release_interm_memory_by_tagging;
   static int use_fbward_hook;
 
+  static bool restart_nccl_comm_by_resetting_channel;
+
   static int train_rank;
   static int train_world_size;
 

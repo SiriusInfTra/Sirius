@@ -30,6 +30,8 @@ int TorchColConfig::release_interm_memory_by_grad_fn = false;
 int TorchColConfig::release_interm_memory_by_tagging = true;
 int TorchColConfig::use_fbward_hook = true;
 
+bool TorchColConfig::restart_nccl_comm_by_resetting_channel = true;
+
 int TorchColConfig::train_rank = 0;
 int TorchColConfig::train_world_size = 1;
 

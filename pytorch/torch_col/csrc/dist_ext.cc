@@ -223,7 +223,12 @@ void ProcessGroupNCCL::RestartNcclComm(
   }
 
   // then restart the nccl comm
-  // RestartNcclCommByRecreating(devices, device_key, nccl_comms, lock);
+  if (TorchColConfig::restart_nccl_comm_by_resetting_channel
+      && NcclExt::nccl_comm_reset_channel_fn_ != nullptr) {
+    RestartNcclCommByResettingChannel(devices, device_key, nccl_comms, lock);
+  } else {
+    RestartNcclCommByRecreating(devices, device_key, nccl_comms, lock);
+  }
 }
 
 void ProcessGroupNCCL::RestartNcclCommByRecreating(
@@ -278,6 +283,34 @@ void ProcessGroupNCCL::RestartNcclCommByRecreating(
   LOG(INFO) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
             << " device_key " << device_key
             << " re-create NCCL comms done";
+}
+
+void ProcessGroupNCCL::RestartNcclCommByResettingChannel(
+    const std::vector<at::Device> &devices, 
+    const std::string &device_key,
+    std::vector<std::shared_ptr<::c10d::NCCLComm>> &nccl_comms,
+    const std::unique_lock<std::mutex> &pg_lock) {
+  {
+    std::unique_lock<std::mutex> work_meta_list_lock(workMetaListMutex_); 
+    workMetaList_.clear();
+  }
+
+  auto nccl_streams_it = ncclStreams_.find(device_key);
+  CHECK(nccl_streams_it != ncclStreams_.end());
+  for (auto & stream : nccl_streams_it->second) {
+    COL_CUDA_CALL(cudaStreamSynchronize(stream));
+  }
+
+  // reset the nccl channel
+  for (auto & comm : nccl_comms) {
+    auto nccl_comm = comm->getNcclComm();
+    COL_NCCL_CALL(NcclExt::nccl_comm_reset_channel_fn_(nccl_comm));
+  }
+
+  DistTrainSync::WaitBarrier();
+  LOG(INFO) << str(boost::format("[Rank %d | RestartNcclComm]") % getRank())
+            << " device_key " << device_key
+            << " reset NCCL channel done";
 }
 
 void ProcessGroupNCCL::SetNcclCommAbortFlag(

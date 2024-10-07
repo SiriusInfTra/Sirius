@@ -305,6 +305,12 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
       const std::string &device_key,
       std::vector<std::shared_ptr<::c10d::NCCLComm>> &nccl_comms,
       const std::unique_lock<std::mutex> &pg_lock);
+    
+  void RestartNcclCommByResettingChannel(
+      const std::vector<at::Device> &devices, 
+      const std::string &device_key,
+      std::vector<std::shared_ptr<::c10d::NCCLComm>> &nccl_comms,
+      const std::unique_lock<std::mutex> &pg_lock);
 
   void _SetNcclCommAbortFlag(ncclComm_t comm, uint32_t val);
   std::pair<uint32_t, uint32_t> _GetNcclCommAbortFlag(ncclComm_t comm);
