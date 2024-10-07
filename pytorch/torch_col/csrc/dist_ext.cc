@@ -22,7 +22,8 @@
 
 namespace torch_col {
 
-void* NcclExt::nccl_comm_reset_channel_fn_ = nullptr;
+ncclResult_t (*NcclExt::nccl_comm_reset_channel_fn_)(ncclComm_t) = nullptr;
+ncclResult_t (*NcclExt::nccl_comm_show_channel_info_fn_)(ncclComm_t) = nullptr;
 
 void NcclExt::Init() {
   std::string libtorch_str = "libtorch_cuda.so";
@@ -33,10 +34,18 @@ void NcclExt::Init() {
   }
 
   // ncclCommResetChannels
-  nccl_comm_reset_channel_fn_ = dlsym(RTLD_DEFAULT, "ncclCommResetChannels");
+  nccl_comm_reset_channel_fn_ = reinterpret_cast<ncclResult_t(*)(ncclComm_t)>
+      (dlsym(RTLD_DEFAULT, "ncclCommResetChannels"));
   LOG_IF(INFO, nccl_comm_reset_channel_fn_ != nullptr) 
       << "[NcclExt] find ncclCommResetChannels " 
       << nccl_comm_reset_channel_fn_;
+
+  // ncclCommShowChannelInfo
+  nccl_comm_show_channel_info_fn_ = reinterpret_cast<ncclResult_t(*)(ncclComm_t)>
+      (dlsym(RTLD_DEFAULT, "ncclCommShowChannelInfo"));
+  LOG_IF(INFO, nccl_comm_show_channel_info_fn_ != nullptr) 
+      << "[NcclExt] find ncclCommShowChannelInfo " 
+      << nccl_comm_show_channel_info_fn_;
 
 }
 
@@ -741,16 +750,32 @@ void TorchDistExtInit() {
           },
           py::call_guard<py::gil_scoped_release>())
       .def("_reset_channel", 
-           [](const c10::intrusive_ptr<ProcessGroupNCCL> &self) {
+           [](const c10::intrusive_ptr<ProcessGroupNCCL> &self,
+              const std::vector<at::Device> &devices) {
             if (NcclExt::nccl_comm_reset_channel_fn_) {
-              auto nccl_comms = self->GetNcclComm(
-                {at::Device(at::kCUDA, TorchColConfig::GetTrainRank())});
-              reinterpret_cast<void(*)(ncclComm_t)>
-                (NcclExt::nccl_comm_reset_channel_fn_)(nccl_comms[0]);
+              auto nccl_comms = self->GetNcclComm(devices);
+              auto err = NcclExt::nccl_comm_reset_channel_fn_(nccl_comms[0]);
+              LOG_IF(FATAL, err != ncclSuccess) 
+                  << "[TorchDistExt] reset channel failed, "
+                  << "err: " << ncclGetErrorString(err);
             } else {
               LOG(FATAL) << "[TorchDistExt] nccl_comm_reset_channel_fn_ is nullptr";
             }
-          });
+          },
+          py::arg("devices"),
+          py::call_guard<py::gil_scoped_release>())
+      .def("_show_channel_info",
+           [](const c10::intrusive_ptr<ProcessGroupNCCL> &self,
+              const std::vector<at::Device> &devices) {
+            if (NcclExt::nccl_comm_show_channel_info_fn_) {
+              auto nccl_comms = self->GetNcclComm(devices);
+              NcclExt::nccl_comm_show_channel_info_fn_(nccl_comms[0]);
+            } else {
+              LOG(FATAL) << "[TorchDistExt] nccl_comm_show_channel_info_fn_ is nullptr";
+            }
+          },
+          py::arg("devices"),
+          py::call_guard<py::gil_scoped_release>());
 
       // .def("_launch_debug_fn",
       //      [](const c10::intrusive_ptr<ProcessGroupNCCL> &self) {

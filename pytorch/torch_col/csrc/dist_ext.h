@@ -20,7 +20,8 @@ namespace torch_col {
 class NcclExt {
  public: 
   static void Init();
-  static void* nccl_comm_reset_channel_fn_;
+  static ncclResult_t (*nccl_comm_reset_channel_fn_)(ncclComm_t);
+  static ncclResult_t (*nccl_comm_show_channel_info_fn_)(ncclComm_t);
 };
 
 class Reducer : public ::c10d::Reducer {
