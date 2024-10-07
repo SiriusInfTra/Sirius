@@ -93,7 +93,7 @@ class Trainer:
                 SwitchL1Exception, 
                 EngineColocateAdjustL1Exception
             ) as exception:
-                if batch.should_update_param():
+                if self._is_ddp_training() and batch.should_update_param():
                     self.batch_manager.vote_abort_last_micro_batch()
                 self.handle_abort_batch(epoch_idx, batch_idx, batch, exception)
             else:
@@ -101,7 +101,7 @@ class Trainer:
                 # self.dynamic_dataset.next_batch()
 
                 # consensus on the sync batch
-                if batch.should_update_param():
+                if self._is_ddp_training() and batch.should_update_param():
                     if not self.batch_manager.vote_finish_last_micro_batch():
                         self.handle_abort_batch(
                             epoch_idx, batch_idx, batch, 
@@ -154,7 +154,7 @@ class Trainer:
         if epoch_idx == 0 and batch_idx == 0:
             raise RuntimeError("first micro batch could not be interrupted.")
         
-        # --------------------------
+        # -------------------------
         # first, finish abort batch
         # Ref: [Note: fast training memory adjust]
 
@@ -166,8 +166,7 @@ class Trainer:
             # should be move to c++ pytorch hook?
             torch_col.xsched.kill_batch()
 
-        if isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
-            # DDP Training
+        if self._is_ddp_training(): # DDP Training
             self.model.reducer.finalize_dropped_batch()
         else:
             pass
@@ -202,9 +201,10 @@ class Trainer:
                 self.batch_manager.reset_last_micro_batch_finish_vote()
             torch_col.dist.wait_barrier()
 
-            nccl_backend = torch_dist.GroupMember.WORLD._get_backend(torch.device('cuda'))
-            # restart nccl will let all training cpu sync
-            nccl_backend._restart_nccl_comm([torch.device(f'cuda:{self.rank}')])
+            if self._is_ddp_training():
+                nccl_backend = torch_dist.GroupMember.WORLD._get_backend(torch.device('cuda'))
+                # restart nccl will let all training cpu sync
+                nccl_backend._restart_nccl_comm([torch.device(f'cuda:{self.rank}')])
 
             if isinstance(self.dynamic_dataset.col_ctrl, torch_col.ColocateCtrl):
                 # Ref: [Note: kill batch]
@@ -233,4 +233,7 @@ class Trainer:
                     torch_col.xsched.register_stream(nccl_streams[0], False)
             torch.cuda.current_stream().synchronize()
             torch_col.xsched.initial_kill_batch(0, 0)
+
+    def _is_ddp_training(self):
+        return isinstance(self.model, torch.nn.parallel.DistributedDataParallel)
 

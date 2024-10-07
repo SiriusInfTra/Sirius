@@ -71,6 +71,7 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
     }
   };
 
+  static bool HasDefaultProcessGroupNCCL() { return default_pg_ != nullptr; }
   static ::c10::intrusive_ptr<ProcessGroupNCCL> GetDefaultProcessGroupNCCL();
   static void SetDefaultProcessGroupNCCL(ProcessGroupNCCL *pg);
   static void SetDefaultProcessGroupNCCL(const ::c10::intrusive_ptr<ProcessGroupNCCL> &pg);

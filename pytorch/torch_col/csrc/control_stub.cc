@@ -314,8 +314,10 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
         auto t1 = torch_col::get_unix_timestamp();
         sta::xsched::SetRejectCudaCalls(true);
         auto _t11 = torch_col::get_unix_timestamp();
-        ProcessGroupNCCL::GetDefaultProcessGroupNCCL()->SetNcclCommAbortFlag(
-            {at::Device(at::kCUDA, TorchColConfig::GetTrainRank())});
+        if (ProcessGroupNCCL::HasDefaultProcessGroupNCCL()) {
+          ProcessGroupNCCL::GetDefaultProcessGroupNCCL()->SetNcclCommAbortFlag(
+              {at::Device(at::kCUDA, TorchColConfig::GetTrainRank())});
+        }
         auto _t12 = torch_col::get_unix_timestamp();
         size_t remove = sta::xsched::AbortAllStreams();
         auto t2 = torch_col::get_unix_timestamp();
