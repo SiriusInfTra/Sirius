@@ -77,6 +77,7 @@ class Config {
   static bool use_xsched;
 
   static bool use_shared_tensor;
+  static bool no_infer;
   static bool use_shared_tensor_infer;
   static bool use_shared_tensor_train;
   static bool better_alloc;

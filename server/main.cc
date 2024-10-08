@@ -51,6 +51,9 @@ void init_cli_options() {
   app.add_option("--use-sta", 
       colserve::Config::use_shared_tensor, 
       "use shared tensor allocator, default is 1");
+  app.add_option("--no-infer", 
+      colserve::Config::no_infer, 
+      "no infer, default is 0");
   app.add_option("--use-sta-infer", 
       colserve::Config::use_shared_tensor_infer, 
       "use shared tensor allocator in infer, default is 1");

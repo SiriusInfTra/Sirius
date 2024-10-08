@@ -23,6 +23,7 @@ std::string Config::train_profile = "train-profile.csv";
 bool Config::use_xsched = false;
 
 bool Config::use_shared_tensor = true;
+bool Config::no_infer = false;
 bool Config::use_shared_tensor_infer = true;
 bool Config::use_shared_tensor_train = true;
 bool Config::ondemand_adjust = true;

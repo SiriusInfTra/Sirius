@@ -194,6 +194,8 @@ class System:
                 for config in self.infer_model_config:
                     print(config, end="\n\n", file=f)
             cmd += ["--infer-model-config", self.infer_model_config_path]
+        if len(self.triton_port) > 0:
+            cmd += ['--no-infer', '1']
 
         # first launch mps
         if self.mps:
@@ -329,12 +331,14 @@ class System:
                                           os.path.pardir, 
                                           os.path.pardir) + ':/colsys',
                        '-v', os.environ['HOME'] + ':/userhome',
-                       'nvcr.io/nvidia/tritonserver:24.07-py3-sdk'
                        ]
                 for key, value in os.environ.items():
                     if key.startswith('CUDA_'):
                         cmd += ['-e', f'{key}={value}']
-                cmd += ['tritonserver --model-repository=/colsys/server/triton_models']
+                cmd += [
+                    'nvcr.io/nvidia/tritonserver:24.07-py3',
+                    'tritonserver',
+                    '--model-repository=/colsys/server/triton_models']
                 self.cmd_trace.append(" ".join(cmd))
                 self.triton_server = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT)
         print('\n')
@@ -517,7 +521,7 @@ class HyperWorkload:
     def _launch(self, server: System, launcher: str, custom_args: List[str] = [], **kwargs):
         assert server is not None
         cmd = [
-            f"./{get_binary_dir()}/client/{launcher}",
+            f"./{get_binary_dir()}/../client/build/{launcher}",
             "-p", server.port,
             "-c", str(self.concurrency),
         ]

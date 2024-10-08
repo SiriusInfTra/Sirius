@@ -55,6 +55,10 @@ InferModelStore* InferModelStore::Get() {
 }
 
 void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
+  if (colserve::Config::no_infer) {
+    LOG(INFO) << "InferModelStore skip initializing";
+    return;
+  }
   LOG(INFO) << "InferModelStore start initializing";
 
   WarmModelCache::Init();
@@ -158,7 +162,11 @@ void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
   LOG(INFO) << "InferModelStore initialized";
 }
 
-bool InferModelStore::Shutdown() { 
+bool InferModelStore::Shutdown() {
+  if (Config::no_infer) {
+    LOG(INFO) << "InferModelStore skip shutdown";
+    return true;
+  }
   std::stringstream ss;
   ss << "\n[Model Hotness]: \n";
   int i = 0;
