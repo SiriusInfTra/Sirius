@@ -18,6 +18,7 @@ from .util import EventManager, Event
 
 from dataclasses import dataclass
 from typing import Callable, Any, Optional
+import time
 
 
 @dataclass
@@ -71,22 +72,19 @@ class Trainer:
         running_loss = 0
 
         for batch_idx, batch in enumerate(self.data_loader):
-            try:
-                self._cur_epoch_stat.tried_batch += 1
-                self.overall_stat.tried_batch += 1
+            self._cur_epoch_stat.tried_batch += 1
+            self.overall_stat.tried_batch += 1
 
-                # self.dynamic_dataset.record_batch_event(
-                #     epoch_idx, batch_idx, 
-                #     self.dynamic_dataset.get_batch_size(batch), 
-                #     self.dynamic_dataset.global_batch_size
-                # )
-                self.batch_manager.begin_batch(
+            self.batch_manager.begin_batch(
                     epoch_idx, batch_idx, batch, batch['range']
                 )
-                
-                # if batch.should_update_param():
-                #     torch_col.info(f'epoch {epoch_idx} batch {batch_idx} w/ sync')
 
+            
+            
+            # if batch.should_update_param():
+            #     torch_col.info(f'epoch {epoch_idx} batch {batch_idx} w/ sync')
+
+            try:
                 _running_loss = self.iter_train_fn(batch)
             except (
                 ColocateAdjustL1Exception, 
@@ -107,6 +105,7 @@ class Trainer:
                             epoch_idx, batch_idx, batch, 
                             EngineColocateAdjustL1Exception("vote finish failed")
                         )
+                        continue
 
                 self.batch_manager.finish_batch(epoch_idx, batch_idx, batch)
                 
@@ -172,6 +171,11 @@ class Trainer:
             pass
         self.batch_manager.abort_batch(epoch_idx, batch_idx, batch)
 
+        if isinstance(self.dynamic_dataset.col_ctrl, torch_col.SwitchCtrl):
+            if torch_col.is_train_master():
+                self.dynamic_dataset.col_ctrl._stub.set_global_has_batch_killed(True)
+            torch_col.dist.wait_barrier()
+
         # ---------------------------------------------
         # second, release memory and reply to inference
 
@@ -180,8 +184,8 @@ class Trainer:
             f'batch_exception_{epoch_idx:02d}_{batch_idx:03d}_{batch_size:02d}'
         with EventManager.record_duration_event(batch_exception_event):
             # cuda has alreadly synced
-            self.dynamic_dataset.col_ctrl.release_and_reply()
-            print(f'[{exception}] batch_size: {batch_size} -> '
+            self.dynamic_dataset.col_ctrl.release_and_reply(True) # barrier to ensure consistent status
+            print(f'[Rank {torch_col.get_train_rank()} | {exception}] batch_size: {batch_size} -> '
                   f'{self.dynamic_dataset.col_ctrl.unpub_target_batch_size}.')
 
         self._cur_epoch_stat.killed_batch += 1
@@ -215,11 +219,20 @@ class Trainer:
                 # before recover the killed batch (not killing batch),
                 # distribute batch should be after recover
                 # to configure training for those requests to avoid infer OOM
-                torch_col.dist._DynamicBatchDistirbutor.distribute_batch(
-                    True, True, False)
                 if isinstance(self.dynamic_dataset.col_ctrl, torch_col.ColocateCtrl):
+                    torch_col.dist._DynamicBatchDistirbutor.distribute_batch(
+                        True, True, False)
                     self.dynamic_dataset.col_ctrl.set_killed_batch_reconfiged()
             torch_col.dist.wait_barrier()
+            # torch_col.info(f'epoch {epoch_idx} batch {batch_idx} handle abort end.')
+
+        # -------------------------------------
+        # [task switch] fourth, wait for resume
+        if isinstance(self.dynamic_dataset.col_ctrl, torch_col.SwitchCtrl):
+            while not self.dynamic_dataset.col_ctrl._stub.prepare_resume():
+                time.sleep(1e-3)
+            torch_col.dist.wait_barrier()
+            # torch_col.info(f'epoch {epoch_idx} batch {batch_idx} resume training.')
 
     def _default_first_batch_callback(self):
         if torch_col.is_enable_shared_tensor():

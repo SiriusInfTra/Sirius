@@ -58,16 +58,37 @@ class DummyStub : public StubBase {
 
 class SwitchStub: public StubBase {
  public:
-  SwitchStub() : StubBase() {
-    DLOG(INFO) << "[SwitchStub] initialized";
-  };
-  bool TryInterruptTrainDone();
-  
+  SwitchStub();
+  bool TryInterruptTrainDone(bool barrier);
+  void SetKilledBatchRecover();
+  void TrainResumeDone();
+  bool PrepareResume();
+
+  void SetGlobalInterruptFlag(bool flag);
+  void SetGlobalHasBatchKilled(bool flag) {
+    bip::scoped_lock lock{*shared_data_.mut_};
+    *shared_data_.has_batch_killed_ = flag;
+  }
+
+  bool GetGlobalInterruptFlag();
+  bool GetGlobalHasBatchKilled() {
+    bip::scoped_lock lock{*shared_data_.mut_};
+    return *shared_data_.has_batch_killed_;
+  }
+
  protected:
   void ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) override;
+  bool TryInterruptTrainDoneWithLock(bool barrier);
 
  private:
   uint64_t last_reply_cmd_id_{0};
+  std::atomic<bool> has_killed_batch_recover_{true};
+
+  struct GlobalSharedData {
+    bool *interrupt_flag_{nullptr};
+    bool *has_batch_killed_{nullptr};
+    bip_mutex *mut_;
+  } shared_data_;
 };
 
 class ColocateStub: public StubBase {

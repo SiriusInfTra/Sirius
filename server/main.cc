@@ -35,6 +35,13 @@
 
 #define STREAM_OUTPUT(field) std::cerr << "cfg::" #field "=" << cfg::field << std::endl
 
+#define READ_ENV_BOOL_CONFIG(env, field) do { \
+    auto env_val = getenv(env); \
+    if (env_val != nullptr) { \
+      cfg::field = std::string(env_val) == "1"; \
+    } \
+  } while (false);
+
 CLI::App app{"ColServe"};
 std::string mode = "normal";
 std::string port = "8080";
@@ -44,7 +51,7 @@ void* memory_pressure_ptr = nullptr;
 
 void init_cli_options() {
   app.add_option("-m,--mode", mode,
-      "server mode, see detail in server/config.h, default is normal")
+      str(boost::format("server mode, see detail in server/config.h, default is %s") % mode))
       ->check(CLI::IsMember({"normal", 
                              "task-switch-l1", 
                              "task-switch-l2", 
@@ -52,34 +59,42 @@ void init_cli_options() {
                              "colocate-l1",
                              "colocate-l2"}));
   app.add_option("--mps", colserve::Config::check_mps, 
-      "check mps, default is 1");
+      str(boost::format("check mps, default is %d") 
+          % colserve::Config::check_mps));
   app.add_option("--use-sta", 
       colserve::Config::use_shared_tensor, 
-      "use shared tensor allocator, default is 1");
+      str(boost::format("use shared tensor allocator, default is %d") 
+          % colserve::Config::use_shared_tensor));
   app.add_option("--use-sta-infer", 
       colserve::Config::use_shared_tensor_infer, 
-      "use shared tensor allocator in infer, default is 1");
+      str(boost::format("use shared tensor allocator in infer, default is %d") 
+          % colserve::Config::use_shared_tensor_infer));
   app.add_option("--use-sta-train", 
       colserve::Config::use_shared_tensor_train,
-      "use shared tensor allocator in train, default is 1");
+      str(boost::format("use shared tensor allocator in train, default is %d") 
+          % colserve::Config::use_shared_tensor_train));
   app.add_option("--cuda-memory-pool-gb", 
       colserve::Config::cuda_memory_pool_gb,
-      "cuda memory pool size in GB, default is 12");
+      str(boost::format("cuda memory pool size in GB, default is %.0f") 
+          % colserve::Config::cuda_memory_pool_gb));
   app.add_option("--memory-pool-policy", 
       colserve::Config::mempool_freelist_policy, 
-      "cuda memory pool freelist policy, default is best-fit.")
+      str(boost::format("cuda memory pool freelist policy, default is %s") 
+          % colserve::Config::mempool_freelist_policy))
         ->check(CLI::IsMember({"first-fit", "next-fit", "best-fit"}));
   app.add_option("-p,--port", port,
-      "gRPC server port, default is 8080");
+      str(boost::format("gRPC server port, default is %s") % port));
   app.add_option("--max-live-minute", max_live_minute,
       "max server live minute, default is " 
       + std::to_string(max_live_minute) + " minutes");
   app.add_option("--infer-model-config", 
       colserve::Config::infer_model_config_path, 
-      "infer model config path, default is config in models store");
+      str(boost::format("infer model config path, default is %s") 
+          % colserve::Config::infer_model_config_path));
   app.add_option("--profile-log", 
       colserve::Config::profile_log_path, 
-      "profile log path, default is server-profile");
+      str(boost::format("profile log path, default is %s") 
+          % colserve::Config::profile_log_path));
   app.add_option("--profile-gpu-smact", 
       colserve::Config::profile_gpu_smact, 
       "profile gpu smact, default is " 
@@ -94,69 +109,101 @@ void init_cli_options() {
       + std::to_string(colserve::Config::profile_sm_partition));
   app.add_option("--capture-train-log", 
       colserve::Config::capture_train_log, 
-      "capture train log, default is 1");
+      str(boost::format("capture train log, default is %d") 
+          % colserve::Config::capture_train_log));
   app.add_flag("--infer-blob-alloc", 
       colserve::Config::infer_raw_blob_alloc, 
-      "infer raw blob alloc, default is false");
+      str(boost::format("infer raw blob alloc, default is %d") 
+          % colserve::Config::infer_raw_blob_alloc));
   app.add_option("--train-mps-thread-percent", 
       colserve::Config::train_mps_thread_percent, 
-      "train mps thread percent, default is None");
+      str(boost::format("train mps thread percent, default is %d") 
+          % colserve::Config::train_mps_thread_percent));
   app.add_flag("--colocate-skip-malloc", 
       colserve::Config::colocate_config.skip_malloc, 
-      "colocate skip malloc, default is false");
+      str(boost::format("colocate skip malloc, default is %d") 
+          % colserve::Config::colocate_config.skip_malloc));
   app.add_flag("--colocate-skip-loading", 
       colserve::Config::colocate_config.skip_loading, 
-      "colocate skip loading, default is false");
+      str(boost::format("colocate skip loading, default is %d") 
+          % colserve::Config::colocate_config.skip_loading));
   app.add_option("--use-xsched", colserve::Config::use_xsched, 
       "use xsched, default is false");
   app.add_option("--dynamic-sm-partition", 
       colserve::Config::dynamic_sm_partition, 
-      "dynamic sm partition, default is false");
+      str(boost::format("dynamic sm partition, default is %d") 
+          % colserve::Config::dynamic_sm_partition));
   app.add_option("--train-profile", colserve::Config::train_profile, 
-      "train timeline path, default is train-timeline");
+      str(boost::format("train timeline path, default is %s") 
+          % colserve::Config::train_profile));
   app.add_option("--max-warm-cache-nbytes", 
       colserve::Config::max_warm_cache_nbytes, 
-      "max warm cache nbytes, default is 0*1024*1024*1024(0G).");
+      str(boost::format("max warm cache nbytes, default is %s") 
+          % colserve::sta::PrintByte(colserve::Config::max_warm_cache_nbytes, true)));
   app.add_option("--cold-cache-min-capability-nbytes", 
       colserve::Config::cold_cache_min_capability_nbytes, 
-      "min cold cache capability nbytes, default is 0*1024*1024*1024(0G).");
+      str(boost::format("min cold cache capability nbytes, default is %s") 
+          % colserve::sta::PrintByte(colserve::Config::cold_cache_min_capability_nbytes, true)));
   app.add_option("--cold-cache-max-capability-nbytes", 
       colserve::Config::cold_cache_max_capability_nbytes, 
-      "max cold cache capability nbytes, default is 0*1024*1024*1024(0G).");
+      str(boost::format("max cold cache capability nbytes, default is %s") 
+          % colserve::sta::PrintByte(colserve::Config::cold_cache_max_capability_nbytes, true)));
   app.add_option("--cold-cache-ratio", 
       colserve::Config::cold_cache_ratio, 
-      "cold cache ratio, default is 0.3(30%).");
+      str(boost::format("cold cache ratio, default is %.1f(%.0f%%)") 
+          % colserve::Config::cold_cache_ratio 
+          % (colserve::Config::cold_cache_ratio * 100)));
   app.add_option("--memory-pressure-mb", 
       colserve::Config::memory_pressure_mb,
-      "memory pressure in MB, default is 0");
+      str(boost::format("memory pressure in MB, default is %.0f") 
+          % colserve::Config::memory_pressure_mb));
   app.add_option("--ondemand-adjust", colserve::Config::ondemand_adjust,
-      "ondemand adjust batch size, default is 1");
+      str(boost::format("ondemand adjust batch size, default is %d") 
+          % colserve::Config::ondemand_adjust));
   app.add_option("--pipeline-load", colserve::Config::pipeline_load,
-      "pipeline load, default is 1");
+      str(boost::format("pipeline load, default is %d") 
+          % colserve::Config::pipeline_load));
   app.add_option("--train-memory-over-predict-mb", 
       colserve::Config::train_memory_over_predict_mb,
-      "train memory over predict in MB, default is 2560");
+      str(boost::format("train memory over predict in MB, default is %.0f") 
+          % colserve::Config::train_memory_over_predict_mb));
   app.add_option("--infer-model-max-idle-ms", 
       colserve::Config::infer_model_max_idle_ms,
-      "infer model max idle in ms, default is 3000");
+      str(boost::format("infer model max idle in ms, default is %.0f") 
+          % colserve::Config::infer_model_max_idle_ms));
   app.add_option("--has-warmup", colserve::Config::has_warmup,
-      "has warmup, default is 0");
+      str(boost::format("has warmup, default is %d") 
+      % colserve::Config::has_warmup));
   app.add_flag("--dump-adjust-info", 
       colserve::Config::dump_adjust_info,
-      "dump adjust info, default is 0");
+      str(boost::format("dump adjust info, default is %d") 
+          % colserve::Config::dump_adjust_info));
   app.add_flag("--profiler-acquire-resource-lock", 
       colserve::Config::profiler_acquire_resource_lock,
-      "profiler acquire resource lock during profiling, "
-      "not use for performance eval");
+      str(boost::format("profiler acquire resource lock during profiling, "
+                        "not use for performance eval, default is %d") 
+          % colserve::Config::profiler_acquire_resource_lock));
   app.add_flag("--dummy-adjust", colserve::Config::dummy_adjust,
-      "dummy adjust for eval, default is 0");
+      str(boost::format("dummy adjust for eval, default is %d") 
+          % colserve::Config::dummy_adjust));
   app.add_flag("--skip-set-mps-thread-percent", 
       colserve::Config::skip_set_mps_thread_percent,
-      "skip set mps thread percent, default is 0");
+      str(boost::format("skip set mps thread percent, default is %d") 
+          % colserve::Config::skip_set_mps_thread_percent));
 
   app.add_flag("--enable-warm-cache-fallback", 
       colserve::Config::enable_warm_cache_fallback,
-      "enable warm cache fallback, default is 1");
+      str(boost::format("enable warm cache fallback, default is %d") 
+          % colserve::Config::enable_warm_cache_fallback));
+
+  app.footer(
+      "The following environment variables can be used to configure the server logging:\n"
+      "  COLSERVE_LOG_ALL,                 COLSERVE_LOG_MEMORY_ADJUST,       COLSERVE_LOG_GRPC\n"
+      "  COLSERVE_LOG_TRAIN_INIT,          COLSERVE_LOG_WARM_CACHE,          COLSERVE_LOG_COLD_CACHE\n"
+      "  COLSERVE_LOG_INFER_MODEL_INIT,    COLSERVE_LOG_INFER_MODEL_RECLAIM, COLSERVE_LOG_INFER_TIME\n"
+      "  COLSERVE_LOG_INFER_PIPELINE_EXEC, COLSERVE_LOG_INFER_LOAD_PARAM,    COLSERVE_LOG_CONTROLLER\n"
+      "  COLSERVE_LOG_TASK_SWITCH\n"
+  );
 }
 
 void init_config() {
@@ -218,7 +265,7 @@ void init_config() {
                            - cfg::cold_cache_max_capability_nbytes); // for warmup
     LOG(INFO) << "enable enable_warm_cache_fallback, "
               << "cache nbytes (used in warmup, conservative estimated) " 
-              << colserve::sta::PrintByte(cfg::max_warm_cache_nbytes);
+              << colserve::sta::PrintByte(cfg::max_warm_cache_nbytes, true);
   }
 
   auto *cuda_device_env = getenv("CUDA_VISIBLE_DEVICES");
@@ -255,6 +302,19 @@ void init_config() {
   if (col_log_adjust_env != nullptr) {
     cfg::log_memory_adjust = std::string(col_log_adjust_env) == "1";
   }
+
+  READ_ENV_BOOL_CONFIG("COLSERVE_LOG_GRPC", log_grpc);
+  READ_ENV_BOOL_CONFIG("COLSERVE_LOG_TRAIN_INIT", log_train_init);
+  READ_ENV_BOOL_CONFIG("COLSERVE_LOG_WARM_CACHE", log_warm_cache);
+  READ_ENV_BOOL_CONFIG("COLSERVE_LOG_COLD_CACHE", log_cold_cache);
+  READ_ENV_BOOL_CONFIG("COLSERVE_LOG_INFER_MODEL_INIT", log_infer_model_init);
+  READ_ENV_BOOL_CONFIG("COLSERVE_LOG_INFER_MODEL_RECLAIM", log_infer_model_reclaim);
+  READ_ENV_BOOL_CONFIG("COLSERVE_LOG_INFER_TIME", log_infer_time);
+  READ_ENV_BOOL_CONFIG("COLSERVE_LOG_INFER_PIPELINE_EXEC", log_infer_pipeline_exec);
+  READ_ENV_BOOL_CONFIG("COLSERVE_LOG_INFER_LOAD_PARAM", log_infer_load_param);
+  READ_ENV_BOOL_CONFIG("COLSERVE_LOG_CONTROLLER", log_controller);
+  READ_ENV_BOOL_CONFIG("COLSERVE_LOG_TASK_SWITCH", log_task_switch);
+  
   if (cfg::log_all) {
     cfg::log_all = true;
     cfg::log_grpc = true;
@@ -268,6 +328,7 @@ void init_config() {
     cfg::log_infer_load_param = true;
     cfg::log_memory_adjust = true;
     cfg::log_controller = true;
+    cfg::log_task_switch = true;
   }
 
   std::string header = str(boost::format("%s COLSERVE CONFIG [PID %d] %s") 

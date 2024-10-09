@@ -65,7 +65,7 @@ double Config::memory_pressure_mb = 0;
 
 bool Config::pipeline_load = true;
 
-double Config::task_switch_delay_ms = 5;
+double Config::task_switch_delay_ms = 10;
 
 bool Config::has_warmup = false;
 double Config::infer_model_max_idle_ms = 3000;
@@ -103,5 +103,6 @@ bool Config::log_infer_pipeline_exec = false;
 bool Config::log_infer_load_param = false;
 bool Config::log_memory_adjust = false;
 bool Config::log_controller = false;
+bool Config::log_task_switch = false;
 
 }

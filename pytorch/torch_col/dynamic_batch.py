@@ -448,9 +448,7 @@ class DynamicBatchDataset(IterableDataset):
                 time.sleep(1e-3)
                 batch_size = self.get_next_batch_size()
         elif self.col_ctrl.train_mode == TrainMode.TASKSWITCH_L1:
-            while self.col_ctrl._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
-                self.col_ctrl.switch()
-                time.sleep(1e-3)
+            pass
         return batch_size    
 
     def _get_batch(self) -> Batch:

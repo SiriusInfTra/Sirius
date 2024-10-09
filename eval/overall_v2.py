@@ -615,10 +615,10 @@ if run_task_switch:
         'mode': System.ServerMode.TaskSwitchL1,
         'use_sta': True,
         'mps': False,
-        'use_xsched': False,
+        'use_xsched': True,
         'has_warmup' : True,
         'cuda_memory_pool_gb': '13',
-        'train_memory_over_predict_mb': 1000,
+        'train_memory_over_predict_mb': 1500,
     }
 
     if UniformConfig.enable and UniformConfig.high_load.enable:
@@ -641,7 +641,7 @@ if run_task_switch:
     if enable_uniform_v2:
         for wkld_type in uniform_v2_workload_types:
             client_model_list, server_model_config = InferModel.get_multi_model(
-                UniformConfig.model_list, UniformConfig.num_model, 1)
+                run_comm.UniformConfig_v2.model_list, run_comm.UniformConfig_v2.num_model, 1)
             workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
             system = System(port=run_comm.UniformConfig_v2.port, **system_config)
             run_comm.run(system, workload, server_model_config, 

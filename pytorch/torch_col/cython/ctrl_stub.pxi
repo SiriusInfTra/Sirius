@@ -22,12 +22,20 @@ cdef extern from "<torch_col/csrc/control_stub.h>" namespace "torch_col":
         void Stop()
         void TrainStart()
         void TrainEnd()
-        bint TryInterruptTrainDone()
+        bint TryInterruptTrainDone(bool)
         void ReportBatchSize(int)
         void StepsNoInteruptBegin()
         void StepsNoInteruptEnd()
         void EnableTorchColEngine()
         bint CanExitAfterInferWorkloadDone()
+        void SetKilledBatchRecover()
+        void SetGlobalInterruptFlag(bool)
+        bool PrepareResume()
+        bool GetGlobalInterruptFlag()
+        void SetGlobalHasBatchKilled(bool)
+        bool GetGlobalHasBatchKilled()
+        void TrainResumeDone()
+
 
     cdef cppclass ColocateStub:
         ColocateStub(int) except +
@@ -92,8 +100,8 @@ cdef class PySwitchStub:
     def stop(self):
         self._cppclass.Stop()
 
-    def try_interrupt_train_done(self):
-        return self._cppclass.TryInterruptTrainDone()
+    def try_interrupt_train_done(self, barrier: bool):
+        return self._cppclass.TryInterruptTrainDone(barrier)
 
     def report_batch_size(self, batch_size):
         self._cppclass.ReportBatchSize(batch_size)
@@ -119,6 +127,27 @@ cdef class PySwitchStub:
 
     def can_exit_after_infer_worklaod_done(self):
         return self._cppclass.CanExitAfterInferWorkloadDone()
+
+    def set_killed_batch_recover(self):
+        self._cppclass.SetKilledBatchRecover()
+
+    def set_global_interrupt_flag(self, flag):
+        self._cppclass.SetGlobalInterruptFlag(flag)
+
+    def prepare_resume(self):
+        return self._cppclass.PrepareResume()
+
+    def get_global_interrupt_flag(self):
+        return self._cppclass.GetGlobalInterruptFlag()
+        
+    def set_global_has_batch_killed(self, flag):
+        self._cppclass.SetGlobalHasBatchKilled(flag)
+
+    def get_global_has_batch_killed(self):
+        return self._cppclass.GetGlobalHasBatchKilled()
+
+    def train_resume_done(self):
+        self._cppclass.TrainResumeDone()
 
     def __dealloc__(self):
         del self._cppclass

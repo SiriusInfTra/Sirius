@@ -38,14 +38,14 @@ void NcclExt::Init() {
       (dlsym(RTLD_DEFAULT, "ncclCommResetChannels"));
   LOG_IF(INFO, nccl_comm_reset_channel_fn_ != nullptr) 
       << "[NcclExt] find ncclCommResetChannels " 
-      << nccl_comm_reset_channel_fn_;
+      << reinterpret_cast<void*>(nccl_comm_reset_channel_fn_);
 
   // ncclCommShowChannelInfo
   nccl_comm_show_channel_info_fn_ = reinterpret_cast<ncclResult_t(*)(ncclComm_t)>
       (dlsym(RTLD_DEFAULT, "ncclCommShowChannelInfo"));
   LOG_IF(INFO, nccl_comm_show_channel_info_fn_ != nullptr) 
       << "[NcclExt] find ncclCommShowChannelInfo " 
-      << nccl_comm_show_channel_info_fn_;
+      << reinterpret_cast<void*>(nccl_comm_show_channel_info_fn_);
 
 }
 
