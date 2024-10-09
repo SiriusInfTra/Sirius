@@ -27,8 +27,6 @@ def setup():
     torch.cuda.set_stream(stream)
 
 def cleanup():
-    if torch_col.is_enable_xsched():
-        torch_col.xsched.unregister_stream()
     train_valiation.val_end()
 
 
@@ -49,15 +47,15 @@ def train(train_mode: TrainMode, hook_mode: HookMode,
     print(f"Train after init memory pool usage: {MemoryPool.get_memory_usage() * 1024:.2f}M")
     
     hook = torch_col.get_hook(train_mode, hook_mode, num_epoch, batch_size)
-    torch_col.init_train_info(batch_size, batch_size)
+    torch_col.init_train_info(batch_size, batch_size, model_name='swin_b')
     hook.register_pytorch_hook([model, criterion])
     checkpoint_micro_batch = hook.train_mode.is_kill_batch()
 
     # dummy data
     train_dataset = DynamicBatchDataset(
-        model_name='swin_b', size=1000, max_batch_size=batch_size, 
+        model_name='swin_b', size=3680, max_batch_size=batch_size, 
         hook=hook, trace=train_valiation.get_trace_input(),
-        input_shape=(3, 224, 224), num_class=10, 
+        input_shape=(3, 224, 224), num_class=37, 
         max_global_batch_size=global_batch_size,
         checkpoint_micro_batch=checkpoint_micro_batch)
     train_loader = DataLoader(train_dataset, batch_size=None, 

@@ -65,6 +65,7 @@ class System:
                  profile_log: str = "profile-log", 
                  server_log: str = "server-log", 
                  triton_log: str = "triton_log",
+                 mps_log: str = "mps_log",
                  train_profile:str = "train-profile", 
                  port: str = "18080",
                  use_triton: bool = False,
@@ -104,6 +105,7 @@ class System:
         self.profile_log = profile_log
         self.server_log = server_log
         self.triton_log = triton_log
+        self.mps_log = mps_log
         self.train_profile = train_profile
         self.port = str(int(port) + os.getuid() % 10)
         self.triton_port = str(int(self.port) + 1000)
@@ -169,6 +171,7 @@ class System:
         pathlib.Path(self.log_dir).mkdir(parents=True, exist_ok=True)
         server_log = f"{self.log_dir}/{self.server_log}.log"
         triton_log = f"{self.log_dir}/{self.triton_log}.log"
+        mps_log = f"{self.log_dir}/{self.mps_log}.log"
         profile_log = f"{self.log_dir}/{self.profile_log}.log"
         train_profile = f"{self.log_dir}/{self.train_profile}.csv"
 
@@ -206,11 +209,13 @@ class System:
                 "--mps-pipe", os.environ['CUDA_MPS_PIPE_DIRECTORY']
             ]))
             if not fake_launch:
-                self.mps_server = subprocess.Popen(
-                    ['sudo', '/opt/mps-control/launch-mps-daemon-private.sh',
-                    '--device', os.environ['CUDA_VISIBLE_DEVICES'], 
-                    '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']],
-                    stderr=subprocess.PIPE, stdout=subprocess.PIPE, env=os.environ.copy())
+                with open(mps_log, "w") as log_file:
+                    self.mps_server = subprocess.Popen(
+                        ['sudo', '/opt/mps-control/launch-mps-daemon-private.sh',
+                        '--device', os.environ['CUDA_VISIBLE_DEVICES'], 
+                        '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']],
+                        stderr=subprocess.STDOUT, stdout=log_file, env=os.environ.copy())
+                time.sleep(5)
             else:
                 self.mps_server is None
         else:
@@ -324,13 +329,13 @@ class System:
             with open(triton_log, "w") as log_file:
                 cmd = ['docker', 'run', '-it', 
                        '--name', f'colsys-triton-{self.triton_port}',
-                       '--rm', '--gpus=all',
+                       '--rm', '--gpus=all', '--ipc=host',
                        '-p', f'{self.triton_port}:8001',
                        '-v', os.path.join(os.path.abspath(__file__), 
                                           os.path.pardir, 
                                           os.path.pardir, 
                                           os.path.pardir) + ':/colsys',
-                       '-v', os.environ['HOME'] + ':/userhome',
+                       '-v', os.environ['HOME'] + ':' + os.environ['HOME'],
                        ]
                 for key, value in os.environ.items():
                     if key.startswith('CUDA_'):
@@ -345,6 +350,7 @@ class System:
         with open(f'{self.log_dir}/cmd-trace', 'w') as f:
             f.write("\n\n".join(self.cmd_trace))
 
+        print('Wait ColSys Server start...')
         while True:
             with open(server_log, "r") as log_file:
                 if self.server.poll() is not None:
@@ -352,6 +358,17 @@ class System:
                     self.quit_mps()
                     raise RuntimeError("Server exited")
                 if "GRPCServer start" not in log_file.read():
+                    time.sleep(0.5)
+                else:
+                    break
+        print('Wait Triton Server start...')
+        while True and len(self.triton_port) > 0:
+            with open(triton_log, 'r') as log_file:
+                if self.triton_server.poll() is not None:
+                    print(log_file.read())
+                    self.quit_mps()
+                    raise RuntimeError("Triton exited")
+                if "Started GRPCInferenceService at" not in log_file.read():
                     time.sleep(0.5)
                 else:
                     break
@@ -389,6 +406,8 @@ class System:
         if self.smi_monitor is not None:
             self.smi_monitor.send_signal(signal.SIGINT)
             self.smi_monitor = None
+        if self.triton_server is not None:
+            os.system(f"docker stop colsys-triton-{self.triton_port}")
         if self.log_dir is not None:
             self.cmd_trace.append(" ".join([
                 'sudo', '/opt/mps-control/quit-mps-daemon-private.sh',
