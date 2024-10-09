@@ -360,5 +360,5 @@ int main(int argc, char *argv[]) {
   colserve::Config::system_initialized = true;
 
   server.Stop();
-  LOG(INFO) << "server has shotdown";
+  LOG(INFO) << "server has shutdown";
 }
