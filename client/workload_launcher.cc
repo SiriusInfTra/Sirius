@@ -15,7 +15,6 @@
 
 #include "workload/util.h"
 #include "workload/workload.h"
-// #include "workload/workload.h"
 
 using namespace colserve::workload;
 
@@ -172,14 +171,14 @@ int main(int argc, char** argv) {
   if (infer_workload != nullptr) {
     infer_workload->PreRun();
   }
-  if (train_workload != nullptr) {
+  if (train_workload != nullptr && train_workload != infer_workload) {
     train_workload->PreRun();
   }
   std::this_thread::sleep_for(std::chrono::seconds(app.duration));
   if (infer_workload != nullptr) {
     infer_workload->PostRun();
   }
-  if (train_workload != nullptr) {
+  if (train_workload != nullptr && infer_workload != train_workload) {
     train_workload->PostRun();
   }
 
@@ -193,7 +192,7 @@ int main(int argc, char** argv) {
   if (train_workload != nullptr) {
     train_workload->Report(app.verbose, ofs);
   }
-  if (infer_workload != nullptr && train_workload != infer_workload) {
+  if (infer_workload != nullptr && infer_workload != train_workload) {
     infer_workload->Report(app.verbose, ofs);
   }
   if (fstream.is_open()) {
