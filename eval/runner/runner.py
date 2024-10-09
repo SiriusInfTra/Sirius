@@ -1,5 +1,6 @@
 
 from __future__ import annotations
+import contextlib
 import datetime
 import signal
 import time
@@ -144,6 +145,7 @@ class System:
         self.max_live_minute = max_live_minute
         self.dcgmi_monitor = None
         self.smi_monitor = None
+        self.triton_server = None
         if System._last_time_stamp is None or not keep_last_time_stamp:
             self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
             System._last_time_stamp = self.time_stamp
@@ -197,7 +199,7 @@ class System:
                 for config in self.infer_model_config:
                     print(config, end="\n\n", file=f)
             cmd += ["--infer-model-config", self.infer_model_config_path]
-        if len(self.triton_port) > 0:
+        if self.use_triton:
             cmd += ['--no-infer', '1']
 
         # first launch mps
@@ -209,12 +211,13 @@ class System:
                 "--mps-pipe", os.environ['CUDA_MPS_PIPE_DIRECTORY']
             ]))
             if not fake_launch:
-                with open(mps_log, "w") as log_file:
+                # with open(mps_log, "w") as log_file:
+                with contextlib.nullcontext():
                     self.mps_server = subprocess.Popen(
                         ['sudo', '/opt/mps-control/launch-mps-daemon-private.sh',
                         '--device', os.environ['CUDA_VISIBLE_DEVICES'], 
                         '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']],
-                        stderr=subprocess.STDOUT, stdout=log_file, env=os.environ.copy())
+                        stderr=subprocess.STDOUT, stdout=open(mps_log, "w"), env=os.environ.copy())
                 time.sleep(5)
             else:
                 self.mps_server is None
@@ -326,8 +329,9 @@ class System:
             self.server = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=env_copy)
 
         if self.use_triton:
-            with open(triton_log, "w") as log_file:
-                cmd = ['docker', 'run', '-it', 
+            # with open(triton_log, "w") as log_file:
+            with contextlib.nullcontext():
+                cmd = ['docker', 'run', '-it', '--user', f'{os.getuid()}:{os.getgid()}',
                        '--name', f'colsys-triton-{self.triton_port}',
                        '--rm', '--gpus=all', '--ipc=host',
                        '-p', f'{self.triton_port}:8001',
@@ -345,7 +349,7 @@ class System:
                     'tritonserver',
                     '--model-repository=/colsys/server/triton_models']
                 self.cmd_trace.append(" ".join(cmd))
-                self.triton_server = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT)
+                self.triton_server = subprocess.Popen(cmd, stdout=open(triton_log, "w"), stderr=subprocess.STDOUT)
         print('\n')
         with open(f'{self.log_dir}/cmd-trace', 'w') as f:
             f.write("\n\n".join(self.cmd_trace))
@@ -361,19 +365,21 @@ class System:
                     time.sleep(0.5)
                 else:
                     break
-        print('Wait Triton Server start...')
-        while True and len(self.triton_port) > 0:
-            with open(triton_log, 'r') as log_file:
-                if self.triton_server.poll() is not None:
-                    print(log_file.read())
-                    self.quit_mps()
-                    raise RuntimeError("Triton exited")
-                if "Started GRPCInferenceService at" not in log_file.read():
-                    time.sleep(0.5)
-                else:
-                    break
+        if self.use_triton:
+            print('Wait Triton Server start...')
+            while True:
+                with open(triton_log, 'r') as log_file:
+                    if self.triton_server.poll() is not None:
+                        print(log_file.read())
+                        self.quit_mps()
+                        raise RuntimeError("Triton exited")
+                    if "Started GRPCInferenceService at" not in log_file.read():
+                        time.sleep(0.5)
+                    else:
+                        break
     
     def stop(self, kill_train: bool = False):
+        print("Stop Server")
         if self.server is not None:
             self.server.send_signal(signal.SIGINT)
             self.server = None
@@ -396,6 +402,9 @@ class System:
                 print(f'Execute {cmd}')
                 os.system(cmd)
         self.infer_model_config_path = None
+        if self.triton_server is not None:
+            stop_triton = subprocess.Popen(['docker', 'stop', f'colsys-triton-{self.triton_port}'])
+            stop_triton.wait()
         if self.mps_server is not None:
             self.quit_mps()
             self.mps_server.wait()
@@ -406,8 +415,6 @@ class System:
         if self.smi_monitor is not None:
             self.smi_monitor.send_signal(signal.SIGINT)
             self.smi_monitor = None
-        if self.triton_server is not None:
-            os.system(f"docker stop colsys-triton-{self.triton_port}")
         if self.log_dir is not None:
             self.cmd_trace.append(" ".join([
                 'sudo', '/opt/mps-control/quit-mps-daemon-private.sh',
