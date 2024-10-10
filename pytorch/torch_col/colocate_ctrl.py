@@ -8,6 +8,7 @@ from typing import List, Optional, Union
 import torch
 import torch_col
 from torch_col._C import ColocateCtrlHookMode
+import torch_col.xsched
 
 from .util import TrainMode, EventManager, MemoryPool
 from . import xsched
@@ -132,7 +133,7 @@ class SwitchCtrl(CtrlBase):
                 # if self._stub.get_global_interrupt_flag():
                     xsched.kill_batch()
                     raise SwitchL1Exception('before_critical_section')
-        torch.cuda.current_stream().synchronize()
+        torch_col.SyncAllStreams()
         if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
         # if self._stub.get_global_interrupt_flag():
             raise SwitchL1Exception('before_critical_section')
@@ -143,14 +144,17 @@ class SwitchCtrl(CtrlBase):
             self._stub.StepsNoInteruptEnd()
             raise ColocateAdjustL1Exception('before_critical_section')
         yield
-        torch.cuda.current_stream().synchronize()
+        torch_col.SyncAllStreams()
         self._stub.StepsNoInteruptEnd()
 
         # during critical section executing, kill batch request may be sent
-        if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
-        # if self._stub.get_global_interrupt_flag():
+        # only for single-gpu training, as we don't know other ranks' status
+        if (torch_col.get_train_world_size() == 1  
+            and self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain
+            # if self._stub.get_global_interrupt_flag():
+        ):
             # since we sync, no kernel is executing
-            self.switch()
+            self.switch(barrier=False)
 
     def register_pytorch_hook(self, module_list: List[torch.nn.Module]):
         if self.train_mode == TrainMode.TASKSWITCH_L0:
@@ -332,7 +336,9 @@ class ColocateCtrl(CtrlBase):
             self._stub.StepsNoInteruptEnd()
 
             # during critical section executing, kill batch request may be sent
-            if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
+            if (torch_col.get_train_world_size() == 1 
+                and self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1
+            ):
                 # since we sync, no kernel is executing
                 with EventManager.record_duration_event('adjust_after_step'):
                     self.adjust()

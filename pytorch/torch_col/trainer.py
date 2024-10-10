@@ -79,8 +79,6 @@ class Trainer:
                     epoch_idx, batch_idx, batch, batch['range']
                 )
 
-            
-            
             # if batch.should_update_param():
             #     torch_col.info(f'epoch {epoch_idx} batch {batch_idx} w/ sync')
 
@@ -210,25 +208,28 @@ class Trainer:
                 # restart nccl will let all training cpu sync
                 nccl_backend._restart_nccl_comm([torch.device(f'cuda:{self.rank}')])
 
-            if isinstance(self.dynamic_dataset.col_ctrl, torch_col.ColocateCtrl):
-                # Ref: [Note: kill batch]
+            if torch_col.get_colocate_train_mode().is_colocate():
+                # Ref: [Note: kill batch] (colcoate)
                 self.dynamic_dataset.col_ctrl.set_killed_batch_recover()
 
             if torch_col.get_train_rank() == 0:
-                # because we may directly reply memory adjust 
-                # before recover the killed batch (not killing batch),
-                # distribute batch should be after recover
-                # to configure training for those requests to avoid infer OOM
-                if isinstance(self.dynamic_dataset.col_ctrl, torch_col.ColocateCtrl):
-                    torch_col.dist._DynamicBatchDistirbutor.distribute_batch(
-                        True, True, False)
+                # Colocate:
+                #   because we may directly reply memory adjust 
+                #   before recovering the killed batch (not killing batch),
+                #   distributing batch should be after recovering
+                #   to configure training for those requests to avoid infer OOM
+                # Task switch:
+                #   call distribute batch to set training is ongoing
+                torch_col.dist._DynamicBatchDistirbutor.distribute_batch(
+                    True, True, False)
+                if torch_col.get_colocate_train_mode().is_colocate():
                     self.dynamic_dataset.col_ctrl.set_killed_batch_reconfiged()
             torch_col.dist.wait_barrier()
             # torch_col.info(f'epoch {epoch_idx} batch {batch_idx} handle abort end.')
 
         # -------------------------------------
         # [task switch] fourth, wait for resume
-        if isinstance(self.dynamic_dataset.col_ctrl, torch_col.SwitchCtrl):
+        if torch_col.get_colocate_train_mode().is_taskswitch():
             while not self.dynamic_dataset.col_ctrl._stub.prepare_resume():
                 time.sleep(1e-3)
             torch_col.dist.wait_barrier()
@@ -244,6 +245,7 @@ class Trainer:
                 nccl_streams = torch_col.xsched.get_nccl_streams()
                 assert len(nccl_streams) <= 1, f"nccl streams {nccl_streams}"
                 if len(nccl_streams) == 1:
+                    # torch_col.info(f'nccl stream {nccl_streams[0]}')
                     torch_col.xsched.register_stream(nccl_streams[0], False)
             torch.cuda.current_stream().synchronize()
             torch_col.xsched.initial_kill_batch(0, 0)

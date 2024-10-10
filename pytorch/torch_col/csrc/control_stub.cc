@@ -295,6 +295,7 @@ bool SwitchStub::TryInterruptTrainDoneWithLock(bool barrier) {
     auto cmd_id = cmd_id_;
     last_reply_cmd_id_ = cmd_id_;
     cmd_id_ = 0;
+    sta::xsched::SetRejectCudaCalls(false); // should move to `SetKillBatchRecover` ?
     if (barrier) {
       DistTrainSync::WaitBarrier();
     }
@@ -456,7 +457,7 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
         && msg.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)
         && cmd_ != static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1);
 
-    // [Note: kill batch]
+    // [Note: kill batch] (colocate)
     // avoid set nccl abort flag while re-creating new nccl comm, 
     // which long waiting time to get nccl comm before abort.
     // Ref: [Note: fast training memory adjust]

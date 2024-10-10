@@ -114,6 +114,9 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
             << " abort " << #func;  \
         return ::c10::make_intrusive<WorkDummy>(rank_, op_type); \
       } else { \
+        DLOG_IF(INFO, TorchColConfig::log_nccl_process_group) \
+            << "[Rank " << rank_ << " | ProcessGroupNCCL]" \
+            << " call " << #func; \
         return func(args); \
       } \
     } while (0)

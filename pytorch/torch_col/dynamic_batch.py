@@ -536,6 +536,9 @@ def init_dynamic_batch(
                 and not enable_grad_accumulate), (
         "enable grad accumulate when colocate training.")
     
+    assert not (global_batch_size is not None and not enable_grad_accumulate), (
+        "enable grad accumulate when global batch size is set.")
+    
     if global_batch_size is None:
         global_batch_size = batch_size * torch_col.get_train_world_size()
     

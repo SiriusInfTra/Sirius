@@ -283,6 +283,7 @@ cdef extern from "<common/xsched_ctrl.h>" namespace "colserve::sta::xsched":
     cpdef void UnRegisterStream(uint64_t stream)
     cpdef void UnRegisterAllStreams()
     cpdef size_t GetXQueueSize(uint64_t stream)
+    cpdef size_t GetXQueueSizeAllStreams()
     cpdef size_t GetTotalXQueueSize()
     cpdef uint64_t AbortStream(uint64_t stream)
     cpdef uint64_t AbortAllStreams()
