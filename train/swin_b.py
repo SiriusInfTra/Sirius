@@ -50,7 +50,8 @@ def train(num_epoch: int, batch_size: int,
     col_ctrl.register_pytorch_hook([model, criterion])
     checkpoint_micro_batch = col_ctrl.train_mode.is_kill_batch()
 
-    enable_grad_accumulator = col_ctrl.train_mode.is_colocate()
+    enable_grad_accumulator = (global_batch_size is not None 
+                               or col_ctrl.train_mode.is_colocate())
     checkpoint_micro_batch = col_ctrl.train_mode.is_kill_batch()
     train_dataset, batch_manager = torch_col.init_dynamic_batch(
         dataset_size=1000,
