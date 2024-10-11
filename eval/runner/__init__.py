@@ -45,6 +45,14 @@ def get_num_gpu():
     return len(cuda_device_env.split(','))
 
 
+def is_multi_gpu():
+    return get_num_gpu() > 1
+
+
+def is_four_gpu():
+    return get_num_gpu() == 4
+
+
 def scale_up_by_num_gpu(value):
     if RunnerConfig._multi_gpu_scale_up_workload:
         return value * get_num_gpu()

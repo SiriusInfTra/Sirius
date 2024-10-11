@@ -386,8 +386,10 @@ bool SwitchStub::PrepareResume() {
             << " cmd " << cmd_ << " cmd_id: " << cmd_id_
             << " has_killed_batch_recover " << has_killed_batch_recover_
             << " global_interrupt_flag " << *shared_data_.interrupt_flag_
-            << " nccl_abort_flag " 
-            << ProcessGroupNCCL::GetDefaultProcessGroupNCCL()->GetAbortFlag();
+            << (ProcessGroupNCCL::HasDefaultProcessGroupNCCL() 
+                ? str(boost::format(" nccl_abort_flag %d") 
+                      % ProcessGroupNCCL::GetDefaultProcessGroupNCCL()->GetAbortFlag())
+                : "");
 
   return true;
 }
