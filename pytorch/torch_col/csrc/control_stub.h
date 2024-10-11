@@ -28,6 +28,7 @@ class StubBase {
   void EnableTorchColEngine();
   uint64_t GetTargetTpcMask();
   bool CanExitAfterInferWorkloadDone();
+  void SetTrainFirstEpochDone();
 
  protected:
   virtual void ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) = 0;

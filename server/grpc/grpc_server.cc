@@ -94,6 +94,13 @@ void CommonHandler::SetupCallData() {
       exec_get_server_status
   };
 
+  // auto exec_get_train_first_epoch_status = [this](
+  //     CommonData<EmptyRequest, ServerStatus>* data) {
+  //   data->response_.set_status((boost::format("%d") 
+  //       % COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(0, first_epoch_done)));
+  //   data->responder_.Finish(data->response_, grpc::Status::OK, (void*)data);
+  // };
+
 
   auto register_warmup_done = [this](
       CommonData<EmptyRequest, EmptyResult>* data) {

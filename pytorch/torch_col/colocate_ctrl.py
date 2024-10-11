@@ -93,6 +93,10 @@ class CtrlBase(abc.ABC):
     def can_exit_after_infer_worklaod_done(self):
         pass
 
+    @abc.abstractmethod
+    def set_train_first_epoch_done(self):
+        pass
+
     @classmethod
     def register_fbward_hook(cls, module: torch.nn.Module, fwd_hood, bwd_hook):
         if not torch_col.is_enable_fbward_hook():
@@ -283,6 +287,9 @@ class SwitchCtrl(CtrlBase):
             torch_col.MemoryPool.empty_cache()
         return self._stub.train_end()
 
+    def set_train_first_epoch_done(self):
+        self._stub.set_train_first_epoch_done()
+
     def stop(self):
         self._stub.stop()
 
@@ -322,7 +329,8 @@ class ColocateCtrl(CtrlBase):
                     if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
                         xsched.kill_batch()
                         raise ColocateAdjustL1Exception('before_critical_section')
-            torch.cuda.current_stream().synchronize()
+            # torch.cuda.current_stream().synchronize()
+            torch_col.SyncAllStreams()
             if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
                 raise ColocateAdjustL1Exception('before_critical_section')
             self._stub.StepsNoInteruptBegin()
@@ -332,7 +340,8 @@ class ColocateCtrl(CtrlBase):
             
             # make sure we will not interrupt step
             yield
-            torch.cuda.current_stream().synchronize()
+            # torch.cuda.current_stream().synchronize()
+            torch_col.SyncAllStreams()
             self._stub.StepsNoInteruptEnd()
 
             # during critical section executing, kill batch request may be sent
@@ -476,6 +485,9 @@ class ColocateCtrl(CtrlBase):
             torch_col.MemoryPool.empty_cache()
         self._stub.train_end()
 
+    def set_train_first_epoch_done(self):
+        self._stub.set_train_first_epoch_done()
+
     def stop(self):
         self._stub.stop()
 
@@ -534,6 +546,9 @@ class DummyCtrl(CtrlBase):
 
     def can_exit_after_infer_worklaod_done(self):
         return self._stub.can_exit_after_infer_worklaod_done()
+    
+    def set_train_first_epoch_done(self):
+        self._stub.set_train_first_epoch_done()
 
 
 def create_colocate_ctrl(

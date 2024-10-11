@@ -158,6 +158,13 @@ bool StubBase::CanExitAfterInferWorkloadDone() {
   }
 }
 
+void StubBase::SetTrainFirstEpochDone() {
+  if (TorchColConfig::HasColocatedInferServer()) {
+    COMMUNICATOR_UPDATE_SHARED_TRAIN_INFO_FIELD(
+        TorchColConfig::GetTrainRank(), first_epoch_done, true);
+  }
+}
+
 void StubBase::EnableTorchColEngine() {
   torch_col::SetUpTorchColEngine(this);
 }

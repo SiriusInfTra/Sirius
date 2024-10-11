@@ -250,6 +250,9 @@ class Trainer:
             torch.cuda.current_stream().synchronize()
             torch_col.xsched.initial_kill_batch(0, 0)
 
+    def _default_first_epoch_callback(self):
+        pass
+
     def _is_ddp_training(self):
         return isinstance(self.model, torch.nn.parallel.DistributedDataParallel)
 

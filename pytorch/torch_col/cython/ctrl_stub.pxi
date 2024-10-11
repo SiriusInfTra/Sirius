@@ -14,6 +14,7 @@ cdef extern from "<torch_col/csrc/control_stub.h>" namespace "torch_col":
         void TrainStart()
         void TrainEnd()
         bint CanExitAfterInferWorkloadDone()
+        void SetTrainFirstEpochDone()
 
     cdef cppclass SwitchStub:
         SwitchStub() except +
@@ -22,6 +23,7 @@ cdef extern from "<torch_col/csrc/control_stub.h>" namespace "torch_col":
         void Stop()
         void TrainStart()
         void TrainEnd()
+        void SetTrainFirstEpochDone()
         bint TryInterruptTrainDone(bool)
         void ReportBatchSize(int)
         void StepsNoInteruptBegin()
@@ -48,6 +50,7 @@ cdef extern from "<torch_col/csrc/control_stub.h>" namespace "torch_col":
         void ColocateAdjustL2Done()
         void TrainStart()
         void TrainEnd()
+        void SetTrainFirstEpochDone()
         void ReportBatchSize(int)
         void StepsNoInteruptBegin()
         void StepsNoInteruptEnd()
@@ -80,6 +83,9 @@ cdef class PyDummyStub:
 
     def can_exit_after_infer_worklaod_done(self):
         return self._cppclass.CanExitAfterInferWorkloadDone()
+
+    def set_train_first_epoch_done(self):
+        self._cppclass.SetTrainFirstEpochDone()
     
     def __dealloc__(self):
         del self._cppclass
@@ -99,6 +105,9 @@ cdef class PySwitchStub:
 
     def stop(self):
         self._cppclass.Stop()
+
+    def set_train_first_epoch_done(self):
+        self._cppclass.SetTrainFirstEpochDone()
 
     def try_interrupt_train_done(self, barrier: bool):
         return self._cppclass.TryInterruptTrainDone(barrier)
@@ -186,6 +195,9 @@ cdef class PyColocateStub:
     def train_end(self):
         self._cppclass.TrainEnd()
 
+    def set_train_first_epoch_done(self):
+        self._cppclass.SetTrainFirstEpochDone()
+
     def report_batch_size(self, batch_size):
         self._cppclass.ReportBatchSize(batch_size)
 
@@ -209,7 +221,6 @@ cdef class PyColocateStub:
 
     def __dealloc__(self):
         del self._cppclass
-
 
 
 def get_adjust_request_time_stamp():
