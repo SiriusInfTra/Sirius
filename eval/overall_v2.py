@@ -8,7 +8,7 @@ import workload_collections as wkld_coll
 import run_comm
 
 # run_comm.UniformConfig_v2.train_model = 'swin_b_ddp'
-run_comm.UniformConfig_v2.train_batch_size = 72
+run_comm.UniformConfig_v2.train_batch_size = 72 if not runner.is_four_gpu() else 66
 
 use_time_stamp = True
 skip_fail = False
@@ -33,14 +33,14 @@ enable_hybrid = False
 enable_uniform_v2 = False
 enable_skewed_v2 = False
 uniform_v2_workload_types = [
-    'NormalA', 
-    # 'NormalB',
-    # 'NormalC'
+    # 'NormalA', 
+    'NormalB',
+    'NormalC'
 ]
 skew_v2_workload_types = [
-    'SkewA',
-    # 'SkewB',
-    # 'SkewC'
+    # 'SkewA',
+    'SkewB',
+    'SkewC'
 ]
 
 # should be false to eval infer-only
@@ -368,7 +368,8 @@ for tag, item in {
         'max_warm_cache_nbytes': int(5.5 * 1024 ** 3),
         'cuda_memory_pool_gb': '7',
         'use_sta_train': False
-    }, {'train_batch_size': 32, 'epoch_time': 5.5}),
+    }, {'train_batch_size': 32 if not runner.is_four_gpu() else 26, 
+        'epoch_time': 5.5}), 
     'I': ({
         'mode' : System.ServerMode.Normal,
         'use_sta': True,
@@ -380,7 +381,8 @@ for tag, item in {
         'max_warm_cache_nbytes': int(9 * 1024 ** 3),
         'cuda_memory_pool_gb': '10.5',
         'use_sta_train': False
-    }, {'train_batch_size': 8, 'epoch_time': 14.5}), 
+    }, {'train_batch_size': 8 if not runner.is_four_gpu() else 2, 
+        'epoch_time': 14.5}), 
 }.items():
     if not run_static_partition:
         break
@@ -484,7 +486,7 @@ if run_colsys:
         'use_xsched' : True,
         'has_warmup' : True,
         'ondemand_adjust' : True,
-        'cuda_memory_pool_gb' : "13",
+        'cuda_memory_pool_gb' : "13" if not runner.is_four_gpu() else "12.5",
         'train_memory_over_predict_mb' : 1500,
         'infer_model_max_idle_ms' : 5000,
         'cold_cache_ratio': 0.5, 
@@ -617,8 +619,8 @@ if run_task_switch:
         'mps': False,
         'use_xsched': True,
         'has_warmup' : True,
-        'cuda_memory_pool_gb': '13',
-        'train_memory_over_predict_mb': 1500,
+        'cuda_memory_pool_gb': '13' if not runner.is_four_gpu() else '12.5',
+        'train_memory_over_predict_mb': 1500 if not runner.is_four_gpu() else 2000,
     }
 
     if UniformConfig.enable and UniformConfig.high_load.enable:
@@ -764,7 +766,7 @@ if run_um_mps:
         'use_sta': False,
         'mps': True,
         'skip_set_mps_thread_percent': skip_set_mps_pct,
-        'use_xsched': False,
+        'use_xsched': True,
         'has_warmup': True,
         'dynamic_sm_partition': dynamic_sm_partition,
     }

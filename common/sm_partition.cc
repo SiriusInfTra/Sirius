@@ -24,7 +24,7 @@ SMPartitioner* SMPartitioner::Get(int device_id) {
 
 SMPartitioner::SMPartitioner(int device_id) : device_id_(device_id) {
   LOG(INFO) << "[SM Partitioner] initialize, "
-            << "train_tpc " << min_train_tpc_num_ << " - " << max_train_tpc_num_;
+            << "train_tpc " << min_train_tpc_num_ << " -- " << max_train_tpc_num_;
             // << ", "
             // << "shm_name " << shm_name_.c_str();
 
