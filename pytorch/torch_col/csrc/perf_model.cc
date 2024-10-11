@@ -71,11 +71,17 @@ double PerfModel::GetThptWithLock(int batch_size) {
     return 0;
   }
 
+  if (batch_thpt_->begin()->first >= batch_size) {
+    return batch_thpt_->begin()->second.first / batch_thpt_->begin()->first * batch_size;
+  }
+
+  if (batch_thpt_->rbegin()->first <= batch_size) {
+    return batch_thpt_->rbegin()->second.first / batch_thpt_->rbegin()->first * batch_size;
+  }
+
   auto it = batch_thpt_->lower_bound(batch_size);
-  if (it == batch_thpt_->end() || it == batch_thpt_->begin()) {
-    it--;
-    return it->second.first / it->first * batch_size;
-  } else if (it->first != batch_size) {
+  assert(it != batch_thpt_->end());
+  if (it->first != batch_size) {
     auto it_prev = it;
     it_prev--;
     // linear interpolation
