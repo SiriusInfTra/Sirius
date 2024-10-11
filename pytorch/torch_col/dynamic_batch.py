@@ -342,6 +342,8 @@ class DynamicBatchDataset(IterableDataset):
 
         # torch_col.dist.init_dynamic_batch_distributor(ds_size, global_batch_size)
 
+        self._ds_ring_repeat = True
+
         if not ds_type == DatasetType.VISION:
             fake_data = True
             print('Warning: fake_data is forced to be True for non-vision dataset', 
@@ -357,12 +359,15 @@ class DynamicBatchDataset(IterableDataset):
                     f"expect ds_size is multiple of {len(self.all_inputs['images'])}"
                 
                 if ds_size != len(self.all_inputs['images']):
-                    for k in self.all_inputs.keys():
-                        rep = ds_size // len(self.all_inputs[k])
-                        rep = (rep, ) + (1, ) * (len(self.all_inputs[k].shape) - 1)
-                        self.all_inputs[k] = np.tile(self.all_inputs[k], rep)
-                    ds_shapes = {k: v.shape for k, v in self.all_inputs.items()}
-                    print(f'real dataset is small, repeat dataset: {ds_shapes}')
+                    if not self._ds_ring_repeat:
+                        for k in self.all_inputs.keys():
+                            rep = ds_size // len(self.all_inputs[k])
+                            rep = (rep, ) + (1, ) * (len(self.all_inputs[k].shape) - 1)
+                            self.all_inputs[k] = np.tile(self.all_inputs[k], rep)
+                        ds_shapes = {k: v.shape for k, v in self.all_inputs.items()}
+                        print(f'real dataset is small, repeat dataset: {ds_shapes}')
+                    else:
+                        pass # len(self.all_inputs['images']) % global_batch_size == 0
 
                 for k in self.all_inputs.keys():
                     self.all_inputs[k] = torch.from_numpy(self.all_inputs[k]).pin_memory()
@@ -430,6 +435,14 @@ class DynamicBatchDataset(IterableDataset):
                                    device=f'cuda:{torch_col.get_train_rank()}')
             off = 0
             for i, j in batch_range_vec:
+                l = j - i
+                if self._ds_ring_repeat:
+                    if i >= len(self.all_inputs[k]):
+                        i = i % len(self.all_inputs[k])
+                        j = i + l
+                        assert j <= len(self.all_inputs[k]), (
+                            f"{i}--{j} range_vec {batch_range_vec}")
+                # torch_col.info(f"batch range: {i}--{j}, range_vec {batch_range_vec}")
                 batch[k][off:off+(j-i)] = self.all_inputs[k][i:j]
                 off += j - i
 
