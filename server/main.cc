@@ -400,7 +400,7 @@ int main(int argc, char *argv[]) {
          device_id++) {
       colserve::sta::CUDAMemPool::Init(device_id,
         static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
-        true, false, free_list_policy);
+        true, false, free_list_policy, true);
       colserve::sta::CUDAMemPool::Get(device_id)->RegisterOOMHandler([]() {
         LOG(INFO) << "[CUDAMemPool OOM] train predict memory" 
                   << boost::accumulate(
@@ -411,6 +411,14 @@ int main(int argc, char *argv[]) {
                       }) 
                   << ".";
         }, colserve::sta::MemType::kInfer);
+    }
+  } else {
+    for (int device_id = 0; 
+         device_id < colserve::sta::DeviceManager::GetNumVisibleGpu(); 
+         device_id++) {
+      colserve::sta::CUDAMemPool::Init(device_id,
+        static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
+        false, false, free_list_policy, false);
     }
   }
   colserve::ctrl::Controller::Init();

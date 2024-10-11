@@ -64,7 +64,7 @@ void CUDAColAllocator::init(int device_count) {
   colserve::sta::CUDAMemPool::Init(
       device_id, pool_nbytes, 
       !torch_col::TorchColConfig::has_shared_tensor_server, 
-      false, policy);
+      false, policy, true);
 
   // then init other devices.
   for (int i = 0; i < device_count; i++) {
@@ -72,7 +72,7 @@ void CUDAColAllocator::init(int device_count) {
     colserve::sta::CUDAMemPool::Init(
         i, pool_nbytes, 
         false, false, 
-        policy);
+        policy, true);
   }
 
   initialized_ = true;
