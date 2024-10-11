@@ -80,7 +80,7 @@ bool Config::estimate_infer_model_tpc = false;
 double Config::infer_exec_time_estimate_scale = 1.1;
 
 bool Config::enable_train_adjust_balance = true;
-memory_mb_t Config::train_adjust_balance_threshold = 256;
+memory_mb_t Config::train_adjust_balance_threshold = 1500;
 
 bool Config::dummy_adjust = false;
 
