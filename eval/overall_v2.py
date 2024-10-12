@@ -75,6 +75,8 @@ parser.add_argument('--azure-rps', type=int, default=150)
 parser.add_argument('--skip-set-mps-pct', action='store_true')
 parser.add_argument('--binary-dir', type=str, default='build')
 parser.add_argument('--multi-gpu', action='store_true')
+parser.add_argument('--uniform-v2-wkld-types', nargs='*', default=[])
+parser.add_argument('--skewed-v2-wkld-types', nargs='*', default=[])
 args = parser.parse_args()
 
 if args.colsys or args.all_sys:
@@ -129,6 +131,8 @@ if args.multi_gpu:
 
 retry_limit = args.retry_limit
 retry_if_fail = retry_limit >= 1
+run_comm.retry_limit = retry_limit
+run_comm.retry_if_fail = retry_if_fail
 
 if args.skip_fail:
     skip_fail = True
@@ -227,7 +231,8 @@ class AzureConfig:
     model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
                   InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
                   InferModel.ResNet152, InferModel.DistilGPT2] 
-    num_model = 64
+    # num_model = 64
+    num_model = 56
     interval_sec = 5
     duration = 300 
     period_num = duration // interval_sec
@@ -426,7 +431,8 @@ for tag, item in {
                                                train_epoch_time=workload_config['epoch_time'])
                 system = System(port=run_comm.UniformConfig_v2.port, **system_config)
                 run_comm.run(system, workload, server_model_config, 
-                            "overall-uniform-v2", f'static-partition-{wkld_type}-{tag}')
+                             f"overall-uniform-v2-{runner.get_num_gpu()}gpu", 
+                             f'static-partition-{wkld_type}-{tag}')
 
     if SkewedConfig.enable and SkewedConfig.high_load.enable:
         with mps_thread_percent(SkewedConfig.high_load.mps_infer):
@@ -462,7 +468,8 @@ for tag, item in {
                                               train_epoch_time=workload_config['epoch_time'])
                 system = System(port=run_comm.SkewedConfig_v2.port, **system_config)
                 run_comm.run(system, workload, server_model_config, 
-                            "overall-skewed-v2", f'static-partition-{wkld_type}-{tag}')
+                             f"overall-skewed-v2-{runner.get_num_gpu()}gpu", 
+                             f'static-partition-{wkld_type}-{tag}')
 
     if AzureConfig.enable:
         with mps_thread_percent(AzureConfig.mps_infer):
@@ -474,7 +481,9 @@ for tag, item in {
                              train_epoch=int(AzureConfig.duration / workload_config['epoch_time'] + 5))
             system = System(train_mps_thread_percent=AzureConfig.mps_train,
                             port=AzureConfig.port, **system_config)
-            run(system, workload, server_model_config, "overall-azure", f"static-partition-{tag}")
+            run(system, workload, server_model_config, 
+                f"overall-azure-{runner.get_num_gpu()}gpu", 
+                f"static-partition-{tag}")
 
 ## MARK: COLSYS
 if run_colsys:
@@ -538,7 +547,8 @@ if run_colsys:
                 workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
                 system = System(port=run_comm.UniformConfig_v2.port, **system_config)
                 run_comm.run(system, workload, server_model_config, 
-                            "overall-uniform-v2", f'colsys-{wkld_type}')
+                             f"overall-uniform-v2-{runner.get_num_gpu()}gpu", 
+                             f'colsys-{wkld_type}')
 
     if SkewedConfig.enable and SkewedConfig.high_load.enable:
         with mps_thread_percent(SkewedConfig.high_load.mps_infer):
@@ -570,7 +580,8 @@ if run_colsys:
                 workload = run_comm.skewed_v2(wkld_type, client_model_list, infer_only=False)
                 system = System(port=run_comm.SkewedConfig_v2.port, **system_config)
                 run_comm.run(system, workload, server_model_config, 
-                            "overall-skewed-v2", f'colsys-{wkld_type}')
+                             f"overall-skewed-v2-{runner.get_num_gpu()}gpu", 
+                             f'colsys-{wkld_type}')
 
     if AzureConfig.enable:
         with mps_thread_percent(AzureConfig.mps_infer):
@@ -581,7 +592,9 @@ if run_colsys:
             system = System(train_mps_thread_percent=AzureConfig.mps_train,
                             port=AzureConfig.port,
                             **system_config)
-            run(system, workload, server_model_config, "overall-azure", "colsys")
+            run(system, workload, server_model_config, 
+                f"overall-azure-{runner.get_num_gpu()}gpu", 
+                "colsys")
 
     if enable_azure_profile_memory:
         with mps_thread_percent(AzureConfig.mps_infer):
@@ -647,7 +660,8 @@ if run_task_switch:
             workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
             system = System(port=run_comm.UniformConfig_v2.port, **system_config)
             run_comm.run(system, workload, server_model_config, 
-                         "overall-uniform-v2", f'task-switch-{wkld_type}')
+                         f"overall-uniform-v2-{runner.get_num_gpu()}gpu", 
+                         f'task-switch-{wkld_type}')
 
     if SkewedConfig.enable and SkewedConfig.high_load.enable:
         client_model_list, server_model_config = InferModel.get_multi_model(
@@ -673,7 +687,8 @@ if run_task_switch:
             workload = run_comm.skewed_v2(wkld_type, client_model_list, infer_only=False)
             system = System(port=run_comm.SkewedConfig_v2.port, **system_config)
             run_comm.run(system, workload, server_model_config, 
-                         "overall-skewed-v2", f'task-switch-{wkld_type}')
+                         f"overall-skewed-v2-{runner.get_num_gpu()}gpu", 
+                         f'task-switch-{wkld_type}')
 
     if AzureConfig.enable:
         client_model_list, server_model_config = InferModel.get_multi_model(
@@ -681,7 +696,8 @@ if run_task_switch:
         workload = azure(rps=AzureConfig.max_rps, 
                          client_model_list=client_model_list, infer_only=False)
         system = System(port=AzureConfig.port, **system_config)
-        run(system, workload, server_model_config, "overall-azure", "task-switch")
+        run(system, workload, server_model_config, 
+            f"overall-azure-{runner.get_num_gpu()}gpu", "task-switch")
 
 ## MARK: Infer Only
 if run_infer_only:
@@ -721,7 +737,8 @@ if run_infer_only:
                 workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=True)
                 system = System(port=run_comm.UniformConfig_v2.port, **system_config)
                 run_comm.run(system, workload, server_model_config, 
-                            "overall-uniform-v2", f'infer-only-{wkld_type}')
+                             f"overall-uniform-v2-{runner.get_num_gpu()}gpu", 
+                             f'infer-only-{wkld_type}')
 
     if SkewedConfig.enable and SkewedConfig.high_load.enable:
         with mps_thread_percent(SkewedConfig.high_load.mps_infer, skip=infer_only_without_mps):
@@ -747,7 +764,8 @@ if run_infer_only:
                 workload = run_comm.skewed_v2(wkld_type, client_model_list, infer_only=True)
                 system = System(port=run_comm.SkewedConfig_v2.port, **system_config)
                 run_comm.run(system, workload, server_model_config, 
-                            "overall-skewed-v2", f'infer-only-{wkld_type}')
+                             f"overall-skewed-v2-{runner.get_num_gpu()}gpu", 
+                             f'infer-only-{wkld_type}')
 
     if AzureConfig.enable:
         with mps_thread_percent(AzureConfig.mps_infer, skip=infer_only_without_mps):
@@ -756,7 +774,9 @@ if run_infer_only:
             workload = azure(rps=AzureConfig.max_rps, 
                              client_model_list=client_model_list, infer_only=True)
             system = System(port=AzureConfig.port, **system_config)
-            run(system, workload, server_model_config, "overall-azure", f"infer-only{mps_tag}")
+            run(system, workload, server_model_config, 
+                f"overall-azure-{runner.get_num_gpu()}gpu", 
+                f"infer-only{mps_tag}")
 
 
 ## MARK: UM+MPS
@@ -799,7 +819,8 @@ if run_um_mps:
                 workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
                 system = System(port=run_comm.UniformConfig_v2.port, **system_config)
                 run_comm.run(system, workload, server_model_config, 
-                            "overall-uniform-v2", f'um-mps-{wkld_type}')
+                             f"overall-uniform-v2-{runner.get_num_gpu()}gpu", 
+                             f'um-mps-{wkld_type}')
 
     if SkewedConfig.enable and SkewedConfig.high_load.enable:
         with um_mps(SkewedConfig.high_load.mps_infer):
@@ -829,7 +850,8 @@ if run_um_mps:
                 workload = run_comm.skewed_v2(wkld_type, client_model_list, infer_only=False)
                 system = System(port=run_comm.SkewedConfig_v2.port, **system_config)
                 run_comm.run(system, workload, server_model_config, 
-                            "overall-skewed-v2", f'um-mps-{wkld_type}')
+                             f"overall-skewed-v2-{runner.get_num_gpu()}gpu", 
+                             f'um-mps-{wkld_type}')
 
     if AzureConfig.enable:
         with um_mps(AzureConfig.mps_infer):
@@ -840,5 +862,6 @@ if run_um_mps:
             system = System(train_mps_thread_percent=AzureConfig.mps_train,
                             port=AzureConfig.port, max_live_minute=int(AzureConfig.duration * 0.15),
                             **system_config)
-            run(system, workload, server_model_config, "overall-azure", "um-mps")
+            run(system, workload, server_model_config, 
+                f"overall-azure-{runner.get_num_gpu()}gpu", "um-mps")
 
