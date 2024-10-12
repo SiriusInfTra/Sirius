@@ -146,7 +146,7 @@ class SwitchCtrl(CtrlBase):
         if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
         # if self._stub.get_global_interrupt_flag():
             self._stub.StepsNoInteruptEnd()
-            raise ColocateAdjustL1Exception('before_critical_section')
+            raise SwitchL1Exception('before_critical_section')
         yield
         torch_col.SyncAllStreams()
         self._stub.StepsNoInteruptEnd()

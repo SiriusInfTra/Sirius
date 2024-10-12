@@ -96,7 +96,8 @@ class Trainer:
                 # batch passed, go to next batch
                 # self.dynamic_dataset.next_batch()
 
-                # consensus on the sync batch
+                # consensus on the sync batch. 
+                # should not enter this block? as we have already synced before optimizer.step(). however, task switch may execute this block
                 if self._is_ddp_training() and batch.should_update_param():
                     if not self.batch_manager.vote_finish_last_micro_batch():
                         self.handle_abort_batch(
