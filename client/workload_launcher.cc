@@ -16,6 +16,7 @@
 #include "workload/util.h"
 #include "workload/workload.h"
 
+
 using namespace colserve::workload;
 
 struct App : public colserve::workload::AppBase {

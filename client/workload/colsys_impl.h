@@ -1,5 +1,5 @@
-#ifndef COLSYS_COLSYS_GRPC_H_
-#define COLSYS_COLSYS_GRPC_H_
+#ifndef COLSYS_COLSYS_IMPL_H_
+#define COLSYS_COLSYS_IMPL_H_
 
 #include <colserve.grpc.pb.h>
 #include <grpcpp/channel.h>
@@ -83,6 +83,11 @@ inline void SetMnistRequest(InferRequest &request, const std::string &model, con
 inline std::unique_ptr<ServeStub> NewStub(std::shared_ptr<grpc::Channel> channel) {
   return colsys::ColServe::NewStub(channel);
 }
+
+inline void StubAsyncInferenceDone(ServeStub &stub, ::grpc::ClientContext *context, const std::string &model_name) {
+  // only triton backend
+}
+
 
 }
 

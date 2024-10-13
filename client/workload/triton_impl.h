@@ -13,6 +13,7 @@
 #include <grpc_client.h>
 #include <grpc_service.grpc.pb.h>
 #include <glog/logging.h>
+#include "warm_cache.h"
 
 #define COLSYS_CLIENT_IMPL_NAMESPACE triton_backend
 
@@ -234,17 +235,19 @@ public:
     stub_ = inference::GRPCInferenceService::NewStub(channel);
   }
 
-  grpc::Status Inference(grpc::ClientContext* context, const InferRequest& request, InferResult* response) {
-    inference::ModelInferRequest req;
-    stub_->ModelInfer(context, request.value, &response->value);
-    return grpc::Status::OK;
+  inference::GRPCInferenceService::Stub &Stub() {
+    return *stub_;
   }
+
+  grpc::Status Inference(grpc::ClientContext *context,
+                         const InferRequest &request, InferResult *response);
 
   grpc::Status Train(grpc::ClientContext* context, const TrainRequest& request, TrainResult* response) {
     return grpc::Status::OK;
   }
 
   std::unique_ptr<AsyncInferResult> AsyncInference(grpc::ClientContext* context, const InferRequest& request, grpc::CompletionQueue* cq) {
+    WarmCache::IncModel(*stub_, context, request.model());
     auto result = stub_->AsyncModelInfer(context, request.value, cq);
     return std::make_unique<AsyncInferResult>(std::move(result));
   }
@@ -280,6 +283,10 @@ inline std::unique_ptr<ServeStub> NewStub(std::shared_ptr<grpc::Channel> channel
   return std::make_unique<ServeStub>(channel);
 }
 
+
+inline void StubAsyncInferenceDone(ServeStub &stub, ::grpc::ClientContext *context, const std::string &model_name) {
+  WarmCache::DecModel(stub.Stub(), context, model_name);
+}
 
 }
 

@@ -1,5 +1,5 @@
 #include "workload.h"
-#include "colsys_grpc.h"
+#include "colsys_impl.h"
 #include "workload.cc.in"
 #include "workload.h.in"
 #include <memory>

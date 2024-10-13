@@ -268,18 +268,14 @@ void InferWorker::FetchInferResult(Workload &workload,
     {
       std::unique_lock status_lock{slot_status_mutex_};
       std::shared_lock slot_lock{slot_mutex_};
-      if (interval_fn == nullptr) {
-        slots_[slot]->req_status_.ready_time_ = std::chrono::steady_clock::now();
-        slots_[slot]->req_status_.status_ = InferReqStatus::kReady;
-        status_slots_id_[InferReqStatus::kWait].erase(slot);
-        status_slots_id_[InferReqStatus::kReady].insert(slot);
-      } else {
-        slots_[slot]->req_status_.ready_time_ = std::chrono::steady_clock::now() + 
-            std::chrono::duration_cast<time_point_t::duration>(interval_fn(slot));
-        slots_[slot]->req_status_.status_ = InferReqStatus::kDone;
-        status_slots_id_[InferReqStatus::kWait].erase(slot);
-        status_slots_id_[InferReqStatus::kDone].insert(slot);
-      }
+      auto interval = interval_fn != nullptr 
+        ? std::chrono::duration_cast<time_point_t::duration>(interval_fn(slot)) : time_point_t::duration(0);
+      auto status = interval_fn != nullptr  ? InferReqStatus::kDone : InferReqStatus::kReady;
+      StubAsyncInferenceDone(*workload.stub_, nullptr, slots_[slot]->request_.model());
+      slots_[slot]->req_status_.ready_time_ = std::chrono::steady_clock::now() + interval;
+      slots_[slot]->req_status_.status_ = status;
+      status_slots_id_[InferReqStatus::kWait].erase(slot);
+      status_slots_id_[InferReqStatus::kDone].insert(slot);
     }
   }
   LOG(INFO) << log_prefix.str() << "FetchInferResult stop";
