@@ -300,7 +300,6 @@ class DynamicBatchDataset(IterableDataset):
                     step_event.tag = 'local'
                 EventManager.record_event('', step_event)
         else:
-            raise RuntimeError("NOT SUPPORT")
             if self.is_do_step():
                 with hook.steps_no_interrupt():
                     step_event = EventManager.record_event('optimizer_step')
