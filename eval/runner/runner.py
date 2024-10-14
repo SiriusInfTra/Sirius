@@ -621,6 +621,7 @@ class HyperWorkload:
                 custom_args: List[str] = [], **kwargs):
         assert server is not None
         cmd = [
+            # f"./{get_binary_dir()}/client-prefix/src/client-build/{launcher}"
             f"./{get_binary_dir()}/../client/build/{launcher}",
             "-p", server.port,
             "-c", str(self.concurrency),
@@ -628,7 +629,7 @@ class HyperWorkload:
         if server.use_triton:
             cmd += ["--triton-port", str(server.triton_port)]
             cmd += ["--triton-config", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../server/triton_models/config.conf"))]
-            cmd += ["--triton-max-memory", str(server.max_warm_cache_nbytes)]
+            cmd += ["--triton-max-memory", str(server.max_warm_cache_nbytes // 1024 // 1024)]
         if self.duration is not None:
             cmd += ["-d", str(self.duration)]
 

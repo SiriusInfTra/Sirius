@@ -14,10 +14,12 @@ def main():
     target_root_dir = '.'
 
     # 复制8份
-    for i in range(1, 8):
+    for i in range(1, 10):
         # 新的模型目录名
         new_model_dir = os.path.join(target_root_dir, f'{args.model_name}-{i}')
-        
+        if os.path.exists(new_model_dir):
+            print(f"模型目录 {new_model_dir} 已经存在，跳过。")
+            continue
         # 复制目录
         shutil.copytree(original_model_dir, new_model_dir)
         

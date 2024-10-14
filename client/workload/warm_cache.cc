@@ -56,7 +56,7 @@ void WarmCache::IncModel(inference::GRPCInferenceService::Stub &stub, ::grpc::Cl
         }
         std::unique_lock s_lock{model->s_mutex_};
         if (model->alive_ && (evict_model == nullptr 
-          || evict_model->hotness_.load(std::memory_order_relaxed) > model->hotness_.load(std::memory_order_relaxed))) {
+          || evict_model->hotness_ > model->hotness_)) {
           evict_model = model.get();
           evict_lock = std::move(s_lock);
         }
@@ -104,7 +104,8 @@ size_t WarmCache::GetModelMemoryUsage(const std::string &name) {
   if (triton_config_.max_memory_nbytes == 0) {
     return 0;
   }
-  std::string name_normalized{name.cbegin(), name.cbegin() + name.find('-')};
+  size_t pos = name.find('-');
+  std::string name_normalized = name.substr(0, pos);
   auto it = triton_config_.models_memory_nbytes.find(name_normalized);
   CHECK(it != triton_config_.models_memory_nbytes.end())
       << "Model " << name << " not found in config";
