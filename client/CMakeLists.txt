@@ -10,7 +10,10 @@ endif()
 set(COLSYS_ROOT_DIR ${PROJECT_SOURCE_DIR}/../)
 set(TRITON_BUILD_PREFIX ${PROJECT_SOURCE_DIR}/third_party/build/triton-client-prefix/src/triton-client-build)
 set(TRITON_INSTALL_DIR ${TRITON_BUILD_PREFIX}/cc-clients/install)
-set(TRITON_3RD_DID ${TRITON_BUILD_PREFIX}//third-party)
+set(TRITON_3RD_DID ${TRITON_BUILD_PREFIX}/third-party)
+message("TRITON_BUILD_PREFIX ${TRITON_BUILD_PREFIX}")
+message("TRITON_INSTALL_DIR ${TRITON_INSTALL_DIR}")
+message("TRITON_3RD_DID ${TRITON_3RD_DID}")
 find_package(TritonCommon REQUIRED NO_DEFAULT_PATH 
   PATHS ${TRITON_INSTALL_DIR}/lib/cmake/TritonCommon)
 
@@ -27,7 +30,7 @@ include(${TRITON_3RD_DID}/protobuf/lib/cmake/protobuf/protobuf-config.cmake)
 find_package(absl CONFIG REQUIRED NO_DEFAULT_PATH
   PATHS ${TRITON_3RD_DID}/grpc/lib/cmake/absl)
 find_package(gRPC CONFIG REQUIRED NODEFAULT_PATH
-  PATHS ${TRITON_3RD_DID}/lib/cmake/grpc)
+  PATHS ${TRITON_3RD_DID}/grpc/lib/cmake/grpc)
 find_package(Protobuf REQUIRED CONFIG NO_DEFAULT_PATH 
   PATHS ${TRITON_3RD_DID}/protobuf/lib/cmake/protobuf)
 

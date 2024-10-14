@@ -77,7 +77,9 @@ ExternalProject_Add(client
     SOURCE_DIR ${CMAKE_SOURCE_DIR}/client
     CMAKE_ARGS 
       -DCOLSYS_ROOT_DIR=${CMAKE_SOURCE_DIR}
+      -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
     INSTALL_COMMAND ""
+    BUILD_COMMAND ${CMAKE_COMMAND} --build .
 )
 
 # link release/debug build directory to ./build
