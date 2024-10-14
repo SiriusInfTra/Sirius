@@ -7,38 +7,10 @@ if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
   set(CMAKE_CUDA_ARCHITECTURES 70)
 endif()
 
-
-set(COLSYS_ROOT_DIR "..")
-
-set(TRITON_INSTALL_DIR ${CMAKE_BINARY_DIR}/triton/install)
-set(TRITON_SOURCE_DIR ${CMAKE_SOURCE_DIR}/third_party/triton-client)
-message("TRITON_INSTALL_DIR ${TRITON_INSTALL_DIR}")
-
-
-include(ExternalProject)
-set(TRITON_COMMON_REPO_TAG "r23.12")
-set(TRITON_THIRD_PARTY_REPO_TAG "r23.12")
-set(TRITON_CORE_REPO_TAG "r23.12")
-
-ExternalProject_Add(triton-client
-    SOURCE_DIR ${TRITON_SOURCE_DIR}
-    CMAKE_ARGS 
-        -DCMAKE_INSTALL_PREFIX=${TRITON_INSTALL_DIR}
-        -DTRITON_ENABLE_CC_HTTP=OFF 
-        -DTRITON_ENABLE_CC_GRPC=ON 
-        -DTRITON_ENABLE_PERF_ANALYZER=OFF
-        -DTRITON_ENABLE_PERF_ANALYZER_C_API=OFF 
-        -DTRITON_ENABLE_PERF_ANALYZER_TFS=OFF
-        -DTRITON_ENABLE_PERF_ANALYZER_TS=OFF
-        -DTRITON_ENABLE_GPU=ON 
-        -DTRITON_ENABLE_EXAMPLES=OFF 
-        -DTRITON_ENABLE_TESTS=OFF
-        -DTRITON_KEEP_TYPEINFO=ON
-        -DTRITON_COMMON_REPO_TAG=${TRITON_COMMON_REPO_TAG}
-        -DTRITON_THIRD_PARTY_REPO_TAG=${TRITON_THIRD_PARTY_REPO_TAG}
-        -DTRITON_CORE_REPO_TAG=${TRITON_CORE_REPO_TAG}
-    INSTALL_COMMAND ""
-)
+set(COLSYS_ROOT_DIR ${PROJECT_SOURCE_DIR}/../)
+set(TRITON_BUILD_PREFIX ${PROJECT_SOURCE_DIR}/third_party/build/triton-client-prefix/src/triton-client-build)
+set(TRITON_INSTALL_DIR ${TRITON_BUILD_PREFIX}/cc-clients/install)
+set(TRITON_3RD_DID ${TRITON_BUILD_PREFIX}//third-party)
 find_package(TritonCommon REQUIRED NO_DEFAULT_PATH 
   PATHS ${TRITON_INSTALL_DIR}/lib/cmake/TritonCommon)
 
@@ -46,19 +18,18 @@ find_package(TritonClient REQUIRED NO_DEFAULT_PATH
   PATHS ${TRITON_INSTALL_DIR}/lib/cmake/TritonClient)
 
 include(/disk2/wyk/gpu-colocation/cmake/glog.cmake)
-# include(${TRITON_INSTALL_DIR}/lib/cmake/TritonClient/TritonClientConfig.cmake)
+include(${TRITON_INSTALL_DIR}/lib/cmake/TritonClient/TritonClientConfig.cmake)
 
 
-# include(${CMAKE_BINARY_DIR}/triton-client-prefix/src/triton-client-build/third-party/protobuf/lib/cmake/protobuf/protobuf-config.cmake)
+include(${TRITON_3RD_DID}/protobuf/lib/cmake/protobuf/protobuf-config.cmake)
 
-# find_package(triton_client REQUIRED HINTS .)
-# find_package(triton_proto REQUIRED HINTS .)
+
 find_package(absl CONFIG REQUIRED NO_DEFAULT_PATH
-  PATHS /disk2/wyk/gpu-colocation/build/client-prefix/src/client-build/triton-client-prefix/src/triton-client-build/third-party/grpc/lib/cmake/absl)
+  PATHS ${TRITON_3RD_DID}/grpc/lib/cmake/absl)
 find_package(gRPC CONFIG REQUIRED NODEFAULT_PATH
-  PATHS /disk2/wyk/gpu-colocation/build/client-prefix/src/client-build/triton-client-prefix/src/triton-client-build/third-party/grpc/lib/cmake/grpc)
+  PATHS ${TRITON_3RD_DID}/lib/cmake/grpc)
 find_package(Protobuf REQUIRED CONFIG NO_DEFAULT_PATH 
-  PATHS /disk2/wyk/gpu-colocation/build/client-prefix/src/client-build/triton-client-prefix/src/triton-client-build/third-party/protobuf/lib/cmake/protobuf)
+  PATHS ${TRITON_3RD_DID}/protobuf/lib/cmake/protobuf)
 
 
 include(FetchContent)
@@ -72,9 +43,7 @@ target_link_libraries(colsys_proto PUBLIC gRPC::grpc++)
 set(PROTO_BINARY_DIR ${CMAKE_BINARY_DIR}/generated_proto)
 set(PROTO_IMPORT_DIRS ${COLSYS_ROOT_DIR}/proto/)
 file(MAKE_DIRECTORY ${PROTO_BINARY_DIR})
-message("!!!!!!!!!!!!!!!PROTO_OUTPUT ${PROTO_OUTPUT}")
 target_include_directories(colsys_proto PUBLIC ${PROTO_BINARY_DIR})
-message("COLSYS_ROOT_DIR ${COLSYS_ROOT_DIR}/proto/colserve.proto")
 
 protobuf_generate(
   TARGET colsys_proto
@@ -94,6 +63,7 @@ add_executable(workload_launcher
   workload_launcher.cc
   workload/colsys_impl.cc
   workload/triton_impl.cc
+  workload/warm_cache.cc
   workload/util.cc
 )
 target_link_libraries(workload_launcher PUBLIC
@@ -107,6 +77,7 @@ add_executable(busy_loop_launcher
   busy_loop_launcher.cc
   workload/colsys_impl.cc
   workload/triton_impl.cc
+  workload/warm_cache.cc
   workload/util.cc
 )
 target_link_libraries(busy_loop_launcher PUBLIC
