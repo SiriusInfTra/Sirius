@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import workload_collections as wkld_coll
 import run_comm
 
-# run_comm.UniformConfig_v2.train_model = 'swin_b_ddp'
+run_comm.UniformConfig_v2.train_model = 'swin_b'
 run_comm.UniformConfig_v2.train_batch_size = 64
 run_comm.UniformConfig_v2.train_global_batch_size = 512
 run_comm.UniformConfig_v2.duration = 7200
