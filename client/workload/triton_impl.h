@@ -280,6 +280,10 @@ public:
     return grpc::Status::OK;
   }
 
+  grpc::Status GetTrainFirstEpochStatus(grpc::ClientContext* context, const EmptyRequest &request, ServerStatus* response) {
+    return grpc::Status::OK;
+  }
+
 
 
 };

@@ -1,68 +1,67 @@
 #include "warm_cache.h"
-#include <algorithm>
+#include <fstream>
+#include <atomic>
+#include <glog/logging.h>
 #include <mutex>
 
 
 namespace colserve::workload {
-  std::mutex WarmCache::g_mutex_;
-  std::mutex WarmCache::m_mutex_;
-  std::unordered_map<std::string, std::unique_ptr<WarmCache>> WarmCache::loaded_models_;
-  TritonConfig WarmCache::triton_config_;
-  size_t WarmCache::curr_memory_usage_ = 0;
-  
-  void WarmCache::SetTritonConfig(TritonConfig config) {
-    triton_config_ = std::move(config);
+std::mutex WarmCache::swapping_mutex_;
+std::mutex WarmCache::m_mutex_;
+std::unordered_map<std::string, std::unique_ptr<WarmCache>> WarmCache::loaded_models_;
+TritonConfig WarmCache::triton_config_;
+size_t WarmCache::curr_memory_usage_ = 0;
+
+void WarmCache::SetTritonConfig(TritonConfig config) {
+  triton_config_ = std::move(config);
+  if (triton_config_.max_memory_nbytes == 0) {
+    LOG(INFO) << "[TritonProxy] No memory limit.";
+  } else {
+    LOG(INFO) << "[TritonProxy] Memory limit: " << triton_config_.max_memory_nbytes << " MB. ";
   }
+}
 
-  void WarmCache::IncModel(inference::GRPCInferenceService::Stub &stub, ::grpc::ClientContext *_, const std::string &model_name) {
-    LOG(INFO) << "[TritonProxy] Model " << model_name << " inc.";
+void WarmCache::IncModel(inference::GRPCInferenceService::Stub &stub, ::grpc::ClientContext *_, const std::string &model_name) {
+  LOG(INFO) << "[TritonProxy] Model " << model_name << " inc.";
 
-    std::unique_lock g_lock{g_mutex_};
-    LOG(INFO) << "[TritonProxy] Model " << model_name << " inc: lock g_mutex #1.";
-    WarmCache *warm_cache;
-    {
-      std::unique_lock m_lock{m_mutex_};
-      auto iter = loaded_models_.find(model_name);
-      if (iter == loaded_models_.cend()) {
-        warm_cache = new WarmCache(model_name);
-        loaded_models_.insert({model_name, std::unique_ptr<WarmCache>(warm_cache)});
-      } else {
-        warm_cache = iter->second.get(); 
+  // std::unique_lock g_lock{g_mutex_};
+  LOG(INFO) << "[TritonProxy] Model " << model_name << " inc: lock g_mutex #1.";
+  WarmCache *warm_cache;
+  {
+    std::unique_lock m_lock{m_mutex_};
+    auto iter = loaded_models_.find(model_name);
+    if (iter == loaded_models_.cend()) {
+      warm_cache = new WarmCache(model_name);
+      loaded_models_.insert({model_name, std::unique_ptr<WarmCache>(warm_cache)});
+    } else {
+      warm_cache = iter->second.get(); 
+    }
+  }
+  size_t model_memory_usage = GetModelMemoryUsage(model_name);
+  
+  std::unique_lock s_lock{warm_cache->s_mutex_};
+
+  std::unique_lock swapping_lock{swapping_mutex_, std::defer_lock};
+  if (!warm_cache->alive_) {
+    LOG(INFO) << "[TritonProxy] Model " << model_name << " not alive.";
+    s_lock.unlock();
+    swapping_lock.lock();
+    s_lock.lock();
+    while(curr_memory_usage_ + model_memory_usage > triton_config_.max_memory_nbytes) {
+      WarmCache *evict_model = nullptr;
+      std::unique_lock<std::mutex> evict_lock;
+      for (auto &&[_, model] : loaded_models_) {
+        if (model->model_name_ == model_name) {
+          continue;
+        }
+        std::unique_lock s_lock{model->s_mutex_};
+        if (model->alive_ && (evict_model == nullptr 
+          || evict_model->hotness_.load(std::memory_order_relaxed) > model->hotness_.load(std::memory_order_relaxed))) {
+          evict_model = model.get();
+          evict_lock = std::move(s_lock);
+        }
       }
-    }
-    std::unique_lock s_lock{warm_cache->s_mutex_};
-    warm_cache->infering_cnt_++;
-    warm_cache->hotness_++;
-    if (warm_cache->alive_) {
-      LOG(INFO) << "[TritonProxy] Model " << model_name << " alive.";
-      return;
-    }
-    std::vector<WarmCache*> alive_models;
-    for (auto &&[_, warm_cache] : loaded_models_) {
-      if (warm_cache->alive_) {
-        CHECK_NE(warm_cache->model_name_, model_name);
-        alive_models.push_back(warm_cache.get());
-      }
-    }
-    warm_cache->alive_ = true; // must set alive before unlock g_mutex
-    LOG(INFO) << "[TritonProxy] Model " << model_name << "alive models: " << alive_models.size();
-    if (alive_models.size() >= 8) {
-      LOG(INFO) << "[TritonProxy] Model " << model_name
-                << " dead, no rooms.";
-      std::sort(alive_models.begin(), alive_models.end(), [](auto &a, auto &b) {
-        return a->hotness_ < b->hotness_;
-      });
-      CHECK_GT(alive_models.size(), 0);
-      g_lock.unlock();
-      auto *evict_model = alive_models[0];
-      std::unique_lock e_lock{evict_model->s_mutex_};
-
-      LOG(INFO) << "[TritonProxy] Model " << model_name << " unlock g_mutex #1.";
-      LOG(INFO) << "[TritonProxy] Model " << model_name << ": wait for " << evict_model->model_name_;
-      evict_model->free_cond_.wait(e_lock, [&evict_model] {
-        return evict_model->infering_cnt_ == 0;
-      });
-      LOG(INFO) << "[TritonProxy] Model " << model_name << ": wait done " << evict_model->model_name_;
+      evict_model->free_cond_.wait(evict_lock, [&]() { return evict_model->infering_cnt_ == 0; });
       ::inference::RepositoryModelUnloadRequest request;
       ::inference::RepositoryModelUnloadResponse response;
       request.set_model_name(evict_model->model_name_);
@@ -70,10 +69,7 @@ namespace colserve::workload {
       auto status = stub.RepositoryModelUnload(&context, request, &response);
       CHECK(status.ok());
       evict_model->alive_ = false;
-      LOG(INFO) << "[TritonProxy] Model " << model_name << ": evit " << evict_model->model_name_ << " unloaded.";
-    } else {
-      g_lock.unlock();
-      LOG(INFO) << "[TritonProxy] Model " << model_name << " unlock g_mutex #2.";
+      curr_memory_usage_ -= GetModelMemoryUsage(evict_model->model_name_);
     }
     ::inference::RepositoryModelLoadRequest request;
     ::inference::RepositoryModelLoadResponse response;
@@ -81,31 +77,82 @@ namespace colserve::workload {
     request.set_model_name(model_name);
     auto status = stub.RepositoryModelLoad(&context, request, &response);
     CHECK(status.ok());
+    warm_cache->alive_ = true;
+    model_memory_usage += model_memory_usage;
+  }
+  warm_cache->infering_cnt_++;
+  warm_cache->hotness_++;
+  LOG(INFO) << "[TritonProxy] Model " << model_name << " loaded.";
+}
 
-    LOG(INFO) << "[TritonProxy] Model " << model_name << " loaded.";
+void WarmCache::DecModel(inference::GRPCInferenceService::Stub &stub, ::grpc::ClientContext *context, const std::string &model_name) {
+  LOG(INFO) << "[TritonProxy] Model " << model_name << " dec.";
+  std::unique_lock m_lock{m_mutex_};
+  auto iter = loaded_models_.find(model_name);
+  CHECK(iter != loaded_models_.cend());
+  auto warm_cache = iter->second.get();
+  std::unique_lock s_lock{warm_cache->s_mutex_};
+  CHECK_GT(warm_cache->infering_cnt_, 0);
+  warm_cache->infering_cnt_ -= 1;
+  LOG(INFO) << "[TritonProxy] Model " << model_name << " dec: " << warm_cache->infering_cnt_;
+  if (warm_cache->infering_cnt_ == 0) {
+    warm_cache->free_cond_.notify_all();
+  } 
+}
+
+size_t WarmCache::GetModelMemoryUsage(const std::string &name) {
+  if (triton_config_.max_memory_nbytes == 0) {
+    return 0;
+  }
+  std::string name_normalized{name.cbegin(), name.cbegin() + name.find('-')};
+  auto it = triton_config_.models_memory_nbytes.find(name_normalized);
+  CHECK(it != triton_config_.models_memory_nbytes.end())
+      << "Model " << name << " not found in config";
+  return it->second;
+}
+
+TritonConfig TritonConfig::LoadConfig(const std::string &filepath,
+                                      size_t max_memory_nbytes) {
+  std::ifstream file(filepath);
+  CHECK(file.is_open()) << "无法打开配置文件: " << filepath;
+
+  TritonConfig config;
+  config.max_memory_nbytes = max_memory_nbytes;
+
+  std::string line;
+  while (std::getline(file, line)) {
+    // 去除空格和注释
+    line = line.substr(0, line.find('#'));
+    line.erase(0, line.find_first_not_of(" \t"));
+    line.erase(line.find_last_not_of(" \t") + 1);
+
+    if (line.empty())
+      continue;
+
+    auto delimiter_pos = line.find('=');
+    CHECK(delimiter_pos != std::string::npos) << "配置格式错误: " << line;
+
+    std::string key = line.substr(0, delimiter_pos);
+    std::string value_str = line.substr(delimiter_pos + 1);
+
+    key.erase(0, key.find_first_not_of(" \t"));
+    key.erase(key.find_last_not_of(" \t") + 1);
+    value_str.erase(0, value_str.find_first_not_of(" \t"));
+    value_str.erase(value_str.find_last_not_of(" \t") + 1);
+
+    size_t value;
+    try {
+      value = std::stoull(value_str);
+    } catch (const std::invalid_argument &e) {
+      LOG(FATAL) << "无效的数字: " << value_str;
+    } catch (const std::out_of_range &e) {
+      LOG(FATAL) << "数字超出范围: " << value_str;
+    }
+
+    config.models_memory_nbytes[key] = value;
   }
 
-  void WarmCache::DecModel(inference::GRPCInferenceService::Stub &stub, ::grpc::ClientContext *context, const std::string &model_name) {
-    LOG(INFO) << "[TritonProxy] Model " << model_name << " dec.";
-    std::unique_lock g_lock{m_mutex_};
-    LOG(INFO) << "[TritonProxy] Model " << model_name << " dec: lock g_mutex #2.";
-    auto iter = loaded_models_.find(model_name);
-    auto warm_cache = iter->second.get();
-    std::unique_lock s_lock{warm_cache->s_mutex_};
-    CHECK(iter != loaded_models_.cend());
-    CHECK_GT(warm_cache->infering_cnt_, 0);
-    warm_cache->infering_cnt_ -= 1;
-    LOG(INFO) << "[TritonProxy] Model " << model_name << " dec: " << warm_cache->infering_cnt_;
-    if (warm_cache->infering_cnt_ == 0) {
-      warm_cache->free_cond_.notify_all();
-    } 
-  }
-
-  size_t WarmCache::GetModelMemoryUsage(const std::string &name) {
-    std::string name_normalized{name.cbegin(), name.cbegin() + name.find('-')};
-    auto it = triton_config_.models_memory_nbytes.find(name_normalized);
-    CHECK(it != triton_config_.models_memory_nbytes.end())
-        << "Model " << name << " not found in config";
-    return it->second;
-  }
-  } // namespace colserve::workload
+  file.close();
+  return config;
+}
+} // namespace colserve::workload

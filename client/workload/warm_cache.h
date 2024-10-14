@@ -10,10 +10,13 @@ namespace colserve::workload {
 struct TritonConfig {
   size_t max_memory_nbytes;
   std::unordered_map<std::string, size_t> models_memory_nbytes;
+
+  static TritonConfig LoadConfig(const std::string &filepath,
+                                 size_t max_memory_nbytes);
 };
 class WarmCache {
  private:
-  static std::mutex g_mutex_; // ordered request
+  static std::mutex swapping_mutex_; // ordered request
   static std::mutex m_mutex_; // protect datastruct access
   static std::unordered_map<std::string, std::unique_ptr<WarmCache>> loaded_models_;
   static TritonConfig triton_config_;

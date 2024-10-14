@@ -50,6 +50,24 @@ class InferWorker {
     }
   }
 
+  bool IsSetupSlotDone() {
+    return setup_slot_done_;
+  }
+
+  void SetupSlot() {
+    std::unique_lock status_lock{slot_status_mutex_};
+    std::unique_lock slot_lock{slot_mutex_};
+    for (size_t i = 0; i < concurrency_; i++) {
+      slots_.emplace_back(std::make_shared<InferSlot>());
+      status_slots_id_[InferReqStatus::kReady].insert(i);
+    }
+    for (auto &slot : slots_) {
+      set_request_fn_(slot->request_);
+    }
+    setup_slot_done_ = true;
+  }
+
+
 
   void RequestInferBusyLoop(Workload &workload,
                             double delay_before_infer);
@@ -99,6 +117,7 @@ private:
 
   // std::vector<double> latency_;
   std::vector<Record> records_;
+  std::atomic<bool> setup_slot_done_{false};
 
 };
 
@@ -141,8 +160,15 @@ class Workload : public IWorkload {
   bool Hello();
   bool InferenceWorkloadStart();
   void InferenceWorkloadDone();
+  bool HasTrainFirstEpochDone();
+
 
   void PreRun() {
+    for (auto &worker : infer_workers_) {
+      if (!worker->IsSetupSlotDone()) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+      }
+    }
     running_ = true;
     ready_promise_.set_value();
     run_btime_ = std::chrono::steady_clock::now();
@@ -218,7 +244,6 @@ class Workload : public IWorkload {
   double delay_before_profile_;
   long start_time_stamp_;
   long end_time_stamp_;
-
 
 
   // friend class InferRecorder;

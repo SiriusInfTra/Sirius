@@ -112,7 +112,7 @@ class System:
                  server_log: str = "server-log", 
                  triton_log: str = "triton_log",
                  mps_log: str = "mps_log",
-                 train_profile:str = "train-profile", 
+                 train_profile: str = "train-profile", 
                  port: str = "18080",
                  use_triton: bool = False,
                  infer_model_config: List[InferModelConfig] | InferModelConfig = None,
@@ -264,7 +264,7 @@ class System:
                 #     stderr=subprocess.PIPE, stdout=subprocess.PIPE, env=os.environ.copy())
                 self.mps_server = subprocess.Popen(
                     CudaMpsCtrl.launch_cmd(),
-                    stderr=subprocess.PIPE, stdout=subprocess.PIPE, 
+                    stderr=subprocess.STDOUT, stdout=open(mps_log, "w"), 
                     env=os.environ.copy())
             else:
                 self.mps_server is None
@@ -627,6 +627,8 @@ class HyperWorkload:
         ]
         if server.use_triton:
             cmd += ["--triton-port", str(server.triton_port)]
+            cmd += ["--triton-config", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../server/triton_models/config.conf"))]
+            cmd += ["--triton-max-memory", str(server.max_warm_cache_nbytes)]
         if self.duration is not None:
             cmd += ["-d", str(self.duration)]
 

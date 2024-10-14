@@ -361,129 +361,133 @@ def run(system: System, workload: HyperWorkload,
 ## =========================================================== ##
 
 ## MARK: Static Partition
-for tag, item in {
-    'F': ({
-        'mode' : System.ServerMode.Normal,
-        'use_sta': True,
-        'mps': True,
-        'skip_set_mps_thread_percent': skip_set_mps_pct,
-        'use_xsched': True,
-        'dynamic_sm_partition': dynamic_sm_partition,
-        'has_warmup': True,
-        'max_warm_cache_nbytes': int(5.5 * 1024 ** 3),
-        'cuda_memory_pool_gb': '7',
-        'use_sta_train': False
-    }, {'train_batch_size': 32 if not runner.is_four_gpu() else 26, 
-        'epoch_time': 5.5}), 
-    'I': ({
-        'mode' : System.ServerMode.Normal,
-        'use_sta': True,
-        'mps': True,
-        'skip_set_mps_thread_percent': skip_set_mps_pct,
-        'use_xsched': True,
-        'dynamic_sm_partition': dynamic_sm_partition,
-        'has_warmup': True,
-        'max_warm_cache_nbytes': int(9 * 1024 ** 3),
-        'cuda_memory_pool_gb': '10.5',
-        'use_sta_train': False
-    }, {'train_batch_size': 8 if not runner.is_four_gpu() else 2, 
-        'epoch_time': 14.5}), 
-}.items():
-    if not run_static_partition:
-        break
-    if tag == 'F' and not run_static_partition_F:
-        continue
-    if tag == 'I' and not run_static_partition_I:
-        continue
+for use_triton in [True]:
+    for tag, item in {
+        'F': ({
+            'mode' : System.ServerMode.Normal,
+            'use_sta': True,
+            'mps': True,
+            'skip_set_mps_thread_percent': skip_set_mps_pct,
+            'use_xsched': True,
+            'use_triton': use_triton,
+            'dynamic_sm_partition': dynamic_sm_partition,
+            'has_warmup': True,
+            'max_warm_cache_nbytes': int(5.5 * 1024 ** 3),
+            'cuda_memory_pool_gb': '7',
+            'use_sta_train': False
+        }, {'train_batch_size': 32 if not runner.is_four_gpu() else 26, 
+            'epoch_time': 5.5}), 
+        'I': ({
+            'mode' : System.ServerMode.Normal,
+            'use_sta': True,
+            'mps': True,
+            'skip_set_mps_thread_percent': skip_set_mps_pct,
+            'use_xsched': True,
+            'use_triton': use_triton,
+            'dynamic_sm_partition': dynamic_sm_partition,
+            'has_warmup': True,
+            'max_warm_cache_nbytes': int(9 * 1024 ** 3),
+            'cuda_memory_pool_gb': '10.5',
+            'use_sta_train': False
+        }, {'train_batch_size': 8 if not runner.is_four_gpu() else 2, 
+            'epoch_time': 14.5}), 
+    }.items():
 
-    system_config, workload_config = item
-    if UniformConfig.enable and UniformConfig.high_load.enable:
-        with mps_thread_percent(UniformConfig.high_load.mps_infer):
-            client_model_list, server_model_config = InferModel.get_multi_model(
-                UniformConfig.model_list, UniformConfig.num_model, 1)
-            workload = uniform(rps=UniformConfig.high_load.rps, 
-                               client_model_list=client_model_list, infer_only=False,
-                               train_batch_size=workload_config['train_batch_size'],
-                               train_epoch=int(UniformConfig.duration / workload_config['epoch_time'] + 5))
-            system = System(train_mps_thread_percent=UniformConfig.high_load.mps_train,
-                            port=UniformConfig.port, **system_config)
-            run(system, workload, server_model_config, "overall-uniform", f"static-partition-high-{tag}")
+        if not run_static_partition:
+            break
+        if tag == 'F' and not run_static_partition_F:
+            continue
+        if tag == 'I' and not run_static_partition_I:
+            continue
 
-    if UniformConfig.enable and UniformConfig.low_load.enable:
-        with mps_thread_percent(UniformConfig.low_load.mps_infer):
-            client_model_list, server_model_config = InferModel.get_multi_model(
-                UniformConfig.model_list, UniformConfig.num_model, 1)
-            workload = uniform(rps=UniformConfig.low_load.rps, 
-                               client_model_list=client_model_list, infer_only=False,
-                               train_batch_size=workload_config['train_batch_size'],
-                               train_epoch=int(UniformConfig.duration / workload_config['epoch_time'] + 5))
-            system = System(train_mps_thread_percent=UniformConfig.low_load.mps_train,
-                            port=UniformConfig.port, **system_config)
-            run(system, workload, server_model_config, "overall-uniform", f"static-partition-low-{tag}")
-
-    if enable_uniform_v2:
-        for wkld_type in uniform_v2_workload_types:
-            with mps_thread_percent(None):
+        system_config, workload_config = item
+        if UniformConfig.enable and UniformConfig.high_load.enable:
+            with mps_thread_percent(UniformConfig.high_load.mps_infer):
                 client_model_list, server_model_config = InferModel.get_multi_model(
-                    run_comm.UniformConfig_v2.model_list, run_comm.UniformConfig_v2.num_model, 1)
-                workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False,
-                                               train_batch_size=workload_config['train_batch_size'],
-                                               train_epoch_time=workload_config['epoch_time'])
-                system = System(port=run_comm.UniformConfig_v2.port, **system_config)
-                run_comm.run(system, workload, server_model_config, 
-                             f"overall-uniform-v2-{runner.get_num_gpu()}gpu", 
-                             f'static-partition-{wkld_type}-{tag}')
+                    UniformConfig.model_list, UniformConfig.num_model, 1)
+                workload = uniform(rps=UniformConfig.high_load.rps, 
+                                client_model_list=client_model_list, infer_only=False,
+                                train_batch_size=workload_config['train_batch_size'],
+                                train_epoch=int(UniformConfig.duration / workload_config['epoch_time'] + 5))
+                system = System(train_mps_thread_percent=UniformConfig.high_load.mps_train,
+                                port=UniformConfig.port, **system_config)
+                run(system, workload, server_model_config, "overall-uniform", f"static-partition-high-{tag}")
 
-    if SkewedConfig.enable and SkewedConfig.high_load.enable:
-        with mps_thread_percent(SkewedConfig.high_load.mps_infer):
-            client_model_list, server_model_config = InferModel.get_multi_model(
-                SkewedConfig.model_list, SkewedConfig.num_model, 1)
-            workload = skewed(rps=SkewedConfig.high_load.rps, 
-                              client_model_list=client_model_list, infer_only=False,
-                              train_batch_size=workload_config['train_batch_size'],
-                              train_epoch=int(SkewedConfig.duration / workload_config['epoch_time'] + 5))
-            system = System(train_mps_thread_percent=SkewedConfig.high_load.mps_train,
-                            port=SkewedConfig.port, **system_config)
-            run(system, workload, server_model_config, "overall-skewed", f"static-partition-high-{tag}")
-
-    if SkewedConfig.enable and SkewedConfig.low_load.enable:
-        with mps_thread_percent(SkewedConfig.low_load.mps_infer):
-            client_model_list, server_model_config = InferModel.get_multi_model(
-                SkewedConfig.model_list, SkewedConfig.num_model, 1)
-            workload = skewed(rps=SkewedConfig.low_load.rps, 
-                              client_model_list=client_model_list, infer_only=False,
-                              train_batch_size=workload_config['train_batch_size'],
-                              train_epoch=int(SkewedConfig.duration / workload_config['epoch_time'] + 5))
-            system = System(train_mps_thread_percent=SkewedConfig.low_load.mps_train,
-                            port=SkewedConfig.port, **system_config)
-            run(system, workload, server_model_config, "overall-skewed", f"static-partition-low-{tag}")
-    
-    if enable_skewed_v2:
-        for wkld_type in skew_v2_workload_types:
-            with mps_thread_percent(None):
+        if UniformConfig.enable and UniformConfig.low_load.enable:
+            with mps_thread_percent(UniformConfig.low_load.mps_infer):
                 client_model_list, server_model_config = InferModel.get_multi_model(
-                    run_comm.SkewedConfig_v2.model_list, run_comm.SkewedConfig_v2.num_model, 1)
-                workload = run_comm.skewed_v2(wkld_type, client_model_list, infer_only=False,
-                                              train_batch_size=workload_config['train_batch_size'],
-                                              train_epoch_time=workload_config['epoch_time'])
-                system = System(port=run_comm.SkewedConfig_v2.port, **system_config)
-                run_comm.run(system, workload, server_model_config, 
-                             f"overall-skewed-v2-{runner.get_num_gpu()}gpu", 
-                             f'static-partition-{wkld_type}-{tag}')
+                    UniformConfig.model_list, UniformConfig.num_model, 1)
+                workload = uniform(rps=UniformConfig.low_load.rps, 
+                                client_model_list=client_model_list, infer_only=False,
+                                train_batch_size=workload_config['train_batch_size'],
+                                train_epoch=int(UniformConfig.duration / workload_config['epoch_time'] + 5))
+                system = System(train_mps_thread_percent=UniformConfig.low_load.mps_train,
+                                port=UniformConfig.port, **system_config)
+                run(system, workload, server_model_config, "overall-uniform", f"static-partition-low-{tag}")
 
-    if AzureConfig.enable:
-        with mps_thread_percent(AzureConfig.mps_infer):
-            client_model_list, server_model_config = InferModel.get_multi_model(
-                AzureConfig.model_list, AzureConfig.num_model, 1)
-            workload = azure(rps=AzureConfig.max_rps, 
-                             client_model_list=client_model_list, infer_only=False,
-                             train_batch_size=workload_config['train_batch_size'],
-                             train_epoch=int(AzureConfig.duration / workload_config['epoch_time'] + 5))
-            system = System(train_mps_thread_percent=AzureConfig.mps_train,
-                            port=AzureConfig.port, **system_config)
-            run(system, workload, server_model_config, 
-                f"overall-azure-{runner.get_num_gpu()}gpu", 
-                f"static-partition-{tag}")
+        if enable_uniform_v2:
+            for wkld_type in uniform_v2_workload_types:
+                with mps_thread_percent(None):
+                    client_model_list, server_model_config = InferModel.get_multi_model(
+                        run_comm.UniformConfig_v2.model_list, run_comm.UniformConfig_v2.num_model, 1)
+                    workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False,
+                                                train_batch_size=workload_config['train_batch_size'],
+                                                train_epoch_time=workload_config['epoch_time'])
+                    system = System(port=run_comm.UniformConfig_v2.port, **system_config)
+                    run_comm.run(system, workload, server_model_config, 
+                                f"overall-uniform-v2-{runner.get_num_gpu()}gpu", 
+                                f'static-partition-{wkld_type}-{tag}')
+
+        if SkewedConfig.enable and SkewedConfig.high_load.enable:
+            with mps_thread_percent(SkewedConfig.high_load.mps_infer):
+                client_model_list, server_model_config = InferModel.get_multi_model(
+                    SkewedConfig.model_list, SkewedConfig.num_model, 1)
+                workload = skewed(rps=SkewedConfig.high_load.rps, 
+                                client_model_list=client_model_list, infer_only=False,
+                                train_batch_size=workload_config['train_batch_size'],
+                                train_epoch=int(SkewedConfig.duration / workload_config['epoch_time'] + 5))
+                system = System(train_mps_thread_percent=SkewedConfig.high_load.mps_train,
+                                port=SkewedConfig.port, **system_config)
+                run(system, workload, server_model_config, "overall-skewed", f"static-partition-high-{tag}")
+
+        if SkewedConfig.enable and SkewedConfig.low_load.enable:
+            with mps_thread_percent(SkewedConfig.low_load.mps_infer):
+                client_model_list, server_model_config = InferModel.get_multi_model(
+                    SkewedConfig.model_list, SkewedConfig.num_model, 1)
+                workload = skewed(rps=SkewedConfig.low_load.rps, 
+                                client_model_list=client_model_list, infer_only=False,
+                                train_batch_size=workload_config['train_batch_size'],
+                                train_epoch=int(SkewedConfig.duration / workload_config['epoch_time'] + 5))
+                system = System(train_mps_thread_percent=SkewedConfig.low_load.mps_train,
+                                port=SkewedConfig.port, **system_config)
+                run(system, workload, server_model_config, "overall-skewed", f"static-partition-low-{tag}")
+        
+        if enable_skewed_v2:
+            for wkld_type in skew_v2_workload_types:
+                with mps_thread_percent(None):
+                    client_model_list, server_model_config = InferModel.get_multi_model(
+                        run_comm.SkewedConfig_v2.model_list, run_comm.SkewedConfig_v2.num_model, 1)
+                    workload = run_comm.skewed_v2(wkld_type, client_model_list, infer_only=False,
+                                                train_batch_size=workload_config['train_batch_size'],
+                                                train_epoch_time=workload_config['epoch_time'])
+                    system = System(port=run_comm.SkewedConfig_v2.port, **system_config)
+                    run_comm.run(system, workload, server_model_config, 
+                                f"overall-skewed-v2-{runner.get_num_gpu()}gpu", 
+                                f'static-partition-{wkld_type}-{tag}')
+
+        if AzureConfig.enable:
+            with mps_thread_percent(AzureConfig.mps_infer):
+                client_model_list, server_model_config = InferModel.get_multi_model(
+                    AzureConfig.model_list, AzureConfig.num_model, 1)
+                workload = azure(rps=AzureConfig.max_rps, 
+                                client_model_list=client_model_list, infer_only=False,
+                                train_batch_size=workload_config['train_batch_size'],
+                                train_epoch=int(AzureConfig.duration / workload_config['epoch_time'] + 5))
+                system = System(train_mps_thread_percent=AzureConfig.mps_train,
+                                port=AzureConfig.port, **system_config)
+                run(system, workload, server_model_config, 
+                    f"overall-azure-{runner.get_num_gpu()}gpu", 
+                    f"static-partition-{tag}")
 
 ## MARK: COLSYS
 if run_colsys:

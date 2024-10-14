@@ -1,5 +1,6 @@
 #include "workload.h"
 #include "triton_impl.h"
+#include "warm_cache.h"
 #include "workload.cc.in"
 #include "workload.h.in"
 #include <memory>
@@ -8,7 +9,8 @@ namespace colserve::workload {
 
 std::unique_ptr<IWorkload> GetTritonWorkload(std::shared_ptr<grpc::Channel> channel,
        std::chrono::seconds duration, double delay_before_profile,
-       const std::string &infer_timeline) {
+       const std::string &infer_timeline, size_t max_memory_nbytes, std::string triton_config) {
+  WarmCache::SetTritonConfig(TritonConfig::LoadConfig(triton_config, max_memory_nbytes));
   return std::make_unique<colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE::Workload>(channel, duration, delay_before_profile, infer_timeline);
 }
 grpc::Status triton_backend::ServeStub::Inference(grpc::ClientContext *context,

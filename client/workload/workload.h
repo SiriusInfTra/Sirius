@@ -13,7 +13,7 @@ using time_point_t = std::chrono::time_point<std::chrono::steady_clock>;
 using double_ms_t = std::chrono::duration<double, std::milli>;
 
 class IWorkload {
-public:
+ public:
   virtual bool Hello() = 0;
   virtual bool InferenceWorkloadStart() = 0;
   virtual void InferenceWorkloadDone() = 0;
@@ -31,19 +31,6 @@ public:
                           int64_t show_result = 0) = 0;
   virtual void Train(const std::string &model, size_t num_epoch, size_t batch_size) = 0;
   virtual void Report(int verbose = false, std::ostream &os = std::cout) = 0;
-  bool IsSetupSlotDone() {
-    return setup_slot_done_;
-  }
-    bool HasTrainFirstEpochDone();
-
-  void Run() {
-    for (auto &worker : infer_workers_) {
-      if (!worker->IsSetupSlotDone()) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-      }
-    }
-  private:
-  std::atomic<bool> setup_slot_done_{false};
 };
 
 std::unique_ptr<IWorkload> GetColsysWorkload(std::shared_ptr<grpc::Channel> channel,
@@ -52,7 +39,7 @@ std::unique_ptr<IWorkload> GetColsysWorkload(std::shared_ptr<grpc::Channel> chan
 
 std::unique_ptr<IWorkload> GetTritonWorkload(std::shared_ptr<grpc::Channel> channel,
            std::chrono::seconds duration, double delay_before_profile,
-           const std::string &infer_timeline);
+           const std::string &infer_timeline, size_t max_memory_nbytes, std::string triton_config);
 }
 
 #endif

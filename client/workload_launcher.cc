@@ -122,7 +122,7 @@ int main(int argc, char** argv) {
       grpc::CreateChannel(triton_target, grpc::InsecureChannelCredentials()),
       std::chrono::seconds(app.duration),
       app.wait_train_setup_sec + app.wait_stable_before_start_profiling_sec,
-      app.infer_timeline
+      app.infer_timeline, app.triton_max_memory, app.triton_config
     );
   }
   // colserve::workload

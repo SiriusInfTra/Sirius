@@ -35,6 +35,8 @@ class AppBase {
   std::string colsys_port;
   std::string triton_ip = "localhost";
   std::string triton_port;
+  size_t triton_max_memory{0}; // in MB
+  std::string triton_config;
   bool enable_train{true}, enable_infer{true};
   std::set<std::string> train_models;
   int duration{10}, concurrency{10};
