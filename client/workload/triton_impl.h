@@ -69,14 +69,14 @@ inline void SetGPTRequest(InferRequest &request, const std::string &model, const
   request.value.set_model_name(model);
   // request.req.set_raw_input_contents()
   auto* input = request.value.add_inputs();
-  input->set_name("input0");
-  input->set_datatype("INT64");
+  input->set_name("input_ids");
+  input->set_datatype("INT32");
   input->add_shape(1);
   input->add_shape(64);
   
   auto contents = input->mutable_contents();
   for (int k = 0; k < 64; ++k) {
-    contents->add_int64_contents(reinterpret_cast<const int64_t*>(data.data())[k]);
+    contents->add_int_contents(reinterpret_cast<const int64_t*>(data.data())[k]);
   }
   
 }
@@ -84,25 +84,25 @@ inline void SetGPTRequest(InferRequest &request, const std::string &model, const
 inline void SetBertRequest(InferRequest &request, const std::string &model, const std::string &ids, const std::string &mask) {
   request.value.set_model_name(model);
   auto* input = request.value.add_inputs();
-  input->set_name("input0");
-  input->set_datatype("INT64");
+  input->set_name("input_ids");
+  input->set_datatype("INT32");
   input->add_shape(1);
   input->add_shape(64);
   
   auto contents = input->mutable_contents();
   for (int k = 0; k < 64; ++k) {
-    contents->add_int64_contents( reinterpret_cast<const int64_t*>(ids.data())[k]);
+    contents->add_int_contents( reinterpret_cast<const int64_t*>(ids.data())[k]);
   }
   
   auto* input1 = request.value.add_inputs();
-  input1->set_name("input1");
-  input1->set_datatype("INT64");
+  input1->set_name("attention_mask");
+  input1->set_datatype("INT32");
   input1->add_shape(1);
   input1->add_shape(64);
   
   auto contents1 = input1->mutable_contents();
   for (int k = 0; k < 64; ++k) {
-    contents1->add_int64_contents(reinterpret_cast<const int64_t*>(mask.data())[k]);
+    contents1->add_int_contents(reinterpret_cast<const int64_t*>(mask.data())[k]);
   }
 }
 
@@ -187,6 +187,11 @@ struct InferResult {
       return TensorData(
         output.contents().int64_contents().data(), 
         output.contents().int64_contents_size() * sizeof(float), 
+        datatype);
+    } else if (datatype == "INT32") {
+      return TensorData(
+        output.contents().int_contents().data(), 
+        output.contents().int_contents_size() * sizeof(float), 
         datatype);
     } else {
       LOG(FATAL) << "Unsupported datatype: " << datatype;
