@@ -339,15 +339,17 @@ class System:
                                           os.path.pardir, 
                                           os.path.pardir, 
                                           os.path.pardir) + ':/colsys',
+                    #    '-v', '/disk2/wyk/onnxruntime_backend/install/backends/onnxruntime:/opt/tritonserver/backends/onnxruntime',
                        '-v', os.environ['HOME'] + ':' + os.environ['HOME'],
                        ]
                 for key, value in os.environ.items():
                     if key.startswith('CUDA_'):
                         cmd += ['-e', f'{key}={value}']
                 cmd += [
-                    'nvcr.io/nvidia/tritonserver:24.07-py3',
+                    'nvcr.io/nvidia/tritonserver:23.12-py3',
                     'tritonserver',
-                    '--model-repository=/colsys/server/triton_models']
+                    '--model-repository=/colsys/server/triton_models',
+                    '--model-control-mode=explicit']
                 self.cmd_trace.append(" ".join(cmd))
                 self.triton_server = subprocess.Popen(cmd, stdout=open(triton_log, "w"), stderr=subprocess.STDOUT)
         print('\n')
@@ -603,7 +605,8 @@ class HyperWorkload:
             return
 
         print(f"  --> [workload-profile] {workload_log}\n")
-
+        with open(f'{server.log_dir}/cmd-trace', 'w') as f:
+            f.write("\n\n".join(server.cmd_trace))
         try:
             client_log = pathlib.Path(server.log_dir) / self.client_log
             with open(client_log, "w") as log_file:
