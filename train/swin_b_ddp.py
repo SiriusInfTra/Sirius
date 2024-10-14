@@ -9,8 +9,9 @@ from torch.utils.data import TensorDataset, DataLoader
 import argparse
 import os, sys
 import torch_col
-from torch_col import MemoryPool, EventManager, TrainMode, HookMode
-from torch_col import DynamicBatchDataset
+from torch_col import MemoryPool, EventManager, TrainMode, ColocateCtrlHookMode
+from torch_col import DynamicBatchDataset, BatchDistributePolicy
+from torch_col import dynamic_batch
 import torch_col.trainer
 import torch_col.xsched
 from typing import Optional, cast
@@ -35,83 +36,60 @@ def cleanup():
 
 
 def train(rank:int, world_size:int,
-          train_mode: TrainMode, 
-          num_epoch: int, real_data: bool, batch_size: int, 
+          num_epoch: int, batch_size: int, 
           global_batch_size: Optional[int] = None):
     setup(rank, world_size)
-    torch_col.init_train_info(batch_size, batch_size, model_name='swin_b_ddp')
-    print(f'Env: {os.environ}')
-    print(f'Real Data: {real_data}')
+    torch_col.init_train_info(batch_size, batch_size, 
+                              model_name='swin_b_ddp')
 
-    hook_mode = torch_col.get_hook_mode()
+    hook_mode = torch_col.get_colocate_ctrl_hook_mode()
+    train_mode = torch_col.get_colocate_train_mode()
     
     if torch_col.is_enable_shared_tensor():
         torch_col.tag_model_start()
 
-
-    model = swin_b_tiny.SwinTransformer(
-        input_shape=(32, 32, 3),
-        patch_size=(2, 2),
-        qkv_bias=True,
-        num_classes=100,
-        embed_dim=128,
-        num_heads=8,
-        num_mlp=256,
-        window_size=2,
-        shift_size=1,
-        dropout_rate=0.1
-    ).cuda()
-
-    # for param in model.parameters():
-    #     param.requires_grad = False
-    if os.environ.get('COL_IMAGENET', '0') == '1':
-        num_class = 100
-    elif os.environ.get('COL_CIFAR100', '0') == '1':
-        num_class = 100
-    elif real_data:
-        num_class = 37
-    else:
-        num_class = 10
-    print(f"num_class = {num_class}.")
-    if real_data:
-        model.head = torch.nn.Linear(model.head.in_features, num_class).cuda()
+    model = models.swin_b(weights=models.Swin_B_Weights.DEFAULT).cuda()
     model = DDP(model, device_ids=[rank])
 
     print(f"Train params memory usage: {torch_col.MemoryPool.get_memory_usage() * 1024:.2f}M")
 
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1).cuda(rank)
-    # optimizer = torch.optim.SGD(model.parameters(), lr=1e-3, momentum=0.9)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-5)
-    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
-    # optimizer, scheduler = torch_col.get_imagenet_optimizer_and_scheduler(model, global_batch_size, 90, 5)
+    criterion = nn.CrossEntropyLoss().cuda(rank)
+    optimizer = torch.optim.SGD(model.parameters(), 0.001, 
+                                momentum=0.9, weight_decay=1e-4)
     scaler = torch.cuda.amp.GradScaler()
 
     print(f"Train after init memory pool usage: {MemoryPool.get_memory_usage() * 1024:.2f}M")
     
-    hook = torch_col.get_hook(train_mode, hook_mode, num_epoch, batch_size)
-    hook.register_pytorch_hook([model, criterion])
-    # checkpoint_micro_batch = hook.train_mode.is_kill_batch()
-    checkpoint_micro_batch = True
+    col_ctrl = torch_col.create_colocate_ctrl(train_mode, hook_mode, num_epoch, batch_size)
+    col_ctrl.register_pytorch_hook([model, criterion])
 
     # dummy data
-    train_dataset = DynamicBatchDataset(
-        model_name='swin_b', size=3680 if real_data else 1000, max_batch_size=batch_size, 
-        hook=hook, trace=None,
-        input_shape=(3, 32, 32), num_class=num_class,
-        fake_data=not real_data,
-        max_global_batch_size=global_batch_size,
-        checkpoint_micro_batch=checkpoint_micro_batch)
+    # train_dataset = DynamicBatchDataset(
+    #     model_name='swin_b', size=1000, max_batch_size=batch_size, 
+    #     hook=hook, trace=None,
+    #     input_shape=(3, 224, 224), num_class=10, 
+    #     max_global_batch_size=None,
+    #     checkpoint_micro_batch=checkpoint_micro_batch)
+
+    enable_grad_accumulate = global_batch_size is not None or train_mode.is_colocate()
+    checkpoint_micro_batch = col_ctrl.train_mode.is_kill_batch()
+    dataset, batch_manager = torch_col.init_dynamic_batch(
+        dataset_size=1000 * world_size, 
+        dataset_type=dynamic_batch.DatasetType.VISION,
+        dataset_config=dynamic_batch.VisionDatasetConfig((3, 224, 224), 10),
+        batch_size=batch_size,
+        global_batch_size=global_batch_size,
+        enable_grad_accumulate=enable_grad_accumulate,
+        checkpoint_micro_batch=checkpoint_micro_batch,
+        lazy_batch_distributing=False,
+        batch_distribute_policy=BatchDistributePolicy.BY_PERFORMANCE
+    )   
 
     model.train()
-    hook.train_start()
-    
-    transform0 = transforms.Compose([
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomVerticalFlip(),
-    ])
+    col_ctrl.train_start()
 
-    # torch_col.util.initialize_sgd_optimizer(model, optimizer)
-    if train_dataset.checkpoint_micro_batch:
+    torch_col.util.initialize_sgd_optimizer(model, optimizer)
+    if batch_manager._checkpoint_micro_batch:
         grad_accumulator = torch_col.GradAccumulator(model)
     else:
         grad_accumulator = None
@@ -123,61 +101,28 @@ def train(rank:int, world_size:int,
 
     torch_col.dist.wait_barrier()
 
-    def iter_train_fn(batch):
-        images = batch['image']
-        targets = batch['label']
-        images: torch.Tensor = images.cuda(rank, non_blocking=True)
-        images = transform0(images)
-        targets: torch.Tensor = targets.cuda(rank, non_blocking=True)
-        with train_dataset.get_context(model):
-            # if grad_accumulator is not None:
-            optimizer.zero_grad(set_to_none=False)
+    def iter_train_fn(batch: dynamic_batch.Batch):
+        images = batch['images']
+        targets = batch['labels']
+        # images: torch.Tensor = images.cuda(rank, non_blocking=True)
+        # targets: torch.Tensor = targets.cuda(rank, non_blocking=True)
+        with batch_manager.ddp_sync_context(model, batch):
             with torch.cuda.amp.autocast(cache_enabled=False):
-                output: torch.Tensor = model(images)
+                output = model(images)
                 loss = criterion(output, targets)
-                train_dataset.scale_loss(loss)
-                # torch_col.info(f"Batch Size is {len(images)}.")
-            scaler.scale(loss).backward()    
-        train_dataset.step_stage(hook, optimizer, scaler=scaler, 
-                                 grad_accumulator=grad_accumulator)
-        return loss
+                running_loss = loss.item() * images.size(0)
+                batch_manager.scale_loss(batch, loss)
+            scaler.scale(loss).backward()
+        batch_manager.optimizer_step(batch, optimizer, 
+                                     amp_scaler=scaler, 
+                                     grad_accumulator=grad_accumulator)
+        return running_loss
 
-    trainer = torch_col.Trainer(model, train_dataset, iter_train_fn)
-    if os.environ.get('COL_IMAGENET', '0') == '1':
-        import numpy as np
-        val_images = np.load('imagenet-100/imagenet-100-images-val.npy', mmap_mode='c')
-        val_labels = np.load('imagenet-100/imagenet-100-labels-val.npy', mmap_mode='c')
-        val_dataset = TensorDataset(torch.tensor(val_images, dtype=torch.float32), torch.tensor(val_labels, dtype=torch.long))
-        val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
-    elif os.environ.get('COL_CIFAR100', '0') == '1':
-        # 下载并加载 CIFAR-100 验证数据集
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-        ])
-        print('==> Preparing data..')
-        # 加载验证数据集
-        val_dataset = torchvision.datasets.CIFAR100(root='./data', train=False, download=True, transform=transform)
+    trainer = torch_col.Trainer(model, iter_train_fn)
 
-        # 提取图像和标签数据
-        val_images = []
-        val_labels = []
-
-        for image, label in val_dataset:
-            val_images.append(image)
-            val_labels.append(label)
-
-        # 将列表转换为张量
-        val_images = torch.stack(val_images)
-        val_labels = torch.tensor(val_labels, dtype=torch.long)
-
-        # 创建 TensorDataset 和 DataLoader
-        val_dataset = TensorDataset(val_images, val_labels)
-        val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
     for epoch in range(num_epoch):
-        last_loss = trainer.train_one_epoch(epoch)
-        lr = optimizer.param_groups[0]['lr']
-        # scheduler.step(epoch)   
-        # scheduler.step(epoch)
+        running_loss = trainer.train_one_epoch(epoch)
+
         epoch_stat = trainer.get_last_epoch_stat()
         epoch_duration = trainer.get_last_epoch_duration()
 
@@ -188,62 +133,19 @@ def train(rank:int, world_size:int,
         if train_mode.is_kill_batch():
             batch_info += (
                 f' | try {epoch_stat.tried_batch} kill {epoch_stat.killed_batch}, ' 
-                + f'{epoch_stat.killed_time*1e3:.1f}ms finish {epoch_stat.finished_batch}, '
-                + f'{epoch_stat.finished_time*1e3:.1f}ms')
-        # time.sleep(10)
-        # torch.cuda.synchronize()
-        # torch_col.dist.wait_barrier()
-        # torch_col.info('Before Swin Buffer1', cast(swin_b_tiny.SwinTransformer, model.module).swin_block1.attn.get_buffer('relative_position_index').cpu())
-        # torch_col.info('Before Swin Buffer2', cast(swin_b_tiny.SwinTransformer, model.module).swin_block2.attn.get_buffer('relative_position_index').cpu())
-        if os.environ.get('COL_IMAGENET', '0') == '1' or os.environ.get('COL_CIFAR100', '0') == '1':
-            while True:
-                total_loss = 0.0
-                correct = 0
-                try:
-                    # with contextlib.nullcontext():
-                    with hook.steps_no_interrupt():
-                        with torch.no_grad():
-                            for images, labels in val_loader:
-                                images = torch.tensor(images).cuda()
-                                labels = torch.tensor(labels).cuda()
-                                outputs: torch.Tensor = model.module(images)
-                                loss = criterion(outputs, labels)
-                                # torch.cuda.synchronize()
-                                correct += (outputs.argmax(1) == labels).type(torch.float).sum().item()
-                                total_loss += loss.item()
-                except torch_col.ColocateAdjustL1Exception as e:
-                    # not calculate success retry
-                    print(f'Exception in val : {e}, retry.')
-                    hook.release_and_reply()
-                    continue
-                break
-            torch_col.info('After Swin Buffer1', cast(swin_b_tiny.SwinTransformer, model.module).swin_block1.attn.get_buffer('relative_position_index').cpu())
-            torch_col.info('After Swin Buffer2', cast(swin_b_tiny.SwinTransformer, model.module).swin_block2.attn.get_buffer('relative_position_index').cpu())
-                # torch_col.dist.wait_barrier()
-            val_loss = total_loss / len(val_loader)
-            val_acc = correct / len(val_loader.dataset)
-            batch_info += f' | val loss {val_loss:.6f} | val acc {val_acc:.6f}'
-        # torch_col.dist.wait_barrier()
+                f'{epoch_stat.killed_time*1e3:.1f}ms finish {epoch_stat.finished_batch}, '
+                f'{epoch_stat.finished_time*1e3:.1f}ms')
         if global_batch_size is not None:
-            batch_info += f' | num_rollback_sampels {train_dataset.num_rollback_samples_in_epoch}'
-        print('[Rank {} | {} epoch {}] {:.3f}s | {} | batch-size {} | micro-batch-size {} | {} | thpt {:.2f} | lr {:.2e} | loss {:.6f}'.format(
-                rank, model.__class__.__name__, epoch, epoch_duration / 1e3,
-                batch_info, batch_size, train_dataset.batch_size,
-                mem_info, epoch_stat.finished_sample / (epoch_duration / 1e3), 
-                lr,
-                last_loss.item()), flush=True)
-        if real_data and torch_col.get_train_rank() == 0:
-            # pass
-            
-            checkpoint_dir = os.environ.get('COL_CP', None)
-            
-            if checkpoint_dir is not None:
-                if not os.path.exists(checkpoint_dir):
-                    os.makedirs(checkpoint_dir)
-                torch.save(model.module.state_dict(), f'{checkpoint_dir}/{os.getpid()}_{epoch}.pth')
+            batch_info += f' | num_rollback_sampels {epoch_stat.num_rollback_batch}'
+
+        print(f'[Rank {rank} | {model.__class__.__name__} epoch {epoch}] '
+              f'{epoch_duration / 1e3:.3f}s | {batch_info} | batch-size {batch_size} '
+              f'| {mem_info} | thpt {epoch_stat.finished_sample / (epoch_duration / 1e3):.3f} '
+              f'| loss {running_loss:.6f}', 
+              flush=True)
     
-        if hook.can_exit_after_infer_worklaod_done():
-            print('[hook] inference workload done, will exit training', flush=True)
+        if col_ctrl.can_exit_after_infer_worklaod_done():
+            torch_col.info('[hook] inference workload done, will exit training')
             torch_col.dist.wait_barrier()
             break
 
@@ -254,8 +156,8 @@ def train(rank:int, world_size:int,
             num_epoch * batch_size, overall_stat.tried_batch, 
             overall_stat.killed_batch, overall_stat.finished_batch), flush=True)
 
-    hook.train_end()
-    hook.stop()
+    col_ctrl.train_end()
+    col_ctrl.stop()
 
     EventManager.dump(None, train_mode)
     cleanup()
@@ -266,29 +168,20 @@ def main():
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--global-batch-size', type=int, default=512)
     parser.add_argument('--num-epoch', type=int, default=15)
-    parser.add_argument('--train-mode', type=str, default=TrainMode.COLOCATE_L1.value, 
-                        choices=[train_mode.value for train_mode in TrainMode])
-    parser.add_argument('--real-data', action='store_true')
     args = parser.parse_args()
     
     batch_size = args.batch_size
     global_batch_size = args.global_batch_size
     num_epoch = args.num_epoch
-    num_epoch = 90
-    real_data = args.real_data or True
-    train_mode = [train_mode for train_mode in TrainMode if train_mode.value == args.train_mode][0]
-    # hook_mode = [hook_mode for hook_mode in HookMode if hook_mode.value == args.hook_mode][0]
-    # hook_mode = torch_col.get_hook_mode()
-    
-    
+
     print(f"Swin Transformer training, batch-size={batch_size}"
-        + f", num-epoch={num_epoch}, train-mode={train_mode}")
+          f", num-epoch={num_epoch}")
     
-    process_context =  torch_mp.spawn(train, 
-                   args=(torch.cuda.device_count(), train_mode,
-                         num_epoch, real_data, batch_size, global_batch_size), 
-                   nprocs=torch.cuda.device_count(), 
-                   join=False)
+    process_context = torch_mp.spawn(train, 
+        args=(torch.cuda.device_count(),
+                num_epoch, batch_size, global_batch_size), 
+        nprocs=torch.cuda.device_count(), 
+        join=False)
     try:
         process_context.join()
     except Exception as e:
@@ -300,4 +193,5 @@ def main():
 
 
 if __name__ == '__main__':
+    # torch_col.util.cleanup_previous_shm()
     main()

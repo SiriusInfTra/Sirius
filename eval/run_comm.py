@@ -90,7 +90,9 @@ class UniformConfig_v2:
     model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
                   InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
                   InferModel.ResNet152, InferModel.DistilGPT2] 
-    num_model = 64
+    # num_model = 64
+    # num_model = 60 * get_num_gpu()
+    num_model = runner.scale_up_by_num_gpu(56)
     interval_sec = 20  # 10/20 sec seem to be good choice
     duration = 300
     port = str(get_unique_port())
@@ -134,7 +136,8 @@ class SkewedConfig_v2:
     model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
                   InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
                   InferModel.ResNet152, InferModel.DistilGPT2] 
-    num_model = 64
+    # num_model = 64
+    num_model = runner.scale_up_by_num_gpu(56)
     interval_sec = 20
     duration = 300
     port = str(get_unique_port())
@@ -318,7 +321,8 @@ def _run(system: System, workload: HyperWorkload, server_model_config: str, unit
         system.calcuate_train_thpt()
     
 
-def run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
+def run(system: System, workload: HyperWorkload, 
+        server_model_config: str, unit: str, tag: str):
     print(f'\x1b[32;1m[{unit} {tag}]\x1b[0m')
     if skip_fail:
         try:

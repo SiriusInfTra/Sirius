@@ -66,7 +66,7 @@ double Config::memory_pressure_mb = 0;
 
 bool Config::pipeline_load = true;
 
-double Config::task_switch_delay_ms = 5;
+double Config::task_switch_delay_ms = 10;
 
 bool Config::has_warmup = false;
 double Config::infer_model_max_idle_ms = 3000;
@@ -80,6 +80,9 @@ bool Config::dynamic_sm_partition = false;
 bool Config::estimate_infer_model_tpc = false;
 double Config::infer_exec_time_estimate_scale = 1.1;
 
+bool Config::enable_train_adjust_balance = true;
+memory_mb_t Config::train_adjust_balance_threshold = 1500;
+
 bool Config::dummy_adjust = false;
 
 bool Config::system_initialized = false;
@@ -90,6 +93,7 @@ bool Config::profile_sm_partition = false;
 
 bool Config::log_all = false;
 bool Config::log_grpc = false;
+bool Config::log_infer_sched = false;
 bool Config::log_train_init = false;
 bool Config::log_warm_cache = false;
 bool Config::log_cold_cache = false;
@@ -98,7 +102,8 @@ bool Config::log_infer_model_reclaim = false;
 bool Config::log_infer_time = false;
 bool Config::log_infer_pipeline_exec = false;
 bool Config::log_infer_load_param = false;
-bool Config::log_memory_adjust = true;
+bool Config::log_memory_adjust = false;
 bool Config::log_controller = false;
+bool Config::log_task_switch = false;
 
 }

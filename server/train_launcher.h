@@ -35,7 +35,9 @@ class TrainLauncher {
     if (!batch_start_) { batch_start_ = true; }
   }
   void SetTargetBatchSize(int bs) {
-    if (batch_start_) target_batch_size_.store(bs, std::memory_order_relaxed);
+    if (batch_start_) {
+      target_batch_size_.store(bs, std::memory_order_relaxed);
+    }
   }
   int GetCurBatchSize() { 
     return cur_batch_size_; 

@@ -2,7 +2,7 @@
 
 #include <common/inf_tra_comm/bip_helper.h>
 #include <common/inf_tra_comm/message_queue.h>
-#include <common/inf_tra_comm/info_board.h>
+#include <common/inf_tra_comm/shared_info.h>
 
 
 namespace colserve {
@@ -20,16 +20,16 @@ class InfTraCommunicator {
   static void Init(bool is_server, bool cleanup, int train_world_size);
   static bool IsInitialized() { return communicator_ != nullptr; }
   static InfTraMessageQueue* GetMQ();
-  static InfTraInfoBoard* GetIB();
+  static InfTraSharedInfo* GetSinfo();
 
   static int GetTrainWorldSize() {
-    return GetIB()->GetTrainInfoUnsafe(kTraRank_0)->train_world_size; 
+    return GetSinfo()->GetTrainInfoUnsafe(kTraRank_0)->train_world_size; 
   }
   static pid_t GetTrainPID(int rank) {
-    return GetIB()->GetTrainInfoUnsafe(rank)->train_pid;
+    return GetSinfo()->GetTrainInfoUnsafe(rank)->train_pid;
   }
   static std::vector<pid_t> GetTrainPIDs() {
-    return GetIB()->GetTrainPIDs();
+    return GetSinfo()->GetTrainPIDs();
   }
 
   InfTraCommunicator(const std::string &shm_name, bool is_server, 
@@ -44,7 +44,7 @@ class InfTraCommunicator {
   bip_mutex *mut_;
 
   std::unique_ptr<InfTraMessageQueue> message_queue_;
-  std::unique_ptr<InfTraInfoBoard> info_board_;
+  std::unique_ptr<InfTraSharedInfo> shared_info_;
 
   bip::managed_shared_memory bip_shm_;
 };

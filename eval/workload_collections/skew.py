@@ -1,7 +1,7 @@
 from runner import *
 import runner.distribution as dist
 from . import normal
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, Union
 import inspect
 
 
@@ -116,9 +116,10 @@ def skew_model_major(name):
 
 
 def get_all_skew_workload(
-        name_filter:str=None, 
-        base_type_filter:type=None) \
-        -> Dict[str, Callable[[], MicrobenchmarkInferWorkload_RpsMajor | MicrobenchmarkInferWorkload_ModelMajor]]:
+    name_filter:str=None, 
+    base_type_filter:type=None
+) -> Dict[str, Callable[[], Union[MicrobenchmarkInferWorkload_RpsMajor, 
+                                  MicrobenchmarkInferWorkload_ModelMajor]]]:
     wkld_dict = {}
     for cfg_name, obj in inspect.getmembers(sys.modules[__name__]):
         try:

@@ -6,7 +6,6 @@
 #include <server/resource_manager.h>
 #include <server/config.h>
 #include <server/tvm/executor.h>
-// #include <server/tvm/texture.h>
 #include <server/tvm/graph.h>
 
 #include <tvm/runtime/device_api.h>
@@ -140,7 +139,7 @@ void Executor::DeInit(const std::vector<size_t> &keep_cold_cached_group_id) {
   LOG_IF(INFO, Config::log_infer_model_reclaim) 
       << "[Executor] " << tvm_graph_.model_name_ 
       << " deinit, cold_cached_nbytes = " 
-      << sta::ByteDisplay(cold_cached_nbytes) << ".";
+      << sta::PrintByte(cold_cached_nbytes) << ".";
   cold_cached_nbytes_.store(cold_cached_nbytes, std::memory_order_relaxed);
   if (!Config::colocate_config.skip_malloc) {
     ResetStorage();
@@ -470,7 +469,7 @@ void Executor::LoadParams(bool pipeline, bool force) {
       << " call_api_ms " << call_api_ms
       << " tot_ms " << Profiler::MilliFrom(load_param_t)
       << " cold_cache_hit " << cold_cache_hit
-      << " total_nbytes " << tvm_graph_.GetParamStorageNBytes()
+      << " total_nbytes " << tvm_graph_.GetParamStorageNbytes()
       << " cached_nbytes " << cold_cached_nbytes_.load(std::memory_order_relaxed);
 }
 
@@ -626,9 +625,9 @@ std::pair<std::function<void()>, std::shared_ptr<OpArgs>> Executor::CreateTVMOp(
 }
 
 size_t Executor::GetMissingStorageSizeAlign() const {
-  CHECK_GE(tvm_graph_.GetStorageAlignedNBytes(),
+  CHECK_GE(tvm_graph_.GetStorageAlignedNbytes(),
            cold_cached_nbytes_.load(std::memory_order_relaxed));
-  return tvm_graph_.GetStorageAlignedNBytes() -
+  return tvm_graph_.GetStorageAlignedNbytes() -
          cold_cached_nbytes_.load(std::memory_order_relaxed);
 }
 

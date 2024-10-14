@@ -25,7 +25,6 @@
 #include <chrono>
 
 
-
 namespace colserve {
 
 std::unique_ptr<TrainLauncher> TrainLauncher::train_launcher_;
@@ -37,7 +36,7 @@ void TrainLauncher::Init(const std::filesystem::path &train_store_path) {
     if (train_script.is_regular_file()) {
       train_launcher_->train_handles_[train_script.path().stem().string()] = train_script.path();
       LOG_IF(INFO, Config::log_train_init) << "TrainLauncher: Add " 
-                                                << train_script.path().stem().string();
+                                           << train_script.path().stem().string();
     }
   }
 
@@ -61,11 +60,7 @@ void TrainLauncher::Init(const std::filesystem::path &train_store_path) {
 }
 
 bool TrainLauncher::Shutdown() {
-  if (train_launcher_->train_pid_ != -1) {
-    LOG(INFO) << "[TrainLauncher]: Shutdown, train_pid(" << train_launcher_->train_pid_ << ") = -1.";
-    CHECK_EQ(kill(train_launcher_->train_pid_, SIGKILL), 0);
-    waitpid(train_launcher_->train_pid_, NULL, 0);
-  }
+  train_launcher_->KillTrain();
   return true;
 }
 
@@ -91,9 +86,11 @@ bool TrainLauncher::Train() {
       Config::enable_warm_cache_fallback) {
     auto [base, slope] = TrainAdjuster::adjuster_->GetModelMemParam(cur_model_name_);
     Config::max_warm_cache_nbytes = static_cast<size_t>((
-      Config::cuda_memory_pool_gb * 1024 - Config::train_memory_over_predict_mb - base) * 1_MB);
+        Config::cuda_memory_pool_gb * 1024 
+        - Config::train_memory_over_predict_mb - base
+      ) * 1_MB);
     LOG(INFO) << "[Warm Cache Fallback for Colocation] set max warm cache nbytes to "
-              << sta::ByteDisplay(Config::max_warm_cache_nbytes);
+              << sta::PrintByte(Config::max_warm_cache_nbytes);
   }
 
   std::vector<std::string> args_str;
@@ -119,24 +116,24 @@ bool TrainLauncher::Train() {
     }
     for (i = j + 1; i < args.size() && args[i] == ' '; i++);
   }
-  if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
-    args_str.push_back("--train-mode");
-    args_str.push_back("taskswitch-l1");
-  } else if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
-    args_str.push_back("--train-mode");
-    args_str.push_back("taskswitch-l3");
-  } else if (Config::serve_mode == ServeMode::kColocateL1) {
-    args_str.push_back("--train-mode");
-    args_str.push_back("colocate-l1");
-  } else if (Config::serve_mode == ServeMode::kColocateL2) {
-    args_str.push_back("--train-mode");
-    args_str.push_back("colocate-l2");
-  } else if (Config::serve_mode == ServeMode::kNormal) {
-    args_str.push_back("--train-mode");
-    args_str.push_back("normal");
-  } else {
-    LOG(FATAL) << "Unsupported serve mode: " << static_cast<int>(Config::serve_mode);
-  }
+  // if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
+  //   args_str.push_back("--train-mode");
+  //   args_str.push_back("taskswitch-l1");
+  // } else if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
+  //   args_str.push_back("--train-mode");
+  //   args_str.push_back("taskswitch-l3");
+  // } else if (Config::serve_mode == ServeMode::kColocateL1) {
+  //   args_str.push_back("--train-mode");
+  //   args_str.push_back("colocate-l1");
+  // } else if (Config::serve_mode == ServeMode::kColocateL2) {
+  //   args_str.push_back("--train-mode");
+  //   args_str.push_back("colocate-l2");
+  // } else if (Config::serve_mode == ServeMode::kNormal) {
+  //   args_str.push_back("--train-mode");
+  //   args_str.push_back("normal");
+  // } else {
+  //   LOG(FATAL) << "Unsupported serve mode: " << static_cast<int>(Config::serve_mode);
+  // }
 
   // args_str.push_back("--train-profile");
   // args_str.push_back(Config::train_profile);
@@ -154,7 +151,8 @@ bool TrainLauncher::Train() {
   return true;
 }
 
-bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::string> &args_str) {
+bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, 
+                                std::vector<std::string> &args_str) {
   std::stringstream extra_env_ss;
   std::stringstream ss;
   char* argv[args_str.size() + 1];
@@ -214,8 +212,10 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
                       Config::mempool_freelist_policy.c_str(), 1), -1);
       extra_env_ss << "COL_USE_SHARED_TENSOR=1"
                    << " COL_HAS_SHARED_TENSOR_SERVER=1"
-                   << " COL_SHARED_TENSOR_POOL_GB=" << Config::cuda_memory_pool_gb
-                   << " SHARED_TENSOR_POOL_FREELIST_POLICY=" << Config::mempool_freelist_policy 
+                   << " COL_SHARED_TENSOR_POOL_GB=" 
+                   << Config::cuda_memory_pool_gb
+                   << " SHARED_TENSOR_POOL_FREELIST_POLICY=" 
+                   << Config::mempool_freelist_policy 
                    << " ";
       // CHECK_NE(setenv("CUDA_LAUNCH_BLOCKING", "1", 1), -1);
     } else {
@@ -238,6 +238,25 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
       extra_env_ss << "COL_HOOK_MODE=none ";
     }
 
+    if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
+      CHECK_NE(setenv("COL_TRAIN_MODE", "taskswitch-l1", 1), -1);
+      extra_env_ss << "COL_TRAIN_MODE=taskswitch-l1 ";
+    } else if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
+      CHECK_NE(setenv("COL_TRAIN_MODE", "taskswitch-l3", 1), -1);
+      extra_env_ss << "COL_TRAIN_MODE=taskswitch-l3 ";
+    } else if (Config::serve_mode == ServeMode::kColocateL1) {
+      CHECK_NE(setenv("COL_TRAIN_MODE", "colocate-l1", 1), -1);
+      extra_env_ss << "COL_TRAIN_MODE=colocate-l1 ";
+    } else if (Config::serve_mode == ServeMode::kColocateL2) {
+      CHECK_NE(setenv("COL_TRAIN_MODE", "colocate-l2", 1), -1);
+      extra_env_ss << "COL_TRAIN_MODE=colocate-l2 ";
+    } else if (Config::serve_mode == ServeMode::kNormal) {
+      CHECK_NE(setenv("COL_TRAIN_MODE", "normal", 1), -1);
+      extra_env_ss << "COL_TRAIN_MODE=normal ";
+    } else {
+      LOG(FATAL) << "Unsupported serve mode: " << static_cast<int>(Config::serve_mode);
+    }
+
     if (!Config::train_profile.empty()) {
       CHECK_NE(setenv("COL_TRAIN_PROFILE_LOG_PATH", 
                       Config::train_profile.c_str(), 1), -1);
@@ -250,10 +269,12 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
         CHECK_NE(setenv("COL_DYNAMIC_SM_PARTITION", "1", 1), -1);
         extra_env_ss << "COL_DYNAMIC_SM_PARTITION=1";
       }
-    } else if (Config::train_mps_thread_percent >= 0 && Config::train_mps_thread_percent <= 100) {
+    } else if (Config::train_mps_thread_percent >= 0 
+               && Config::train_mps_thread_percent <= 100) {
       CHECK_NE(setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", 
                       std::to_string(Config::train_mps_thread_percent).c_str(), 1), -1);
-      extra_env_ss << "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE=" << Config::train_mps_thread_percent << " ";
+      extra_env_ss << "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE=" 
+                   << Config::train_mps_thread_percent << " ";
       LOG(INFO) << "[TrainLauncher]: set CUDA_MPS_ACTIVE_THREAD_PERCENTAGE to " 
                 << Config::train_mps_thread_percent;
     }
@@ -287,7 +308,8 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job, std::vector<std::strin
 
   int status;
   int ret = waitpid(pid, &status, 0);
-  LOG(INFO) << "[TrainLauncher]: wait pid return, ret = " << ret << ", status = " << status << "."; 
+  LOG(INFO) << "[TrainLauncher]: wait pid return, ret = " << ret 
+            << ", status = " << status << "."; 
   train_pid_ = -1;
   batch_start_ = false;
   // target_batch_size_ = -1;
@@ -348,15 +370,19 @@ void TrainLauncher::DummyAdjust() {
     auto cmd_id = ctrl::Controller::Get()->ColocateAdjust(-1, 0, batch_size);
     ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
     ctrl::Controller::Get()->DummyInferExit(0, ori_target_bs);
-    std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<>(200, 1000)(gen)));
+    std::this_thread::sleep_for(
+        std::chrono::milliseconds(std::uniform_int_distribution<>(200, 1000)(gen)));
   }
 }
 
 void TrainLauncher::KillTrain() {
+  if (!ctrl::InfTraCommunicator::GetSinfo()->IsTrainInfoValid(ctrl::kTraRank_0)) {
+    return;
+  }
   int num_train_proc = 
-      ctrl::InfTraCommunicator::GetIB()->GetTrainInfoUnsafe(0)->train_world_size;
+      ctrl::InfTraCommunicator::GetSinfo()->GetTrainInfoUnsafe(0)->train_world_size;
   for (int i = 0; i < num_train_proc; i++) {
-    auto train_info = ctrl::InfTraCommunicator::GetIB()->GetTrainInfoUnsafe(i);
+    auto train_info = ctrl::InfTraCommunicator::GetSinfo()->GetTrainInfoUnsafe(i);
     auto pid = train_info->train_pid;
     auto rank = train_info->train_rank;
     if (pid != -1) {

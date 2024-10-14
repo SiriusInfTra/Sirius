@@ -30,8 +30,10 @@ namespace {
 std::vector<std::string> ParseModelName(const std::string &model) {
   std::regex r{"([a-zA-Z0-9_]+)(\\[([0-9]+)\\])?"};
   std::smatch match;
-  CHECK(std::regex_match(model, match, r)) << "model name " << model << " not match";
+  CHECK(std::regex_match(model, match, r)) 
+      << "model name " << model << " not match";
   CHECK_EQ(match.size(), 4);
+
   if (match[3].str().empty()) {
     return {match[1].str()};
   } else {
@@ -212,13 +214,16 @@ bool InferModelStore::AddJob(const std::string &model_name,
   Profiler::InferReqInc();
   // InterruptTrain check whether to interrupt train
   if (Config::IsSwitchMode()) {
-    ctrl::Controller::Get()->InterruptTrain();
+    auto cmd_id = ctrl::Controller::Get()->InterruptTrain();
     
     auto t0 = Profiler::Now();
-    ctrl::Controller::Get()->WaitTrainNotRunning();
+    ctrl::Controller::Get()->WaitTaskSwitchDone(cmd_id);
     auto wait_train_ms = Profiler::MilliFrom(t0);
-    DLOG(INFO) << "[InferModelStore] [Task Switch] wait train " 
-              << wait_train_ms << " ms";
+
+    LOG_IF(INFO, Config::log_task_switch && cmd_id != 0) 
+        << "[InferModelStore] [Task Switch] wait train " 
+        << wait_train_ms << " ms, cmd_id "
+        << cmd_id;
   }
 
   {
@@ -239,7 +244,7 @@ void InferModelStore::InferingInc(tvm::TVMGraph *graph, tvm::Executor *executor)
   //   return Get()->task_switch_ctrl_.load() != static_cast<int>(TaskSwitchStatus::kReclaimInfer);
   // });
   Get()->num_infering_model_.fetch_add(1, std::memory_order_relaxed);
-  Get()->infering_model_nbytes_.fetch_add(graph->GetStorageNBytes(), std::memory_order_relaxed); 
+  Get()->infering_model_nbytes_.fetch_add(graph->GetStorageNbytes(), std::memory_order_relaxed); 
 
   // if (res == 0) {
   //   Get()->task_switch_ctrl_.store(static_cast<int>(TaskSwitchStatus::kInfering));
@@ -251,7 +256,7 @@ void InferModelStore::InferingDec(tvm::TVMGraph *graph, tvm::Executor *executor)
   // CHECK(Get()->task_switch_ctrl_.load() == static_cast<int>(TaskSwitchStatus::kInfering));
   CHECK(Get()->num_infering_model_.load(std::memory_order_relaxed) > 0);
   Get()->num_infering_model_.fetch_sub(1, std::memory_order_relaxed);
-  Get()->infering_model_nbytes_.fetch_sub(graph->GetStorageNBytes(), std::memory_order_relaxed);
+  Get()->infering_model_nbytes_.fetch_sub(graph->GetStorageNbytes(), std::memory_order_relaxed);
   // if (res == 1) {
   //   Get()->task_switch_ctrl_.store(static_cast<int>(TaskSwitchStatus::kNotInfering));
   // }
@@ -333,7 +338,7 @@ void InferModelStore::ColocateMonitor() {
           LOG_IF(INFO, Config::log_infer_model_reclaim) 
               << "[InferModelStore] reclaim " << model_name
               << ", cold cache nbytes "
-              << sta::ByteDisplay(cold_cache_nbytes);
+              << sta::PrintByte(cold_cache_nbytes);
         }
       }
     }
@@ -345,7 +350,7 @@ void InferModelStore::ColocateMonitor() {
         ctrl::Controller::Get()->ColocateInferReleaseAdjust(adjust_plan);
       }
     }
-    std::this_thread::sleep_for(10ms);
+    std::this_thread::sleep_for(100ms);
   }
 }
 
@@ -353,9 +358,10 @@ void InferModelStore::TaskSwitchMonitor() {
   using namespace std::chrono_literals;
 
   auto check_switch_unlock = [this](std::unique_lock<std::mutex> &lock) {
-    DLOG(INFO) << "check switch " << this->task_switch_to_infer_
-              << " " << this->num_infering_model_
-              << " " << ctrl::Controller::Get()->IsInferIdle();
+    DLOG_EVERY_N(INFO, 10000) 
+        << "check switch " << this->task_switch_to_infer_
+        << " " << this->num_infering_model_
+        << " " << ctrl::Controller::Get()->IsInferIdle();
     return this->task_switch_to_infer_
         && this->num_infering_model_.load(std::memory_order_relaxed) == 0
         && ctrl::Controller::Get()->IsInferIdle();
@@ -366,16 +372,24 @@ void InferModelStore::TaskSwitchMonitor() {
     return check_switch_unlock(lock);
   };
 
-  auto do_switch = [this, &check_switch_unlock]() -> int {
+  auto do_switch = [this, &check_switch_unlock]() -> std::pair<bool, int> {
+    // note that during the switch, infer request may come in
     std::unique_lock lock{this->task_switch_mutex_};
-    if (!check_switch_unlock(lock)) { return -1; }
-
-    LOG(INFO) << "[InferModelStore] [Task Switch] start";
 
     int reclaim_cnt = 0;
     const int rank = 0;
+    std::array<
+        std::unique_lock<std::mutex>, MAX_DEVICE_NUM
+    > cold_cache_locks;
 
-    std::array<std::unique_lock<std::mutex>, MAX_DEVICE_NUM> cold_cache_locks;
+    if (!check_switch_unlock(lock)) { 
+      // return std::make_pair(false, -1); 
+      goto cannel_switch;
+    }
+
+    LOG_IF(INFO, Config::log_task_switch) 
+        << "[InferModelStore] [Task Switch] start";
+
     for (auto &cold_model_cache : ColdModelCache::cold_model_caches_) {
       cold_cache_locks[cold_model_cache->device_id_] = cold_model_cache->Lock();
     }
@@ -387,8 +401,16 @@ void InferModelStore::TaskSwitchMonitor() {
       std::unique_lock<std::mutex> model_lock{model->muts_[rank]};
       reclaim_cnt += model->ReclaimMemory(rank, cold_cache_locks[device_id], 
                                           model_lock, nullptr);
+
+      if (!check_switch_unlock(lock)) { 
+        goto cannel_switch; 
+      }
     }
-    return reclaim_cnt;
+exit:
+    return std::make_pair(true, reclaim_cnt);
+
+cannel_switch:
+    return std::make_pair(false, reclaim_cnt);
   };
 
   while (true) {
@@ -396,12 +418,15 @@ void InferModelStore::TaskSwitchMonitor() {
       auto prepare_switch_time = Profiler::Get()->Now();
       std::this_thread::sleep_for(Config::task_switch_delay_ms * 1ms);
       
-      int res = do_switch();
-      if (res < 0) {
-        LOG(INFO) << "[InferModelStore] [Task Switch] cancelled";
+      auto [switch_, num_reclaim] = do_switch();
+      if (!switch_) {
+        LOG(INFO) << "[InferModelStore] [Task Switch] cancelled, reclaim " 
+                  << num_reclaim << " models";
       } else {
-        LOG(INFO) << "[InferModelStore] [Task Switch] done, reclaim " << res << " models";
-        Profiler::Get()->RecordPerf(Profiler::PerfItem::InferNumModelOnSwitch, res);
+        LOG(INFO) << "[InferModelStore] [Task Switch] done, reclaim " 
+                  << num_reclaim << " models";
+        Profiler::Get()->RecordPerf(Profiler::PerfItem::InferNumModelOnSwitch, 
+                                    num_reclaim);
         ctrl::Controller::Get()->ResumeTrain();
         task_switch_to_infer_ = false;
       }

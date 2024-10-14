@@ -1,6 +1,8 @@
 #ifndef COLSERVE_CONFIG_H
 #define COLSERVE_CONFIG_H
 
+#include <common/util.h>
+
 #include <atomic>
 #include <iostream>
 #include <filesystem>
@@ -135,6 +137,9 @@ class Config {
   static bool estimate_infer_model_tpc;
   static double infer_exec_time_estimate_scale;
 
+  static bool enable_train_adjust_balance;
+  static memory_mb_t train_adjust_balance_threshold;
+
   static bool dummy_adjust;
 
   static bool system_initialized;
@@ -145,6 +150,7 @@ class Config {
 
   static  bool log_all;
   static  bool log_grpc;
+  static  bool log_infer_sched;
   static  bool log_train_init;
   static  bool log_warm_cache;
   static  bool log_cold_cache;
@@ -155,6 +161,7 @@ class Config {
   static  bool log_infer_load_param;
   static  bool log_memory_adjust;
   static  bool log_controller;
+  static  bool log_task_switch;
 
   inline static bool IsSwitchMode() {
     return Config::serve_mode == ServeMode::kTaskSwitchL1

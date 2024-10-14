@@ -11,6 +11,8 @@ service ColServe {
 
     rpc InferenceWorkloadStart(InferenceWorkloadStartRequest) returns (EmptyResult) {}
 
+    rpc GetTrainFirstEpochStatus(EmptyRequest) returns (ServerStatus) {}
+
     rpc Shutdown(EmptyRequest) returns (EmptyRequest) {}
 
     rpc Inference(InferRequest) returns (InferResult) {}

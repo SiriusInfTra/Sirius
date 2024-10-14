@@ -64,7 +64,18 @@ void Workload::InferenceWorkloadDone() {
   CHECK(status.ok()) << "Report Inference workload done fail";
 }
 
+bool Workload::HasTrainFirstEpochDone() {
+  grpc::ClientContext context;
+  EmptyRequest request;
+  ServerStatus result;
+  grpc::Status status = stub_->GetTrainFirstEpochStatus(&context, request, &result);
+  CHECK(status.ok());
+
+  return result.status() == "1";
+}
+
 void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_infer) {
+  SetupSlot();
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << this << ") " << model_ << " BUSY LOOP] ";
 
@@ -110,6 +121,7 @@ void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_i
 void InferWorker::RequestInferTrace(Workload& workload, 
                                     const std::vector<double>& start_points, 
                                     double delay_before_infer) {
+  SetupSlot();
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << this << ") " << model_ << " TRACE] "; 
   workload.ready_future_.wait();

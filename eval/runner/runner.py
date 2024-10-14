@@ -14,9 +14,54 @@ from types import NoneType
 from dataclasses import dataclass
 import re
 
-from .hyper_workload import InferWorkloadBase, TrainWorkload, \
+from .hyper_workload import (
+    InferWorkloadBase, TrainWorkload, 
     InferTraceDumper, InferModel, RandomInferWorkload
-from .config import get_global_seed, get_binary_dir
+)
+from .config import (
+    get_global_seed, get_binary_dir,
+    get_host_name, is_meepo5
+)
+
+
+class CudaMpsCtrl:
+    @classmethod
+    def launch_cmd(cls, 
+                   device: Optional[str] = None, 
+                   mps_pipe: Optional[str] = None):
+        if device is None:
+                device = os.environ['CUDA_VISIBLE_DEVICES']
+        if mps_pipe is None:
+            mps_pipe = os.environ['CUDA_MPS_PIPE_DIRECTORY']
+
+        if is_meepo5():
+            return [
+                "sudo", "/opt/mps-control/launch-mps-daemon-private.sh",
+                "--device", device, "--mps-pipe", mps_pipe
+            ]
+        elif pathlib.Path('/.dockerenv').exists():
+            return [
+                "./scripts/docker_launch_mps.sh",
+                "--device", device, "--mps-pipe", mps_pipe
+            ]
+        else:
+            raise RuntimeError("Unknown MPS launch environment")
+
+    @classmethod
+    def quit_cmd(cls, mps_pipe: Optional[str] = None):
+        if mps_pipe is None:
+            mps_pipe = os.environ['CUDA_MPS_PIPE_DIRECTORY']
+        
+        if is_meepo5():
+            return [
+                'sudo', '/opt/mps-control/quit-mps-daemon-private.sh',
+                '--mps-pipe', mps_pipe
+            ]
+        elif pathlib.Path('/.dockerenv').exists():
+            return [
+                "./scripts/docker_quit_mps.sh",
+                "--mps-pipe", mps_pipe
+            ]
 
 
 class System:
@@ -205,20 +250,22 @@ class System:
         # first launch mps
         if self.mps:
             cmd += ["--mps", "1"]
-            self.cmd_trace.append(" ".join([
-                "sudo", "/opt/mps-control/launch-mps-daemon-private.sh",
-                "--device", os.environ['CUDA_VISIBLE_DEVICES'], 
-                "--mps-pipe", os.environ['CUDA_MPS_PIPE_DIRECTORY']
-            ]))
+            # self.cmd_trace.append(" ".join([
+            #     "sudo", "/opt/mps-control/launch-mps-daemon-private.sh",
+            #     "--device", os.environ['CUDA_VISIBLE_DEVICES'], 
+            #     "--mps-pipe", os.environ['CUDA_MPS_PIPE_DIRECTORY']
+            # ]))
+            self.cmd_trace.append(" ".join(CudaMpsCtrl.launch_cmd()))
             if not fake_launch:
-                # with open(mps_log, "w") as log_file:
-                with contextlib.nullcontext():
-                    self.mps_server = subprocess.Popen(
-                        ['sudo', '/opt/mps-control/launch-mps-daemon-private.sh',
-                        '--device', os.environ['CUDA_VISIBLE_DEVICES'], 
-                        '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']],
-                        stderr=subprocess.STDOUT, stdout=open(mps_log, "w"), env=os.environ.copy())
-                time.sleep(5)
+                # self.mps_server = subprocess.Popen(
+                #     ['sudo', '/opt/mps-control/launch-mps-daemon-private.sh',
+                #     '--device', os.environ['CUDA_VISIBLE_DEVICES'], 
+                #     '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']],
+                #     stderr=subprocess.PIPE, stdout=subprocess.PIPE, env=os.environ.copy())
+                self.mps_server = subprocess.Popen(
+                    CudaMpsCtrl.launch_cmd(),
+                    stderr=subprocess.PIPE, stdout=subprocess.PIPE, 
+                    env=os.environ.copy())
             else:
                 self.mps_server is None
         else:
@@ -232,7 +279,8 @@ class System:
             cmd += ["--infer-blob-alloc"]
 
         if self.train_mps_thread_percent is not None:
-            cmd += ["--train-mps-thread-percent", str(self.train_mps_thread_percent)]
+            cmd += ["--train-mps-thread-percent", 
+                    str(self.train_mps_thread_percent)]
 
         if self.colocate_skip_malloc:
             cmd += ["--colocate-skip-malloc"]
@@ -242,8 +290,10 @@ class System:
         cmd += ['--train-profile', str(train_profile)]
         
         cmd += ['--max-warm-cache-nbytes', str(self.max_warm_cache_nbytes)]
-        cmd += ['--cold-cache-min-capability-nbytes', str(self.cold_cache_min_capability_nbytes)]
-        cmd += ['--cold-cache-max-capability-nbytes', str(self.cold_cache_max_capability_nbytes)]
+        cmd += ['--cold-cache-min-capability-nbytes', 
+                str(self.cold_cache_min_capability_nbytes)]
+        cmd += ['--cold-cache-max-capability-nbytes', 
+                str(self.cold_cache_max_capability_nbytes)]
         cmd += ['--cold-cache-ratio', str(self.cold_cache_ratio)]
 
         if self.memory_pressure_mb:
@@ -260,9 +310,11 @@ class System:
             cmd += ["--pipeline-load", "0"]        
 
         if self.train_memory_over_predict_mb:
-            cmd += ["--train-memory-over-predict-mb", str(self.train_memory_over_predict_mb)]
+            cmd += ["--train-memory-over-predict-mb", 
+                    str(self.train_memory_over_predict_mb)]
         if self.infer_model_max_idle_ms:
-            cmd += ["--infer-model-max-idle-ms", str(self.infer_model_max_idle_ms)]
+            cmd += ["--infer-model-max-idle-ms", 
+                    str(self.infer_model_max_idle_ms)]
 
         if self.has_warmup:
             cmd += ["--has-warmup", "1"]
@@ -318,15 +370,22 @@ class System:
             env_copy = os.environ.copy()
             if self.mps and self.skip_set_mps_thread_percent:
                 print(f'  --> Skip set MPS pct')
-            if not self.skip_set_mps_thread_percent and '_CUDA_MPS_ACTIVE_THREAD_PERCENTAGE' in env_copy:
-                env_copy['CUDA_MPS_ACTIVE_THREAD_PERCENTAGE'] = env_copy['_CUDA_MPS_ACTIVE_THREAD_PERCENTAGE']
+            if (not self.skip_set_mps_thread_percent 
+                and '_CUDA_MPS_ACTIVE_THREAD_PERCENTAGE' in env_copy):
+                env_copy['CUDA_MPS_ACTIVE_THREAD_PERCENTAGE'] = \
+                    env_copy['_CUDA_MPS_ACTIVE_THREAD_PERCENTAGE']
                 print(f"  --> MPS: {env_copy['CUDA_MPS_ACTIVE_THREAD_PERCENTAGE']}")
                 pass
-            self.cmd_trace.append(f"CUDA_ENV: "
-                    + f"CUDA_VISIBLE_DEVICES {env_copy.get('CUDA_VISIBLE_DEVICES')}"
-                    + f", CUDA_MPS_ACTIVE_THREAD_PERCENTAGE {env_copy.get('CUDA_MPS_ACTIVE_THREAD_PERCENTAGE')}")
+            self.cmd_trace.append(
+                f"CUDA_ENV: "
+                f"CUDA_VISIBLE_DEVICES {env_copy.get('CUDA_VISIBLE_DEVICES')}"
+                f", CUDA_MPS_ACTIVE_THREAD_PERCENTAGE "
+                f"{env_copy.get('CUDA_MPS_ACTIVE_THREAD_PERCENTAGE')}"
+            )
             self.cmd_trace.append(" ".join(cmd))
-            self.server = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=env_copy)
+            self.server = subprocess.Popen(cmd, stdout=log_file, 
+                                           stderr=subprocess.STDOUT, 
+                                           env=env_copy)
 
         if self.use_triton:
             # with open(triton_log, "w") as log_file:
@@ -418,42 +477,51 @@ class System:
             self.smi_monitor.send_signal(signal.SIGINT)
             self.smi_monitor = None
         if self.log_dir is not None:
-            self.cmd_trace.append(" ".join([
-                'sudo', '/opt/mps-control/quit-mps-daemon-private.sh',
-                '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']
-            ]))
+            # self.cmd_trace.append(" ".join([
+            #     'sudo', '/opt/mps-control/quit-mps-daemon-private.sh',
+            #     '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']
+            # ]))
+            self.cmd_trace.append(" ".join(CudaMpsCtrl.quit_cmd()))
             with open(f'{self.log_dir}/cmd-trace', 'w') as f:
                 f.write("\n\n".join(self.cmd_trace))
             self.exit_log_dir = self.log_dir                                                                                                                                   
             self.log_dir = None
     
     def draw_memory_usage(self):
-        cmd = f'python util/profile/memory_trace.py  -l {self.exit_log_dir}/profile-log.log  -o {self.exit_log_dir}'
+        cmd = (f'python util/profile/memory_trace.py'
+               f' -l {self.exit_log_dir}/profile-log.log -o {self.exit_log_dir}')
         print(f'execute {cmd}')
         os.system(cmd)
     
     def draw_trace_cfg(self, time_scale=None):
-        cmd = f'python util/profile/trace_cfg.py  -t {self.exit_log_dir}/trace-cfg  -o {self.exit_log_dir}'
+        cmd = (f'python util/profile/trace_cfg.py'
+              f' -t {self.exit_log_dir}/trace-cfg -o {self.exit_log_dir}')
         if time_scale:
             cmd += f' --time-scale {time_scale}'
         print(f'execute {cmd}')
         os.system(cmd)
 
     def calcuate_train_thpt(self):
-        cmd = f'python util/profile/throughput.py --log-dir {self.exit_log_dir} > {self.exit_log_dir}/train_thpt 2>&1'
+        cmd = (f'python util/profile/throughput.py'
+               f' --log-dir {self.exit_log_dir}'
+               f' > {self.exit_log_dir}/train_thpt 2>&1')
         print(f'execute {cmd}')
         os.system(cmd)
 
     def draw_infer_slo(self):
-        cmd = f'python util/profile/collect_infer_ltc.py -l {self.exit_log_dir}/workload-log --slo-output {self.exit_log_dir}'
+        cmd = (f'python util/profile/collect_infer_ltc.py'
+               f' -l {self.exit_log_dir}/workload-log'
+               f' --slo-output {self.exit_log_dir}')
         print(f'execute {cmd}')
         os.system(cmd)
 
     def quit_mps(self):
-        quit_mps = subprocess.run([
-            'sudo', '/opt/mps-control/quit-mps-daemon-private.sh', 
-            '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']], 
-            capture_output=True, env=os.environ.copy())
+        # quit_mps = subprocess.run([
+        #     'sudo', '/opt/mps-control/quit-mps-daemon-private.sh', 
+        #     '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']], 
+        #     capture_output=True, env=os.environ.copy())
+        quit_mps = subprocess.run(CudaMpsCtrl.quit_cmd(), 
+                                  capture_output=True, env=os.environ.copy())
 
 
 class HyperWorkload:
@@ -513,7 +581,9 @@ class HyperWorkload:
     def disable_train(self):
         self.enable_train = False
 
-    def launch_workload(self, server: System, trace_cfg: Optional[PathLike] = None, **kwargs):
+    def launch_workload(self, server: System, 
+                        trace_cfg: Optional[PathLike] = None, 
+                        **kwargs):
         infer_trace_args = []
         if trace_cfg is not None:
             infer_trace_args += ["--infer-trace", str(trace_cfg)]
@@ -535,7 +605,8 @@ class HyperWorkload:
 
         self._launch(server, "workload_launcher", infer_trace_args, **kwargs)
 
-    def launch_busy_loop(self, server: System, infer_models: List[InferModel] = None):
+    def launch_busy_loop(self, server: System, 
+                         infer_models: List[InferModel] = None):
         if infer_models is None:
             infer_models = self.infer_models
         infer_model_args = []
@@ -546,7 +617,8 @@ class HyperWorkload:
 
         self._launch(server, "busy_loop_launcher", infer_model_args)
         
-    def _launch(self, server: System, launcher: str, custom_args: List[str] = [], **kwargs):
+    def _launch(self, server: System, launcher: str, 
+                custom_args: List[str] = [], **kwargs):
         assert server is not None
         cmd = [
             f"./{get_binary_dir()}/../client/build/{launcher}",
@@ -610,10 +682,14 @@ class HyperWorkload:
         try:
             client_log = pathlib.Path(server.log_dir) / self.client_log
             with open(client_log, "w") as log_file:
-                completed = subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy())
+                completed = subprocess.run(cmd, stdout=log_file, 
+                                           stderr=subprocess.STDOUT, 
+                                           env=os.environ.copy())
                 if completed.returncode != 0:
                     raise Exception(f"Workload exited with code {completed.returncode}")
         except Exception as e:
-            print(f"Workload exited with exception, see detail in {server.log_dir}/{server.server_log}.log and {client_log}")
+            print(f"Workload exited with exception, "
+                  f"see detail in {server.log_dir}/{server.server_log}.log "
+                  f"and {client_log}")
             server.stop(kill_train=True)
             raise e

@@ -3,6 +3,12 @@ import numpy as np
 import contextlib
 import hashlib
 
+class RunnerConfig:
+    _global_seed = None
+    _binary_dir = 'build'
+    _multi_gpu_scale_up_workload = True
+    
+
 __global_seed = None
 __binary_dir = 'build'
 
@@ -10,9 +16,11 @@ def set_binary_dir(binary_dir):
     global __binary_dir
     __binary_dir = binary_dir
 
+
 def get_binary_dir():
     global __binary_dir
     return __binary_dir
+
 
 def get_global_seed():
     global __global_seed
@@ -21,15 +29,25 @@ def get_global_seed():
         print(f'\x1b[33;1mWARNING: global seed is not set, set to {__global_seed}\x1b[0m')
     return __global_seed
 
+
 def get_global_seed_by_hash(s:str):
     seed = get_global_seed()
     seed = seed + eval('0x' + hashlib.md5(s.encode()).hexdigest()[:4])
     # print(f'{s}, seed = {seed}, global_seed = {get_global_seed()}')
     return seed
 
+
 def set_global_seed(seed):
     global __global_seed
     __global_seed = seed
+
+
+def get_host_name():
+    return os.uname().nodename
+
+
+def is_meepo5():
+    return get_host_name() == 'meepo5'
 
 
 def set_mps_thread_percent(percent):

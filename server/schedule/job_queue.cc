@@ -1,7 +1,7 @@
 #include <server/logging_as_glog.h>
-
 #include <server/grpc/grpc_server.h>
 #include <server/schedule/job_queue.h>
+#include <server/config.h>
 
 #include <chrono> 
 
@@ -57,7 +57,8 @@ bool BatchJobQueue::Put(const std::shared_ptr<Job> &job) {
   std::unique_lock lock{mutex_};
   queue_.push(job);
   job->RecordEnqueued();
-  DLOG(INFO) << "BatchJobQueue: put " << job << " into queue";
+  DLOG_IF(INFO, Config::log_infer_sched) 
+      << "BatchJobQueue: put " << job << " into queue";
   lock.unlock();
   put_job_cv_.notify_one();
   return true;

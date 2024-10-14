@@ -63,7 +63,8 @@ class SMPartitioner {
   int max_train_tpc_num_ = 40;
 
   // assume one thread per stream, so no need for lock  
-  static thread_local std::unordered_map<CUstream, uint64_t> stream_last_tpc_mask_map_;
+  static thread_local 
+  std::unordered_map<CUstream, uint64_t> stream_last_tpc_mask_map_;
 };
 
 

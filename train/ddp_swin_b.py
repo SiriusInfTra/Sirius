@@ -60,6 +60,9 @@ def ddp_setup(rank, world_size):
     init_process_group(backend='nccl', rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
 
+    print(f'[rank {rank} PID {os.getpid()}] setup done')
+    time.sleep(10)
+
 
 def prepare_dataloader(rank:int, batch_size: int):
     dataset = MyIterDataset(rank, batch_size)
@@ -78,16 +81,17 @@ def main(rank:int, world_size:int,
          num_epoch:int, batch_size:int):
     ddp_setup(rank, world_size)
 
-    # dataset = FakeData(size=1000, image_size=(3, 224, 224), num_classes=10, transform=ToTensor())
+    dataset = FakeData(size=1000, image_size=(3, 224, 224), num_classes=10, transform=ToTensor())
     # dataset = {'image': torch.randn(1000, 3, 224, 224), 'label': torch.randint(0, 10, (1000))}
     # dataset = MyDataset()
+    dataloader = DataLoader(dataset, batch_size=batch_size, pin_memory=True, num_workers=0)
 
     
     model = torchvision.models.swin_t()
     model = model.cuda(rank)
     model = DDP(model, device_ids=[rank], output_device=rank)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.001)
-    dataset, dataloader = prepare_dataloader(rank, batch_size)
+    # dataset, dataloader = prepare_dataloader(rank, batch_size)
 
     criterion = torch.nn.CrossEntropyLoss()
     criterion = criterion.cuda(rank)
@@ -105,19 +109,25 @@ def main(rank:int, world_size:int,
             x = x.cuda(rank, non_blocking=True)
             y = y.cuda(rank, non_blocking=True)
             
-            if rank == 0 and (b + 1) % accumulate_step != 0:
-                # local accumulate
-                with model.no_sync():
-                    pred = model(x)
-                    loss = criterion(pred, y)
-                    loss.backward()
-            else:
-                # sync
-                pred = model(x)
-                loss = criterion(pred, y)
-                loss.backward()
-                optimizer.step()
-                optimizer.zero_grad()
+            pred = model(x)
+            loss = criterion(pred, y)
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+
+            # if rank == 0 and (b + 1) % accumulate_step != 0:
+            #     # local accumulate
+            #     with model.no_sync():
+            #         pred = model(x)
+            #         loss = criterion(pred, y)
+            #         loss.backward()
+            # else:
+            #     # sync
+            #     pred = model(x)
+            #     loss = criterion(pred, y)
+            #     loss.backward()
+            #     optimizer.step()
+            #     optimizer.zero_grad()
             # print(f'rank {rank} epoch {e} batch {b} loss {loss.item()}')
         epoch_end = time.time()
         epoch_time = epoch_end - epoch_begin
@@ -129,5 +139,5 @@ def main(rank:int, world_size:int,
 
 if __name__ == '__main__':
     world_size = torch.cuda.device_count()
-    mp.spawn(main, args=(world_size, 10, 100), nprocs=world_size, join=True)
+    mp.spawn(main, args=(world_size, 3, 100), nprocs=world_size, join=True)
     

@@ -1,7 +1,6 @@
 #ifndef COLSERVE_INFER_MODEL_STORE_H
 #define COLSERVE_INFER_MODEL_STORE_H
 
-#include <server/logging_as_glog.h>
 #include <server/resource_manager.h>
 #include <server/tvm/executor.h>
 #include <server/grpc/grpc_server.h>

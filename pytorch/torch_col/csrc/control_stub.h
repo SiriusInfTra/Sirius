@@ -28,6 +28,7 @@ class StubBase {
   void EnableTorchColEngine();
   uint64_t GetTargetTpcMask();
   bool CanExitAfterInferWorkloadDone();
+  void SetTrainFirstEpochDone();
 
  protected:
   virtual void ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) = 0;
@@ -48,7 +49,9 @@ class StubBase {
 
 class DummyStub : public StubBase {
  public:
-  DummyStub() : StubBase() {}
+  DummyStub() : StubBase() {
+    DLOG(INFO) << "[DummyStub] initialized";
+  }
 
  protected:
   void ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) override;
@@ -56,33 +59,69 @@ class DummyStub : public StubBase {
 
 class SwitchStub: public StubBase {
  public:
-  SwitchStub() : StubBase() {};
-  bool TryInterruptTrainDone();
-  
+  SwitchStub();
+  bool TryInterruptTrainDone(bool barrier);
+  void SetKilledBatchRecover();
+  void TrainResumeDone();
+  bool PrepareResume();
+
+  void SetGlobalInterruptFlag(bool flag);
+  void SetGlobalHasBatchKilled(bool flag) {
+    bip::scoped_lock lock{*shared_data_.mut_};
+    *shared_data_.has_batch_killed_ = flag;
+  }
+
+  bool GetGlobalInterruptFlag();
+  bool GetGlobalHasBatchKilled() {
+    bip::scoped_lock lock{*shared_data_.mut_};
+    return *shared_data_.has_batch_killed_;
+  }
+
  protected:
   void ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) override;
+  bool TryInterruptTrainDoneWithLock(bool barrier);
 
  private:
   uint64_t last_reply_cmd_id_{0};
+  std::atomic<bool> has_killed_batch_recover_{true};
+
+  struct GlobalSharedData {
+    bool *interrupt_flag_{nullptr};
+    bool *has_batch_killed_{nullptr};
+    bip_mutex *mut_;
+  } shared_data_;
 };
 
 class ColocateStub: public StubBase {
  public:
   ColocateStub(int batch_size) 
-      : StubBase(), target_bs_(batch_size), current_bs_(batch_size) {};
+      : StubBase(), 
+        input_batch_size_(batch_size), 
+        current_bs_(batch_size) {
+    DLOG(INFO) << "[ColocateStub] initialized";
+  };
 
   int GetTargetBatchSize();
+  int GetUnpubTargetBatchSize();
   void ColocateAdjustL1Done();
   void ColocateAdjustL2Done();
   double PassedTimeFromSetCmd();
   void ReportBatchSize(int batch_size) override;
 
+  void SetKilledBatchRecover() {
+    has_killed_batch_recover_.store(true, std::memory_order_release);
+  }
+  void SetKilledBatchReconfiged() {
+    will_killed_batch_reconfig_.store(false, std::memory_order_release);
+  }
+
  protected:
   void ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) override;
 
  private:
-  int target_bs_, current_bs_;
-
+  int input_batch_size_, current_bs_;
+  std::atomic<bool> has_killed_batch_recover_{true};
+  std::atomic<bool> will_killed_batch_reconfig_{false};
   std::chrono::time_point<std::chrono::steady_clock> set_cmd_time_;
 };
 

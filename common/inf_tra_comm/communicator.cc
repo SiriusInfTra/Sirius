@@ -24,11 +24,11 @@ InfTraMessageQueue* InfTraCommunicator::GetMQ() {
   return communicator_->message_queue_.get();
 }
 
-InfTraInfoBoard* InfTraCommunicator::GetIB() {
+InfTraSharedInfo* InfTraCommunicator::GetSinfo() {
   if (communicator_ == nullptr) {
     LOG(FATAL) << "InfTraCommunicator has not been initialized.";
   }
-  return communicator_->info_board_.get();
+  return communicator_->shared_info_.get();
 }
 
 InfTraCommunicator::InfTraCommunicator(const std::string &shm_name, 
@@ -52,7 +52,7 @@ InfTraCommunicator::InfTraCommunicator(const std::string &shm_name,
   bip::scoped_lock<bip_mutex> lock{*mut_};
   message_queue_ = std::make_unique<InfTraMessageQueue>(
       is_server, train_world_size, bip_shm_, lock);
-  info_board_ = std::make_unique<InfTraInfoBoard>(
+  shared_info_ = std::make_unique<InfTraSharedInfo>(
       is_server, train_world_size, bip_shm_, lock);
 }
 

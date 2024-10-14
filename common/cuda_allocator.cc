@@ -36,20 +36,24 @@ bool CUDAMemPool::IsEnable() {
 
 void CUDAMemPool::Init(int device_id, std::size_t nbytes, 
                        bool cleanup, bool observe,
-                       FreeListPolicyType free_list_policy) {
-  // DLOG(INFO) << "[CUDA Memory Pool] initilized with size " << size / 1024 / 1024 << " Mb";
-  CHECK(device_id < MAX_DEVICE_NUM) << "device_id " << device_id 
-                                    << " exceeds MAX_DEVICE_NUM";
+                       FreeListPolicyType free_list_policy,
+                       bool enable_mpool) {
+  CHECK(device_id < MAX_DEVICE_NUM) 
+      << "device_id " << device_id << " exceeds MAX_DEVICE_NUM";
+
+  allocate_tensor_from_memory_pool_ = enable_mpool;
   cuda_mem_pools_[device_id] = std::make_unique<CUDAMemPool>(
       device_id, nbytes, cleanup, observe, free_list_policy);
-  allocate_tensor_from_memory_pool_ = true;
 }
 
 CUDAMemPool::CUDAMemPool(int device_id, std::size_t nbytes, 
                          bool cleanup, bool observe,
                          FreeListPolicyType free_list_policy) 
                          : device_id_{device_id} {
-  // for (int i = 0; i < DeviceManager::GetNumVisibleGpu(); i++) {
+  if (!CUDAMemPool::IsEnable()) {
+    return;
+  }
+
   std::string prefix = GetDefaultShmNamePrefix(device_id);
   mpool::PagesPoolConf pages_pool_config{
       .device_id = device_id,
@@ -104,6 +108,7 @@ CUDAMemPool::Alloc(size_t nbytes, MemType mtype, bool allow_nullptr) {
 std::shared_ptr<CUDAMemPool::PoolEntry> 
 CUDAMemPool::AllocWithStream(std::size_t nbytes, MemType mtype, 
                              cudaStream_t stream, bool allow_nullptr) {
+  CHECK(CUDAMemPool::IsEnable());
   CHECK(!allow_nullptr) << "currently deprecated";
   if (nbytes == 0) {
     return std::shared_ptr<CUDAMemPool::PoolEntry>{
@@ -208,6 +213,7 @@ size_t CUDAMemPool::InferMemUsage() {
 }
 
 size_t CUDAMemPool::TrainMemUsage() {
+  CHECK(CUDAMemPool::IsEnable());
   auto status = torch_allocator_->GetObject()->GetStats();
   size_t nbytes = status.mem_block_nbytes[false].allocated_free[0] 
                   + status.mem_block_nbytes[true].allocated_free[0];
@@ -216,20 +222,24 @@ size_t CUDAMemPool::TrainMemUsage() {
 }
 
 size_t CUDAMemPool::TrainPeakMemUsage() {
+  CHECK(CUDAMemPool::IsEnable());
   auto stats = torch_allocator_->GetObject()->GetStats();
   return stats.mem_block_nbytes[false].peak + stats.mem_block_nbytes[true].peak;
 }
 
 size_t CUDAMemPool::TrainAllMemUsage() {
+  CHECK(CUDAMemPool::IsEnable());
   return (torch_allocator_->GetObject()->belong.GetPagesNum() 
           * pages_pool_->GetObject()->config.page_nbytes);
 }
 
 size_t CUDAMemPool::PoolNbytes() {
+  CHECK(CUDAMemPool::IsEnable());
   return pages_pool_->GetObject()->config.pool_nbytes;
 }
 
 void CUDAMemPool::FreeTrainLocals() {
+  CHECK(CUDAMemPool::IsEnable());
   torch_allocator_->GetObject()->EmptyCache();
 }
 
@@ -237,6 +247,7 @@ void CUDAMemPool::DumpDumpBlockList() {}
 
 void CUDAMemPool::RegisterOOMHandler(std::function<void()> oom_handler,
                                      MemType mtype) {
+  CHECK(CUDAMemPool::IsEnable());
   auto oom_observer = std::make_shared<mpool::OOMObserver>(
       [oom_handler](int device_id, cudaStream_t stream, OOMReason reason) {
         oom_handler();

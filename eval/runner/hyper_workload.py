@@ -12,6 +12,8 @@ from scipy.signal import correlate
 from .config import get_global_seed
 from . import distribution as dist
 
+import runner
+
 class InferModel:
     ResNet152 = "resnet152"
     ResNet50 = "resnet50"
@@ -311,6 +313,11 @@ class AzureInferWorkload(RandomInferWorkload):
         # print("\n".join(["%.2f" % trace.start_point for trace in trace_list]))
 
         return trace_list
+
+    def summary_trace(self, text_io=None, verbose=False):
+        if text_io is None:
+            text_io = sys.stdout
+        print(f'azure trace: max_rps {self.max_request_sec}')
 
 
 class PoissonInferWorkload(RandomInferWorkload):
@@ -692,6 +699,9 @@ class MicrobenchmarkInferWorkload_RpsMajor(MicrobenchmarkInferWorkloadBase):
         tot_rps_arr = cur_rps_arr
 
         for i, rps in enumerate(tot_rps_arr):
+            # rps *= runner.get_num_gpu()
+            rps = runner.scale_up_by_num_gpu(rps)
+
             model_rps = self._split_request(rps, self.total_num_model(), self.model_hotness)
             poisson_param_arr[:, i] = model_rps
             num_request_model_arr[i] = np.sum(model_rps > 0)
@@ -731,6 +741,8 @@ class MicrobenchmarkInferWorkload_ModelMajor(MicrobenchmarkInferWorkloadBase):
                              poisson_param_arr: np.ndarray):
         for i in range(len(num_request_model_arr)):
             num_request_model_arr[i] = min(len(self.model_list), int(self.request_model_dist.get() + 0.5))
+            num_request_model_arr[i] = runner.scale_up_by_num_gpu(num_request_model_arr[i])
+        
         acf = np.array([self.acf.get(x) for x in range(self.num_period())])
 
         permute_rs = RandomState(MT19937(SeedSequence(self.rs.randint(1, self.seed+1))))
@@ -750,6 +762,7 @@ class MicrobenchmarkInferWorkload_ModelMajor(MicrobenchmarkInferWorkloadBase):
             else:
                 scale_factor = np.sum(self.model_hotness[request_model]) / np.sum(self.model_hotness)
             rps = rps * scale_factor
+            rps = runner.scale_up_by_num_gpu(rps)
             noise = noise_rs.normal(0, 0.1 * rps)
             rps += noise
             rps = max(0, rps)

@@ -1,5 +1,7 @@
 #include <server/logging_as_glog.h>
 #include <server/model_store/infer_model_store.h>
+#include <server/tvm/graph.h>
+#include <server/tvm/executor.h>
 
 #include <common/tensor/shape_helper.h>
 
@@ -13,10 +15,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <cstdlib>
-
-#include "executor.h"
-#include "graph.h"
-// #include "texture.h"
 
 
 namespace colserve {
@@ -149,8 +147,8 @@ void TVMGraph::SetupStorage() {
   if (!logged.count((model_name_without_dup_id))) {
     logged.insert(model_name_without_dup_id);
     LOG(INFO) << "[Executor] " << model_name_without_dup_id
-              << " params " << sta::ByteDisplay(param_storage_nbytes_)
-              << " intermediate " << sta::ByteDisplay(buffer_storage_nbytes_);
+              << " params " << sta::PrintByte(param_storage_nbytes_)
+              << " intermediate " << sta::PrintByte(buffer_storage_nbytes_);
   }
 }
 
@@ -241,8 +239,6 @@ void TVMGraph::SetupParamGroupPartition(const std::string &path) {
         param_eids.push_back(p.first);
         // param_ready_event_ids_[p.first] = host_param_storage_group_.size();
       }
-      // auto param_group = TVMArray::Empty(ShapeTuple({static_cast<int64_t>(total_nbytes)}),
-      //    DLDataType{kDLInt, 8, 1}, DLDevice{kDLCUDAHost, 0});
       auto param_group = sta::HostEmpty({static_cast<int64_t>(total_nbytes)}, 
                                         DLDataType{kDLInt, 8, 1}, 
                                         sta::MemType::kInfer);
@@ -265,9 +261,9 @@ void TVMGraph::SetupParamGroupPartition(const std::string &path) {
     logged.insert(model_name_without_dup_id);
     LOG_IF(INFO, Config::log_infer_model_init) 
         << "[Executor] " << model_name_ << " internal fragment: " 
-        << sta::ByteDisplay(fragment_nbytes) << " / " << sta::ByteDisplay(model_nbytes)
+        << sta::PrintByte(fragment_nbytes) << " / " << sta::PrintByte(model_nbytes)
         << " | model with group fragment "
-        << sta::ByteDisplay(model_nbytes_with_group_fragment_);
+        << sta::PrintByte(model_nbytes_with_group_fragment_);
   }
 }
 
@@ -345,7 +341,7 @@ TVMGraph::LoadParamsAsTVMArray(const std::string &params_file) {
     params_ret[names[i]] = temp;
     params_size += ::tvm::runtime::GetDataSize(*temp.operator->());
   }
-  VLOG(1) << params_file << " " << sta::ByteDisplay(params_size);
+  VLOG(1) << params_file << " " << sta::PrintByte(params_size);
   return params_ret;
 }
 

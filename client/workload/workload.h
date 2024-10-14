@@ -31,6 +31,19 @@ public:
                           int64_t show_result = 0) = 0;
   virtual void Train(const std::string &model, size_t num_epoch, size_t batch_size) = 0;
   virtual void Report(int verbose = false, std::ostream &os = std::cout) = 0;
+  bool IsSetupSlotDone() {
+    return setup_slot_done_;
+  }
+    bool HasTrainFirstEpochDone();
+
+  void Run() {
+    for (auto &worker : infer_workers_) {
+      if (!worker->IsSetupSlotDone()) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+      }
+    }
+  private:
+  std::atomic<bool> setup_slot_done_{false};
 };
 
 std::unique_ptr<IWorkload> GetColsysWorkload(std::shared_ptr<grpc::Channel> channel,

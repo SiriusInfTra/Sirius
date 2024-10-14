@@ -1,6 +1,7 @@
 from typing import Optional
 import torch
 from collections import defaultdict
+from typing import Optional
 
 
 class GradAccumulator:
@@ -19,9 +20,13 @@ class GradAccumulator:
         for p in self.param_list:
             assert isinstance(p, torch.Tensor)
             self.param_grads[p]['global'] += p.grad 
+            p.grad.zero_()
 
-    def step(self, optmizer: torch.optim.Optimizer, 
-             scaler: Optional[torch.cuda.amp.GradScaler] = None, do_zero_grad=True):
+    def step(self, 
+             optmizer: torch.optim.Optimizer, 
+             scaler: Optional[torch.cuda.amp.GradScaler]=None, 
+             do_zero_grad=True
+    ):
         for p in self.param_list:
             assert isinstance(p, torch.Tensor)
             assert p.grad is not None

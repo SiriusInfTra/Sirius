@@ -1,15 +1,18 @@
-#include <Python.h>
-#include <object.h>
-#include <moduleobject.h>
+#include <torch_col/csrc/torch_allocator_plugin.h>
+#include <torch_col/csrc/mem_tagging.h>
+#include <torch_col/csrc/fake_engine.h>
+
+#include <common/log_as_glog_sta.h>
+
 #include <ATen/Tensor.h>
 #include <torch/csrc/Exceptions.h>
 #include <torch/csrc/autograd/engine.h>
 #include <torch/csrc/autograd/python_variable.h>
 #include <torch/csrc/utils/object_ptr.h>
 
-#include <torch_col/csrc/torch_allocator_plugin.h>
-#include <torch_col/csrc/mem_tagging.h>
-#include <torch_col/csrc/fake_engine.h>
+#include <Python.h>
+#include <object.h>
+#include <moduleobject.h>
 
 namespace torch_col {
 
@@ -48,16 +51,19 @@ void RearrangeMemory() {
 void TorchColSavedVariableHooks::call_pack_hook(const at::Tensor& tensor) {
   CUDAColAllocator::Get()->TagIntermMemory(tensor);
   data_ = tensor;
-  if (static_cast<ctrl::CtrlEvent>(GetColocateStub().GetCmd()) == ctrl::CtrlEvent::kColocateAdjustL1) {
+  if (static_cast<ctrl::CtrlEvent>(GetColocateStub().GetCmd()) 
+      == ctrl::CtrlEvent::kColocateAdjustL1) {
     pybind11::gil_scoped_acquire gil;
     throw EngineColocateAdjustL1Exception("TorchColEngine");
   }
 }
 
 at::Tensor TorchColSavedVariableHooks::call_unpack_hook() {
-  if (static_cast<ctrl::CtrlEvent>(GetColocateStub().GetCmd()) == ctrl::CtrlEvent::kColocateAdjustL1) {
+  if (static_cast<ctrl::CtrlEvent>(GetColocateStub().GetCmd()) 
+      == ctrl::CtrlEvent::kColocateAdjustL1) {
     pybind11::gil_scoped_acquire gil;
-    LOG(INFO) << "throw python exception!";
+    LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank()
+              << "] throw python exception!";
     throw EngineColocateAdjustL1Exception("TorchColEngine");
   }
   return data_;

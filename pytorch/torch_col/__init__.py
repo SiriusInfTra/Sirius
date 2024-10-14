@@ -3,24 +3,34 @@ import torch_col.xsched
 from ._C import *
 from ._C import _dist as dist
 
-from .util import MemoryPool, TrainMode, EventManager, \
-      info, dinfo
+from .util import (
+    MemoryPool, TrainMode, EventManager, 
+    info, dinfo,
+    info_with_frame
+)
 from .accumulate import GradAccumulator
 
-from .dataset import DynamicBatchDataset
-from .hook import register_saved_tensor_hook, get_hook, \
-    HookMode, DummyHook, SwitchHook, \
-    SwitchL1Exception, ColocateHook, ColocateAdjustL1Exception, \
+# from .dataset import DynamicBatchDataset
+from .colocate_ctrl import (
+    register_saved_tensor_hook, create_colocate_ctrl, 
+    ColocateCtrlHookMode, DummyCtrl, SwitchCtrl, 
+    SwitchL1Exception, ColocateCtrl, ColocateAdjustL1Exception, 
     EngineColocateAdjustL1Exception
+)
 from .trainer import Trainer
-from .lr_scheduler import get_imagenet_optimizer_and_scheduler
+from .dynamic_batch import (
+    DynamicBatchDataset, MicroBatchManager,
+    get_dynamic_dataset, get_micro_batch_manager,
+    init_dynamic_batch, BatchDistributePolicy
+)
+from .colocate_ctrl import get_colocate_ctrl
 
 from .debug_server import DebugServer
 
 
-def setup_colocate_training(rank, world_size,
-                            will_use_nccl_comm:bool, 
-                            init_nccl_process_group:bool):
+def setup_colocate_training(rank: int, world_size: int,
+                            will_use_nccl_comm: bool, 
+                            init_nccl_process_group: bool):
     import torch
     import torch_col
     
@@ -47,6 +57,13 @@ def setup_colocate_training(rank, world_size,
             raise ValueError('torch.distributed already initialized')
         torch_dist.init_process_group("nccl", rank=rank, world_size=world_size)
         torch_dist.GroupMember.WORLD._get_backend(torch.device('cuda'))._set_as_default_pg()
+
+        # trigger allreduce to init nccl comm
+        ts = torch.tensor([42], device='cuda')
+        torch_dist.GroupMember.WORLD.allreduce(ts).wait()
+        del ts
+        
+        torch_col.dinfo(f'init_nccl_process_group done')
 
 
 def cleanup_colocate_training(destory_nccl_process_group:bool):

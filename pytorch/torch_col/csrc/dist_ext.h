@@ -1,17 +1,28 @@
 #pragma once
 
-#include <common/log_as_glog_sta.h>
-#include <common/inf_tra_comm/bip_helper.h>
-#include <pthread.h>
-
 #include <torch/csrc/distributed/c10d/reducer.hpp>
 #include <torch/csrc/distributed/c10d/logger.hpp>
 #include <torch/csrc/distributed/c10d/ProcessGroupNCCL.hpp>
 #include <torch/csrc/distributed/c10d/Work.hpp>
 #include <torch/csrc/distributed/c10d/Types.hpp>
 
+#include <torch_col/csrc/config.h>
+
+#include <common/log_as_glog_sta.h>
+#include <common/inf_tra_comm/bip_helper.h>
+
+#include <thread>
+#include <pthread.h>
+
 
 namespace torch_col {
+
+class NcclExt {
+ public: 
+  static void Init();
+  static ncclResult_t (*nccl_comm_reset_channel_fn_)(ncclComm_t);
+  static ncclResult_t (*nccl_comm_show_channel_info_fn_)(ncclComm_t);
+};
 
 class Reducer : public ::c10d::Reducer {
  public:
@@ -60,6 +71,7 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
     }
   };
 
+  static bool HasDefaultProcessGroupNCCL() { return default_pg_ != nullptr; }
   static ::c10::intrusive_ptr<ProcessGroupNCCL> GetDefaultProcessGroupNCCL();
   static void SetDefaultProcessGroupNCCL(ProcessGroupNCCL *pg);
   static void SetDefaultProcessGroupNCCL(const ::c10::intrusive_ptr<ProcessGroupNCCL> &pg);
@@ -89,14 +101,22 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
   }
 
   /////////////////////////////////////////////////////////////////////////////
-  // override the original collective functions to handle the abort flag
+  // override the original collective functions to handle the abort flag.
+  //
+  // if we call NCCL library after set the abort flag, it will cause 
+  // some error, so we override the pytorch NCCL processs group functions
+  // to not call the NCCL functions if the abort flag is set.
   #define REDISPATCH_COLLECTIVE_FUNC(op_type, func, args...) \
     do { \
       if (abort_flag_ != 0) { \
-        LOG(INFO) << "[Rank " << rank_ << " | ProcessGroupNCCL | REDISPATCH_COLLECTIVE_FUNC]" \
-                  << " abort " << #func;  \
+        LOG_IF(INFO, TorchColConfig::log_nccl_process_group) \
+            << "[Rank " << rank_ << " | ProcessGroupNCCL | REDISPATCH_COLLECTIVE_FUNC]" \
+            << " abort " << #func;  \
         return ::c10::make_intrusive<WorkDummy>(rank_, op_type); \
       } else { \
+        DLOG_IF(INFO, TorchColConfig::log_nccl_process_group) \
+            << "[Rank " << rank_ << " | ProcessGroupNCCL]" \
+            << " call " << #func; \
         return func(args); \
       } \
     } while (0)
@@ -119,7 +139,7 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
       std::vector<at::Tensor>& tensors,
       const ::c10d::AllreduceOptions& opts = ::c10d::AllreduceOptions()) override {
     REDISPATCH_COLLECTIVE_FUNC(::c10d::OpType::ALLREDUCE, 
-      ::c10d::ProcessGroupNCCL::allreduce, tensors, opts);
+        ::c10d::ProcessGroupNCCL::allreduce, tensors, opts);
   }
 
   ::c10::intrusive_ptr<::c10d::Work> allreduce_coalesced(
@@ -236,7 +256,11 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
   void SetNcclCommAbortFlag(const std::vector<at::Device> &devices, 
                             uint32_t val = 1 /* default to abort */);
 
+  // void LaunchDebugFn();
+
  private:
+  static ::c10::intrusive_ptr<ProcessGroupNCCL> default_pg_;
+
   // from torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp
   // but as the static methods
   static std::string getKeyFromDevices(const std::vector<at::Device>& devices) {
@@ -285,6 +309,12 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
       const std::string &device_key,
       std::vector<std::shared_ptr<::c10d::NCCLComm>> &nccl_comms,
       const std::unique_lock<std::mutex> &pg_lock);
+    
+  void RestartNcclCommByResettingChannel(
+      const std::vector<at::Device> &devices, 
+      const std::string &device_key,
+      std::vector<std::shared_ptr<::c10d::NCCLComm>> &nccl_comms,
+      const std::unique_lock<std::mutex> &pg_lock);
 
   void _SetNcclCommAbortFlag(ncclComm_t comm, uint32_t val);
   std::pair<uint32_t, uint32_t> _GetNcclCommAbortFlag(ncclComm_t comm);
@@ -292,12 +322,12 @@ class ProcessGroupNCCL : public ::c10d::ProcessGroupNCCL {
 
   std::string GetDevNcclCommMapKeySetStrs();
   std::string GetDevNcclCommMapKeySetStrsUnlocked() const;
-
-  static ::c10::intrusive_ptr<ProcessGroupNCCL> default_pg_;
-  
+    
   // our own maintained abort flag outside of NCCL, 
   // therefore we can check abort flag without get the NCCLComm
   std::atomic<uint32_t> abort_flag_{0};
+
+  // std::unique_ptr<std::thread> debug_thread;
 };
 
 } // namespace torch_col

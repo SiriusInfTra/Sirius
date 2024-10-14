@@ -101,7 +101,9 @@ class ColdModelCache {
   int device_id_;
   size_t current_cached_nbytes_;
   std::mutex mut_;
-  std::unordered_map<std::string, std::unique_ptr<CacheItem>> cold_cache_items_;
+  std::unordered_map<
+      std::string, std::unique_ptr<CacheItem>
+  > cold_cache_items_;
 
  public:
   enum class ReservePolicy {
@@ -116,7 +118,8 @@ class ColdModelCache {
   using evict_list = std::vector<std::pair<std::string, std::vector<size_t>>>;
   using group_id_list = std::vector<size_t>;
 
-  ColdModelCache(int device_id): current_cached_nbytes_{0}, device_id_{device_id} {}
+  ColdModelCache(int device_id)
+    : current_cached_nbytes_{0}, device_id_{device_id} {}
 
   friend class InferModelStore;
 
@@ -133,7 +136,10 @@ class ColdModelCache {
    *         a vector of pairs representing the names and group sizes,
    *         and a boolean indicating the success of the operation.
    */
-  std::tuple<std::vector<size_t>, std::vector<std::pair<std::string, std::vector<size_t>>>, bool>
+  std::tuple<
+      std::vector<size_t>, 
+      std::vector<std::pair<std::string, std::vector<size_t>>>, 
+      bool>
   PushCacheItem(const std::string& name, size_t rank, 
                 std::vector<size_t> groups_nbytes, size_t total_nbytes, 
                 std::unique_lock<std::mutex> &lock, Model *source_model);
@@ -162,7 +168,7 @@ class ColdModelCache {
    * @param lock A unique lock on the mutex.
    * @return The list of models that should be evicted.
    */
-  evict_list GetEvictModels(long capacity, std::array<Model*, 2> ignore_models, 
+  evict_list GetEvictModels(memory_byte_t capacity, std::array<Model*, 2> ignore_models, 
                             std::unique_lock<std::mutex>& lock);
 
 

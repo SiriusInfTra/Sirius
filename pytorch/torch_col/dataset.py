@@ -15,14 +15,14 @@ from torch.utils.data import DataLoader, Subset
 
 import sys
 import torch_col
-from torch_col.hook import HookABC, HookMode
+from torch_col.colocate_ctrl import CtrlBase, ColocateCtrlHookMode
 from torch_col.util import TrainMode, MemoryPool, EventManager
 import torch_col.xsched
 
-class DatasetState(IntEnum):
-    INIT = 0
-    ITER = 1
-    NEXT = 2
+
+_BATCH_FINISH_TAG = 'finish'
+_BATCH_CANCEL_TAG = 'cancel'
+
 
 def _vision_task(model_name):
     return 'resnet' in model_name or 'vit' in model_name or 'swin' in model_name
@@ -33,9 +33,16 @@ def _text_gen(model_name):
 def _text_cls(model_name):
     return 'bert' in model_name
 
+
+class DatasetState(IntEnum):
+    INIT = 0
+    ITER = 1
+    NEXT = 2
+
+
 class DynamicBatchDataset(IterableDataset):
     def __init__(self, model_name, size, max_batch_size,
-                 hook: HookABC, trace: Optional[list[dict]], 
+                 hook: CtrlBase, trace: Optional[list[dict]], 
                  input_shape = None, num_class = None,
                  seq_len = None, 
                  max_global_batch_size = None,
@@ -129,10 +136,8 @@ class DynamicBatchDataset(IterableDataset):
                 self.num_class = 100
             elif _vision_task(self.model_name):
                 self.all_inputs = {
-                    # 'image': torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_inputs.npy')).pin_memory(),
-                    # 'label': torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_targets.npy')).pin_memory(),
-                    'image': torch.from_numpy(np.load('workload_data/pet/pet_inputs.npy')).pin_memory(),
-                    'label': torch.from_numpy(np.load('workload_data/pet/pet_targets.npy')).pin_memory()
+                    'image': torch.from_numpy(np.load('workload_data/cifar10/cifar10_inputs.npy')).pin_memory(),
+                    'label': torch.from_numpy(np.load('workload_data/cifar10/cifar10_targets.npy')).pin_memory()
                 }
                 assert num_class == torch.max(self.all_inputs['label']).item() + 1, \
                     f"expect num of class: {torch.max(self.all_inputs['label']).item() + 1},."
@@ -141,8 +146,8 @@ class DynamicBatchDataset(IterableDataset):
                     f"expect input shape: {self.all_inputs['image'].shape[1:]}"
             else:
                 raise Exception("not support model")
-            # self.all_inputs = torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_inputs.npy')).pin_memory()
-            # self.all_targets = torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_targets.npy')).pin_memory()
+            # self.all_inputs = torch.from_numpy(np.load('workload_data/cifar10/cifar10_inputs.npy')).pin_memory()
+            # self.all_targets = torch.from_numpy(np.load('workload_data/cifar10/cifar10_targets.npy')).pin_memory()
         else:
             if _vision_task(self.model_name):
                 self.all_inputs = {
@@ -159,7 +164,7 @@ class DynamicBatchDataset(IterableDataset):
         self.trace = trace
         self.trace_idx = 0
         if trace is not None:
-            assert hook.train_mode == TrainMode.NORMAL and hook.hook_mode == HookMode.NONE, \
+            assert hook.train_mode == TrainMode.NORMAL and hook.hook_mode == ColocateCtrlHookMode.NONE, \
                 'only normal train can valid trace.'
         self.empty_cache_at_larger_batch_size = empty_cache_at_larger_batch_size
         print(f'Create DynamicBatchDataset, hook={type(hook)}.')
@@ -187,11 +192,15 @@ class DynamicBatchDataset(IterableDataset):
             raise Exception("not support model")
 
     def record_batch_event(self, epoch, i, batch_size, global_batch_size=None):
-        self.batch_event = EventManager.record_event(f'batch_{epoch:02d}_{i:03d}_{batch_size:02d}')
+        self.batch_event = EventManager.record_event(
+            f'batch_{epoch:02d}_{i:03d}_{batch_size:02d}'
+        )
         if self.enable_accumulation:
             if self.global_batch_event is None:
                 assert global_batch_size is not None
-                self.global_batch_event = EventManager.record_event(f'global_batch_{epoch:02d}_{i:03d}_{global_batch_size:02d}')
+                self.global_batch_event = EventManager.record_event(
+                    f'global_batch_{epoch:02d}_{i:03d}_{global_batch_size:02d}'
+                )
 
     def next_batch(self):
         if self.is_do_step():
@@ -202,11 +211,11 @@ class DynamicBatchDataset(IterableDataset):
                 self.hook.release_and_reply()
 
         assert self.state == DatasetState.ITER
-        self.batch_event.tag = 'finish'
+        self.batch_event.tag = _BATCH_FINISH_TAG
         EventManager.record_event('', self.batch_event)
         self.batch_event = None
         if self.enable_accumulation and self.at_global_batch_end():
-            self.global_batch_event.tag = 'finish'
+            self.global_batch_event.tag = _BATCH_FINISH_TAG
             EventManager.record_event('', self.global_batch_event)
             self.global_batch_event = None
 
@@ -257,12 +266,12 @@ class DynamicBatchDataset(IterableDataset):
         self.micro_batch_iter_idx = self.global_batch_iter_idx
         self.accumulate_iter_idx = 0
 
-        self.global_batch_event.tag = 'cancel'
+        self.global_batch_event.tag = _BATCH_CANCEL_TAG
         EventManager.record_event('', self.global_batch_event)
         self.global_batch_event = None
     
     def cancel_micro_batch(self):
-        self.batch_event.tag = 'cancel'
+        self.batch_event.tag = _BATCH_CANCEL_TAG
         EventManager.record_event('', self.batch_event)
         # self.batch_event = None # to be check 
         if self.enable_accumulation and not self.checkpoint_micro_batch:
@@ -277,7 +286,7 @@ class DynamicBatchDataset(IterableDataset):
         else:
             pass
 
-    def step_stage(self, hook:torch_col.hook.HookABC, 
+    def step_stage(self, hook:torch_col.colocate_ctrl.CtrlBase, 
                    optimizer: torch.optim.Optimizer, 
                    scaler: Optional[torch.cuda.amp.GradScaler] = None, 
                    grad_accumulator:torch_col.accumulate.GradAccumulator = None):
@@ -382,12 +391,14 @@ class DynamicBatchDataset(IterableDataset):
     
     def __iter__(self) -> Iterator:
         worker_info = get_worker_info()
-        assert worker_info is None or worker_info.num_workers == 1, "not support multi-process"
+        assert worker_info is None or worker_info.num_workers == 1, \
+            "not support multi-process"
         while True:
             if self.micro_batch_iter_idx == self.size:
                 self.micro_batch_iter_idx = 0
                 if self.global_batch_iter_idx is not None:
-                    assert self.global_batch_iter_idx == self.size, f"{self.global_batch_iter_idx} vs {self.size}"
+                    assert self.global_batch_iter_idx == self.size, \
+                        f"{self.global_batch_iter_idx} vs {self.size}"
                     self.global_batch_iter_idx = 0
                     self.num_rollback_samples_in_epoch = 0
                 break
