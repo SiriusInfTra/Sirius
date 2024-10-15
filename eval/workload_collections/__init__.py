@@ -20,11 +20,19 @@ def _set_workload_alias(workload_name_alias: Dict[str, str]):
 
 
 _set_workload_alias({
-    'NormalA' : 'Normal_Markov_LogNormal_AC',
-    'NormalB' : 'Normal_Model_Markov_LogNormal_AD',
-    'NormalC' : 'Normal_Model_LogNormal_D',
+    # 'NormalA' : 'Normal_Markov_LogNormal_AC',
+    # 'NormalB' : 'Normal_Model_Markov_LogNormal_AD',
+    # 'NormalC' : 'Normal_Model_LogNormal_D',
 
-    'SkewA'   : 'Skew_Markov_LogNormal_AC',
-    'SkewB'   : 'Skew_Model_Markov_LogNormal_AD',
-    'SkewC'   : 'Skew_Model_LogNormal_D'
+    # 'SkewA'   : 'Skew_Markov_LogNormal_AC',
+    # 'SkewB'   : 'Skew_Model_Markov_LogNormal_AD',
+    # 'SkewC'   : 'Skew_Model_LogNormal_D'
+
+    'NormalA' : 'Normal_LogNormal_A',
+    'NormalB' : 'Normal_LogNormal_C',
+    'NormalC' : 'Normal_Markov_LogNormal_AC',
+
+    'SkewA'   : 'Skew_LogNormal_A',
+    'SkewB'   : 'Skew_LogNormal_C',
+    'SkewC'   : 'Skew_Markov_LogNormal_AC',
 })

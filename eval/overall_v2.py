@@ -33,13 +33,13 @@ enable_hybrid = False
 enable_uniform_v2 = False
 enable_skewed_v2 = False
 uniform_v2_workload_types = [
-    # 'NormalA', 
+    'NormalA', 
     'NormalB',
     'NormalC'
 ]
 skew_v2_workload_types = [
     # 'SkewA',
-    'SkewB',
+    # 'SkewB',
     'SkewC'
 ]
 
