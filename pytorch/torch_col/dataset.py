@@ -91,7 +91,8 @@ class DynamicBatchDataset(IterableDataset):
                 self.size = len(self.all_inputs['label'])           
                 self.num_class = 100
             elif os.environ.get('COL_CIFAR100', '0') == '1':
-                rng = np.random.default_rng(42)
+                # rng = np.random.default_rng(42)
+                rng = np.random.default_rng()
                 transform = transforms.Compose([
                     transforms.ToTensor(),
                 ])
