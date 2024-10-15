@@ -391,13 +391,14 @@ int main(int argc, char *argv[]) {
     LOG(INFO) << "max live minute reached, shutting down...";
     Shutdown(SIGINT);
   });
-
-  COL_CU_CALL(cuInit(0));
+  if (!colserve::Config::no_infer) {
+    COL_CU_CALL(cuInit(0));
+  }
   COL_NVML_CALL(nvmlInit());
   colserve::sta::DeviceManager::Init();
   auto free_list_policy = colserve::sta::getFreeListPolicy(
       colserve::Config::mempool_freelist_policy);
-  if (colserve::Config::use_shared_tensor) {
+  if (colserve::Config::use_shared_tensor && !colserve::Config::no_infer) {
     for (int device_id = 0; 
          device_id < colserve::sta::DeviceManager::GetNumVisibleGpu(); 
          device_id++) {

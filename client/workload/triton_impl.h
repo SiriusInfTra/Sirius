@@ -13,6 +13,7 @@
 #include <grpc_client.h>
 #include <grpc_service.grpc.pb.h>
 #include <glog/logging.h>
+#include <stdexcept>
 #include "warm_cache.h"
 
 #define COLSYS_CLIENT_IMPL_NAMESPACE triton_backend
@@ -252,7 +253,7 @@ public:
                          const InferRequest &request, InferResult *response);
 
   grpc::Status Train(grpc::ClientContext* context, const TrainRequest& request, TrainResult* response) {
-    return grpc::Status::OK;
+    throw std::runtime_error("Not implemented Train");
   }
 
   std::unique_ptr<AsyncInferResult> AsyncInference(grpc::ClientContext* context, const InferRequest& request, grpc::CompletionQueue* cq) {
@@ -285,7 +286,7 @@ public:
   }
 
   grpc::Status GetTrainFirstEpochStatus(grpc::ClientContext* context, const EmptyRequest &request, ServerStatus* response) {
-    return grpc::Status::OK;
+    throw std::runtime_error("Not implemented GetTrainFirstEpochStatus");
   }
 
 

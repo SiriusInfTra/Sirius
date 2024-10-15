@@ -262,10 +262,23 @@ class System:
                 #     '--device', os.environ['CUDA_VISIBLE_DEVICES'], 
                 #     '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']],
                 #     stderr=subprocess.PIPE, stdout=subprocess.PIPE, env=os.environ.copy())
-                self.mps_server = subprocess.Popen(
-                    CudaMpsCtrl.launch_cmd(),
-                    stderr=subprocess.STDOUT, stdout=open(mps_log, "w"), 
-                    env=os.environ.copy())
+                with open(mps_log, 'w') as log_file:
+                    self.mps_server = subprocess.Popen(
+                        CudaMpsCtrl.launch_cmd(),
+                        stderr=subprocess.STDOUT, stdout=log_file, 
+                        env=os.environ.copy())
+                    while True:
+                        if self.mps_server.poll() is not None:
+                            print(log_file.read())
+                            raise RuntimeError("MPS exited")
+                        log_file.flush()
+                        with open(mps_log, 'r') as f:
+                            content = f.read()
+                        if "To connect CUDA applications to this daemon" not in content:
+                            time.sleep(0.1)
+                        else:
+                            print("MPS is ready")
+                            break
             else:
                 self.mps_server is None
         else:
@@ -522,6 +535,7 @@ class System:
         #     capture_output=True, env=os.environ.copy())
         quit_mps = subprocess.run(CudaMpsCtrl.quit_cmd(), 
                                   capture_output=True, env=os.environ.copy())
+        # raise Exception(f"Quit MPS failed: {quit_mps.stderr}")
 
 
 class HyperWorkload:
@@ -629,7 +643,7 @@ class HyperWorkload:
         if server.use_triton:
             cmd += ["--triton-port", str(server.triton_port)]
             cmd += ["--triton-config", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../server/triton_models/config.conf"))]
-            cmd += ["--triton-max-memory", str(server.max_warm_cache_nbytes // 1024 // 1024)]
+            cmd += ["--triton-max-memory", str(int(float(server.cuda_memory_pool_gb) * 1024))]
         if self.duration is not None:
             cmd += ["-d", str(self.duration)]
 

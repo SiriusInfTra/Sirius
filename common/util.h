@@ -15,7 +15,6 @@
 #include <cstdint>
 #include <sstream>
 
-
 namespace colserve {
 
 #define COL_CUDA_CALL(func) do { \
