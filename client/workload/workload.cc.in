@@ -153,7 +153,10 @@ void InferWorker::RequestInferTrace(Workload& workload,
     DLOG(INFO) << log_prefix.str() << "sleep until " << std::chrono::duration_cast<std::chrono::milliseconds>(sleep_until_sys_clock - start_sys_clock).count() << "ms."; 
     // InferRecorder recorder(workload, model_);
     std::this_thread::sleep_until(sleep_until_sys_clock);
-    CHECK(workload.running_) << log_prefix.str() << "Workload client is not running while request(start_point=" << start_point << "s) did not sent.";
+    if (!workload.running_) {
+      LOG(WARNING) << log_prefix.str() << "Workload client is not running while request(start_point=" << start_point << "s) did not sent.";
+      break;
+    }
     size_t slot;
     {
       std::unique_lock status_lock{slot_status_mutex_};
@@ -240,7 +243,7 @@ void InferWorker::FetchInferResult(Workload &workload,
       std::unique_lock status_lock{slot_status_mutex_};
       std::shared_lock slot_lock{slot_mutex_};
       CHECK(slots_[slot]->rpc_status_.ok()) 
-          << " slot " << slot << ": " << slots_[slot]->rpc_status_.error_code() << " " 
+          << " slot " << slot << "("<< slots_[slot]->request_.model() << "): " << slots_[slot]->rpc_status_.error_code() << " " 
           << slots_[slot]->rpc_status_.error_message();
       CHECK(status_slots_id_[InferReqStatus::kWait].count(slot)) 
           << " " << slot << " " << status_slots_id_[InferReqStatus::kWait].size();

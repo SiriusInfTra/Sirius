@@ -66,8 +66,8 @@ struct InferRequest {
 
 
 inline void SetGPTRequest(InferRequest &request, const std::string &model, const std::string &data) {
+  CHECK_EQ(request.value.inputs_size(), 0);
   request.value.set_model_name(model);
-  // request.req.set_raw_input_contents()
   auto* input = request.value.add_inputs();
   input->set_name("input_ids");
   input->set_datatype("INT32");
@@ -82,6 +82,7 @@ inline void SetGPTRequest(InferRequest &request, const std::string &model, const
 }
 
 inline void SetBertRequest(InferRequest &request, const std::string &model, const std::string &ids, const std::string &mask) {
+  CHECK_EQ(request.value.inputs_size(), 0);
   request.value.set_model_name(model);
   auto* input = request.value.add_inputs();
   input->set_name("input_ids");
@@ -107,6 +108,7 @@ inline void SetBertRequest(InferRequest &request, const std::string &model, cons
 }
 
 inline void SetMnistRequest(InferRequest &request, const std::string &model, const std::string &data) {
+  CHECK_EQ(request.value.inputs_size(), 0);
   request.value.set_model_name(model);
   auto* input = request.value.add_inputs();
   input->set_name("input0");
@@ -121,6 +123,7 @@ inline void SetMnistRequest(InferRequest &request, const std::string &model, con
   }
 }
 inline void SetResnetRequest(InferRequest &request, const std::string &model, const std::string &data) {
+  CHECK_EQ(request.value.inputs_size(), 0);
   request.value.set_model_name(model);
   auto* input = request.value.add_inputs();
   input->set_name("input0");
@@ -137,6 +140,7 @@ inline void SetResnetRequest(InferRequest &request, const std::string &model, co
 }
 
 inline void SetInceptionRequest(InferRequest &request, const std::string &model, const std::string &data) {
+  CHECK_EQ(request.value.inputs_size(), 0);
   request.value.set_model_name(model);
   auto* input = request.value.add_inputs();
   input->set_name("input0");

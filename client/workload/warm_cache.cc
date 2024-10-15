@@ -23,9 +23,6 @@ void WarmCache::SetTritonConfig(TritonConfig config) {
 
 void WarmCache::IncModel(inference::GRPCInferenceService::Stub &stub, ::grpc::ClientContext *_, const std::string &model_name) {
   LOG(INFO) << "[TritonProxy] Model " << model_name << " inc.";
-
-  // std::unique_lock g_lock{g_mutex_};
-  LOG(INFO) << "[TritonProxy] Model " << model_name << " inc: lock g_mutex #1.";
   WarmCache *warm_cache;
   {
     std::unique_lock m_lock{m_mutex_};
@@ -61,7 +58,9 @@ void WarmCache::IncModel(inference::GRPCInferenceService::Stub &stub, ::grpc::Cl
           evict_lock = std::move(s_lock);
         }
       }
+      LOG(INFO) << "[TritonProxy] Model " << model_name <<  " try to evict model " << evict_model->model_name_ << ".";
       evict_model->free_cond_.wait(evict_lock, [&]() { return evict_model->infering_cnt_ == 0; });
+      LOG(INFO) << "[TritonProxy] Model " << model_name <<  " evict model " << evict_model->model_name_ << ": wait done.";
       ::inference::RepositoryModelUnloadRequest request;
       ::inference::RepositoryModelUnloadResponse response;
       request.set_model_name(evict_model->model_name_);
@@ -78,11 +77,12 @@ void WarmCache::IncModel(inference::GRPCInferenceService::Stub &stub, ::grpc::Cl
     auto status = stub.RepositoryModelLoad(&context, request, &response);
     CHECK(status.ok());
     warm_cache->alive_ = true;
-    model_memory_usage += model_memory_usage;
+    curr_memory_usage_ += model_memory_usage;
+    LOG(INFO) << "[TritonProxy] Model " << model_name << " loaded, predict curr_memory_usage_: " << curr_memory_usage_;
   }
   warm_cache->infering_cnt_++;
   warm_cache->hotness_++;
-  LOG(INFO) << "[TritonProxy] Model " << model_name << " loaded.";
+  LOG(INFO) << "[TritonProxy] Model " << model_name << " inc done.";
 }
 
 void WarmCache::DecModel(inference::GRPCInferenceService::Stub &stub, ::grpc::ClientContext *context, const std::string &model_name) {

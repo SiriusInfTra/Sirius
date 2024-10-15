@@ -145,6 +145,7 @@ int main(int argc, char** argv) {
       for (auto &f : warm_up_futures) {
         f.wait();
       }
+      LOG(INFO) << "Warmup done.";
       if (app.wait_warmup_done_sec > 0) {
         std::this_thread::sleep_for(std::chrono::duration<double>(app.wait_warmup_done_sec));
         infer_workload->WarmupDone();
