@@ -22,6 +22,7 @@ void WarmCache::SetTritonConfig(TritonConfig config) {
 }
 
 void WarmCache::IncModel(inference::GRPCInferenceService::Stub &stub, ::grpc::ClientContext *_, const std::string &model_name) {
+  if (triton_config_.max_memory_nbytes == 0) { return; }
   LOG(INFO) << "[TritonProxy] Model " << model_name << " inc.";
   WarmCache *warm_cache;
   {
@@ -86,6 +87,7 @@ void WarmCache::IncModel(inference::GRPCInferenceService::Stub &stub, ::grpc::Cl
 }
 
 void WarmCache::DecModel(inference::GRPCInferenceService::Stub &stub, ::grpc::ClientContext *context, const std::string &model_name) {
+  if (triton_config_.max_memory_nbytes == 0) { return; }
   LOG(INFO) << "[TritonProxy] Model " << model_name << " dec.";
   std::unique_lock m_lock{m_mutex_};
   auto iter = loaded_models_.find(model_name);

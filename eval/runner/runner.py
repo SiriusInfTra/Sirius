@@ -414,14 +414,17 @@ class System:
                     #    '-v', '/disk2/wyk/onnxruntime_backend/install/backends/onnxruntime:/opt/tritonserver/backends/onnxruntime',
                        '-v', os.environ['HOME'] + ':' + os.environ['HOME'],
                        ]
+                if 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:
+                    cmd += ['-v', '/disk2/wyk/tensorrt_backend/install/backends/tensorrt:/opt/tritonserver/backends/tensorrt']
                 for key, value in os.environ.items():
                     if key.startswith('CUDA_'):
                         cmd += ['-e', f'{key}={value}']
                 cmd += [
                     'nvcr.io/nvidia/tritonserver:23.12-py3',
                     'tritonserver',
-                    '--model-repository=/colsys/server/triton_models',
-                    '--model-control-mode=explicit']
+                    '--model-repository=/colsys/server/triton_models']
+                if not 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:
+                    cmd += ['--model-control-mode=explicit']
                 self.cmd_trace.append(" ".join(cmd))
                 self.triton_server = subprocess.Popen(cmd, stdout=open(triton_log, "w"), stderr=subprocess.STDOUT)
         print('\n')
@@ -643,7 +646,10 @@ class HyperWorkload:
         if server.use_triton:
             cmd += ["--triton-port", str(server.triton_port)]
             cmd += ["--triton-config", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../server/triton_models/config.conf"))]
-            cmd += ["--triton-max-memory", str(int(float(server.cuda_memory_pool_gb) * 1024))]
+            if 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:
+                cmd += ["--triton-max-memory", "0"]
+            else:
+                cmd += ["--triton-max-memory", str(int(float(server.cuda_memory_pool_gb) * 1024))]
         if self.duration is not None:
             cmd += ["-d", str(self.duration)]
 

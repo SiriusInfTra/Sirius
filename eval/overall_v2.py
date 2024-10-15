@@ -790,9 +790,10 @@ if run_um_mps:
         'use_sta': False,
         'mps': True,
         'skip_set_mps_thread_percent': skip_set_mps_pct,
-        'use_xsched': True,
+        'use_xsched': False,
         'has_warmup': True,
-        'dynamic_sm_partition': dynamic_sm_partition,
+        'use_triton': True,
+        'dynamic_sm_partition': False,
     }
 
     if UniformConfig.enable and UniformConfig.high_load.enable:
