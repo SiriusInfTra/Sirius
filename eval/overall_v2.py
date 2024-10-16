@@ -371,6 +371,7 @@ for use_triton in [True]:
             'use_xsched': not use_triton,
             'use_triton': use_triton,
             'dynamic_sm_partition': dynamic_sm_partition and not use_triton,
+            'max_live_minute': 60,
             'has_warmup': True,
             'max_warm_cache_nbytes': int(5.5 * 1024 ** 3),
             'cuda_memory_pool_gb': '7.0',
@@ -802,7 +803,8 @@ if run_um_mps:
                 UniformConfig.model_list, UniformConfig.num_model, 1)
             workload = uniform(UniformConfig.high_load.rps, client_model_list, infer_only=False)
             system = System(train_mps_thread_percent=UniformConfig.high_load.mps_train,
-                            port=UniformConfig.port, max_live_minute=int(SkewedConfig.duration * 0.1),
+                            port=UniformConfig.port, 
+                            max_live_minute=int(UniformConfig.duration * 0.2),
                             **system_config)
             run(system, workload, server_model_config, "overall-uniform", "um-mps-high")
 
@@ -812,7 +814,8 @@ if run_um_mps:
                 UniformConfig.model_list, UniformConfig.num_model, 1)
             workload = uniform(UniformConfig.low_load.rps, client_model_list, infer_only=False)
             system = System(train_mps_thread_percent=UniformConfig.low_load.mps_train,
-                            port=UniformConfig.port, max_live_minute=int(SkewedConfig.duration * 0.1),
+                            port=UniformConfig.port,
+                            max_live_minute=int(UniformConfig.duration * 0.2),
                             **system_config)
             run(system, workload, server_model_config, "overall-uniform", "um-mps-low")
 
@@ -822,7 +825,9 @@ if run_um_mps:
                 client_model_list, server_model_config = InferModel.get_multi_model(
                     run_comm.UniformConfig_v2.model_list, run_comm.UniformConfig_v2.num_model, 1)
                 workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
-                system = System(port=run_comm.UniformConfig_v2.port, **system_config)
+                system = System(port=run_comm.UniformConfig_v2.port, 
+                                max_live_minute=int(UniformConfig.duration * 0.2),
+                                **system_config)
                 run_comm.run(system, workload, server_model_config, 
                              f"overall-uniform-v2-{runner.get_num_gpu()}gpu", 
                              f'um-mps-{wkld_type}')
@@ -833,7 +838,8 @@ if run_um_mps:
                 SkewedConfig.model_list, SkewedConfig.num_model, 1)
             workload = skewed(SkewedConfig.high_load.rps, client_model_list, infer_only=False)
             system = System(train_mps_thread_percent=SkewedConfig.high_load.mps_train,
-                            port=SkewedConfig.port, max_live_minute=int(SkewedConfig.duration * 0.1),
+                            port=SkewedConfig.port,
+                            max_live_minute=int(SkewedConfig.duration * 0.2),
                             **system_config)
             run(system, workload, server_model_config, "overall-skewed", "um-mps-high")
 
@@ -843,7 +849,8 @@ if run_um_mps:
                 SkewedConfig.model_list, SkewedConfig.num_model, 1)
             workload = skewed(SkewedConfig.low_load.rps, client_model_list, infer_only=False)
             system = System(train_mps_thread_percent=SkewedConfig.low_load.mps_train,
-                            port=SkewedConfig.port, max_live_minute=int(SkewedConfig.duration * 0.1),
+                            port=SkewedConfig.port, 
+                            max_live_minute=int(SkewedConfig.duration * 0.2),
                             **system_config)
             run(system, workload, server_model_config, "overall-skewed", "um-mps-low")
 
@@ -853,7 +860,9 @@ if run_um_mps:
                 client_model_list, server_model_config = InferModel.get_multi_model(
                     run_comm.SkewedConfig_v2.model_list, run_comm.SkewedConfig_v2.num_model, 1)
                 workload = run_comm.skewed_v2(wkld_type, client_model_list, infer_only=False)
-                system = System(port=run_comm.SkewedConfig_v2.port, **system_config)
+                system = System(port=run_comm.SkewedConfig_v2.port, 
+                                max_live_minute=int(SkewedConfig.duration * 0.2),
+                                **system_config)
                 run_comm.run(system, workload, server_model_config, 
                              f"overall-skewed-v2-{runner.get_num_gpu()}gpu", 
                              f'um-mps-{wkld_type}')
