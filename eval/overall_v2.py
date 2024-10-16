@@ -23,6 +23,7 @@ run_static_partition = False
 run_static_partition_I = False
 run_static_partition_F = False
 run_infer_only = False
+run_strawman = False
 
 enable_uniform = False
 enable_skewed = False
@@ -58,12 +59,12 @@ parser.add_argument('--static-partition', action='store_true')
 parser.add_argument('--static-partition-i', action='store_true')
 parser.add_argument('--static-partition-f', action='store_true')
 parser.add_argument('--infer-only', action='store_true')
+parser.add_argument('--strawman', action='store_true')
 parser.add_argument('--uniform', action='store_true')
 parser.add_argument('--uniform-v2', action='store_true')
 parser.add_argument('--skewed', action='store_true')
 parser.add_argument('--skewed-v2', action='store_true')
 parser.add_argument('--hybrid', action='store_true')
-parser.add_argument('--strawman', action='store_true')
 parser.add_argument('--azure', action='store_true')
 parser.add_argument('--azure-profile-memory', action='store_true')
 parser.add_argument('--all-sys', action='store_true')
@@ -97,6 +98,8 @@ if args.static_partition_f or args.all_sys:
     run_static_partition_F = True
 if args.infer_only or args.all_sys:
     run_infer_only = True
+if args.strawman or args.all_sys:
+    run_strawman = True
 
 if args.uniform or args.all_workload:
     enable_uniform = True
@@ -541,12 +544,15 @@ if run_colsys:
 
     if enable_uniform_v2:
         for wkld_type in uniform_v2_workload_types:
+            dumo_adjust_info = wkld_type == 'NormalC'
             with mps_thread_percent(None):
                 client_model_list, server_model_config = InferModel.get_multi_model(
                     run_comm.UniformConfig_v2.model_list, run_comm.UniformConfig_v2.num_model, 1)
                 workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
-                system = System(port=run_comm.UniformConfig_v2.port, **system_config)
-                run_comm.run(system, workload, server_model_config, 
+                system = System(port=run_comm.UniformConfig_v2.port, 
+                                dumo_adjust_info=dumo_adjust_info,
+                                **system_config)
+                run_comm.run(system, workload, server_model_config,
                              f"overall-uniform-v2-{runner.get_num_gpu()}gpu", 
                              f'colsys-{wkld_type}')
 
@@ -623,6 +629,40 @@ if run_colsys:
                             **system_config)
             run(system, workload, server_model_config, "overall-hybrid", "colsys-hybrid")
 
+# strawman
+if run_strawman:
+    system_config = {
+        'mode' : System.ServerMode.ColocateL2,
+        'use_sta' : True, 
+        'mps' : True, 
+        'skip_set_mps_thread_percent': skip_set_mps_pct,
+        'use_xsched' : True,
+        'has_warmup' : True,
+        'ondemand_adjust' : True,
+        'pipeline_load' : False,
+        'train_memory_over_predict_mb' : 500,
+        # 'cuda_memory_pool_gb' : "13" if not runner.is_four_gpu() else "12.5",
+        # 'infer_model_max_idle_ms' : 5000,
+        # 'cold_cache_ratio': 0.5, 
+        # 'cold_cache_min_capability_nbytes': int(0.5 * 1024 * 1024 * 1024),
+        # 'cold_cache_max_capability_nbytes': int(1 * 1024 * 1024 * 1024),
+        # 'cold_cache_min_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),
+        # 'cold_cache_max_capability_nbytes': int(2 * 1024 * 1024 * 1024),
+        'dynamic_sm_partition': dynamic_sm_partition,
+    }
+
+    if enable_uniform_v2:
+        wkld_type = 'NormalC'
+        with mps_thread_percent(None):
+            client_model_list, server_model_config = InferModel.get_multi_model(
+                run_comm.UniformConfig_v2.model_list, run_comm.UniformConfig_v2.num_model, 1)
+            workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
+            system = System(port=run_comm.UniformConfig_v2.port, 
+                            dump_adjust_info=True, 
+                            **system_config)
+            run_comm.run(system, workload, server_model_config,
+                        f"overall-uniform-v2-{runner.get_num_gpu()}gpu", 
+                        f'strawman-{wkld_type}')    
 
 ## MARK: Task Switch
 if run_task_switch:
