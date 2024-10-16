@@ -122,6 +122,14 @@ if args.infer_only_without_mps or args.skip_set_mps_pct:
 if args.skip_set_mps_pct:
     skip_set_mps_pct = True
 
+if args.uniform_v2_wkld_types:
+    enable_uniform_v2 = True
+    uniform_v2_workload_types = args.uniform_v2_wkld_types
+
+if args.skewed_v2_wkld_types:
+    enable_skewed_v2 = True
+    skew_v2_workload_types = args.skewed_v2_wkld_types
+
 if not skip_set_mps_pct:
     dynamic_sm_partition = False
 
@@ -634,18 +642,19 @@ if run_colsys:
                             **system_config)
             run(system, workload, server_model_config, "overall-hybrid", "colsys-hybrid")
 
-# strawman
+## MARK: strawman
+
 if run_strawman:
     system_config = {
         'mode' : System.ServerMode.ColocateL2,
-        'use_sta' : True, 
+        'use_sta' : False, 
         'mps' : True, 
         'skip_set_mps_thread_percent': skip_set_mps_pct,
         'use_xsched' : True,
         'has_warmup' : True,
         'ondemand_adjust' : True,
         'pipeline_load' : False,
-        'train_memory_over_predict_mb' : 500,
+        'train_memory_over_predict_mb' : 5000,
         # 'cuda_memory_pool_gb' : "13" if not runner.is_four_gpu() else "12.5",
         # 'infer_model_max_idle_ms' : 5000,
         # 'cold_cache_ratio': 0.5, 
@@ -655,7 +664,7 @@ if run_strawman:
         # 'cold_cache_max_capability_nbytes': int(2 * 1024 * 1024 * 1024),
         'dynamic_sm_partition': dynamic_sm_partition,
     }
-
+    run_comm.UniformConfig_v2.train_batch_size = 64
     if enable_uniform_v2:
         wkld_type = 'NormalC'
         with mps_thread_percent(None):
