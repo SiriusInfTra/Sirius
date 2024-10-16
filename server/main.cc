@@ -367,6 +367,7 @@ void init_config() {
 }
 
 void Shutdown(int sig) {
+  // FIXME: flush pytorc output
   LOG(INFO) <<"signal " <<  strsignal(sig) << "(" << sig << ")" 
             << " received, shutting down...";
   colserve::Config::running = false;

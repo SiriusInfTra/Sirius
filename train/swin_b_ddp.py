@@ -20,6 +20,7 @@ from torch.utils.data import Dataset
 import os
 import torch
 import torchvision
+from torchvision import models
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -166,7 +167,7 @@ def train(rank:int, world_size:int,
 def main():
     parser = argparse.ArgumentParser('Train Resnet')    
     parser.add_argument('--batch-size', type=int, default=64)
-    parser.add_argument('--global-batch-size', type=int, default=512)
+    parser.add_argument('--global-batch-size', type=int, default=500)
     parser.add_argument('--num-epoch', type=int, default=15)
     args = parser.parse_args()
     

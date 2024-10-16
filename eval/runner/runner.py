@@ -12,6 +12,7 @@ import subprocess
 from typing import List, Dict, Optional
 from types import NoneType
 from dataclasses import dataclass
+from .triton_cp import cp_model
 import re
 
 from .hyper_workload import (
@@ -22,6 +23,10 @@ from .config import (
     get_global_seed, get_binary_dir,
     get_host_name, is_meepo5
 )
+
+def get_num_gpu():
+    cuda_device_env = os.environ['CUDA_VISIBLE_DEVICES']
+    return len(cuda_device_env.split(','))
 
 
 class CudaMpsCtrl:
@@ -269,7 +274,6 @@ class System:
                         env=os.environ.copy())
                     while True:
                         if self.mps_server.poll() is not None:
-                            print(log_file.read())
                             raise RuntimeError("MPS exited")
                         log_file.flush()
                         with open(mps_log, 'r') as f:
@@ -403,15 +407,39 @@ class System:
         if self.use_triton:
             # with open(triton_log, "w") as log_file:
             with contextlib.nullcontext():
+                project_root = os.path.join(os.path.abspath(__file__), 
+                                          os.path.pardir, 
+                                          os.path.pardir, 
+                                          os.path.pardir)
+                project_root = os.path.abspath(project_root)
+                model_lists = []
+                def parse_and_generate_models(input_string: str):
+                    # example input
+                    """densenet161[38] 
+                        path densenet161-b1
+                        device cuda
+                        batch-size 1
+                        num-worker 1
+                        max-worker 1"""
+                    assert isinstance(input_string, str)
+                    model_info = re.search(r'(\w+)\[(\d+)\]', input_string)
+                    if model_info:
+                        model_name = model_info.group(1)
+                        model_quantity = int(model_info.group(2))
+                        return [f"{model_name}" if i == 0 else f"{model_name}-{i}" for i in range(model_quantity)]
+                    else:
+                        return []
+                for config in self.infer_model_config:
+                    model_lists.extend(parse_and_generate_models(config))
+                triton_model_dir = os.path.join(project_root, f'triton_models-{self.port}')
+                docker_model_dir = os.path.join('/colsys', f'triton_models-{self.port}')
+                print(f'Generate triton model repo for {model_lists}.')
+                cp_model(model_lists, get_num_gpu(), triton_model_dir)
                 cmd = ['docker', 'run', '-it', '--user', f'{os.getuid()}:{os.getgid()}',
                        '--name', f'colsys-triton-{self.triton_port}',
                        '--rm', '--gpus=all', '--ipc=host',
                        '-p', f'{self.triton_port}:8001',
-                       '-v', os.path.join(os.path.abspath(__file__), 
-                                          os.path.pardir, 
-                                          os.path.pardir, 
-                                          os.path.pardir) + ':/colsys',
-                    #    '-v', '/disk2/wyk/onnxruntime_backend/install/backends/onnxruntime:/opt/tritonserver/backends/onnxruntime',
+                       '-v', f'{project_root}:/colsys',
                        '-v', os.environ['HOME'] + ':' + os.environ['HOME'],
                        ]
                 if 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:
@@ -422,7 +450,7 @@ class System:
                 cmd += [
                     'nvcr.io/nvidia/tritonserver:23.12-py3',
                     'tritonserver',
-                    '--model-repository=/colsys/server/triton_models']
+                    f'--model-repository={docker_model_dir}']
                 if not 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:
                     cmd += ['--model-control-mode=explicit']
                 self.cmd_trace.append(" ".join(cmd))
@@ -649,7 +677,7 @@ class HyperWorkload:
             if 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:
                 cmd += ["--triton-max-memory", "0"]
             else:
-                cmd += ["--triton-max-memory", str(int(float(server.cuda_memory_pool_gb) * 1024))]
+                cmd += ["--triton-max-memory", str(int(float(server.cuda_memory_pool_gb) * 1024  * get_num_gpu()))]
         if self.duration is not None:
             cmd += ["-d", str(self.duration)]
 
