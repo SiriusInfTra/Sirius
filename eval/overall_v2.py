@@ -544,13 +544,13 @@ if run_colsys:
 
     if enable_uniform_v2:
         for wkld_type in uniform_v2_workload_types:
-            dumo_adjust_info = wkld_type == 'NormalC'
+            dump_adjust_info = wkld_type == 'NormalC'
             with mps_thread_percent(None):
                 client_model_list, server_model_config = InferModel.get_multi_model(
                     run_comm.UniformConfig_v2.model_list, run_comm.UniformConfig_v2.num_model, 1)
                 workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
                 system = System(port=run_comm.UniformConfig_v2.port, 
-                                dumo_adjust_info=dumo_adjust_info,
+                                dump_adjust_info=dump_adjust_info,
                                 **system_config)
                 run_comm.run(system, workload, server_model_config,
                              f"overall-uniform-v2-{runner.get_num_gpu()}gpu", 
