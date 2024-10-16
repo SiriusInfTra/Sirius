@@ -44,7 +44,6 @@
 
 CLI::App app{"ColServe"};
 std::string mode = "normal";
-std::string port = "8080";
 int max_live_minute = 20;
 
 void* memory_pressure_ptr = nullptr;
@@ -85,8 +84,8 @@ void init_cli_options() {
       str(boost::format("cuda memory pool freelist policy, default is %s") 
           % colserve::Config::mempool_freelist_policy))
         ->check(CLI::IsMember({"first-fit", "next-fit", "best-fit"}));
-  app.add_option("-p,--port", port,
-      str(boost::format("gRPC server port, default is %s") % port));
+  app.add_option("-p,--port", colserve::Config::port,
+      str(boost::format("gRPC server port, default is %s") % colserve::Config::port));
   app.add_option("--max-live-minute", max_live_minute,
       "max server live minute, default is " 
       + std::to_string(max_live_minute) + " minutes");
@@ -445,8 +444,8 @@ int main(int argc, char *argv[]) {
     size_t nbytes = static_cast<size_t>(colserve::Config::memory_pressure_mb * 1_MB);
     COL_CUDA_CALL(cudaMalloc(&memory_pressure_ptr, nbytes));
   }
-
-  std::string server_address("0.0.0.0:" + port);
+  CHECK_NE(setenv("COL_SERVE_PORT", colserve::Config::port.c_str(), 1), -1) << "setenv failed";
+  std::string server_address("0.0.0.0:" + colserve::Config::port);
   colserve::network::GRPCServer server;
   server.Start(server_address);
 

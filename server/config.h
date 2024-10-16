@@ -71,7 +71,7 @@ class Config {
   static ColocateConfig colocate_config;
 
   static bool check_mps;
-  
+  static std::string port;
   static std::atomic<bool> running;
 
   static std::string train_profile;

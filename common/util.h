@@ -5,6 +5,7 @@
 #include <common/device_manager.h>
 
 #include <boost/format.hpp>
+#include <cstdlib>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include <nvml.h>
@@ -117,6 +118,11 @@ inline std::string GetDefaultShmNamePrefix(int device_id) {
 }
 
 inline std::string GetDefaultShmNamePrefix() {
+  const char *port = getenv("COL_SERVE_PORT");
+  if (port == nullptr) {
+    LOG(WARNING) << "COL_SERVE_PORT is not set, use 0 as default";
+    port = "0";
+  }
   return (boost::format("colserve_shm_%s") % getuid()).str();
 }
 

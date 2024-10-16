@@ -21,7 +21,7 @@ std::atomic<bool> Config::running{true};
 std::string Config::train_profile = "train-profile.csv";
 
 bool Config::use_xsched = false;
-
+std::string colserve::Config::port = "8080";
 bool Config::use_shared_tensor = true;
 bool Config::no_infer = false;
 bool Config::use_shared_tensor_infer = true;
