@@ -1,4 +1,5 @@
 #include "warm_cache.h"
+#include <chrono>
 #include <fstream>
 #include <atomic>
 #include <glog/logging.h>
@@ -7,7 +8,7 @@
 
 namespace colserve::workload {
 std::mutex WarmCache::swapping_mutex_;
-std::mutex WarmCache::m_mutex_;
+std::mutex WarmCache::data_mutex_;
 std::unordered_map<std::string, std::unique_ptr<WarmCache>> WarmCache::loaded_models_;
 TritonConfig WarmCache::triton_config_;
 size_t WarmCache::curr_memory_usage_ = 0;
@@ -24,9 +25,10 @@ void WarmCache::SetTritonConfig(TritonConfig config) {
 void WarmCache::IncModel(inference::GRPCInferenceService::Stub &stub, ::grpc::ClientContext *_, const std::string &model_name) {
   if (triton_config_.max_memory_nbytes == 0) { return; }
   LOG(INFO) << "[TritonProxy] Model " << model_name << " inc.";
+  auto t0 = std::chrono::steady_clock::now();
   WarmCache *warm_cache;
   {
-    std::unique_lock m_lock{m_mutex_};
+    std::unique_lock m_lock{data_mutex_};
     auto iter = loaded_models_.find(model_name);
     if (iter == loaded_models_.cend()) {
       warm_cache = new WarmCache(model_name);
@@ -35,33 +37,58 @@ void WarmCache::IncModel(inference::GRPCInferenceService::Stub &stub, ::grpc::Cl
       warm_cache = iter->second.get(); 
     }
   }
+  auto t1 = std::chrono::steady_clock::now();
+  LOG(INFO) << "[TritonProxy] MODEL " << model_name << " GET_ITEM " << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << "ms.";
   size_t model_memory_usage = GetModelMemoryUsage(model_name);
-  
+  {
+    // wait if someone is wait model to release
+    // std::unique_lock inc_lock{warm_cache->inc_mutex_};
+  }
   std::unique_lock s_lock{warm_cache->s_mutex_};
+  auto t2 = std::chrono::steady_clock::now();
+  LOG(INFO) << "[TritonProxy] MODEL " << model_name << " GET_LOCK " << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count() << "ms.";
 
-  std::unique_lock swapping_lock{swapping_mutex_, std::defer_lock};
   if (!warm_cache->alive_) {
     LOG(INFO) << "[TritonProxy] Model " << model_name << " not alive.";
     s_lock.unlock();
-    swapping_lock.lock();
+    std::unique_lock swapping_lock{swapping_mutex_};
     s_lock.lock();
+    auto t3 = std::chrono::steady_clock::now();
+    LOG(INFO) << "[TritonProxy] MODEL " << model_name << " GET_SWAP_LOCK " << std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2).count() << "ms.";
     while(curr_memory_usage_ + model_memory_usage > triton_config_.max_memory_nbytes) {
       WarmCache *evict_model = nullptr;
       std::unique_lock<std::mutex> evict_lock;
-      for (auto &&[_, model] : loaded_models_) {
-        if (model->model_name_ == model_name) {
-          continue;
+      for (bool try_lock : {true, false}) {
+        for (auto &&[_, e_model] : loaded_models_) {
+          if (e_model->model_name_ == model_name) {
+            continue;
+          }
+          std::unique_lock<std::mutex> e_lock;
+          if (try_lock) {
+            e_lock = std::unique_lock<std::mutex>(e_model->s_mutex_, std::try_to_lock);
+            if (!e_lock.owns_lock()) { continue; }
+          } else {
+            e_lock = std::unique_lock<std::mutex>(e_model->s_mutex_);
+          }
+          if (e_model->alive_ && (evict_model == nullptr 
+            || evict_model->hotness_ > e_model->hotness_)) {
+            evict_model = e_model.get();
+            evict_lock = std::move(e_lock);
+          }
         }
-        std::unique_lock s_lock{model->s_mutex_};
-        if (model->alive_ && (evict_model == nullptr 
-          || evict_model->hotness_ > model->hotness_)) {
-          evict_model = model.get();
-          evict_lock = std::move(s_lock);
+        if (evict_model != nullptr) {
+          break;
         }
       }
+      
       LOG(INFO) << "[TritonProxy] Model " << model_name <<  " try to evict model " << evict_model->model_name_ << ".";
+      auto t4 = std::chrono::steady_clock::now();
+      LOG(INFO) << "[TritonProxy] MODEL " << model_name << " FIND_EVICT_MODEL " << std::chrono::duration_cast<std::chrono::milliseconds>(t4 - t3).count() << "ms.";
+      // std::unique_lock inc_lock{evict_model->inc_mutex_};
       evict_model->free_cond_.wait(evict_lock, [&]() { return evict_model->infering_cnt_ == 0; });
-      LOG(INFO) << "[TritonProxy] Model " << model_name <<  " evict model " << evict_model->model_name_ << ": wait done.";
+      auto t5 = std::chrono::steady_clock::now();
+      LOG(INFO) << "[TritonProxy] Model " << model_name <<  " WAIT_MODEL_RELEASE " << std::chrono::duration_cast<std::chrono::milliseconds>(t5 - t4).count() << "ms.";
+      // LOG(INFO) << "[TritonProxy] Model " << model_name <<  " evict model " << evict_model->model_name_ << ": wait done.";
       ::inference::RepositoryModelUnloadRequest request;
       ::inference::RepositoryModelUnloadResponse response;
       request.set_model_name(evict_model->model_name_);
@@ -70,6 +97,15 @@ void WarmCache::IncModel(inference::GRPCInferenceService::Stub &stub, ::grpc::Cl
       CHECK(status.ok());
       evict_model->alive_ = false;
       curr_memory_usage_ -= GetModelMemoryUsage(evict_model->model_name_);
+      auto t6 = std::chrono::steady_clock::now();
+      LOG(INFO) << "[TritonProxy] MODEL " << model_name << " UNLOAD_MODEL " << std::chrono::duration_cast<std::chrono::milliseconds>(t6 - t5).count() << "ms.";
+    }
+    auto t7 = std::chrono::steady_clock::now();
+    warm_cache->alive_ = true;  
+    curr_memory_usage_ += model_memory_usage;
+    static std::atomic<int> concurrent_load = 4;
+    if (concurrent_load.fetch_sub(1) - 1 >= 0) {
+      swapping_lock.unlock();
     }
     ::inference::RepositoryModelLoadRequest request;
     ::inference::RepositoryModelLoadResponse response;
@@ -77,8 +113,10 @@ void WarmCache::IncModel(inference::GRPCInferenceService::Stub &stub, ::grpc::Cl
     request.set_model_name(model_name);
     auto status = stub.RepositoryModelLoad(&context, request, &response);
     CHECK(status.ok());
-    warm_cache->alive_ = true;
-    curr_memory_usage_ += model_memory_usage;
+    concurrent_load.fetch_add(1);
+    auto t8 = std::chrono::steady_clock::now();
+    LOG(INFO) << "[TritonProxy] MODEL " << model_name << " LOAD_MODEL " << std::chrono::duration_cast<std::chrono::milliseconds>(t8 - t7).count() << "ms.";
+    LOG(INFO) << "[TritonProxy] MODEL " << model_name << " TOT_INC " << std::chrono::duration_cast<std::chrono::milliseconds>(t8 - t0).count() << "ms.";
     LOG(INFO) << "[TritonProxy] Model " << model_name << " loaded, predict curr_memory_usage_: " << curr_memory_usage_;
   }
   warm_cache->infering_cnt_++;
@@ -89,7 +127,7 @@ void WarmCache::IncModel(inference::GRPCInferenceService::Stub &stub, ::grpc::Cl
 void WarmCache::DecModel(inference::GRPCInferenceService::Stub &stub, ::grpc::ClientContext *context, const std::string &model_name) {
   if (triton_config_.max_memory_nbytes == 0) { return; }
   LOG(INFO) << "[TritonProxy] Model " << model_name << " dec.";
-  std::unique_lock m_lock{m_mutex_};
+  std::unique_lock m_lock{data_mutex_};
   auto iter = loaded_models_.find(model_name);
   CHECK(iter != loaded_models_.cend());
   auto warm_cache = iter->second.get();

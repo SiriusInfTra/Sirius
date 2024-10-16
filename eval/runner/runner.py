@@ -450,6 +450,7 @@ class System:
                 cmd += [
                     'nvcr.io/nvidia/tritonserver:23.12-py3',
                     'tritonserver',
+                    '--model-load-thread-count=4',
                     f'--model-repository={docker_model_dir}']
                 if not 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:
                     cmd += ['--model-control-mode=explicit']

@@ -17,12 +17,13 @@ struct TritonConfig {
 class WarmCache {
  private:
   static std::mutex swapping_mutex_; // ordered request
-  static std::mutex m_mutex_; // protect datastruct access
+  static std::mutex data_mutex_; // protect datastruct access
   static std::unordered_map<std::string, std::unique_ptr<WarmCache>> loaded_models_;
   static TritonConfig triton_config_;
   static size_t curr_memory_usage_;
 
   std::mutex s_mutex_;
+  std::mutex inc_mutex_;
   std::condition_variable free_cond_;
   std::string model_name_;
   size_t hotness_;
