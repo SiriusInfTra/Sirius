@@ -22,6 +22,8 @@ class TorchColConfig {
 
   static std::string colocate_ctrl_hook_mode;
   static std::string colocate_train_mode;
+  static bool is_colocate_l1;
+  static bool is_colocate_l2;
 
   static int release_interm_memory_by_grad_fn;
   static int release_interm_memory_by_tagging;

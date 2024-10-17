@@ -540,7 +540,8 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
            << " timestamp: " << torch_col::get_unix_timestamp();
       }
 
-      if (will_killed_batch_reconfig_.load(std::memory_order_acquire)) {
+      if (TorchColConfig::is_colocate_l1
+          && will_killed_batch_reconfig_.load(std::memory_order_acquire)) {
         // concurrenctly distributing batch with infer require memory adjust
         // may cause some issues. 
         // For example:
