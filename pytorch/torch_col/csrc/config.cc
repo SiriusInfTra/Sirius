@@ -25,6 +25,8 @@ int TorchColConfig::dynamic_sm_partition = false;
 
 std::string TorchColConfig::colocate_ctrl_hook_mode = "none";
 std::string TorchColConfig::colocate_train_mode = "normal";
+bool TorchColConfig::is_colocate_l1 = false;
+bool TorchColConfig::is_colocate_l2 = false;
 
 int TorchColConfig::release_interm_memory_by_grad_fn = false;
 int TorchColConfig::release_interm_memory_by_tagging = true;
@@ -81,6 +83,8 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
   colocate_train_mode = train_mode_env == nullptr ? "normal" : std::string(train_mode_env);
   train_profile_log_path = train_profile_log_path_env == nullptr ? 
                            "" : std::string(train_profile_log_path_env);
+  is_colocate_l1 = colocate_train_mode == "colocate-l1";
+  is_colocate_l2 = colocate_train_mode == "colocate-l2";
 
   log_all = log_all_env == nullptr ? 
             false : (std::string(log_all_env) == "1");

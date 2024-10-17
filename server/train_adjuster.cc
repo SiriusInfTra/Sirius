@@ -272,7 +272,9 @@ TrainAdjuster::GetInferReleaseMemAdjustPlanWithInLock(
       );
     } else {
       // w/ native gpu memory management
-      target_bs_predict_by_avail_mem = -1;
+      // target_bs_predict_by_avail_mem = -1;
+      target_bs_predict_by_avail_mem = adjuster_->PredictTargetBatchSize(
+          0, std::max(train_avail_mem_mb - reserve_mem_mb, 0.0));
 
       target_bs_calcu_by_delta_mem =
           cur_train_target_bs + 
