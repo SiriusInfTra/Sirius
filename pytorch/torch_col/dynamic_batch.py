@@ -182,7 +182,11 @@ class MicroBatchManager:
         col_ctrl = get_colocate_ctrl()
         if col_ctrl.train_mode == TrainMode.COLOCATE_L2:
             if col_ctrl._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL2:
-                col_ctrl.release_and_reply()
+                col_ctrl.release_and_reply(False)
+                if torch_col.get_train_rank() == 0 and not batch.should_update_param():
+                    torch_col.dist._DynamicBatchDistirbutor.distribute_batch(
+                        True, True, False)
+                torch_col.dist.wait_barrier()
         
         self._complete_batch_event(_BATCH_FINISH_TAG, batch)
         self._past_micro_batch_range_vecs_in_global_batch.append(
