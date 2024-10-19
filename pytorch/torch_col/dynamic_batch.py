@@ -182,11 +182,15 @@ class MicroBatchManager:
         col_ctrl = get_colocate_ctrl()
         if col_ctrl.train_mode == TrainMode.COLOCATE_L2:
             if col_ctrl._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL2:
-                col_ctrl.release_and_reply(False)
-                if torch_col.get_train_rank() == 0 and not batch.should_update_param():
-                    torch_col.dist._DynamicBatchDistirbutor.distribute_batch(
-                        True, True, False)
-                torch_col.dist.wait_barrier()
+                if torch_col.get_train_world_size() == 1:
+                    col_ctrl.release_and_reply(False)
+                else:
+                    if batch.should_update_param():
+                        torch_col.dist.wait_barrier()
+                        col_ctrl.release_and_reply(False)
+                        # if torch_col.get_train_rank() == 0 and batch.should_update_param():
+                            # torch_col.dist._DynamicBatchDistirbutor.distribute_batch(
+                            #     True, True, False)
         
         self._complete_batch_event(_BATCH_FINISH_TAG, batch)
         self._past_micro_batch_range_vecs_in_global_batch.append(
@@ -198,7 +202,8 @@ class MicroBatchManager:
         # else:
         #     _DynamicBatchDistirbutor.finish_batch()
 
-        if (not self._enable_grad_accumulate 
+        if (not self._enable_grad_accumulate # should check grad accumulate?
+            or not torch_col.get_colocate_train_mode().is_kill_batch()
             or self._should_checkpoint_micro_batch()
         ):
             _DynamicBatchDistirbutor.finish_batch(
@@ -291,6 +296,7 @@ class MicroBatchManager:
             self._complate_global_batch_event(_BATCH_FINISH_TAG)
 
         if (self._enable_grad_accumulate 
+            and torch_col.get_colocate_train_mode().is_kill_batch()
             and not self._checkpoint_micro_batch
         ):
             # for idx in self._past_micro_batch_range_vecs_in_global_batch:

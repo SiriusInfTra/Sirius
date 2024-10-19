@@ -10,6 +10,7 @@
 #include <common/util.h>
 #include <common/device_manager.h>
 #include <common/sm_partition.h>
+#include <common/inf_tra_comm/communicator.h>
 
 #include <boost/format.hpp>
 #include <boost/range/irange.hpp>
@@ -345,7 +346,8 @@ void Profiler::CollectMemoryResourceInfo(
       for (uint32_t i = 0; i < proc_info_cnt; i++) {
         if (!Config::use_shared_tensor_train && proc_infos[i].pid == getpid()) {
           res_info.infer_mem = proc_infos[i].usedGpuMemory;
-        } else if (proc_infos[i].pid == TrainLauncher::Get()->GetTrainPid()) {
+        // } else if (proc_infos[i].pid == TrainLauncher::Get()->GetTrainPid()) {
+        } else if (proc_infos[i].pid == ctrl::InfTraCommunicator::GetTrainPIDNotCheckValid(device_id)) {
           res_info.train_mem = proc_infos[i].usedGpuMemory;
           res_info.train_all_mem = res_info.train_mem;
         }

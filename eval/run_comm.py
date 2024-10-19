@@ -84,7 +84,7 @@ class UniformConfig_v2:
     train_batch_size = 72
     train_global_batch_size = 500 # not used, hard code for global batch size and dataset size
     train_dataset_size = 1000 
-    train_epoch_time = 5.5 # used for predict number epoch
+    train_epoch_time = 1 # used for predict number epoch
 
     model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
                   InferModel.EfficientViT_b2, InferModel.DistilBertBase, 

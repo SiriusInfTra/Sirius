@@ -51,6 +51,9 @@ class InfTraSharedInfo {
     CHECK(IsTrainInfoValid(id));
     return train_infos_[id];
   }
+  const TrainInfo* GetTrainInfoUnsafeNotCheckValid(int id) {
+    return train_infos_[id];
+  }
   TrainInfo* GetMutableTrainInfoUnsafe(int id) {
     CHECK(IsTrainInfoValid(id));
     return train_infos_[id];
