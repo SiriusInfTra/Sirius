@@ -139,6 +139,7 @@ if args.binary_dir != 'build':
 if args.multi_gpu:
     run_comm.UniformConfig_v2.train_model += "_ddp"
     run_comm.SkewedConfig_v2.train_model += "_ddp"
+    run_comm.UniformConfig_v2.num_model = runner.scale_up_by_num_gpu(50)
 
 retry_limit = args.retry_limit
 retry_if_fail = retry_limit >= 1
