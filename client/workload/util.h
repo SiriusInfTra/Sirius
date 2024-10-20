@@ -37,6 +37,7 @@ class AppBase {
   std::string triton_port;
   size_t triton_max_memory{0}; // in MB
   std::string triton_config;
+  std::string triton_device_map;
   bool enable_train{true}, enable_infer{true};
   std::set<std::string> train_models;
   int duration{10}, concurrency{10};

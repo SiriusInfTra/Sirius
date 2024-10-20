@@ -10,10 +10,14 @@ namespace colserve::workload {
 std::mutex WarmCache::swapping_mutex_;
 std::mutex WarmCache::data_mutex_;
 std::unordered_map<std::string, std::unique_ptr<WarmCache>> WarmCache::loaded_models_;
+std::atomic<int> WarmCache::concurrent_loads[MAX_DEVICE];
 TritonConfig WarmCache::triton_config_;
 size_t WarmCache::curr_memory_usage_ = 0;
 
-void WarmCache::SetTritonConfig(TritonConfig config) {
+
+
+
+void WarmCache::Init(TritonConfig config) {
   triton_config_ = std::move(config);
   if (triton_config_.max_memory_nbytes == 0) {
     LOG(INFO) << "[TritonProxy] No memory limit.";
@@ -103,8 +107,10 @@ void WarmCache::IncModel(inference::GRPCInferenceService::Stub &stub, ::grpc::Cl
     auto t7 = std::chrono::steady_clock::now();
     warm_cache->alive_ = true;  
     curr_memory_usage_ += model_memory_usage;
-    static std::atomic<int> concurrent_load = 4;
-    if (concurrent_load.fetch_sub(1) - 1 >= 0) {
+    // static std::atomic<int> concurrent_loads[MAX_DEVICE] = {4, 4, 4, 4};
+    auto &concurrent_load = concurrent_loads[triton_config_.models_device.find(model_name)->second];
+    // static std::atomic<int> concurrent_load = 0;
+    if (concurrent_load.fetch_add(1) < MAX_CONCURRENT_LOAD) {
       swapping_lock.unlock();
     }
     ::inference::RepositoryModelLoadRequest request;
@@ -113,7 +119,7 @@ void WarmCache::IncModel(inference::GRPCInferenceService::Stub &stub, ::grpc::Cl
     request.set_model_name(model_name);
     auto status = stub.RepositoryModelLoad(&context, request, &response);
     CHECK(status.ok());
-    concurrent_load.fetch_add(1);
+    concurrent_load.fetch_sub(1);
     auto t8 = std::chrono::steady_clock::now();
     LOG(INFO) << "[TritonProxy] MODEL " << model_name << " LOAD_MODEL " << std::chrono::duration_cast<std::chrono::milliseconds>(t8 - t7).count() << "ms.";
     LOG(INFO) << "[TritonProxy] MODEL " << model_name << " TOT_INC " << std::chrono::duration_cast<std::chrono::milliseconds>(t8 - t0).count() << "ms.";
@@ -153,9 +159,9 @@ size_t WarmCache::GetModelMemoryUsage(const std::string &name) {
 }
 
 TritonConfig TritonConfig::LoadConfig(const std::string &filepath,
-                                      size_t max_memory_nbytes) {
+                                      size_t max_memory_nbytes, const std::string &model_device_config_path) {
   std::ifstream file(filepath);
-  CHECK(file.is_open()) << "无法打开配置文件: " << filepath;
+  CHECK(file.is_open()) << "Unable open configuration: " << filepath;
 
   TritonConfig config;
   config.max_memory_nbytes = max_memory_nbytes;
@@ -171,7 +177,7 @@ TritonConfig TritonConfig::LoadConfig(const std::string &filepath,
       continue;
 
     auto delimiter_pos = line.find('=');
-    CHECK(delimiter_pos != std::string::npos) << "配置格式错误: " << line;
+    CHECK(delimiter_pos != std::string::npos) << "wrong configuration: " << line;
 
     std::string key = line.substr(0, delimiter_pos);
     std::string value_str = line.substr(delimiter_pos + 1);
@@ -185,15 +191,23 @@ TritonConfig TritonConfig::LoadConfig(const std::string &filepath,
     try {
       value = std::stoull(value_str);
     } catch (const std::invalid_argument &e) {
-      LOG(FATAL) << "无效的数字: " << value_str;
+      LOG(FATAL) << "invalid number " << value_str;
     } catch (const std::out_of_range &e) {
-      LOG(FATAL) << "数字超出范围: " << value_str;
+      LOG(FATAL) << "out of range " << value_str;
     }
 
     config.models_memory_nbytes[key] = value;
   }
 
   file.close();
+
+  std::ifstream device_map_file(model_device_config_path);
+  CHECK(device_map_file.is_open()) << "Unable open device map configuration: " << model_device_config_path;
+  std::string model_name;
+  int model_device;
+  while (device_map_file >> model_name >> model_device) {
+    config.models_device[model_name] = model_device;
+  }
   return config;
 }
 } // namespace colserve::workload

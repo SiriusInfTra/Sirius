@@ -39,7 +39,8 @@ std::unique_ptr<IWorkload> GetColsysWorkload(std::shared_ptr<grpc::Channel> chan
 
 std::unique_ptr<IWorkload> GetTritonWorkload(std::shared_ptr<grpc::Channel> channel,
            std::chrono::seconds duration, double delay_before_profile,
-           const std::string &infer_timeline, size_t max_memory_nbytes, std::string triton_config);
+           const std::string &infer_timeline, size_t max_memory_nbytes,
+           const std::string &triton_config, const std::string &triton_device_map);
 }
 
 #endif
