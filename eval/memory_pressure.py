@@ -75,7 +75,7 @@ def uniform(rps, client_model_list, infer_only=True, rps_fn=None, num_model_requ
     if not infer_only:
         workload.set_train_workload(
             train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
-    workload.set_infer_workloads(MicrobenchmarkInferWorkload(
+    workload.set_infer_workloads(MicrobenchmarkInferWorkload_v1(
         model_list=client_model_list,
         interval_sec=UniformConfig.interval_sec, fix_request_sec=rps,
         rps_fn=rps_fn, num_request_model_fn=num_model_request_fn,
@@ -92,15 +92,17 @@ system_config = {
     'mode' : System.ServerMode.ColocateL1,
     'use_sta' : True, 
     'mps' : True, 
+    'skip_set_mps_thread_percent': True,
     'use_xsched' : True, 
     'has_warmup' : True,
     'ondemand_adjust' : True,
-    'cuda_memory_pool_gb' : "13.5",
+    'cuda_memory_pool_gb' : "13.0",
     'train_memory_over_predict_mb' : 1500,
     'infer_model_max_idle_ms' : 5000,
     'cold_cache_ratio': 0.5, 
     'cold_cache_min_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),
     'cold_cache_max_capability_nbytes': int(2 * 1024 * 1024 * 1024),
+    'dynamic_sm_partition': True,
 }
 
 with mps_thread_percent(UniformConfig.high_load.mps_infer):
@@ -120,4 +122,5 @@ with mps_thread_percent(UniformConfig.high_load.mps_infer):
                     port=UniformConfig.port,
                     max_live_minute=int(UniformConfig.duration/60 + 10),
                     **system_config)
-    run_comm.run(system, workload, server_model_config, "memory-pressure", f"{UniformConfig.num_model}")
+    run_comm.run(system, workload, server_model_config, 
+                 "memory-pressure", f"{UniformConfig.num_model}")
