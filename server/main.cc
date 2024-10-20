@@ -176,6 +176,9 @@ void init_cli_options() {
   app.add_option("--has-warmup", colserve::Config::has_warmup,
       str(boost::format("has warmup, default is %d") 
       % colserve::Config::has_warmup));
+  app.add_option("--train-adjust-balance", colserve::Config::enable_train_adjust_balance,
+      str(boost::format("train adjust balance, default is %d") 
+          % colserve::Config::enable_train_adjust_balance));
   app.add_flag("--dump-adjust-info", 
       colserve::Config::dump_adjust_info,
       str(boost::format("dump adjust info, default is %d") 
@@ -385,6 +388,7 @@ int main(int argc, char *argv[]) {
   init_cli_options();
   CLI11_PARSE(app, argc, argv);
   init_config();
+  CHECK_NE(setenv("COL_SERVE_PORT", colserve::Config::port.c_str(), 1), -1) << "setenv failed";
 
   std::thread shutdown_trigger([](){
     std::this_thread::sleep_for(std::chrono::minutes(max_live_minute));
@@ -444,7 +448,7 @@ int main(int argc, char *argv[]) {
     size_t nbytes = static_cast<size_t>(colserve::Config::memory_pressure_mb * 1_MB);
     COL_CUDA_CALL(cudaMalloc(&memory_pressure_ptr, nbytes));
   }
-  CHECK_NE(setenv("COL_SERVE_PORT", colserve::Config::port.c_str(), 1), -1) << "setenv failed";
+
   std::string server_address("0.0.0.0:" + colserve::Config::port);
   colserve::network::GRPCServer server;
   server.Start(server_address);

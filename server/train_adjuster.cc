@@ -1,4 +1,5 @@
 
+#include "common/device_manager.h"
 #include "train_launcher.h"
 #include <server/logging_as_glog.h>
 #include <server/config.h>
@@ -109,10 +110,10 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
   auto train_world_size = adjuster_->cached_train_world_size_;
   int cur_train_target_bs = 
       adjuster_->cached_target_batch_sizes_[device_id];
-
+  // (((sta::DeviceManager::GetNumVisibleGpu() > 1) && false) ? 1 
   if (cur_train_target_bs <= 0) {
     LOG_IF(INFO, Config::log_memory_adjust) 
-        << "[InferRequireMemAdjust] target batch batch is already 0, skip adjust";
+        << "[InferRequireMemAdjust] target batch batch is already 0/1, skip adjust";
     return {};
   }
 
@@ -133,6 +134,9 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
       adjuster_->GetDeltaBatchSize(device_id, adjust_batch_buf_mb);
   CHECK_GE(adjust_batch_buf_mb, 0);
   int target_batch_size = cur_train_target_bs - delta_batch_size;
+  // if (false && sta::DeviceManager::GetNumVisibleGpu() > 1) {
+  //   target_batch_size = std::max(target_batch_size, 1);
+  // }
 
   // [Note: adjust plan for imbalance]
   // case 1: all batch size is same 
@@ -500,6 +504,9 @@ std::pair<double, double> TrainAdjuster::GetModelMemParam(
       // NOTE: PLACEHOLDER
       // return {1700, 140};
       return {3300, 145};
+    } else if (model_name == "swin_b_ddp") {
+      // TODO: remove hard-coded value
+      return {3500, 150};
     } else {
       LOG(FATAL) << "Unsupported model: " << model_name;
     }

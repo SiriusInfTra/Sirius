@@ -285,6 +285,14 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job,
                 << Config::train_mps_thread_percent;
     }
 
+    if (Config::enable_train_adjust_balance) {
+      CHECK_NE(setenv("COL_BATCH_DISTRIBUTE_POLICY", "BY_PERFORMANCE", 1), -1);
+      extra_env_ss << "COL_BATCH_DISTRIBUTE_POLICY=BY_PERFORMANCE ";
+    } else {
+      CHECK_NE(setenv("COL_BATCH_DISTRIBUTE_POLICY", "FIX", 1), -1);
+      extra_env_ss << "COL_BATCH_DISTRIBUTE_POLICY=FIX ";
+    }
+
     LOG(INFO) << "[TrainLauncher]: " << "Train " << job << " ( "
               << extra_env_ss.str() << " " << ss.str() << ")";
     auto err = execvp("python", argv);
