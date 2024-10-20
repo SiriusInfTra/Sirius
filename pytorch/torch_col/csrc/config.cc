@@ -107,9 +107,12 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
     shared_tensor_pool_gb = std::stod(pool_size_env);
   }
 
-  auto config_head = (boost::format(
-      "================ TORCH_COL CONFIG [Rank %d PID %d] ================") 
-        % train_rank % getpid()).str();
+  auto config_head = str(boost::format(
+      "================ TORCH_COL CONFIG [Rank %d PID %d | PORT %d ] ================") 
+        % train_rank 
+        % getpid()
+        % (std::getenv("COLSYS_PORT") == nullptr 
+           ? 0 : std::stoi(std::getenv("COLSYS_PORT"))));
 
   std::stringstream config_ss;
   config_ss << config_head << std::endl;

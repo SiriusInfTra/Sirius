@@ -353,6 +353,7 @@ void Profiler::CollectMemoryResourceInfo(
         }
       }
       size_t free, total;
+      // COL_CUDA_CALL(cudaSetDevice(device_id));
       COL_CUDA_CALL(cudaMemGetInfo(&free, &total));
       res_info.gpu_used_mem = total - free;
       if (Config::use_shared_tensor) {
