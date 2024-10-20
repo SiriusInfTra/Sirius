@@ -301,7 +301,7 @@ def skewed(rps, client_model_list, infer_only=True, rps_fn=None,
 
 def azure(rps, client_model_list, infer_only=True, rps_fn=None,
           train_model:str = AzureConfig.train_model, 
-          train_epoch:int = int(AzureConfig.duration / 5.5 + 5), 
+          train_epoch:int = int(AzureConfig.duration / 3 + 5), 
           train_batch_size:int = AzureConfig.train_batch_size):
     print(f'azure rps {rps}')
     workload = HyperWorkload(concurrency=2048,
@@ -374,6 +374,20 @@ def run(system: System, workload: HyperWorkload,
 ## MARK: Static Partition
 for use_triton in [True]:
     for tag, item in {
+        'I': ({
+            'mode' : System.ServerMode.Normal,
+            'use_sta': True,
+            'mps': True,
+            'skip_set_mps_thread_percent': skip_set_mps_pct,
+            'use_xsched': not use_triton,
+            'use_triton': use_triton,
+            'dynamic_sm_partition': dynamic_sm_partition and not use_triton,
+            'has_warmup': True,
+            'max_warm_cache_nbytes': int(9 * 1024 ** 3),
+            'cuda_memory_pool_gb': '10.5',
+            'use_sta_train': False
+        }, {'train_batch_size': 8 if not runner.is_four_gpu() else 2, 
+            'epoch_time': 14.5}), 
         'F': ({
             'mode' : System.ServerMode.Normal,
             'use_sta': True,
@@ -389,20 +403,6 @@ for use_triton in [True]:
             'use_sta_train': False
         }, {'train_batch_size': 32 if not runner.is_four_gpu() else 26, 
             'epoch_time': 5.5}), 
-        'I': ({
-            'mode' : System.ServerMode.Normal,
-            'use_sta': True,
-            'mps': True,
-            'skip_set_mps_thread_percent': skip_set_mps_pct,
-            'use_xsched': not use_triton,
-            'use_triton': use_triton,
-            'dynamic_sm_partition': dynamic_sm_partition and not use_triton,
-            'has_warmup': True,
-            'max_warm_cache_nbytes': int(9 * 1024 ** 3),
-            'cuda_memory_pool_gb': '10.5',
-            'use_sta_train': False
-        }, {'train_batch_size': 8 if not runner.is_four_gpu() else 2, 
-            'epoch_time': 14.5}), 
     }.items():
 
         if not run_static_partition:
@@ -653,18 +653,11 @@ if run_strawman:
         'use_xsched' : True,
         'has_warmup' : True,
         'ondemand_adjust' : True,
+        
         'pipeline_load' : False,
-        'train_memory_over_predict_mb' : 5000,
-        # 'cuda_memory_pool_gb' : "13" if not runner.is_four_gpu() else "12.5",
-        # 'infer_model_max_idle_ms' : 5000,
-        # 'cold_cache_ratio': 0.5, 
-        # 'cold_cache_min_capability_nbytes': int(0.5 * 1024 * 1024 * 1024),
-        # 'cold_cache_max_capability_nbytes': int(1 * 1024 * 1024 * 1024),
-        # 'cold_cache_min_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),
-        # 'cold_cache_max_capability_nbytes': int(2 * 1024 * 1024 * 1024),
+        'train_memory_over_predict_mb' : 1500,
         'dynamic_sm_partition': dynamic_sm_partition,
     }
-    run_comm.UniformConfig_v2.train_batch_size = 64
     if enable_uniform_v2:
         wkld_type = 'NormalC'
         with mps_thread_percent(None):
@@ -672,9 +665,9 @@ if run_strawman:
                 run_comm.UniformConfig_v2.model_list, run_comm.UniformConfig_v2.num_model, 1)
             workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
             system = System(port=run_comm.UniformConfig_v2.port, 
-                            dump_adjust_info=True, 
+                            dump_adjust_info=True, max_live_minute=120,
                             **system_config)
-            run_comm.run(system, workload, server_model_config,
+            run_comm.run(system, workload, server_model_config, 
                         f"overall-uniform-v2-{runner.get_num_gpu()}gpu", 
                         f'strawman-{wkld_type}')    
 
