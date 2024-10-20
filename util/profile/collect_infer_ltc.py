@@ -17,7 +17,7 @@ log_file = args.log
 output_file = args.output
 slo_output_file = args.slo_output
 
-if pathlib.Path(slo_output_file).is_dir():
+if slo_output_file is not None and pathlib.Path(slo_output_file).is_dir():
     slo_output_file = pathlib.Path(slo_output_file) / 'infer-slo.svg'
 
 

@@ -557,13 +557,12 @@ if run_colsys:
 
     if enable_uniform_v2:
         for wkld_type in uniform_v2_workload_types:
-            dump_adjust_info = wkld_type == 'NormalC'
+            # dump_adjust_info = wkld_type == 'NormalA'
             with mps_thread_percent(None):
                 client_model_list, server_model_config = InferModel.get_multi_model(
                     run_comm.UniformConfig_v2.model_list, run_comm.UniformConfig_v2.num_model, 1)
                 workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
-                system = System(port=run_comm.UniformConfig_v2.port, 
-                                dump_adjust_info=dump_adjust_info,
+                system = System(port=run_comm.UniformConfig_v2.port,
                                 **system_config)
                 run_comm.run(system, workload, server_model_config,
                              f"overall-uniform-v2-{runner.get_num_gpu()}gpu", 
@@ -607,7 +606,8 @@ if run_colsys:
             client_model_list, server_model_config = InferModel.get_multi_model(
                 AzureConfig.model_list, AzureConfig.num_model, 1)
             workload = azure(rps=AzureConfig.max_rps, 
-                             client_model_list=client_model_list, infer_only=False)
+                             client_model_list=client_model_list, 
+                             infer_only=False)
             system = System(train_mps_thread_percent=AzureConfig.mps_train,
                             port=AzureConfig.port,
                             **system_config)
@@ -642,8 +642,7 @@ if run_colsys:
                             **system_config)
             run(system, workload, server_model_config, "overall-hybrid", "colsys-hybrid")
 
-## MARK: strawman
-
+## MARK: MARK: strawman
 if run_strawman:
     system_config = {
         'mode' : System.ServerMode.ColocateL2,
@@ -655,7 +654,14 @@ if run_strawman:
         'ondemand_adjust' : True,
         
         'pipeline_load' : False,
-        'train_memory_over_predict_mb' : 1500,
+        'train_memory_over_predict_mb' : 1000,
+        # 'cuda_memory_pool_gb' : "13" if not runner.is_four_gpu() else "12.5",
+        # 'infer_model_max_idle_ms' : 5000,
+        # 'cold_cache_ratio': 0.5, 
+        # 'cold_cache_min_capability_nbytes': int(0.5 * 1024 * 1024 * 1024),
+        # 'cold_cache_max_capability_nbytes': int(1 * 1024 * 1024 * 1024),
+        # 'cold_cache_min_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),
+        # 'cold_cache_max_capability_nbytes': int(2 * 1024 * 1024 * 1024),
         'dynamic_sm_partition': dynamic_sm_partition,
     }
     if enable_uniform_v2:
