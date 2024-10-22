@@ -1,3 +1,4 @@
+#include "common/device_manager.h"
 #include <server/logging_as_glog.h>
 #include <server/model_store/infer_model_store.h>
 #include <server/model_store/infer_model.h>
@@ -225,8 +226,13 @@ bool Model::ReclaimMemory(size_t rank,
 
 void Model::ClearColdCache(const std::vector<size_t> &cold_cached_group_id, int rank, 
                            std::unique_lock<std::mutex> &cold_cache_lock) {
+  auto t0 = std::chrono::steady_clock::now();
+  auto cache_before = ColdModelCache::Get(sta::DeviceManager::GetCurrentDevice())->GetCacheSizeMBUnsafe();
   std::unique_lock other_model_lock{muts_[rank]};
   executors_[rank]->ClearColdCached(cold_cached_group_id);
+  auto dur = std::chrono::steady_clock::now() - t0;
+  auto cache_after = ColdModelCache::Get(sta::DeviceManager::GetCurrentDevice())->GetCacheSizeMBUnsafe();
+  LOG(INFO) << "[ClearCache] cost " << std::chrono::duration_cast<std::chrono::milliseconds>(dur).count() << "ms: " << cache_before << " -> " << cache_after << ".";
 }
 
 bool Model::MaybeAdjustTrainAndCache(size_t rank, 
@@ -315,6 +321,7 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
     } else {
       capacity = 0;
     }
+    // capacity = 0;
 
     auto evict_models = cold_model_cache->GetEvictModels(
         capacity, {this, nullptr}, cold_cache_lock);

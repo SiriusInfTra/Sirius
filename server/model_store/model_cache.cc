@@ -217,15 +217,21 @@ ColdModelCache::PushCacheItem(
   cache_item->cached_group_nbytes = 0;
   cache_item->model = InferModelStore::Get()->GetModel(name);
   size_t model_max_cached_nbytes = static_cast<size_t>(total_nbytes * Config::cold_cache_ratio);
+  size_t uncache_nbytes = 0;
   for (size_t k = 0; k < groups_nbytes.size(); ++k) {
     DLOG(INFO) << "k = " << k << ".";
-    if ((k == 0 || cache_item->cached_group_nbytes + groups_nbytes[k] / 2 <= model_max_cached_nbytes) 
-      && (cache_item->cached_group_nbytes + groups_nbytes[k] < Config::cold_cache_min_capability_nbytes)) {
-      cache_item->cached_groups_id.push_back(k);
-      cache_item->cached_group_nbytes += groups_nbytes[k];
-    } else {
-      break;
-    }
+    cache_item->cached_groups_id.push_back(k);
+    cache_item->cached_group_nbytes += groups_nbytes[k];
+    // if ((k == 0 || cache_item->cached_group_nbytes + groups_nbytes[k] / 2 <= model_max_cached_nbytes) 
+    //   && (cache_item->cached_group_nbytes + groups_nbytes[k] < Config::cold_cache_min_capability_nbytes)) {
+    //   cache_item->cached_groups_id.push_back(k);
+    //   cache_item->cached_group_nbytes += groups_nbytes[k];
+    // } else {
+    //   for (;k < groups_nbytes.size(); ++k) {
+    //     uncache_nbytes += groups_nbytes[k];
+    //   }
+    //   break;
+    // }
   }
   LOG_IF(INFO, Config::log_cold_cache) 
       <<"[ColdModelCache] decide to cache " << name 
@@ -238,8 +244,15 @@ ColdModelCache::PushCacheItem(
   }
 
   DLOG(INFO) << "check whether should evict models.";
-  auto evict_models = GetEvictModels(Config::cold_cache_max_capability_nbytes, 
+  evict_list evict_models;
+  CHECK_EQ(uncache_nbytes, 0);
+  if (current_cached_nbytes_ + cache_item->cached_group_nbytes > Config::cold_cache_max_capability_nbytes) {
+    auto nbytes_before = current_cached_nbytes_;
+    // bug maybe ignore model
+     evict_models = GetEvictModels(Config::cold_cache_min_capability_nbytes, 
                                      {cache_item->model, source_model}, lock);
+      LOG(INFO) << "Evict model " << current_cached_nbytes_ / 1024;
+  }
   current_cached_nbytes_ += cache_item->cached_group_nbytes;
   DLOG(INFO) << "put to cold_cache_items_.";
   CHECK(cold_cache_items_.emplace(std::make_pair(name, cache_item)).second == true) << name;
@@ -311,6 +324,7 @@ double ColdModelCache::GetBufferMBUnsafe() {
 double ColdModelCache::GetCacheSizeMBUnsafe() {
   auto cold_cache_nbytes = current_cached_nbytes_;
   auto free_memory_mb = ResourceManager::GetFreeMemoryMB(device_id_, false);
+  LOG(INFO) << "cold_cache_nbytes = " << cold_cache_nbytes << ", free_memory_mb = " << free_memory_mb;
   return std::min(sta::ByteToMB(Config::cold_cache_max_capability_nbytes),
                   sta::ByteToMB(cold_cache_nbytes) + std::max(0.0, free_memory_mb));
 }
