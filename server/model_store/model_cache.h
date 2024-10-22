@@ -100,6 +100,7 @@ class ColdModelCache {
 
   int device_id_;
   size_t current_cached_nbytes_;
+  size_t current_capacity_nbytes_;
   std::mutex mut_;
   std::unordered_map<
       std::string, std::unique_ptr<CacheItem>

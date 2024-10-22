@@ -58,10 +58,10 @@ memory_mb_t TrainAdjuster::PredictTrainMemUsageMB(int device_id, bool verbose) {
   if (!ctrl::InfTraCommunicator::GetSinfo()->IsTrainInfoValid(ctrl::kTraRank_0)) {
     return 0;
   }
-  // auto batch_size = 
-  //     adjuster_->cached_target_batch_sizes_[device_id];
   auto target_batch_size_ = 
-      COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(device_id, target_batch_size);
+      adjuster_->cached_target_batch_sizes_[device_id];
+  // auto target_batch_size_ = 
+      // COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(device_id, target_batch_size);
   // auto target_batch_size_ = TrainLauncher::Get()->GetTargetBatchSize();
   auto current_batch_size = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(device_id, current_batch_size);
   auto batch_size = std::max(target_batch_size_, current_batch_size);
