@@ -302,8 +302,18 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
             << "[Model, Cold Cache Adjust] "
             << "AllocStorageMaybeAdjust: model " << rank
             << " wait adjust " << PROFILE_DURATRION(TrainAdjust);
-      } 
-      cold_model_cache->SetNewCapacity(new_capacity, cold_cache_lock);
+      } else if (require_mb > 0) {
+        // DEBUG
+        auto evict_models = cold_model_cache->GetEvictModels(0, {this, nullptr}, cold_cache_lock);
+        for (auto &&[name, cached_groups_id] : evict_models) {
+          InferModelStore::Get()->GetModel(name)->ClearColdCache(cached_groups_id, rank, cold_cache_lock);
+        }
+        LOG(INFO) << "[Model, Cold Cache Adjust] "
+                  << "AllocStorageMaybeAdjust: model " << rank
+                  << " require " << require_mb << "MB, but no adjust plan";
+
+      }
+      cold_model_cache->SetNewCapacity(total_storage_nbytes, cold_cache_lock);
     }
     // ensure ok
     LOG(INFO) << "[MaybeAdjustTrainAndCache] After maybe adjust, "
