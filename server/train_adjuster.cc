@@ -58,10 +58,10 @@ memory_mb_t TrainAdjuster::PredictTrainMemUsageMB(int device_id, bool verbose) {
   if (!ctrl::InfTraCommunicator::GetSinfo()->IsTrainInfoValid(ctrl::kTraRank_0)) {
     return 0;
   }
-  auto target_batch_size_ = 
-      adjuster_->cached_target_batch_sizes_[device_id];
   // auto target_batch_size_ = 
-      // COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(device_id, target_batch_size);
+      // adjuster_->cached_target_batch_sizes_[device_id];
+  auto target_batch_size_ = 
+      COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(device_id, target_batch_size);
   // auto target_batch_size_ = TrainLauncher::Get()->GetTargetBatchSize();
   auto current_batch_size = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(device_id, current_batch_size);
   auto batch_size = std::max(target_batch_size_, current_batch_size);
@@ -99,11 +99,11 @@ std::vector<TrainAdjuster::AdjustPlan>
 TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
     int device_id, 
     memory_mb_t required_mem_mb,
-    memory_mb_t cold_cache_free_mem_mb,
-    std::unique_lock<std::mutex> &cold_cache_lock) {
+    memory_mb_t _,
+    std::unique_lock<std::mutex> &__) {
   CHECK(adjuster_ != nullptr);
-  CHECK_GT(required_mem_mb, cold_cache_free_mem_mb)
-      << "memory adjust is not necessary";
+  // CHECK_GT(required_mem_mb, cold_cache_free_mem_mb)
+  //     << "memory adjust is not necessary";
 
   std::unique_lock adjuster_lock{adjuster_->mut_};
 
@@ -119,11 +119,14 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
     return {};
   }
 
-  memory_mb_t adjust_reserve_mb =
-      ColdModelCache::Get(device_id)->GetAdjustReserveMemoryMBUnsafe();
-  memory_mb_t adjust_batch_buf_mb = required_mem_mb 
-                                    - std::max(0.0, cold_cache_free_mem_mb) 
-                                    + adjust_reserve_mb;
+  // CHECK_LE(ColdModelCache::Get(device_id)->GetCacheSizeMBUnsafe(), Config::cold_cache_max_capability_nbytes / 1024.0);
+  // ColdModelCache::Get(device_id)->ExpandToMax();
+  // memory_mb_t adjust_reserve_mb =
+  //     ColdModelCache::Get(device_id)->GetAdjustReserveMemoryMBUnsafe();
+  // memory_mb_t adjust_batch_buf_mb = required_mem_mb 
+  //                                   - std::max(0.0, cold_cache_free_mem_mb) 
+  //                                   + adjust_reserve_mb;
+  memory_mb_t adjust_batch_buf_mb = required_mem_mb;
 
   if (adjust_batch_buf_mb <= 0) {
     LOG_IF(INFO, Config::log_memory_adjust) 
@@ -196,8 +199,8 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
     std::stringstream ss; 
     ss << "[InferRequireMemAdjust]"
       << " cur_train_target_bs " << cur_train_target_bs
-      << " cold cache free memory " << cold_cache_free_mem_mb
-      << " adjust_reserve_mb " << adjust_reserve_mb
+      // << " cold cache free memory " << cold_cache_free_mem_mb
+      // << " adjust_reserve_mb " << adjust_reserve_mb
       << " required_mem_mb " << required_mem_mb
       << " adjust_batch_buf_mb " << adjust_batch_buf_mb
       << " delta_batch_size " << delta_batch_size
@@ -222,6 +225,7 @@ TrainAdjuster::GetInferReleaseMemAdjustPlan() {
 std::vector<TrainAdjuster::AdjustPlan>
 TrainAdjuster::GetInferReleaseMemAdjustPlanWithInLock(
     std::vector<std::unique_lock<std::mutex>> &cold_cache_locks) {
+  LOG(INFO) << "GetInferReleaseMemAdjustPlanWithInLock";
   CHECK(adjuster_ != nullptr);
   CHECK(cold_cache_locks.size() == sta::DeviceManager::GetNumVisibleGpu());
   

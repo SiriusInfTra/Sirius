@@ -1,4 +1,4 @@
-#include "common/device_manager.h"
+#include <cmath>
 #include <server/logging_as_glog.h>
 #include <server/model_store/infer_model_store.h>
 #include <server/model_store/infer_model.h>
@@ -11,7 +11,7 @@
 
 #include <common/util.h>
 #include <common/sm_partition.h>
-
+#include <common/device_manager.h>
 #include <algorithm>
 #include <chrono>
 #include <limits>
@@ -227,19 +227,26 @@ bool Model::ReclaimMemory(size_t rank,
 void Model::ClearColdCache(const std::vector<size_t> &cold_cached_group_id, int rank, 
                            std::unique_lock<std::mutex> &cold_cache_lock) {
   auto t0 = std::chrono::steady_clock::now();
-  auto cache_before = ColdModelCache::Get(sta::DeviceManager::GetCurrentDevice())->GetCacheSizeMBUnsafe();
+  auto cache_before = ResourceManager::GetFreeMemoryMB(sta::DeviceManager::GetCurrentDevice(), false);
   std::unique_lock other_model_lock{muts_[rank]};
   executors_[rank]->ClearColdCached(cold_cached_group_id);
   auto dur = std::chrono::steady_clock::now() - t0;
-  auto cache_after = ColdModelCache::Get(sta::DeviceManager::GetCurrentDevice())->GetCacheSizeMBUnsafe();
-  LOG(INFO) << "[ClearCache] cost " << std::chrono::duration_cast<std::chrono::milliseconds>(dur).count() << "ms: " << cache_before << " -> " << cache_after << ".";
+  auto cache_after = ResourceManager::GetFreeMemoryMB(sta::DeviceManager::GetCurrentDevice(), false);
+  LOG(INFO) << "[ClearCache] cost " << std::chrono::duration_cast<std::chrono::milliseconds>(dur).count() << "ms: " << cache_before << " -> " << cache_after 
+    << ", cached " << sta::ByteToMB(ColdModelCache::Get(device_.device_id)->GetCachedNbytesUnsafe())
+    << ", cap " <<  ColdModelCache::Get(device_.device_id)->GetCacheSizeMBUnsafe() <<".";
 }
 
 bool Model::MaybeAdjustTrainAndCache(size_t rank, 
                                      std::unique_lock<std::mutex> &cold_cache_lock, 
                                      std::unique_lock<std::mutex> &model_lock) {
   CHECK(status_[rank] == Status::kWithoutMemory);
-
+  if (ctrl::Controller::Get()->IsTrainIdle()) {
+    LOG(INFO) << "[Model, Cold Cache Adjust] "
+              << "AllocStorageMaybeAdjust: model " << rank
+              << " train idle, skip adjust";
+    return false;
+  }
 #if ADJUST_WITH_FLYING
   // batching adjust with flying adjusts, deprecated currently
 
@@ -266,80 +273,82 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
 #endif
 
   auto cold_model_cache = ColdModelCache::Get(device_.device_id);
-
-  double free_memory_MB = 
-      ResourceManager::GetFreeMemoryMB(device_.device_id, true);
-  double cold_cache_free_memory_MB =
-      cold_model_cache->GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock);
-  double total_storage_MB = 
-      sta::ByteToMB(executors_[rank]->GetMissingStorageSizeAlign());
-
-  if (total_storage_MB > cold_cache_free_memory_MB 
-      && !ctrl::Controller::Get()->IsTrainIdle()) {
-    auto adjust_plan = 
-        TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
-          device_.device_id, total_storage_MB, 
-          cold_cache_free_memory_MB, cold_cache_lock);
-    if (!adjust_plan.empty()) {
-      PROFILE_START(TrainAdjust);
-      auto cmd_id = ctrl::Controller::Get()->ColocateInferRequireAdjust(
-          rank, device_.device_id, adjust_plan);
-      ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
-      PROFILE_END(TrainAdjust);
-
-      LOG_IF(INFO, Config::log_memory_adjust) 
-          << "[Model, Cold Cache Adjust] "
-          << "AllocStorageMaybeAdjust: model " << rank
-          << " wait adjust " << PROFILE_DURATRION(TrainAdjust)
-          << " | before adjust: free memory " << free_memory_MB
-          << " cold cache free memory " << cold_cache_free_memory_MB
-          << " model required " << total_storage_MB;
+  size_t total_storage_nbytes = executors_[rank]->GetMissingStorageSizeAlign();
+  LOG(INFO) << "[Model, Cold Cache Adjust] "
+            << "AllocStorageMaybeAdjust: model " << rank
+            << " total_storage_nbytes " << total_storage_nbytes;
+  if (!cold_model_cache->TakeSpace(total_storage_nbytes)) {
+    if (cold_model_cache->GetCacheCapacity(cold_cache_lock) < Config::cold_cache_min_capability_nbytes + total_storage_nbytes) {
+      memory_byte_t new_capacity = (Config::cold_cache_max_capability_nbytes - Config::cold_cache_min_capability_nbytes) / 2;
+      // reset memory predict accumulation error
+      memory_mb_t require_mb = 
+        + (sta::ByteToMB(new_capacity)
+          - sta::ByteToMB(cold_model_cache->GetCachedNbytes(cold_cache_lock)))
+        - (ResourceManager::GetFreeMemoryMB(sta::DeviceManager::GetCurrentDevice(), true) 
+          - Config::train_memory_over_predict_mb);
+      LOG(INFO) << "[Model, Cold Cache Adjust] "
+                << "Adjust train " << rank
+                << " require " << require_mb << "MB";
+      auto adjust_plan = TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
+          device_.device_id, require_mb, 
+          nan(""), cold_cache_lock);
+      if (!adjust_plan.empty()) {
+        PROFILE_START(TrainAdjust);
+        auto cmd_id = ctrl::Controller::Get()->ColocateInferRequireAdjust(
+            rank, device_.device_id, adjust_plan);
+        ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
+        PROFILE_END(TrainAdjust);
+        LOG_IF(INFO, Config::log_memory_adjust) 
+            << "[Model, Cold Cache Adjust] "
+            << "AllocStorageMaybeAdjust: model " << rank
+            << " wait adjust " << PROFILE_DURATRION(TrainAdjust);
+      } 
+      cold_model_cache->SetNewCapacity(new_capacity, cold_cache_lock);
+    }
+    // ensure ok
+    LOG(INFO) << "[MaybeAdjustTrainAndCache] After maybe adjust, "
+      << " Curr capacity: " << sta::ByteToMB(cold_model_cache->GetCacheCapacity(cold_cache_lock)) << "MB"
+      << " Curr cached: " << sta::ByteToMB(cold_model_cache->GetCachedNbytes(cold_cache_lock)) << "MB"
+      << " Total storage: " << sta::ByteToMB(total_storage_nbytes) << "MB";
+    CHECK_GE(cold_model_cache->GetCacheCapacity(cold_cache_lock), Config::cold_cache_min_capability_nbytes + total_storage_nbytes);
+    if (cold_model_cache->TakeSpace(total_storage_nbytes)) {
+      LOG(INFO) << "[MaybeAdjustTrainAndCache] Secound take space success, new capacity " << sta::ByteToMB(cold_model_cache->GetCacheCapacity(cold_cache_lock)) << "MB"
+                << " new cache " << sta::ByteToMB(cold_model_cache->GetCachedNbytes(cold_cache_lock)) << "MB.";
     } else {
-      LOG_IF(INFO, Config::log_memory_adjust) 
-          << "[Model, Cold Cache Adjust] AllocStorageMaybeAdjust: model " 
-          << rank << " skip adjust";
+      memory_byte_t init_cached_nbytes = cold_model_cache->GetCachedNbytes(cold_cache_lock);
+      CHECK_GE(cold_model_cache->GetCacheCapacity(cold_cache_lock), cold_model_cache->GetCachedNbytes(cold_cache_lock));
+      
+      CHECK_GE(cold_model_cache->GetCachedNbytes(cold_cache_lock) + total_storage_nbytes, cold_model_cache->GetCacheCapacity(cold_cache_lock));
+      memory_byte_t evict_to_nbytes = cold_model_cache->GetCacheCapacity(cold_cache_lock) - total_storage_nbytes;
+      LOG(INFO) << "Current capacity: " << sta::ByteToMB(cold_model_cache->GetCacheCapacity(cold_cache_lock)) << "MB"
+                << " Current cached: " << sta::ByteToMB(cold_model_cache->GetCachedNbytes(cold_cache_lock)) << "MB"
+                << " Total storage: " << sta::ByteToMB(total_storage_nbytes) << "MB"
+                << " Evict to: " << sta::ByteToMB(evict_to_nbytes) << "MB";
+      auto evict_models = cold_model_cache->GetEvictModels(
+        evict_to_nbytes, {this, nullptr}, cold_cache_lock);
+      LOG(INFO) << "Current capacity: " << sta::ByteToMB(cold_model_cache->GetCacheCapacity(cold_cache_lock)) << "MB"
+                << " Current cached: " << sta::ByteToMB(cold_model_cache->GetCachedNbytes(cold_cache_lock)) << "MB"
+                << " Total storage: " << sta::ByteToMB(total_storage_nbytes) << "MB"
+                << " Evict to: " << sta::ByteToMB(evict_to_nbytes) << "MB";
+      size_t evict_storage = 0;
+      for (auto &&[name, cached_groups_id] : evict_models) {
+        evict_storage += InferModelStore::Get()->GetModel(name)->GetMemoryNbytes(0);
+        InferModelStore::Get()->GetModel(name)->ClearColdCache(cached_groups_id, rank, cold_cache_lock);
+      }
+
+      size_t release_nbytes = init_cached_nbytes - cold_model_cache->GetCachedNbytes(cold_cache_lock);
+      LOG(INFO) << "[MaybeAdjustTrainAndCache] After maybe evict, "
+        << " Curr capacity: " << sta::ByteToMB(cold_model_cache->GetCacheCapacity(cold_cache_lock)) << "MB"
+        << " Curr cached: " << sta::ByteToMB(cold_model_cache->GetCachedNbytes(cold_cache_lock)) << "MB"
+        << " Total storage: " << sta::ByteToMB(total_storage_nbytes) << "MB"
+        << "  Evict: " << sta::ByteToMB(evict_storage) << "MB" << "|" << sta::ByteToMB(release_nbytes) << "MB.";
+      // CHECK_GE(evict_to_nbytes, cold_model_cache->GetCachedNbytes(cold_cache_lock) + total_storage_nbytes);
+      cold_model_cache->SetNewCapacity(
+        cold_model_cache->GetCacheCapacity(cold_cache_lock) - total_storage_nbytes, 
+        cold_cache_lock);
     }
-    free_memory_MB = ResourceManager::GetFreeMemoryMB(
-        device_.device_id, Config::log_memory_adjust);
   }
-  LOG_IF(INFO, Config::log_memory_adjust) 
-      << "[Model, Cold Cache Adjust] after adjust, "
-      << "free memory " << free_memory_MB
-      << " cold cache free memory " 
-      << cold_model_cache->GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock)
-      << " model required " << total_storage_MB;
-
-  if (total_storage_MB > free_memory_MB) {
-    memory_byte_t cold_cache_nbytes = 
-        cold_model_cache->GetCachedNbytes(cold_cache_lock);
-    memory_byte_t to_evict_nbytes = static_cast<memory_byte_t>(
-        total_storage_MB * 1024 * 1024 - free_memory_MB);
-
-    memory_byte_t capacity;
-    if (cold_cache_nbytes >= to_evict_nbytes) {
-      capacity = cold_cache_nbytes - to_evict_nbytes;
-    } else {
-      capacity = 0;
-    }
-    // capacity = 0;
-
-    auto evict_models = cold_model_cache->GetEvictModels(
-        capacity, {this, nullptr}, cold_cache_lock);
-    for (auto &&[name, cached_groups_id] : evict_models) {
-      InferModelStore::Get()->GetModel(name)->ClearColdCache(
-          cached_groups_id, rank, cold_cache_lock);
-    }
-
-    LOG_IF(INFO, Config::log_memory_adjust) 
-        << "[Model, Cold Cache Adjust] after adjust, "
-        << "furthur evict model until cached nbytes is " 
-        << sta::PrintByte(capacity)
-        << " for " << name_ << " rank " << rank
-        << " cache nbytes " 
-        << sta::PrintByte(cold_cache_nbytes) << " -> "
-        << sta::PrintByte(cold_model_cache->GetCachedNbytes(cold_cache_lock));
-  }
-
+ 
 #if 1
   // directly release memory changing lock, 
   // infer may alloc memory but without this lock
@@ -356,8 +365,8 @@ bool Model::SetupMemory(size_t rank,
   CHECK(status_[rank] == Status::kWithoutMemory);
 
   ColdModelCache::Get(device_.device_id)->PopCacheItem(
-      name_, rank, cold_cache_lock);
-
+      name_, rank, true, cold_cache_lock);
+  
   if (Config::IsColocateMode() && Config::ondemand_adjust) {
     PROFILE_START(InferAdjustAlloc);
     if (!Config::colocate_config.skip_malloc) {
