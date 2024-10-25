@@ -15,6 +15,10 @@ build_*/
 *.tar
 *.xz
 *.onnx
+*.plan
+*.pt
+*.pbtxt
+*.bin
 
 server/models/*/
 
@@ -43,3 +47,42 @@ mempool_dump*/*
 cifar-10-batches-py/*
 
 .clangd
+.cache
+workload_data/azurefunctions-dataset2019/app_memory_percentiles.anon.d01.csv
+workload_data/azurefunctions-dataset2019/app_memory_percentiles.anon.d02.csv
+workload_data/azurefunctions-dataset2019/app_memory_percentiles.anon.d03.csv
+workload_data/azurefunctions-dataset2019/app_memory_percentiles.anon.d04.csv
+workload_data/azurefunctions-dataset2019/app_memory_percentiles.anon.d05.csv
+workload_data/azurefunctions-dataset2019/app_memory_percentiles.anon.d06.csv
+workload_data/azurefunctions-dataset2019/app_memory_percentiles.anon.d07.csv
+workload_data/azurefunctions-dataset2019/app_memory_percentiles.anon.d08.csv
+workload_data/azurefunctions-dataset2019/app_memory_percentiles.anon.d09.csv
+workload_data/azurefunctions-dataset2019/app_memory_percentiles.anon.d10.csv
+workload_data/azurefunctions-dataset2019/app_memory_percentiles.anon.d11.csv
+workload_data/azurefunctions-dataset2019/app_memory_percentiles.anon.d12.csv
+workload_data/azurefunctions-dataset2019/function_durations_percentiles.anon.d02.csv
+workload_data/azurefunctions-dataset2019/function_durations_percentiles.anon.d03.csv
+workload_data/azurefunctions-dataset2019/function_durations_percentiles.anon.d04.csv
+workload_data/azurefunctions-dataset2019/function_durations_percentiles.anon.d05.csv
+workload_data/azurefunctions-dataset2019/function_durations_percentiles.anon.d06.csv
+workload_data/azurefunctions-dataset2019/function_durations_percentiles.anon.d07.csv
+workload_data/azurefunctions-dataset2019/function_durations_percentiles.anon.d08.csv
+workload_data/azurefunctions-dataset2019/function_durations_percentiles.anon.d09.csv
+workload_data/azurefunctions-dataset2019/function_durations_percentiles.anon.d10.csv
+workload_data/azurefunctions-dataset2019/function_durations_percentiles.anon.d11.csv
+workload_data/azurefunctions-dataset2019/function_durations_percentiles.anon.d12.csv
+workload_data/azurefunctions-dataset2019/function_durations_percentiles.anon.d13.csv
+workload_data/azurefunctions-dataset2019/function_durations_percentiles.anon.d14.csv
+workload_data/azurefunctions-dataset2019/invocations_per_function_md.anon.d02.csv
+workload_data/azurefunctions-dataset2019/invocations_per_function_md.anon.d03.csv
+workload_data/azurefunctions-dataset2019/invocations_per_function_md.anon.d04.csv
+workload_data/azurefunctions-dataset2019/invocations_per_function_md.anon.d05.csv
+workload_data/azurefunctions-dataset2019/invocations_per_function_md.anon.d06.csv
+workload_data/azurefunctions-dataset2019/invocations_per_function_md.anon.d07.csv
+workload_data/azurefunctions-dataset2019/invocations_per_function_md.anon.d08.csv
+workload_data/azurefunctions-dataset2019/invocations_per_function_md.anon.d09.csv
+workload_data/azurefunctions-dataset2019/invocations_per_function_md.anon.d10.csv
+workload_data/azurefunctions-dataset2019/invocations_per_function_md.anon.d11.csv
+workload_data/azurefunctions-dataset2019/invocations_per_function_md.anon.d12.csv
+workload_data/azurefunctions-dataset2019/invocations_per_function_md.anon.d13.csv
+workload_data/azurefunctions-dataset2019/invocations_per_function_md.anon.d14.csv
