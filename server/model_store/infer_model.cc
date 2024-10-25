@@ -233,7 +233,7 @@ void Model::ClearColdCache(const std::vector<size_t> &cold_cached_group_id, int 
   auto dur = std::chrono::steady_clock::now() - t0;
   auto cache_after = ResourceManager::GetFreeMemoryMB(sta::DeviceManager::GetCurrentDevice(), false);
   LOG(INFO) << "[ClearCache] cost " << std::chrono::duration_cast<std::chrono::milliseconds>(dur).count() << "ms: " << cache_before << " -> " << cache_after 
-    << ", cached " << sta::ByteToMB(ColdModelCache::Get(device_.device_id)->GetCachedNbytesUnsafe())
+    << ", cached " << sta::ByteToMB(ColdModelCache::Get(device_.device_id)->GetCachedNbytes(cold_cache_lock))
     << ", cap " <<  ColdModelCache::Get(device_.device_id)->GetCacheSizeMBUnsafe() <<".";
 }
 
@@ -271,8 +271,8 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
   //   }
   // }
 #endif
-
   auto cold_model_cache = ColdModelCache::Get(device_.device_id);
+  cold_model_cache->BlockProfilter();
   size_t total_storage_nbytes = executors_[rank]->GetMissingStorageSizeAlign();
   LOG(INFO) << "[Model, Cold Cache Adjust] "
             << "AllocStorageMaybeAdjust: model " << rank
@@ -358,6 +358,7 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
         cold_cache_lock);
     }
   }
+  cold_model_cache->UnblockProfilter();
  
 #if 1
   // directly release memory changing lock, 

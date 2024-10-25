@@ -1,3 +1,4 @@
+#include "tvm/graph.h"
 #include <algorithm>
 #include <server/logging_as_glog.h>
 #include <server/model_store/model_cache.h>
@@ -221,20 +222,19 @@ ColdModelCache::PushCacheItem(
   size_t model_max_cached_nbytes = static_cast<size_t>(total_nbytes * Config::cold_cache_ratio);
   size_t uncache_nbytes = 0;
   for (size_t k = 0; k < groups_nbytes.size(); ++k) {
-    DLOG(INFO) << "k = " << k << ".";
-    cache_item->cached_groups_id.push_back(k);
-    cache_item->cached_group_nbytes += tvm::GetMemBlockAlignedNBytes(groups_nbytes[k]);
-    // if ((k == 0 || cache_item->cached_group_nbytes + groups_nbytes[k] / 2 <= model_max_cached_nbytes) 
-    //   && (cache_item->cached_group_nbytes + groups_nbytes[k] < Config::cold_cache_min_capability_nbytes)) {
-    //   cache_item->cached_groups_id.push_back(k);
-    //   cache_item->cached_group_nbytes += groups_nbytes[k];
-    // } else {
-    //   for (;k < groups_nbytes.size(); ++k) {
-    //     uncache_nbytes += groups_nbytes[k];
-    //   }
-    //   break;
-    // }
+    memory_byte_t group_nbytes = tvm::GetMemBlockAlignedNBytes(groups_nbytes[k]);
+    if ((k == 0 || cache_item->cached_group_nbytes + groups_nbytes[k] / 2 <= model_max_cached_nbytes)) {
+      cache_item->cached_groups_id.push_back(k);
+      cache_item->cached_group_nbytes += group_nbytes;
+    } else {
+      for (; k < groups_nbytes.size(); ++k) {
+        uncache_nbytes += tvm::GetMemBlockAlignedNBytes(groups_nbytes[k]);
+      }
+      break;
+    }
   }
+  // CHECK_EQ(uncache_nbytes, 0);
+  CHECK_EQ(cache_item->cached_group_nbytes + uncache_nbytes, total_nbytes);
   LOG_IF(INFO, Config::log_cold_cache) 
       <<"[ColdModelCache] decide to cache " << name 
       << " decide to cache group = [ "<< cache_item->cached_groups_id << " ]," 
@@ -254,8 +254,8 @@ ColdModelCache::PushCacheItem(
   memory_byte_t before_infer_nbytes = ResourceManager::GetInferMemoryMB(sta::DeviceManager::GetCurrentDevice()) * 1024 * 1024;
   memory_byte_t before_ic_nbytes = before_infer_nbytes - current_cached_nbytes_ + current_capacity_nbytes_;
   memory_byte_t evict_nbytes = 0;
-  if (current_capacity_nbytes_ + cache_item->cached_group_nbytes <= Config::cold_cache_max_capability_nbytes) {
-    current_capacity_nbytes_ += cache_item->cached_group_nbytes;
+  if (current_capacity_nbytes_ + total_nbytes <= Config::cold_cache_max_capability_nbytes) {
+    current_capacity_nbytes_ += total_nbytes;
     current_cached_nbytes_ += cache_item->cached_group_nbytes;
     LOG(INFO) << "[ColdModelCache] Cache Succes, update Capacity=" << sta::ByteToMB(current_capacity_nbytes_) << "MB.";
   } else {

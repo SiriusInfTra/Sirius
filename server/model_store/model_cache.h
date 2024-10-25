@@ -179,6 +179,24 @@ class ColdModelCache {
     return std::unique_lock{mut_};
   }
 
+
+  std::pair<size_t, size_t> capacity_and_cache = {0, 0};
+  std::pair<size_t, size_t> GetColdCacheCapacityAndCache() {
+    if (capacity_and_cache == std::pair<size_t, size_t>{0, 0}) {
+      return {current_capacity_nbytes_, current_cached_nbytes_};
+    } else {
+      return capacity_and_cache;
+    }
+  }
+
+  void BlockProfilter() {
+    capacity_and_cache = {current_capacity_nbytes_, current_cached_nbytes_};
+  }
+
+  void UnblockProfilter() {
+    capacity_and_cache = {0, 0};
+  }
+
   inline size_t GetCachedNbytes(std::unique_lock<std::mutex> &lock) {
     return current_cached_nbytes_;
   }
