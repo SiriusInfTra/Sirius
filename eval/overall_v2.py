@@ -139,6 +139,7 @@ if args.binary_dir != 'build':
 if args.multi_gpu:
     run_comm.UniformConfig_v2.train_model += "_ddp"
     run_comm.SkewedConfig_v2.train_model += "_ddp"
+    # run_comm.UniformConfig_v2.num_model = runner.scale_up_by_num_gpu(50)
 
 retry_limit = args.retry_limit
 retry_if_fail = retry_limit >= 1
@@ -514,11 +515,11 @@ if run_colsys:
         'cuda_memory_pool_gb' : "13" if not runner.is_four_gpu() else "12.5",
         'train_memory_over_predict_mb' : 1500,
         'infer_model_max_idle_ms' : 5000,
-        'cold_cache_ratio': 0.5, 
+        'cold_cache_ratio': 1.0, 
         # 'cold_cache_min_capability_nbytes': int(0.5 * 1024 * 1024 * 1024),
         # 'cold_cache_max_capability_nbytes': int(1 * 1024 * 1024 * 1024),
-        'cold_cache_min_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),
-        'cold_cache_max_capability_nbytes': int(2 * 1024 * 1024 * 1024),
+        'cold_cache_min_capability_nbytes': int(0.0 * 1024 * 1024 * 1024),
+        'cold_cache_max_capability_nbytes': int(3.0 * 1024 * 1024 * 1024),
         'dynamic_sm_partition': dynamic_sm_partition,
     }
 

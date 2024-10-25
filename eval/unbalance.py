@@ -87,32 +87,32 @@ run_comm.UniformConfig_v2.train_batch_size = 72 if not runner.is_four_gpu() else
 run_comm.retry_limit = True
 run_comm.retry_if_fail = 3
 
-for train_adjust_balance in [True]:
+for train_adjust_balance in [False, True]:
     system_config = {
         'mode' : System.ServerMode.ColocateL1,
         'use_sta' : True, 
         'mps' : True, 
-        'skip_set_mps_thread_percent': False,
+        'skip_set_mps_thread_percent': True,
         'use_xsched' : True,
         'has_warmup' : True,
         'ondemand_adjust' : True,
         'cuda_memory_pool_gb' : "13" if not runner.is_four_gpu() else "12.5",
         'train_memory_over_predict_mb' : 1500,
         'infer_model_max_idle_ms' : 5000,
-        'cold_cache_ratio': 0.5, 
+        'cold_cache_ratio': 1.0, 
         'train_adjust_balance': train_adjust_balance,
         # 'cold_cache_min_capability_nbytes': int(0.5 * 1024 * 1024 * 1024),
         # 'cold_cache_max_capability_nbytes': int(1 * 1024 * 1024 * 1024),
-        'cold_cache_min_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),
+        'cold_cache_min_capability_nbytes': int(0 * 1024 * 1024 * 1024),
         'cold_cache_max_capability_nbytes': int(2 * 1024  * 1024 * 1024),
         'dynamic_sm_partition': True,
     }
+    num_model = 56
     client_model_list, server_model_config = InferModel.get_multi_model(
-        run_comm.UniformConfig_v2.model_list, 40, 1)
+        run_comm.UniformConfig_v2.model_list, num_model, 1)
     workload_list = [
         run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False) for wkld_type in ['NormalA', 'NormalB']
     ]
-
     system = System(port=run_comm.UniformConfig_v2.port, 
                     dump_adjust_info=False,
                     **system_config)
@@ -124,5 +124,5 @@ for train_adjust_balance in [True]:
     server_model_config = update_sever_config(server_model_config, len(workload_list))
 
     run_comm.run(system, workload, server_model_config,
-                    f"overall-uniform-v2-{runner.get_num_gpu()}gpu", 
+                    f"overall-uniform-v2-{runner.get_num_gpu()}gpu-{num_model}", 
                     'colsys-' + ('balance' if train_adjust_balance else 'imbalance'))
