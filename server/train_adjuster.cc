@@ -110,12 +110,11 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
   auto train_world_size = adjuster_->cached_train_world_size_;
   int cur_train_target_bs = 
       adjuster_->cached_target_batch_sizes_[device_id];
-  // (((sta::DeviceManager::GetNumVisibleGpu() > 1) && false) ? 1 
-  // int min_batch_size =  (sta::DeviceManager::GetNumVisibleGpu() > 1) ? 1 : 0;
-  int min_batch_size = 1;
-  if (cur_train_target_bs <= min_batch_size) {
+  // (((sta::DeviceManager::GetNumVisibleGpu() > 1) && false) ? 1
+  int min_train_bs = sta::DeviceManager::GetNumVisibleGpu() > 1 ? 1 : 0;
+  if (cur_train_target_bs <= min_train_bs) {
     LOG_IF(INFO, Config::log_memory_adjust) 
-        << "[InferRequireMemAdjust] target batch batch is already " << min_batch_size << ", skip adjust";
+        << "[InferRequireMemAdjust] target batch batch is already " <<  min_train_bs << ", skip adjust";
     return {};
   }
 
@@ -139,8 +138,8 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
       adjuster_->GetDeltaBatchSize(device_id, adjust_batch_buf_mb);
   CHECK_GE(adjust_batch_buf_mb, 0);
   int target_batch_size = cur_train_target_bs - delta_batch_size;
-  if (min_batch_size > 0 && sta::DeviceManager::GetNumVisibleGpu() > 1) {
-    target_batch_size = std::max(target_batch_size, min_batch_size);
+  if (sta::DeviceManager::GetNumVisibleGpu() > 1) {
+    target_batch_size = std::max(target_batch_size, min_train_bs);
   }
 
   // [Note: adjust plan for imbalance]
@@ -282,9 +281,9 @@ TrainAdjuster::GetInferReleaseMemAdjustPlanWithInLock(
       );
     } else {
       // w/ native gpu memory management
-      // target_bs_predict_by_avail_mem = -1;
-      target_bs_predict_by_avail_mem = adjuster_->PredictTargetBatchSize(
-          0, std::max(train_avail_mem_mb - reserve_mem_mb, 0.0));
+      target_bs_predict_by_avail_mem = -1;
+      // target_bs_predict_by_avail_mem = adjuster_->PredictTargetBatchSize(
+      //     0, std::max(train_avail_mem_mb - reserve_mem_mb, 0.0));
 
       target_bs_calcu_by_delta_mem =
           cur_train_target_bs + 
@@ -292,7 +291,8 @@ TrainAdjuster::GetInferReleaseMemAdjustPlanWithInLock(
       
       target_batch_size = std::max(
           cur_train_target_bs,
-          std::min(target_bs_calcu_by_delta_mem, target_bs_predict_by_avail_mem)
+          // std::min(target_bs_calcu_by_delta_mem, target_bs_predict_by_avail_mem)
+          target_bs_calcu_by_delta_mem
       );
     }
   }
@@ -509,10 +509,11 @@ std::pair<double, double> TrainAdjuster::GetModelMemParam(
     } else if (model_name == "swin_b") {
       // NOTE: PLACEHOLDER
       // return {1700, 140};
-      return {3300, 145};
+      // return {2800, 150};      
+      return {3000, 200};
     } else if (model_name == "swin_b_ddp") {
-      // TODO: remove hard-coded value
-      return {3500, 150};
+      // return {3300, 145};
+      return {3800, 200};
     } else {
       LOG(FATAL) << "Unsupported model: " << model_name;
     }

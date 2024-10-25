@@ -123,7 +123,7 @@ inline std::string GetDefaultShmNamePrefix() {
     LOG(WARNING) << "COL_SERVE_PORT is not set, use 0 as default";
     port = "0";
   }
-  return (boost::format("colserve_shm_%s") % getuid()).str();
+  return (boost::format("colserve_shm_%s_%s") % getuid() % port).str();
 }
 
 } // namespace colserve

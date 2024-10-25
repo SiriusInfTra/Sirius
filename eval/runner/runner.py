@@ -2,6 +2,7 @@
 from __future__ import annotations
 import contextlib
 import datetime
+import shutil
 import signal
 import time
 import numpy as np
@@ -29,6 +30,11 @@ def get_num_gpu():
     return len(cuda_device_env.split(','))
 
 
+_project_root = os.path.join(os.path.abspath(__file__), 
+                            os.path.pardir, 
+                            os.path.pardir, 
+                            os.path.pardir)
+_project_root = os.path.abspath(_project_root)
 class CudaMpsCtrl:
     @classmethod
     def launch_cmd(cls, 
@@ -120,6 +126,7 @@ class System:
                  train_profile: str = "train-profile", 
                  port: str = "18080",
                  use_triton: bool = False,
+                 train_adjust_balance: bool = True,
                  infer_model_config: List[InferModelConfig] | InferModelConfig = None,
                  mps: bool = True,
                  skip_set_mps_thread_percent: bool = False,
@@ -161,6 +168,7 @@ class System:
         self.port = str(int(port) + os.getuid() % 10)
         self.triton_port = str(int(self.port) + 1000)
         self.use_triton = use_triton
+        self.train_adjust_balance = train_adjust_balance
         self.server:Optional[subprocess.Popen]= None
         self.log_dir:Optional[str] = None
         self.cmd_trace = []
@@ -235,7 +243,8 @@ class System:
             "--mode", self.mode, 
             "--use-sta", "1" if self.use_sta else "0", 
             "--use-sta-train", "1" if self.use_sta_train else "0",
-            "--profile-log", profile_log
+            "--profile-log", profile_log,
+            "--train-adjust-balance", "1" if self.train_adjust_balance else "0"
         ]
         if self.cuda_memory_pool_gb is not None:
             cmd += ["--cuda-memory-pool-gb", str(self.cuda_memory_pool_gb)]
@@ -407,11 +416,7 @@ class System:
         if self.use_triton:
             # with open(triton_log, "w") as log_file:
             with contextlib.nullcontext():
-                project_root = os.path.join(os.path.abspath(__file__), 
-                                          os.path.pardir, 
-                                          os.path.pardir, 
-                                          os.path.pardir)
-                project_root = os.path.abspath(project_root)
+
                 model_lists = []
                 def parse_and_generate_models(input_string: str):
                     # example input
@@ -431,7 +436,7 @@ class System:
                         return []
                 for config in self.infer_model_config:
                     model_lists.extend(parse_and_generate_models(config))
-                triton_model_dir = os.path.join(project_root, f'triton_models-{self.port}')
+                triton_model_dir = os.path.join(_project_root, f'triton_models-{self.port}')
                 docker_model_dir = os.path.join('/colsys', f'triton_models-{self.port}')
                 print(f'Generate triton model repo for {model_lists}.')
                 cp_model(model_lists, get_num_gpu(), triton_model_dir)
@@ -439,7 +444,7 @@ class System:
                        '--name', f'colsys-triton-{self.triton_port}',
                        '--rm', '--gpus=all', '--ipc=host',
                        '-p', f'{self.triton_port}:8001',
-                       '-v', f'{project_root}:/colsys',
+                       '-v', f'{_project_root}:/colsys',
                        '-v', os.environ['HOME'] + ':' + os.environ['HOME'],
                        ]
                 if 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:
@@ -450,7 +455,7 @@ class System:
                 cmd += [
                     'nvcr.io/nvidia/tritonserver:23.12-py3',
                     'tritonserver',
-                    '--model-load-thread-count=4',
+                    f'--model-load-thread-count={4 * get_num_gpu()}',
                     f'--model-repository={docker_model_dir}']
                 if not 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:
                     cmd += ['--model-control-mode=explicit']
@@ -570,6 +575,8 @@ class System:
         # raise Exception(f"Quit MPS failed: {quit_mps.stderr}")
 
 
+
+
 class HyperWorkload:
     def __init__(self, 
                  concurrency:int, 
@@ -612,7 +619,7 @@ class HyperWorkload:
         self.wait_train_setup_sec = wait_train_setup_sec
         self.wait_stable_before_start_profiling_sec = wait_stable_before_start_profiling_sec
         self.show_result = show_result
-
+        self.manual_trace_cfg = None
         self.infer_extra_infer_sec = self.wait_stable_before_start_profiling_sec
 
     def set_infer_workloads(self, *infer_workloads: InferWorkloadBase):
@@ -631,6 +638,9 @@ class HyperWorkload:
                         trace_cfg: Optional[PathLike] = None, 
                         **kwargs):
         infer_trace_args = []
+        if self.manual_trace_cfg is not None:
+            trace_cfg = self.manual_trace_cfg
+            shutil.copy(trace_cfg, os.path.join(server.log_dir, self.trace_cfg))
         if trace_cfg is not None:
             infer_trace_args += ["--infer-trace", str(trace_cfg)]
         elif len(self.infer_workloads) > 0:
@@ -675,6 +685,8 @@ class HyperWorkload:
         if server.use_triton:
             cmd += ["--triton-port", str(server.triton_port)]
             cmd += ["--triton-config", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../server/triton_models/config.conf"))]
+            triton_model_dir = os.path.join(_project_root, f'triton_models-{server.port}')
+            cmd += ["--triton-device-map", os.path.join(triton_model_dir, "device_map.txt")]
             if 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:
                 cmd += ["--triton-max-memory", "0"]
             else:
