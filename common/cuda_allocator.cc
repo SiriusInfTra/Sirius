@@ -181,7 +181,13 @@ CUDAMemPool::RawAlloc(size_t nbytes, MemType mtype) {
   return std::shared_ptr<PoolEntry>(
       new PoolEntry{ptr, nbytes, mtype}, [this](PoolEntry *entry) {
         COL_CUDA_CALL(cudaSetDevice(this->device_id_));
-        COL_CUDA_CALL(cudaFree(entry->addr));
+        auto error = cudaFree(entry->addr);
+        if (error != cudaSuccess) {
+          LOG(ERROR) << "cudaFree failed: " << cudaGetErrorString(error) 
+                     << " addr " << entry->addr << " nbytes " << entry->nbytes
+                     << " mtype " << static_cast<int>(entry->mtype)
+                     << " block" << *entry->block;
+        }
         delete entry;
       });
 }
