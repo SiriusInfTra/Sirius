@@ -5,6 +5,7 @@ def cp_model(model_list: list[str], n_gpu: int, repo_target_dir: str):
     repo_source_dir = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, 'server', 'triton_models')
     repo_source_dir = os.path.abspath(repo_source_dir)
     repo_target_dir = os.path.abspath(repo_target_dir)
+    device_map = {}
     if os.path.exists(repo_target_dir):
         shutil.rmtree(repo_target_dir)
     os.makedirs(repo_target_dir)
@@ -25,8 +26,12 @@ def cp_model(model_list: list[str], n_gpu: int, repo_target_dir: str):
             content = f.read()
             content = content.replace(f'name: "{model_name.split("-")[0]}"', f'name: "{model_name}"')
             content = content.replace('gpus: [0]', f'gpus: [{i % n_gpu}]')
+            device_map[model_name] = str(i % n_gpu)
         with open(target_config, 'w') as f:
             f.write(content)
+    with open(os.path.join(repo_target_dir, 'device_map.txt'), 'w') as f:
+        for model_name, device_id in device_map.items():
+            f.write(f'{model_name} {device_id}\n')
 
 if __name__ == '__main__':
     model_list = []
