@@ -10,6 +10,7 @@
 #include <common/util.h>
 #include <common/device_manager.h>
 #include <common/sm_partition.h>
+#include <common/inf_tra_comm/communicator.h>
 
 #include <boost/format.hpp>
 #include <boost/range/irange.hpp>
@@ -345,7 +346,8 @@ void Profiler::CollectMemoryResourceInfo(
       for (uint32_t i = 0; i < proc_info_cnt; i++) {
         if (!Config::use_shared_tensor_train && proc_infos[i].pid == getpid()) {
           res_info.infer_mem = proc_infos[i].usedGpuMemory;
-        } else if (proc_infos[i].pid == TrainLauncher::Get()->GetTrainPid()) {
+        // } else if (proc_infos[i].pid == TrainLauncher::Get()->GetTrainPid()) {
+        } else if (proc_infos[i].pid == ctrl::InfTraCommunicator::GetTrainPIDNotCheckValid(device_id)) {
           res_info.train_mem = proc_infos[i].usedGpuMemory;
           res_info.train_all_mem = res_info.train_mem;
         }
@@ -451,10 +453,15 @@ void Profiler::WriteLog() {
   long workload_profile_end_ts = workload_end_time_stamp_;
 
 
+  std::vector<int> sorted_perf_info_keys;
   for (auto &it : perf_info_) {
-    auto item = static_cast<Profiler::PerfItem>(it.first);
+    sorted_perf_info_keys.push_back(it.first);
+  }
+  std::sort(sorted_perf_info_keys.begin(), sorted_perf_info_keys.end());
+  for (auto key : sorted_perf_info_keys) {
+    auto item = static_cast<Profiler::PerfItem>(key);
     std::vector<double> item_perf_info;
-    for (auto &p : it.second) {
+    for (auto &p : perf_info_[key]) {
       auto time_stamp = std::get<0>(p);
       auto value = std::get<1>(p);
       if (time_stamp > workload_start_time_stamp_ + static_cast<long>(delay_before_profile_ * 1000)) {
@@ -474,7 +481,7 @@ void Profiler::WriteLog() {
     }
     auto sorted = item_perf_info;
     sort(sorted.begin(), sorted.end());
-    ofs << static_cast<PerfItem>(it.first) << std::fixed << std::setprecision(1) << ":"
+    ofs << static_cast<PerfItem>(key) << std::fixed << std::setprecision(1) << ":"
         << " avg " << avg << " max " << max << " min " << min << " cnt " << item_perf_info.size() << " |"
         << " p99 " << sorted[int(0.99 * sorted.size())]
         << " p95 " << sorted[int(0.95 * sorted.size())]

@@ -8,6 +8,7 @@ from typing import List, Optional, Union
 import torch
 import torch_col
 from torch_col._C import ColocateCtrlHookMode
+import torch_col.xsched
 
 from .util import TrainMode, EventManager, MemoryPool
 from . import xsched
@@ -55,11 +56,11 @@ class CtrlBase(abc.ABC):
     def register_pytorch_hook(self, module_list: List[torch.nn.Module]):
         pass
         
-    def release_and_reply(self):
+    def release_and_reply(self, barrier: bool):
         if self.train_mode.is_colocate():
             return self.adjust()
         if self.train_mode.is_taskswitch():
-            return self.switch()
+            return self.switch(barrier)
         pass
     
     @abc.abstractmethod
@@ -90,6 +91,10 @@ class CtrlBase(abc.ABC):
     
     @abc.abstractmethod
     def can_exit_after_infer_worklaod_done(self):
+        pass
+
+    @abc.abstractmethod
+    def set_train_first_epoch_done(self):
         pass
 
     @classmethod
@@ -113,7 +118,10 @@ class SwitchCtrl(CtrlBase):
                  hook_mode: ColocateCtrlHookMode, 
                  num_epoch: int, batch_size: int) -> None:
         assert train_mode in {TrainMode.TASKSWITCH_L1, TrainMode.TASKSWITCH_L0}
-        super().__init__(train_mode, hook_mode, num_epoch, batch_size)
+        super().__init__(train_mode=train_mode, 
+                         hook_mode=hook_mode, 
+                         num_epoch=num_epoch, 
+                         batch_size=batch_size)
         self._stub = torch_col.PySwitchStub()
         self._grad_fn = []
 
@@ -126,21 +134,31 @@ class SwitchCtrl(CtrlBase):
         if self.hook_mode.use_xsched():
             while xsched.get_xqueue_size() != 0:
                 if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
+                # if self._stub.get_global_interrupt_flag():
                     xsched.kill_batch()
                     raise SwitchL1Exception('before_critical_section')
-        torch.cuda.current_stream().synchronize()
+        torch_col.SyncAllStreams()
         if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
+        # if self._stub.get_global_interrupt_flag():
             raise SwitchL1Exception('before_critical_section')
         # make sure we will not interrupt step
         self._stub.StepsNoInteruptBegin()
+        if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
+        # if self._stub.get_global_interrupt_flag():
+            self._stub.StepsNoInteruptEnd()
+            raise SwitchL1Exception('before_critical_section')
         yield
-        torch.cuda.current_stream().synchronize()
+        torch_col.SyncAllStreams()
         self._stub.StepsNoInteruptEnd()
 
         # during critical section executing, kill batch request may be sent
-        if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
+        # only for single-gpu training, as we don't know other ranks' status
+        if (torch_col.get_train_world_size() == 1  
+            and self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain
+            # if self._stub.get_global_interrupt_flag():
+        ):
             # since we sync, no kernel is executing
-            self.switch()
+            self.switch(barrier=False)
 
     def register_pytorch_hook(self, module_list: List[torch.nn.Module]):
         if self.train_mode == TrainMode.TASKSWITCH_L0:
@@ -158,14 +176,6 @@ class SwitchCtrl(CtrlBase):
                 torch_col.register_saved_tensor_hook()
 
     def get_fwd_hook(self):
-        # def hook(module, input, output):
-        #     torch.cuda.synchronize()
-        #     self._grad_fn.append(output._grad_fn)
-        #     if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
-        #         raise SwitchL1Exception("[Task Switch]")
-        #     elif self._stub.cmd == torch_col.CtrlEvent.kResumeTrain:
-        #         self._stub.cmd = None
-        # match self.hook_mode:
         if self.hook_mode == ColocateCtrlHookMode.SYNC:
             if self.train_mode == TrainMode.TASKSWITCH_L1:
                 def hook(module, input, output):
@@ -173,6 +183,7 @@ class SwitchCtrl(CtrlBase):
                     if torch_col.is_release_interm_memory_v1():
                         self._grad_fn.append(output.grad_fn)
                     if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
+                    # if self._stub.get_global_interrupt_flag():
                         raise SwitchL1Exception("[Task Switch SYNC FWD]")
                     elif self._stub.cmd == torch_col.CtrlEvent.kResumeTrain:
                         # self._stub.cmd = None
@@ -185,6 +196,7 @@ class SwitchCtrl(CtrlBase):
                     if torch_col.is_release_interm_memory_v1():
                         self._grad_fn.append(output.grad_fn)
                     if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
+                    # if self._stub.get_global_interrupt_flag():
                         xsched.kill_batch()
                         raise ColocateAdjustL1Exception("[Task Switch XSCHED_SYNC FWD]")
                     elif self._stub.cmd == torch_col.CtrlEvent.kResumeTrain:
@@ -197,19 +209,12 @@ class SwitchCtrl(CtrlBase):
         return hook
     
     def get_bwd_hook(self):
-        # def hook(module, grad_input, grad_output):
-        #     torch.cuda.synchronize()
-        #     if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
-        #         raise SwitchL1Exception("[Task Switch]")
-        #     elif self._stub.cmd == torch_col.CtrlEvent.kResumeTrain:
-        #         self._stub.cmd = None
-        # return hook
-        # match self.hook_mode:
         if self.hook_mode == ColocateCtrlHookMode.SYNC:
             if self.train_mode == TrainMode.TASKSWITCH_L1:
                 def hook(module, grad_input, grad_output):
                     torch.cuda.synchronize()
                     if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
+                    # if self._stub.get_global_interrupt_flag():
                         raise SwitchL1Exception("[Task Switch BWD]")
                     elif self._stub.cmd == torch_col.CtrlEvent.kResumeTrain:
                         # self._stub.cmd = None
@@ -221,6 +226,7 @@ class SwitchCtrl(CtrlBase):
                 def hook(module, grad_input, grad_output):
                     # print(f'{event_name}: {self._stub.cmd}')
                     if self._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
+                    # if self._stub.get_global_interrupt_flag():
                         xsched.kill_batch()
                         raise SwitchL1Exception("[Task Switch BWD]")
                     elif self._stub.cmd == torch_col.CtrlEvent.kResumeTrain:
@@ -232,14 +238,14 @@ class SwitchCtrl(CtrlBase):
             raise RuntimeError(f"Unsupported hook_mode: {self.hook_mode.name}")
         return hook
 
-    def switch(self):
+    def switch(self, barrier: bool):
         # match self.train_mode:
         if self.train_mode == TrainMode.TASKSWITCH_L1:
-            return self.switch_l1()
+            return self.switch_l1(barrier)
         else:
             raise RuntimeError(f"Unsupported train_mode: {self.train_mode.name}")
 
-    def switch_l1(self):
+    def switch_l1(self, barrier: bool):
         # decouple kill batch and reclaim memory
         t0 = time.time()
         if torch_col.is_release_interm_memory_v1():
@@ -251,7 +257,7 @@ class SwitchCtrl(CtrlBase):
         old_gpu_mem = MemoryPool.get_memory_usage()
         MemoryPool.empty_cache()
         cur_gpu_mem = MemoryPool.get_memory_usage()
-        succ = self.try_reply_interrupt()
+        succ = self.try_reply_interrupt(barrier)
         t1 = time.time()
         if succ:
             print(f'[Switch L1 {(t1-t0)*1e3:.1f} ms] ',
@@ -259,8 +265,8 @@ class SwitchCtrl(CtrlBase):
                   f'memory usage: {old_gpu_mem:.2f}GB -> {cur_gpu_mem:.2f}GB.',
                     flush=True)
 
-    def try_reply_interrupt(self):
-        return self._stub.try_interrupt_train_done()
+    def try_reply_interrupt(self, barrier):
+        return self._stub.try_interrupt_train_done(barrier)
 
     @property
     def target_batch_size(self):
@@ -281,11 +287,17 @@ class SwitchCtrl(CtrlBase):
             torch_col.MemoryPool.empty_cache()
         return self._stub.train_end()
 
+    def set_train_first_epoch_done(self):
+        self._stub.set_train_first_epoch_done()
+
     def stop(self):
         self._stub.stop()
 
     def can_exit_after_infer_worklaod_done(self):
         return self._stub.can_exit_after_infer_worklaod_done()
+    
+    def set_killed_batch_recover(self):
+        self._stub.set_killed_batch_recover()
         
 
 class ColocateAdjustL1Exception(Exception):
@@ -300,7 +312,10 @@ class ColocateCtrl(CtrlBase):
                  num_epoch: int, batch_size: int):
         assert (train_mode == TrainMode.COLOCATE_L1 
                 or train_mode == TrainMode.COLOCATE_L2)
-        super().__init__(train_mode, hook_mode, batch_size, num_epoch)
+        super().__init__(train_mode=train_mode, 
+                         hook_mode=hook_mode, 
+                         num_epoch=num_epoch, 
+                         batch_size=batch_size)
         self._stub = torch_col.PyColocateStub(batch_size)
         self._grad_fn = []
         self._torch_stream = torch.cuda.current_stream()
@@ -314,7 +329,8 @@ class ColocateCtrl(CtrlBase):
                     if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
                         xsched.kill_batch()
                         raise ColocateAdjustL1Exception('before_critical_section')
-            torch.cuda.current_stream().synchronize()
+            # torch.cuda.current_stream().synchronize()
+            torch_col.SyncAllStreams()
             if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
                 raise ColocateAdjustL1Exception('before_critical_section')
             self._stub.StepsNoInteruptBegin()
@@ -324,11 +340,14 @@ class ColocateCtrl(CtrlBase):
             
             # make sure we will not interrupt step
             yield
-            torch.cuda.current_stream().synchronize()
+            # torch.cuda.current_stream().synchronize()
+            torch_col.SyncAllStreams()
             self._stub.StepsNoInteruptEnd()
 
             # during critical section executing, kill batch request may be sent
-            if self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1:
+            if (torch_col.get_train_world_size() == 1 
+                and self._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL1
+            ):
                 # since we sync, no kernel is executing
                 with EventManager.record_duration_event('adjust_after_step'):
                     self.adjust()
@@ -466,6 +485,9 @@ class ColocateCtrl(CtrlBase):
             torch_col.MemoryPool.empty_cache()
         self._stub.train_end()
 
+    def set_train_first_epoch_done(self):
+        self._stub.set_train_first_epoch_done()
+
     def stop(self):
         self._stub.stop()
 
@@ -485,7 +507,10 @@ class DummyCtrl(CtrlBase):
                  hook_mode: ColocateCtrlHookMode, 
                  num_epoch: 
                  int, batch_size: int):
-        super().__init__(train_mode, hook_mode, batch_size, num_epoch)
+        super().__init__(train_mode=train_mode, 
+                         hook_mode=hook_mode, 
+                         num_epoch=num_epoch, 
+                         batch_size=batch_size)
         self._stub = torch_col.PyDummyStub()
         assert hook_mode == ColocateCtrlHookMode.NONE
     
@@ -521,6 +546,9 @@ class DummyCtrl(CtrlBase):
 
     def can_exit_after_infer_worklaod_done(self):
         return self._stub.can_exit_after_infer_worklaod_done()
+    
+    def set_train_first_epoch_done(self):
+        self._stub.set_train_first_epoch_done()
 
 
 def create_colocate_ctrl(

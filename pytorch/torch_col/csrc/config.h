@@ -22,10 +22,14 @@ class TorchColConfig {
 
   static std::string colocate_ctrl_hook_mode;
   static std::string colocate_train_mode;
+  static bool is_colocate_l1;
+  static bool is_colocate_l2;
 
   static int release_interm_memory_by_grad_fn;
   static int release_interm_memory_by_tagging;
   static int use_fbward_hook;
+
+  static bool restart_nccl_comm_by_resetting_channel;
 
   static int train_rank;
   static int train_world_size;
@@ -35,6 +39,7 @@ class TorchColConfig {
   static bool log_all;
   static bool log_dynamic_batch;
   static bool log_control_stub;
+  static bool log_nccl_process_group;
   
   static int configured;
 

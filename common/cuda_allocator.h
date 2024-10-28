@@ -71,7 +71,8 @@ class CUDAMemPool {
   };
   static void Init(int device_id, std::size_t nbytes, 
                    bool cleanup, bool observe, 
-                   FreeListPolicyType free_list_policy);
+                   FreeListPolicyType free_list_policy,
+                   bool enable_mpool);
   static CUDAMemPool* Get(int device_id);
   static bool IsEnable();
 
@@ -123,6 +124,8 @@ class CUDAMemPool {
   mpool::SharableObject<mpool::PagesPool>* pages_pool_;
   mpool::SharableObject<mpool::CachingAllocator>* torch_allocator_;
   mpool::SharableObject<mpool::DirectAllocator>* tvm_allocator_;
+
+  bool enable_mpool_;
 
   // std::atomic<size_t> train_alloc_us_;
 };

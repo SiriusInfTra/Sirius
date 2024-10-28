@@ -160,6 +160,7 @@ class Config {
   static  bool log_infer_load_param;
   static  bool log_memory_adjust;
   static  bool log_controller;
+  static  bool log_task_switch;
 
   inline static bool IsSwitchMode() {
     return Config::serve_mode == ServeMode::kTaskSwitchL1

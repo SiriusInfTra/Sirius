@@ -84,12 +84,14 @@ class UniformConfig_v2:
     train_batch_size = 72
     train_global_batch_size = 500 # not used, hard code for global batch size and dataset size
     train_dataset_size = 1000 
-    train_epoch_time = 5.5 # used for predict number epoch
+    train_epoch_time = 1 # used for predict number epoch
 
     model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
                   InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
                   InferModel.ResNet152, InferModel.DistilGPT2] 
-    num_model = 64
+    # num_model = 64
+    # num_model = 60 * get_num_gpu()
+    num_model = runner.scale_up_by_num_gpu(56)
     interval_sec = 20  # 10/20 sec seem to be good choice
     duration = 300
     port = str(get_unique_port())
@@ -133,7 +135,8 @@ class SkewedConfig_v2:
     model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
                   InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
                   InferModel.ResNet152, InferModel.DistilGPT2] 
-    num_model = 64
+    # num_model = 64
+    num_model = runner.scale_up_by_num_gpu(56)
     interval_sec = 20
     duration = 300
     port = str(get_unique_port())

@@ -165,6 +165,18 @@ size_t GetXQueueSize(uint64_t stream) {
   return xqueue->GetSize();
 }
 
+size_t GetXQueueSizeAllStreams() {
+  std::unique_lock lock{stream_mut};
+  size_t ret = 0;
+  for (auto &kv : stream_map) {
+    auto xqueue = CudaXQueueGet(kv.second);
+    CHECK(xqueue != nullptr) << "XQueue is NULL, stream_handle=" 
+                             << kv.second;
+    ret += xqueue->GetSize();
+  }
+  return ret;
+}
+
 size_t GetTotalXQueueSize() {
   std::unique_lock lock{stream_mut};
   size_t total = 0;

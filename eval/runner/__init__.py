@@ -30,9 +30,12 @@ print('CUDA_VISIBLE_DEVICES={}, CUDA_MPS_PIPE_DIRECTORY={}'.format(
     os.environ['CUDA_VISIBLE_DEVICES'], os.environ['CUDA_MPS_PIPE_DIRECTORY']))
 
 
-from .config import get_global_seed, get_global_seed_by_hash, set_global_seed, \
-    set_mps_thread_percent, unset_mps_thread_percent, mps_thread_percent, um_mps, \
-    set_binary_dir, get_binary_dir
+from .config import (
+    get_global_seed, get_global_seed_by_hash, set_global_seed, 
+    set_mps_thread_percent, unset_mps_thread_percent, mps_thread_percent, um_mps, 
+    set_binary_dir, get_binary_dir,
+    RunnerConfig
+)
 from .runner import *
 from .hyper_workload import *
 
@@ -40,3 +43,18 @@ from .hyper_workload import *
 def get_num_gpu():
     cuda_device_env = os.environ['CUDA_VISIBLE_DEVICES']
     return len(cuda_device_env.split(','))
+
+
+def is_multi_gpu():
+    return get_num_gpu() > 1
+
+
+def is_four_gpu():
+    return get_num_gpu() == 4
+
+
+def scale_up_by_num_gpu(value):
+    if RunnerConfig._multi_gpu_scale_up_workload:
+        return value * get_num_gpu()
+    else:
+        return value

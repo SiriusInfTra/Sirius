@@ -52,15 +52,14 @@ class InferWorker {
               std::function<void(InferRequest&)> set_request_fn,
               Workload &workload)
       : model_(model), concurrency_(concurrency), set_request_fn_(set_request_fn) {
-    for (size_t i = 0; i < concurrency; i++) {
-      slots_.emplace_back(std::make_shared<InferSlot>());
-      status_slots_id_[InferReqStatus::kReady].insert(i);
-    }
-    for (auto &slot : slots_) {
-      set_request_fn(slot->request_);
-    }
+    // for (size_t i = 0; i < concurrency; i++) {
+    //   slots_.emplace_back(std::make_shared<InferSlot>());
+    //   status_slots_id_[InferReqStatus::kReady].insert(i);
+    // }
+    // for (auto &slot : slots_) {
+    //   set_request_fn(slot->request_);
+    // }
   }
-
 
   void RequestInferBusyLoop(Workload &workload,
                             double delay_before_infer);
@@ -73,6 +72,10 @@ class InferWorker {
   void Report(Workload &workload, int verbose, std::ostream &os);
 
   const std::vector<Record> GetRecord(Workload &workload) const;
+
+  bool IsSetupSlotDone() {
+    return setup_slot_done_;
+  }
 
 private:
   struct InferReqStatus {
@@ -96,6 +99,19 @@ private:
     std::unique_ptr<grpc::ClientAsyncResponseReader<InferResult>> rpc_;
   };
 
+  void SetupSlot() {
+    std::unique_lock status_lock{slot_status_mutex_};
+    std::unique_lock slot_lock{slot_mutex_};
+    for (size_t i = 0; i < concurrency_; i++) {
+      slots_.emplace_back(std::make_shared<InferSlot>());
+      status_slots_id_[InferReqStatus::kReady].insert(i);
+    }
+    for (auto &slot : slots_) {
+      set_request_fn_(slot->request_);
+    }
+    setup_slot_done_ = true;
+  }
+
   std::string model_;
   size_t concurrency_;
 
@@ -105,6 +121,7 @@ private:
   std::shared_mutex slot_mutex_;
   std::vector<std::shared_ptr<InferSlot>> slots_;
   std::unordered_set<size_t> status_slots_id_[InferReqStatus::kNumStatus];
+  std::atomic<bool> setup_slot_done_{false};
 
   std::function<void(InferRequest&)> set_request_fn_;
 
@@ -152,8 +169,15 @@ class Workload {
   bool Hello();
   bool InferenceWorkloadStart();
   void InferenceWorkloadDone();
+  bool HasTrainFirstEpochDone();
 
   void Run() {
+    for (auto &worker : infer_workers_) {
+      if (!worker->IsSetupSlotDone()) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+      }
+    }
+
     running_ = true;
     ready_promise_.set_value();
     run_btime_ = std::chrono::steady_clock::now();

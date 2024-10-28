@@ -90,6 +90,7 @@ void Controller::TrainMonitor() {
 
     auto event = static_cast<ctrl::CtrlEvent>(entry.event);
     auto last_status = train_status_;
+    auto last_task_switch_done_id = task_switch_done_id_;
     // LOG(INFO) << "[Controller] MonitorTrain: " << event;
     switch (event){
     case ctrl::CtrlEvent::kTrainStart:
@@ -102,7 +103,10 @@ void Controller::TrainMonitor() {
     case ctrl::CtrlEvent::kInterruptTrainDone:
       {
         train_status_ = TrainStatus::kInterrupted;
-        LOG(INFO) << "[Controller]: train interrupted";
+        task_switch_done_id_ = entry.id;
+        wait_task_switch_cv_.notify_all();
+        LOG_IF(INFO, Config::log_controller) 
+            << "[Controller]: train interrupted, cmd_id: " << entry.id;
       }
       break;
     case ctrl::CtrlEvent::kResumeTrainDone:
@@ -146,24 +150,41 @@ void Controller::TrainMonitor() {
 }
 
 uint64_t Controller::InterruptTrain() {
-  auto cmd_id = Controller::interrupt_cmd_id.fetch_add(
-      1, std::memory_order_relaxed);
-
   if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
-    if (train_status_ == TrainStatus::kRunning) {
-      DLOG(INFO) << "Controller: Put InterruptTrain";
+    std::unique_lock lock{wait_task_switch_mutex_};
+
+    if (train_status_ != TrainStatus::kIdle
+       && has_sent_resume_train_from_last_interrupt_ /* avoid OOM Ref: [Note: task switch] */ ) {
+      auto cmd_id = Controller::interrupt_cmd_id.fetch_add(
+        1, std::memory_order_relaxed);
+
+      LOG_IF(INFO, Config::log_controller) 
+          << "Controller: Put InterruptTrain, cmd_id: " << cmd_id;
       InfTraCommunicator::GetMQ()->PutAll(
           {cmd_id, static_cast<int>(CtrlEvent::kInterruptTrain)}, 
           InfTraMessageQueue::Direction::kInf2Tra);
+      has_sent_resume_train_from_last_interrupt_ = false;
+
+      return cmd_id;
+    } else {
+      return 0;
     }
   } else if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
     if (TrainLauncher::Get()->GetTrainPid() != -1) {
+      auto cmd_id = Controller::interrupt_cmd_id.fetch_add(
+        1, std::memory_order_relaxed);
+
       DLOG(INFO) << "[Controller]: kill train";
       CHECK_EQ((kill(TrainLauncher::Get()->GetTrainPid(), SIGKILL)), 0);
       // TrainEnd();
+    } else {
+      return 0;
     }
+  } else {
+    LOG(FATAL) << "Unknown serve mode " 
+               << static_cast<int>(Config::serve_mode);
   }
-  return cmd_id;
+  return 0;
 }
 
 uint64_t Controller::ResumeTrain() {
@@ -171,10 +192,14 @@ uint64_t Controller::ResumeTrain() {
       1, std::memory_order_relaxed);
 
   if (!IsTrainIdle()) {
-    DLOG(INFO) << "Controller: Put ResumeTrain";
-    InfTraCommunicator::GetMQ()->PutAll(
+    LOG_IF(INFO, Config::log_controller) 
+        << "Controller: Put ResumeTrain";
+    std::unique_lock lock{wait_task_switch_mutex_};
+    InfTraCommunicator::GetMQ()->Put(
         {cmd_id, static_cast<int>(CtrlEvent::kResumeTrain)}, 
-        InfTraMessageQueue::Direction::kInf2Tra);
+        InfTraMessageQueue::Direction::kInf2Tra,
+        ctrl::kTraRank_0);
+    has_sent_resume_train_from_last_interrupt_ = true;
   }
   return cmd_id;
 }
@@ -323,6 +348,22 @@ bool Controller::WaitTrainNotRunning() {
   std::unique_lock lock{wait_train_mutex_};
   wait_train_cv_.wait(lock, 
       [&]() { return train_status_ != TrainStatus::kRunning; });
+  return true;
+}
+
+bool Controller::WaitTaskSwitchDone(uint64_t cmd_id) {
+  if (!IsTrainIdle()) {
+    std::unique_lock lock{wait_task_switch_mutex_};
+    wait_task_switch_cv_.wait(lock, [&](){ 
+      auto ret = task_switch_done_id_ >= cmd_id; 
+      // if (!ret) {
+      //   LOG(INFO) << "[Controller] wait task switch done, "
+      //             << " task_switch_done_id " << task_switch_done_id_
+      //             << " cmd_id " << cmd_id;
+      // }
+      return ret;
+    });
+  }
   return true;
 }
 

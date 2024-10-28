@@ -42,6 +42,7 @@ class Controller {
       size_t model_rank, int device_id, 
       const std::vector<TrainAdjuster::AdjustPlan> &adjust_plans);
   bool WaitTrainNotRunning();
+  bool WaitTaskSwitchDone(uint64_t cmd_id);
   bool WaitInferIdle();
   bool WaitColocateAdjustDone(uint64_t cmd_id);
   // uint64_t InferExit(int device_id);
@@ -81,8 +82,14 @@ class Controller {
   TrainStatus train_status_{TrainStatus::kIdle};
 
   // switch mode
-  std::mutex wait_train_mutex_, wait_infer_mutex_;
-  std::condition_variable wait_train_cv_, wait_infer_cv_;
+  std::mutex wait_train_mutex_,
+             wait_task_switch_mutex_,
+             wait_infer_mutex_;
+  std::condition_variable wait_train_cv_, 
+                          wait_task_switch_cv_,
+                          wait_infer_cv_;
+  uint64_t task_switch_done_id_{0};
+  bool has_sent_resume_train_from_last_interrupt_{true};
   std::unique_ptr<std::thread> monitor_train_thread_;
 
   // colocate mode

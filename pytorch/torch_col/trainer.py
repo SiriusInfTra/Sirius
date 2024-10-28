@@ -18,6 +18,7 @@ from .util import EventManager, Event
 
 from dataclasses import dataclass
 from typing import Callable, Any, Optional
+import time
 
 
 @dataclass
@@ -71,42 +72,39 @@ class Trainer:
         running_loss = 0
 
         for batch_idx, batch in enumerate(self.data_loader):
-            try:
-                self._cur_epoch_stat.tried_batch += 1
-                self.overall_stat.tried_batch += 1
+            self._cur_epoch_stat.tried_batch += 1
+            self.overall_stat.tried_batch += 1
 
-                # self.dynamic_dataset.record_batch_event(
-                #     epoch_idx, batch_idx, 
-                #     self.dynamic_dataset.get_batch_size(batch), 
-                #     self.dynamic_dataset.global_batch_size
-                # )
-                self.batch_manager.begin_batch(
+            self.batch_manager.begin_batch(
                     epoch_idx, batch_idx, batch, batch['range']
                 )
-                
-                # if batch.should_update_param():
-                #     torch_col.info(f'epoch {epoch_idx} batch {batch_idx} w/ sync')
 
+            # if batch.should_update_param():
+            #     torch_col.info(f'epoch {epoch_idx} batch {batch_idx} w/ sync')
+
+            try:
                 _running_loss = self.iter_train_fn(batch)
             except (
                 ColocateAdjustL1Exception, 
                 SwitchL1Exception, 
                 EngineColocateAdjustL1Exception
             ) as exception:
-                if batch.should_update_param():
+                if self._is_ddp_training() and batch.should_update_param():
                     self.batch_manager.vote_abort_last_micro_batch()
                 self.handle_abort_batch(epoch_idx, batch_idx, batch, exception)
             else:
                 # batch passed, go to next batch
                 # self.dynamic_dataset.next_batch()
 
-                # consensus on the sync batch
-                if batch.should_update_param():
+                # consensus on the sync batch. 
+                # should not enter this block? as we have already synced before optimizer.step(). however, task switch may execute this block
+                if self._is_ddp_training() and batch.should_update_param():
                     if not self.batch_manager.vote_finish_last_micro_batch():
                         self.handle_abort_batch(
                             epoch_idx, batch_idx, batch, 
                             EngineColocateAdjustL1Exception("vote finish failed")
                         )
+                        continue
 
                 self.batch_manager.finish_batch(epoch_idx, batch_idx, batch)
                 
@@ -154,7 +152,7 @@ class Trainer:
         if epoch_idx == 0 and batch_idx == 0:
             raise RuntimeError("first micro batch could not be interrupted.")
         
-        # --------------------------
+        # -------------------------
         # first, finish abort batch
         # Ref: [Note: fast training memory adjust]
 
@@ -166,12 +164,16 @@ class Trainer:
             # should be move to c++ pytorch hook?
             torch_col.xsched.kill_batch()
 
-        if isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
-            # DDP Training
+        if self._is_ddp_training(): # DDP Training
             self.model.reducer.finalize_dropped_batch()
         else:
             pass
         self.batch_manager.abort_batch(epoch_idx, batch_idx, batch)
+
+        if isinstance(self.dynamic_dataset.col_ctrl, torch_col.SwitchCtrl):
+            if torch_col.is_train_master():
+                self.dynamic_dataset.col_ctrl._stub.set_global_has_batch_killed(True)
+            torch_col.dist.wait_barrier()
 
         # ---------------------------------------------
         # second, release memory and reply to inference
@@ -181,8 +183,8 @@ class Trainer:
             f'batch_exception_{epoch_idx:02d}_{batch_idx:03d}_{batch_size:02d}'
         with EventManager.record_duration_event(batch_exception_event):
             # cuda has alreadly synced
-            self.dynamic_dataset.col_ctrl.release_and_reply()
-            print(f'[{exception}] batch_size: {batch_size} -> '
+            self.dynamic_dataset.col_ctrl.release_and_reply(True) # barrier to ensure consistent status
+            print(f'[Rank {torch_col.get_train_rank()} | {exception}] batch_size: {batch_size} -> '
                   f'{self.dynamic_dataset.col_ctrl.unpub_target_batch_size}.')
 
         self._cur_epoch_stat.killed_batch += 1
@@ -194,29 +196,45 @@ class Trainer:
         # --------------------------------------------------
         # third, re-configure training and re-start training
 
-        if torch_col.get_train_rank() == 0:
-            # batch across worker contain at least one sync batch 
-            # or has no sync batch, it is ok to reset all vote counter
-            self.batch_manager.reset_last_micro_batch_finish_vote()
-        torch_col.dist.wait_barrier()
+        train_restart_event = f'batch_restart_{epoch_idx:02d}_{batch_idx:03d}'
+        with EventManager.record_duration_event(train_restart_event):
+            if torch_col.get_train_rank() == 0:
+                # batch across worker contain at least one sync batch 
+                # or has no sync batch, it is ok to reset all vote counter
+                self.batch_manager.reset_last_micro_batch_finish_vote()
+            torch_col.dist.wait_barrier()
 
-        nccl_backend = torch_dist.GroupMember.WORLD._get_backend(torch.device('cuda'))
-        # restart nccl will let all training cpu sync
-        nccl_backend._restart_nccl_comm([torch.device(f'cuda:{self.rank}')])
+            if self._is_ddp_training():
+                nccl_backend = torch_dist.GroupMember.WORLD._get_backend(torch.device('cuda'))
+                # restart nccl will let all training cpu sync
+                nccl_backend._restart_nccl_comm([torch.device(f'cuda:{self.rank}')])
 
-        if isinstance(self.dynamic_dataset.col_ctrl, torch_col.ColocateCtrl):
-            # Ref: [Note: kill batch]
-            self.dynamic_dataset.col_ctrl.set_killed_batch_recover()
+            if torch_col.get_colocate_train_mode().is_colocate():
+                # Ref: [Note: kill batch] (colcoate)
+                self.dynamic_dataset.col_ctrl.set_killed_batch_recover()
 
-        if torch_col.get_train_rank() == 0:
-            # because we may directly reply memory adjust 
-            # before recover the killed batch (not killing batch),
-            # distribute batch should be after recover
-            # to configure training for those requests to avoid infer OOM
-            torch_col.dist._DynamicBatchDistirbutor.distribute_batch(
-                True, True, False)
-            self.dynamic_dataset.col_ctrl.set_killed_batch_reconfiged()
-        torch_col.dist.wait_barrier()
+            if torch_col.get_train_rank() == 0:
+                # Colocate:
+                #   because we may directly reply memory adjust 
+                #   before recovering the killed batch (not killing batch),
+                #   distributing batch should be after recovering
+                #   to configure training for those requests to avoid infer OOM
+                # Task switch:
+                #   call distribute batch to set training is ongoing
+                torch_col.dist._DynamicBatchDistirbutor.distribute_batch(
+                    True, True, False)
+                if torch_col.get_colocate_train_mode().is_colocate():
+                    self.dynamic_dataset.col_ctrl.set_killed_batch_reconfiged()
+            torch_col.dist.wait_barrier()
+            # torch_col.info(f'epoch {epoch_idx} batch {batch_idx} handle abort end.')
+
+        # -------------------------------------
+        # [task switch] fourth, wait for resume
+        if torch_col.get_colocate_train_mode().is_taskswitch():
+            while not self.dynamic_dataset.col_ctrl._stub.prepare_resume():
+                time.sleep(1e-3)
+            torch_col.dist.wait_barrier()
+            # torch_col.info(f'epoch {epoch_idx} batch {batch_idx} resume training.')
 
     def _default_first_batch_callback(self):
         if torch_col.is_enable_shared_tensor():
@@ -228,7 +246,14 @@ class Trainer:
                 nccl_streams = torch_col.xsched.get_nccl_streams()
                 assert len(nccl_streams) <= 1, f"nccl streams {nccl_streams}"
                 if len(nccl_streams) == 1:
+                    # torch_col.info(f'nccl stream {nccl_streams[0]}')
                     torch_col.xsched.register_stream(nccl_streams[0], False)
             torch.cuda.current_stream().synchronize()
             torch_col.xsched.initial_kill_batch(0, 0)
+
+    def _default_first_epoch_callback(self):
+        pass
+
+    def _is_ddp_training(self):
+        return isinstance(self.model, torch.nn.parallel.DistributedDataParallel)
 

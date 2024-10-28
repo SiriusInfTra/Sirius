@@ -182,7 +182,15 @@ class MicroBatchManager:
         col_ctrl = get_colocate_ctrl()
         if col_ctrl.train_mode == TrainMode.COLOCATE_L2:
             if col_ctrl._stub.cmd == torch_col.CtrlEvent.kColocateAdjustL2:
-                col_ctrl.release_and_reply()
+                if torch_col.get_train_world_size() == 1:
+                    col_ctrl.release_and_reply(False)
+                    if not batch.should_update_param():
+                        torch_col.dist._DynamicBatchDistirbutor.distribute_batch(
+                                    True, True, False)
+                else:
+                    if batch.should_update_param():
+                        torch_col.dist.wait_barrier()
+                        col_ctrl.release_and_reply(False)
         
         self._complete_batch_event(_BATCH_FINISH_TAG, batch)
         self._past_micro_batch_range_vecs_in_global_batch.append(
@@ -194,7 +202,8 @@ class MicroBatchManager:
         # else:
         #     _DynamicBatchDistirbutor.finish_batch()
 
-        if (not self._enable_grad_accumulate 
+        if (not self._enable_grad_accumulate # should check grad accumulate?
+            or not torch_col.get_colocate_train_mode().is_kill_batch()
             or self._should_checkpoint_micro_batch()
         ):
             _DynamicBatchDistirbutor.finish_batch(
@@ -287,6 +296,7 @@ class MicroBatchManager:
             self._complate_global_batch_event(_BATCH_FINISH_TAG)
 
         if (self._enable_grad_accumulate 
+            and torch_col.get_colocate_train_mode().is_kill_batch()
             and not self._checkpoint_micro_batch
         ):
             # for idx in self._past_micro_batch_range_vecs_in_global_batch:
@@ -342,6 +352,8 @@ class DynamicBatchDataset(IterableDataset):
 
         # torch_col.dist.init_dynamic_batch_distributor(ds_size, global_batch_size)
 
+        self._ds_ring_repeat = True
+
         if not ds_type == DatasetType.VISION:
             fake_data = True
             print('Warning: fake_data is forced to be True for non-vision dataset', 
@@ -357,12 +369,15 @@ class DynamicBatchDataset(IterableDataset):
                     f"expect ds_size is multiple of {len(self.all_inputs['images'])}"
                 
                 if ds_size != len(self.all_inputs['images']):
-                    for k in self.all_inputs.keys():
-                        rep = ds_size // len(self.all_inputs[k])
-                        rep = (rep, ) + (1, ) * (len(self.all_inputs[k].shape) - 1)
-                        self.all_inputs[k] = np.tile(self.all_inputs[k], rep)
-                    ds_shapes = {k: v.shape for k, v in self.all_inputs.items()}
-                    print(f'real dataset is small, repeat dataset: {ds_shapes}')
+                    if not self._ds_ring_repeat:
+                        for k in self.all_inputs.keys():
+                            rep = ds_size // len(self.all_inputs[k])
+                            rep = (rep, ) + (1, ) * (len(self.all_inputs[k].shape) - 1)
+                            self.all_inputs[k] = np.tile(self.all_inputs[k], rep)
+                        ds_shapes = {k: v.shape for k, v in self.all_inputs.items()}
+                        print(f'real dataset is small, repeat dataset: {ds_shapes}')
+                    else:
+                        pass # len(self.all_inputs['images']) % global_batch_size == 0
 
                 for k in self.all_inputs.keys():
                     self.all_inputs[k] = torch.from_numpy(self.all_inputs[k]).pin_memory()
@@ -430,6 +445,14 @@ class DynamicBatchDataset(IterableDataset):
                                    device=f'cuda:{torch_col.get_train_rank()}')
             off = 0
             for i, j in batch_range_vec:
+                l = j - i
+                if self._ds_ring_repeat:
+                    if i >= len(self.all_inputs[k]):
+                        i = i % len(self.all_inputs[k])
+                        j = i + l
+                        assert j <= len(self.all_inputs[k]), (
+                            f"{i}--{j} range_vec {batch_range_vec}")
+                # torch_col.info(f"batch range: {i}--{j}, range_vec {batch_range_vec}")
                 batch[k][off:off+(j-i)] = self.all_inputs[k][i:j]
                 off += j - i
 
@@ -448,13 +471,12 @@ class DynamicBatchDataset(IterableDataset):
                 time.sleep(1e-3)
                 batch_size = self.get_next_batch_size()
         elif self.col_ctrl.train_mode == TrainMode.TASKSWITCH_L1:
-            while self.col_ctrl._stub.cmd == torch_col.CtrlEvent.kInterruptTrain:
-                self.col_ctrl.switch()
-                time.sleep(1e-3)
+            pass
         return batch_size    
 
     def _get_batch(self) -> Batch:
-        _batch_size = self._wait_valid_batch_size()
+        with EventManager.record_duration_event('wait_valid_batch'):
+            _batch_size = self._wait_valid_batch_size()
         batch_range_vec, last_micro_batch = \
             torch_col.dist._DynamicBatchDistirbutor.get_batch(_batch_size)
         _batch = self._retrieve_batch(batch_range_vec)
@@ -525,7 +547,7 @@ def init_dynamic_batch(
     enable_grad_accumulate: bool = False,
     checkpoint_micro_batch: bool = False,
     empty_cache_at_larger_batch_size: bool = False,
-    batch_distribute_policy: BatchDistributePolicy = BatchDistributePolicy.SIMPLE,
+    batch_distribute_policy: BatchDistributePolicy = BatchDistributePolicy.FIX,
     lazy_batch_distributing: bool = False,
     fake_data: bool = False
 ) -> Tuple[DynamicBatchDataset, MicroBatchManager]:
@@ -537,6 +559,9 @@ def init_dynamic_batch(
                 and not enable_grad_accumulate), (
         "enable grad accumulate when colocate training.")
     
+    assert not (global_batch_size is not None and not enable_grad_accumulate), (
+        "enable grad accumulate when global batch size is set.")
+    
     if global_batch_size is None:
         global_batch_size = batch_size * torch_col.get_train_world_size()
     
@@ -547,6 +572,14 @@ def init_dynamic_batch(
               f'checkpoint_micro_batch will be False.',
               file=sys.stderr)
         checkpoint_micro_batch = False
+
+    if (not torch_col.get_colocate_train_mode().is_colocate()
+        and batch_distribute_policy != BatchDistributePolicy.FIX
+    ):
+        print(f'torch_col: Warning: batch_distribute_policy will be '
+              f'{BatchDistributePolicy.FIX} when not colocate with inference.',
+              file=sys.stderr)
+        batch_distribute_policy = BatchDistributePolicy.FIX
 
     vision_ds_config = None
     text_ds_config = None
@@ -564,6 +597,7 @@ def init_dynamic_batch(
         empty_cache_at_larger_batch_size=empty_cache_at_larger_batch_size,
         fake_data=fake_data,
     )
+
     torch_col.dist.init_dynamic_batch_distributor(
         dataset_size, batch_size, global_batch_size,
         lazy_batch_distributing, batch_distribute_policy.value)

@@ -21,6 +21,7 @@ size_t AbortAllStreams();
 int SyncStream(uint64_t stream);
 int SyncAllStreams();
 size_t GetXQueueSize(uint64_t stream);
+size_t GetXQueueSizeAllStreams();
 size_t GetTotalXQueueSize();
 int QueryRejectCudaCalls();
 void SetRejectCudaCalls(bool reject);

@@ -49,6 +49,8 @@ cdef extern from "<torch_col/csrc/config.h>" namespace "torch_col":
         @staticmethod
         bint IsEnableFbwardHook()
         @staticmethod
+        bint IsTrainMaster()
+        @staticmethod
         int GetTrainRank()
         @staticmethod
         void SetTrainRank(int)
@@ -131,6 +133,9 @@ def disable_fbward_hook():
 def is_enable_fbward_hook():
     return TorchColConfig.IsEnableFbwardHook()
 
+
+def is_train_master():
+    return TorchColConfig.IsTrainMaster()
 
 def torch_col_init(train_rank = 0, train_world_size = 1):
     assert train_rank >= 0 and train_world_size > 0
@@ -278,6 +283,7 @@ cdef extern from "<common/xsched_ctrl.h>" namespace "colserve::sta::xsched":
     cpdef void UnRegisterStream(uint64_t stream)
     cpdef void UnRegisterAllStreams()
     cpdef size_t GetXQueueSize(uint64_t stream)
+    cpdef size_t GetXQueueSizeAllStreams()
     cpdef size_t GetTotalXQueueSize()
     cpdef uint64_t AbortStream(uint64_t stream)
     cpdef uint64_t AbortAllStreams()

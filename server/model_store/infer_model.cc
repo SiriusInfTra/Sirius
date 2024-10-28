@@ -384,9 +384,10 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
   while (!InferModelStore::Initialized()) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
-  DLOG(INFO) << "[Model Inference] " << name_ << " (rank " << rank << ") start inference";
+  
   {
     auto reserved_lock = warm_model_cache->ReserveCache(name_, rank);
+    auto cold_cache_lock = cold_model_cache->Lock();
     CHECK(status_[rank] == Status::kWithoutMemory);
     executors_[rank]->Init(true);
     ChangeStatus(rank, Status::kReady);

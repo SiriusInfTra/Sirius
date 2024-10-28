@@ -82,13 +82,16 @@ bool TrainLauncher::Train() {
   auto train_script = train_handles_[model];
 
   if ((Config::IsColocateMode() || Config::IsSwitchMode()) && 
-      Config::use_shared_tensor &&
       Config::enable_warm_cache_fallback) {
     auto [base, slope] = TrainAdjuster::adjuster_->GetModelMemParam(cur_model_name_);
-    Config::max_warm_cache_nbytes = static_cast<size_t>((
-        Config::cuda_memory_pool_gb * 1024 
-        - Config::train_memory_over_predict_mb - base
-      ) * 1_MB);
+    if (Config::use_shared_tensor) {
+      Config::max_warm_cache_nbytes = static_cast<size_t>((
+          Config::cuda_memory_pool_gb * 1024 
+          - Config::train_memory_over_predict_mb - base
+        ) * 1_MB);
+    } else {
+      Config::max_warm_cache_nbytes = 16_GB - base * 1_MB;
+    }
     LOG(INFO) << "[Warm Cache Fallback for Colocation] set max warm cache nbytes to "
               << sta::PrintByte(Config::max_warm_cache_nbytes);
   }

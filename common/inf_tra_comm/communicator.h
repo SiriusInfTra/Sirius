@@ -28,6 +28,9 @@ class InfTraCommunicator {
   static pid_t GetTrainPID(int rank) {
     return GetSinfo()->GetTrainInfoUnsafe(rank)->train_pid;
   }
+  static pid_t GetTrainPIDNotCheckValid(int rank) {
+    return GetSinfo()->GetTrainInfoUnsafeNotCheckValid(rank)->train_pid;
+  }
   static std::vector<pid_t> GetTrainPIDs() {
     return GetSinfo()->GetTrainPIDs();
   }

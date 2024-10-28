@@ -265,6 +265,8 @@ TrainAdjuster::GetInferReleaseMemAdjustPlanWithInLock(
     } else {
       // w/ native gpu memory management
       target_bs_predict_by_avail_mem = -1;
+      // target_bs_predict_by_avail_mem = adjuster_->PredictTargetBatchSize(
+      //     0, std::max(train_avail_mem_mb - reserve_mem_mb, 0.0));
 
       target_bs_calcu_by_delta_mem =
           cur_train_target_bs + 
@@ -272,6 +274,7 @@ TrainAdjuster::GetInferReleaseMemAdjustPlanWithInLock(
       
       target_batch_size = std::max(
           cur_train_target_bs,
+          // std::min(target_bs_calcu_by_delta_mem, target_bs_predict_by_avail_mem)
           target_bs_calcu_by_delta_mem
       );
     }
@@ -451,11 +454,12 @@ std::pair<double, double> TrainAdjuster::GetModelMemParam(
       */
       // NOTE: DID NOT consider grad checkpoint
       return {1150, 85};
-    } else if (model_name == "swin_b" || model_name == "swin_b_ddp") {
-      // return {1700, 140};
-
+    } else if (model_name == "swin_b") {
+      return {1700, 140};
+    } else if (model_name == "swin_b_ddp") {
       // TODO: remove hard-coded value
       return {2560, 140};
+      // return {3500, 140};
     } else if (model_name == "gpt2") {
       /*
        
@@ -488,7 +492,11 @@ std::pair<double, double> TrainAdjuster::GetModelMemParam(
     } else if (model_name == "swin_b") {
       // NOTE: PLACEHOLDER
       // return {1700, 140};
-      return {3300, 145};
+      // return {2800, 150};      
+      return {3000, 200};
+    } else if (model_name == "swin_b_ddp") {
+      // return {3300, 145};
+      return {3800, 200};
     } else {
       LOG(FATAL) << "Unsupported model: " << model_name;
     }

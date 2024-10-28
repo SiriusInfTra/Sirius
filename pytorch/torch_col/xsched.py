@@ -92,7 +92,8 @@ def unregister_all_streams():
 
 def get_xqueue_size(stream: Optional[Union[Stream, int]] = None) -> int:
     if stream is None:
-        stream = torch.cuda.current_stream()
+        # stream = torch.cuda.current_stream()
+        return torch_col.GetXQueueSizeAllStreams()
     if isinstance(stream, Stream):
         stream = stream.cuda_stream
     return torch_col.GetXQueueSize(stream)

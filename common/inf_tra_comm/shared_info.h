@@ -30,6 +30,8 @@ struct TrainInfo {
   int target_batch_size_unpublished{0};
 
   char model_name[256];
+
+  bool first_epoch_done{false};
 };
 
 class InfTraSharedInfo {
@@ -49,6 +51,9 @@ class InfTraSharedInfo {
     CHECK(IsTrainInfoValid(id));
     return train_infos_[id];
   }
+  const TrainInfo* GetTrainInfoUnsafeNotCheckValid(int id) {
+    return train_infos_[id];
+  }
   TrainInfo* GetMutableTrainInfoUnsafe(int id) {
     CHECK(IsTrainInfoValid(id));
     return train_infos_[id];
@@ -59,6 +64,13 @@ class InfTraSharedInfo {
   ValueType GetTrainInfoField(int id, size_t field_off) {
     bip::scoped_lock lock{*train_info_muts_[id]};
     return GetTrainInfoFieldWithoutLock<ValueType>(id, field_off);
+  }
+
+
+  template <typename ValueType>
+  void UpdateTrainInfoField(int id, size_t field_off, ValueType value) {
+    bip::scoped_lock lock{*train_info_muts_[id]};
+    UpdateTrainInfoFieldWithoutLock<ValueType>(id, field_off, value);
   }
 
   template <typename ValueType>
@@ -217,6 +229,13 @@ class InfTraSharedInfo {
     decltype(::colserve::ctrl::TrainInfo::field) \
   >(offsetof(::colserve::ctrl::TrainInfo, field))
 
+
+#define COMMUNICATOR_UPDATE_SHARED_TRAIN_INFO_FIELD(id, field, value) \
+  ::colserve::ctrl::InfTraCommunicator:: \
+  GetSinfo()->UpdateTrainInfoField< \
+    decltype(::colserve::ctrl::TrainInfo::field) \
+  >(id, offsetof(::colserve::ctrl::TrainInfo, field), value)
+  
 
 #define COMMUNICATOR_UPDATE_SHARED_TRAIN_INFO_FIELD_VEC(field, values) \
   ::colserve::ctrl::InfTraCommunicator:: \

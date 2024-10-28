@@ -203,7 +203,10 @@ void DynamicBatchDistirbutor::DistributeBatchWithoutLock(
     for (auto i : boost::irange(TorchColConfig::GetTrainWorldSize())) {
       if (global_shared_data_.has_unproc_batches_->at(i)) {
         ongoing_workers.push_back(i);
-        target_bs_vec.push_back(target_bs_unpub[i]);
+        target_bs_vec.push_back(
+            TorchColConfig::HasColocatedInferServer()
+            ? target_bs_unpub[i]
+            : input_batch_size_);
       }
     }
 
@@ -581,6 +584,10 @@ bool DynamicBatchDistirbutor::VoteFinishLastMicroBatch() {
   int vote_cnt = GLOBAL_SHARED_DATA
       .last_micro_batch_finish_vote_cnt_->fetch_add(
         VOTE_FINISH_LAST_MICRO_BATCH, std::memory_order_relaxed);
+
+  LOG_IF(INFO, TorchColConfig::log_dynamic_batch) 
+      << "[Rank " << TorchColConfig::GetTrainRank() 
+      << " | BatchFinishVote] vote_cnt " << vote_cnt;
     
   if (vote_cnt + VOTE_FINISH_LAST_MICRO_BATCH 
       == TorchColConfig::GetTrainWorldSize()) {
@@ -608,6 +615,10 @@ bool DynamicBatchDistirbutor::VoteFinishLastMicroBatch() {
 void DynamicBatchDistirbutor::VoteAbortLastMicroBatch() {
   CHECK(batch_distributor_ != nullptr);
   bip::scoped_lock lock{*GLOBAL_SHARED_DATA.mut_};
+
+  LOG_IF(INFO, TorchColConfig::log_dynamic_batch) 
+      << "[Rank " << TorchColConfig::GetTrainRank() 
+      << " | BatchFinishVote] abort batch";
 
   GLOBAL_SHARED_DATA.last_micro_batch_finish_vote_cnt_->store(
       ABORT_LAST_MICRO_BATCH, std::memory_order_relaxed);

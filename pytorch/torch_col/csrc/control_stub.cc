@@ -4,6 +4,7 @@
 #include <torch_col/csrc/fake_engine.h>
 #include <torch_col/csrc/dist_ext.h>
 #include <torch_col/csrc/dynamic_batch.h>
+#include <torch_col/csrc/dist_train_sync.h>
 
 #include <common/log_as_glog_sta.h>
 #include <common/cuda_allocator.h>
@@ -35,6 +36,19 @@
 // 6. continue training
 
 
+// [Note: task switch] (multi-gpu)
+// Generally, server will maintain training status to guarantee the validity of
+// interrupt/resume training. However, the trick is that the training require
+// time to change its status. 
+// - Case 1 (interrupt training), as long as resume msg is sent to training, 
+//   we choose to let interrupt training to be valid (avoiding starting infer 
+//   while training resumes). so, training should handle the interrupt for two 
+//   cases, normal running and during resume.
+// - Case 2 (resuem training, only send to master), it need to be guaranteed 
+//   that all training workers consent to resume. Remind that we need to handle
+//   the interrupt before resuming is done. so, we need to sync workers to check
+//   whether the all training agree to resume.
+
 namespace torch_col {
 
 using namespace colserve;
@@ -58,7 +72,8 @@ StubBase::StubBase() {
           ProcessCtrlMsg(TorchColConfig::GetTrainRank(), msg);
         }
       }
-      LOG(INFO) << "[CtrlStub] control thread exit";
+      LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank()
+                <<  " | CtrlStub] control thread exit";
     }));
   }
 }
@@ -143,6 +158,13 @@ bool StubBase::CanExitAfterInferWorkloadDone() {
   }
 }
 
+void StubBase::SetTrainFirstEpochDone() {
+  if (TorchColConfig::HasColocatedInferServer()) {
+    COMMUNICATOR_UPDATE_SHARED_TRAIN_INFO_FIELD(
+        TorchColConfig::GetTrainRank(), first_epoch_done, true);
+  }
+}
+
 void StubBase::EnableTorchColEngine() {
   torch_col::SetUpTorchColEngine(this);
 }
@@ -152,12 +174,29 @@ void DummyStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
   switch (msg.event) {
   case static_cast<int>(ctrl::CtrlEvent::kInferenceWorkloadDone):
     infer_workload_done_timestamp_ = torch_col::get_unix_timestamp();
-    LOG(INFO) << "[DummyStub] inference workload done";
+    LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank()
+              << " | DummyStub] inference workload done";
     break;
   default:
-    LOG(FATAL) << "[DummyStub] Unknown command: " << msg.event;
+    LOG(FATAL) << "[Rank " << TorchColConfig::GetTrainRank() 
+               << " | DummyStub] Unknown command: " << msg.event;
   }
 }
+
+SwitchStub::SwitchStub() : StubBase() {
+  DLOG(INFO) << "[SwitchStub] initialized";
+
+  DistTrainSync::CreateCustomSharedData(
+    "switch_stub", 
+
+    std::make_pair(std::string{"global_interrupt_flag"}, 
+                   &shared_data_.interrupt_flag_),
+    std::make_pair(std::string{"has_batch_killed"}, 
+                   &shared_data_.has_batch_killed_),
+    std::make_pair(std::string{"mut"}, 
+                   &shared_data_.mut_)
+  );
+};
 
 void SwitchStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
   std::unique_lock lock{mutex_};
@@ -168,60 +207,196 @@ void SwitchStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
       // already interrupting train
       cmd_id_ = msg.id;
       last_reply_cmd_id_ = cmd_id_;
-      ctrl::InfTraCommunicator::GetMQ()
-          ->Put({cmd_id_, static_cast<int>(ctrl::CtrlEvent::kInterruptTrainDone)},
-                ctrl::InfTraMessageQueue::Direction::kTra2Inf,
-                TorchColConfig::GetTrainRank());
+      if (TorchColConfig::IsTrainMaster()) {
+        CHECK(GetGlobalHasBatchKilled());
+        CHECK(GetGlobalInterruptFlag());
+        ctrl::InfTraCommunicator::GetMQ()
+            ->Put({cmd_id_, static_cast<int>(ctrl::CtrlEvent::kInterruptTrainDone)},
+                  ctrl::InfTraMessageQueue::Direction::kTra2Inf,
+                  TorchColConfig::GetTrainRank());
+        LOG_IF(INFO, TorchColConfig::log_control_stub) 
+            << "[Rank "<< TorchColConfig::GetTrainRank()
+            << " | SwitchStub] already interrupting train, done, cmd_id: "
+            << msg.id;
+      }
       cmd_id_ = 0;
-
-      LOG_IF(INFO, TorchColConfig::log_control_stub) 
-          << "[SwitchStub] already interrupting train, done";
     } else {
+      if (TorchColConfig::IsTrainMaster()) {
+        SetGlobalInterruptFlag(true);
+        SetGlobalHasBatchKilled(false);
+        LOG_IF(INFO, TorchColConfig::log_control_stub) 
+            << "[Rank " << TorchColConfig::GetTrainRank()
+            << " | SwitchStub] Interrupt train, cmd_id: " << msg.id;
+      }
+
+      if (TorchColConfig::kill_batch_on_recv 
+          && has_killed_batch_recover_) {
+        CHECK(cmd_ == static_cast<int>(ctrl::CtrlEvent::kResumeTrain) 
+              || cmd_ == -1 /* the first time */) << "cmd_ " << cmd_;
+        std::unique_lock step_lock{step_mutex_};
+        auto t1 = torch_col::get_unix_timestamp();
+        // DLOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank()
+        //           << " | SwitchStub] kill batch, cmd " << cmd_
+        //           << " cmd_id " << cmd_id_;
+        sta::xsched::SetRejectCudaCalls(true);
+        if (ProcessGroupNCCL::HasDefaultProcessGroupNCCL()) {
+          ProcessGroupNCCL::GetDefaultProcessGroupNCCL()->SetNcclCommAbortFlag(
+            {at::Device(at::kCUDA, TorchColConfig::GetTrainRank())});
+        }
+        auto remove = sta::xsched::AbortAllStreams();
+        sta::xsched::SyncAllStreams();
+        auto t2 = torch_col::get_unix_timestamp();
+        has_killed_batch_recover_ = false;
+        LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank()
+                  << " | SwitchStub] kill batch, remove " << remove
+                  << ", cost " << t2 - t1 << "ms";
+      }
       cmd_id_ = msg.id;
       cmd_ = static_cast<int>(ctrl::CtrlEvent::kInterruptTrain);
-
-      LOG_IF(INFO, TorchColConfig::log_control_stub) 
-          << "[SwitchStub] Interrupt train";
     }
+    LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank()
+              << " | SwitchStub] Interrupt train, cmd " << cmd_
+              << " cmd_id: " << cmd_id_;
     break;
   case (static_cast<int>(ctrl::CtrlEvent::kResumeTrain)):
     if (cmd_ == static_cast<int>(ctrl::CtrlEvent::kInterruptTrain) 
         && cmd_id_ == 0) {
       // already interrupting train
       cmd_ = static_cast<int>(ctrl::CtrlEvent::kResumeTrain);
+      SetGlobalInterruptFlag(false);
       LOG_IF(INFO, TorchColConfig::log_control_stub) 
-          << "[SwitchStub] Resume train";
-      ctrl::InfTraCommunicator::GetMQ()
-          ->Put({0, static_cast<int>(ctrl::CtrlEvent::kResumeTrainDone)},
-                ctrl::InfTraMessageQueue::Direction::kTra2Inf,
-                TorchColConfig::GetTrainRank());
+          << "[Rank " << TorchColConfig::GetTrainRank() 
+          << " | SwitchStub] Resume train, cmd " << cmd_;
+
+      // if (TorchColConfig::IsTrainMaster()) {
+      //   ctrl::InfTraCommunicator::GetMQ()
+      //       ->Put({0, static_cast<int>(ctrl::CtrlEvent::kResumeTrainDone)},
+      //             ctrl::InfTraMessageQueue::Direction::kTra2Inf,
+      //             TorchColConfig::GetTrainRank());
+      // }
     } else {
+      // should not happen if cmd_ is kInterruptTrain (ie. 7)
       LOG_IF(INFO, TorchColConfig::log_control_stub) 
-          << "[SwitchStub] Ignore resume train";
+          << "[Rank " << TorchColConfig::GetTrainRank()
+          << "| SwitchStub] Ignore resume train, cmd " << cmd_;
     }
+    break;
   case (static_cast<int>(ctrl::CtrlEvent::kInferenceWorkloadDone)):
     this->infer_workload_done_timestamp_ = torch_col::get_unix_timestamp();
-    LOG(INFO) << "[SwitchStub] Inference workload done";
+    LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank()
+              << " | SwitchStub] Inference workload done";
     break;
   default:
-    LOG(FATAL) << "[SwitchStub] Unknown command: " << msg.event;
+    LOG(FATAL) << "[Rank "<< TorchColConfig::GetTrainRank()
+               << " | SwitchStub] Unknown command: " << msg.event;
   }
 }
 
-bool SwitchStub::TryInterruptTrainDone() {
+bool SwitchStub::TryInterruptTrainDone(bool barrier) {
   std::unique_lock locker{mutex_};
+  return TryInterruptTrainDoneWithLock(barrier);
+}
+
+bool SwitchStub::TryInterruptTrainDoneWithLock(bool barrier) {
   if (cmd_id_ > last_reply_cmd_id_) {
+    auto cmd_id = cmd_id_;
     last_reply_cmd_id_ = cmd_id_;
-    ctrl::InfTraCommunicator::GetMQ()
-        ->Put({cmd_id_, static_cast<int>(ctrl::CtrlEvent::kInterruptTrainDone)},
-              ctrl::InfTraMessageQueue::Direction::kTra2Inf,
-              TorchColConfig::GetTrainRank());
     cmd_id_ = 0;
-    LOG_IF(INFO, TorchColConfig::log_control_stub) 
-        << "[SwitchStub] Interrupt train done";
+    sta::xsched::SetRejectCudaCalls(false); // should move to `SetKillBatchRecover` ?
+    if (barrier) {
+      DistTrainSync::WaitBarrier();
+    }
+    if (TorchColConfig::IsTrainMaster()) {
+      ctrl::InfTraCommunicator::GetMQ()
+          ->Put({cmd_id, static_cast<int>(ctrl::CtrlEvent::kInterruptTrainDone)},
+                ctrl::InfTraMessageQueue::Direction::kTra2Inf,
+                TorchColConfig::GetTrainRank());
+      LOG_IF(INFO, TorchColConfig::log_control_stub) 
+          << "[Rank " << TorchColConfig::GetTrainRank()
+          << " | SwitchStub] Interrupt train done, cmd_id: " 
+          << last_reply_cmd_id_;
+    }
     return true;
   }
   return false;
+}
+
+void SwitchStub::TrainResumeDone() {
+  if (TorchColConfig::IsTrainMaster()) {
+    std::unique_lock locker{mutex_};
+    ctrl::InfTraCommunicator::GetMQ()
+        ->Put({0, static_cast<int>(ctrl::CtrlEvent::kResumeTrainDone)},
+              ctrl::InfTraMessageQueue::Direction::kTra2Inf,
+              TorchColConfig::GetTrainRank());
+  }
+}
+
+void SwitchStub::SetKilledBatchRecover() {
+  has_killed_batch_recover_.store(true, std::memory_order_release);
+  DLOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() 
+            << " | SwitchStub] Set killed batch recover";
+}
+
+void SwitchStub::SetGlobalInterruptFlag(bool flag) {
+  bip::scoped_lock lock{*shared_data_.mut_};
+  *shared_data_.interrupt_flag_ = flag;
+}
+
+// call by master
+bool SwitchStub::PrepareResume() {
+  std::unique_lock lock{mutex_};
+  
+  bool resume = true;
+  {
+    if (cmd_ == static_cast<int>(ctrl::CtrlEvent::kInterruptTrain)
+        && cmd_id_ != 0) {
+      LOG_IF(INFO, TorchColConfig::log_control_stub) 
+          << "[Rank " << TorchColConfig::GetTrainRank() 
+          << " | SwitchStub] Prepare to resume train, "
+          << "find interrupt, cmd_id: " << cmd_id_;
+      SetGlobalInterruptFlag(true);
+    }
+    DistTrainSync::WaitBarrier();
+    resume &= !GetGlobalInterruptFlag();
+    DistTrainSync::WaitBarrier();
+  }
+
+  if (!resume) {
+    TryInterruptTrainDoneWithLock(false);
+    DistTrainSync::WaitBarrier();
+    return false;
+  }
+
+  CHECK(!TorchColConfig::IsTrainMaster() 
+      || cmd_ == static_cast<int>(ctrl::CtrlEvent::kResumeTrain));
+
+  cmd_ = static_cast<int>(ctrl::CtrlEvent::kResumeTrain);
+  has_killed_batch_recover_ = true; // control whether batch can be killed
+  DistTrainSync::WaitBarrier();
+
+  if (TorchColConfig::IsTrainMaster()) {
+    ctrl::InfTraCommunicator::GetMQ()
+        ->Put({0, static_cast<int>(ctrl::CtrlEvent::kResumeTrainDone)},
+              ctrl::InfTraMessageQueue::Direction::kTra2Inf,
+              TorchColConfig::GetTrainRank());
+  }
+
+  LOG(INFO) << "[Rank " << TorchColConfig::GetTrainRank() 
+            << " | SwitchStub] Prepare to resume train,"
+            << " cmd " << cmd_ << " cmd_id: " << cmd_id_
+            << " has_killed_batch_recover " << has_killed_batch_recover_
+            << " global_interrupt_flag " << *shared_data_.interrupt_flag_
+            << (ProcessGroupNCCL::HasDefaultProcessGroupNCCL() 
+                ? str(boost::format(" nccl_abort_flag %d") 
+                      % ProcessGroupNCCL::GetDefaultProcessGroupNCCL()->GetAbortFlag())
+                : "");
+
+  return true;
+}
+
+bool SwitchStub::GetGlobalInterruptFlag() {
+  bip::scoped_lock lock{*shared_data_.mut_};
+  return *shared_data_.interrupt_flag_;
 }
 
 int ColocateStub::GetTargetBatchSize() {
@@ -291,7 +466,7 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
         && msg.event == static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1)
         && cmd_ != static_cast<int>(ctrl::CtrlEvent::kColocateAdjustL1);
 
-    // [Note: kill batch]
+    // [Note: kill batch] (colocate)
     // avoid set nccl abort flag while re-creating new nccl comm, 
     // which long waiting time to get nccl comm before abort.
     // Ref: [Note: fast training memory adjust]
@@ -314,8 +489,10 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
         auto t1 = torch_col::get_unix_timestamp();
         sta::xsched::SetRejectCudaCalls(true);
         auto _t11 = torch_col::get_unix_timestamp();
-        ProcessGroupNCCL::GetDefaultProcessGroupNCCL()->SetNcclCommAbortFlag(
-            {at::Device(at::kCUDA, TorchColConfig::GetTrainRank())});
+        if (ProcessGroupNCCL::HasDefaultProcessGroupNCCL()) {
+          ProcessGroupNCCL::GetDefaultProcessGroupNCCL()->SetNcclCommAbortFlag(
+              {at::Device(at::kCUDA, TorchColConfig::GetTrainRank())});
+        }
         auto _t12 = torch_col::get_unix_timestamp();
         size_t remove = sta::xsched::AbortAllStreams();
         auto t2 = torch_col::get_unix_timestamp();
@@ -363,7 +540,8 @@ void ColocateStub::ProcessCtrlMsg(int id, const ctrl::CtrlMsgEntry &msg) {
            << " timestamp: " << torch_col::get_unix_timestamp();
       }
 
-      if (will_killed_batch_reconfig_.load(std::memory_order_acquire)) {
+      if (TorchColConfig::is_colocate_l1
+          && will_killed_batch_reconfig_.load(std::memory_order_acquire)) {
         // concurrenctly distributing batch with infer require memory adjust
         // may cause some issues. 
         // For example:

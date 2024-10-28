@@ -25,10 +25,14 @@ int TorchColConfig::dynamic_sm_partition = false;
 
 std::string TorchColConfig::colocate_ctrl_hook_mode = "none";
 std::string TorchColConfig::colocate_train_mode = "normal";
+bool TorchColConfig::is_colocate_l1 = false;
+bool TorchColConfig::is_colocate_l2 = false;
 
 int TorchColConfig::release_interm_memory_by_grad_fn = false;
 int TorchColConfig::release_interm_memory_by_tagging = true;
 int TorchColConfig::use_fbward_hook = true;
+
+bool TorchColConfig::restart_nccl_comm_by_resetting_channel = true;
 
 int TorchColConfig::train_rank = 0;
 int TorchColConfig::train_world_size = 1;
@@ -38,6 +42,7 @@ std::string TorchColConfig::train_profile_log_path = "";
 bool TorchColConfig::log_all = false;
 bool TorchColConfig::log_dynamic_batch = false;
 bool TorchColConfig::log_control_stub = false;
+bool TorchColConfig::log_nccl_process_group = false;
 
 int TorchColConfig::configured = false;
 
@@ -61,6 +66,7 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
   auto log_all_env = std::getenv("COL_LOG_ALL");
   auto log_dynamic_batch_env = std::getenv("COL_LOG_DYNAMIC_BATCH");
   auto log_control_stub_env = std::getenv("COL_LOG_CONTROL_STUB");
+  auto log_nccl_process_group_env = std::getenv("COL_LOG_NCCL_PROCESS_GROUP");
 
   use_shared_tensor = use_shared_tensor_env == nullptr ? 
                       false : (std::string(use_shared_tensor_env) == "1");
@@ -77,6 +83,8 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
   colocate_train_mode = train_mode_env == nullptr ? "normal" : std::string(train_mode_env);
   train_profile_log_path = train_profile_log_path_env == nullptr ? 
                            "" : std::string(train_profile_log_path_env);
+  is_colocate_l1 = colocate_train_mode == "colocate-l1";
+  is_colocate_l2 = colocate_train_mode == "colocate-l2";
 
   log_all = log_all_env == nullptr ? 
             false : (std::string(log_all_env) == "1");
@@ -84,6 +92,8 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
                       false : (std::string(log_dynamic_batch_env) == "1"));
   log_control_stub = log_all || (log_control_stub_env == nullptr ?
                       false : (std::string(log_control_stub_env) == "1"));
+  log_nccl_process_group = log_all || (log_nccl_process_group_env == nullptr ?
+                           false : (std::string(log_nccl_process_group_env) == "1"));
 
   if (colocate_ctrl_hook_mode == "xsched-sync2") {
     kill_batch_on_recv = 1 && colocate_use_xsched;
@@ -105,7 +115,8 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
   config_ss << config_head << std::endl;
   config_ss << "TorchColConfig::rank=" << train_rank 
             << "|world_size=" << train_world_size << std::endl;;
-  config_ss << "TorchColConfig::use_shared_tensor=" << use_shared_tensor << std::endl;
+  config_ss << "TorchColConfig::use_shared_tensor=" 
+            << use_shared_tensor << std::endl;
   config_ss << "TorchColConfig::colocate_use_xsched=" << colocate_use_xsched 
             << "|LD_LIBRARY_PATh=" 
             << (getenv("LD_LIBRARY_PATH") != nullptr ? getenv("LD_LIBRARY_PATH") : "")
