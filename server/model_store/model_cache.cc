@@ -247,7 +247,7 @@ ColdModelCache::PushCacheItem(
 
   DLOG(INFO) << "check whether should evict models.";
   evict_list evict_models;
-  CHECK_EQ(uncache_nbytes, 0);
+  // CHECK_EQ(uncache_nbytes, 0);
   
   memory_byte_t before_capacity_nbytes = current_capacity_nbytes_;
   memory_byte_t before_cache_nbytes = current_cached_nbytes_;

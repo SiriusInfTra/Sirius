@@ -182,11 +182,12 @@ class ColdModelCache {
 
   std::pair<size_t, size_t> capacity_and_cache = {0, 0};
   std::pair<size_t, size_t> GetColdCacheCapacityAndCache() {
-    if (capacity_and_cache == std::pair<size_t, size_t>{0, 0}) {
-      return {current_capacity_nbytes_, current_cached_nbytes_};
-    } else {
-      return capacity_and_cache;
-    }
+    return {current_capacity_nbytes_, current_cached_nbytes_};
+    // if (capacity_and_cache == std::pair<size_t, size_t>{0, 0}) {
+    //   return {current_capacity_nbytes_, current_cached_nbytes_};
+    // } else {
+    //   return capacity_and_cache;
+    // }
   }
 
   void BlockProfilter() {
