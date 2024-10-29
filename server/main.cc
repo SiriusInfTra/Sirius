@@ -320,7 +320,7 @@ void init_config() {
   READ_ENV_BOOL_CONFIG("COLSERVE_LOG_CONTROLLER", log_controller);
   READ_ENV_BOOL_CONFIG("COLSERVE_LOG_TASK_SWITCH", log_task_switch);
 
-  CHECK(setenv("COLSYS_PORT", port.c_str(), 1) == 0);
+  CHECK(setenv("COLSYS_PORT", cfg::port.c_str(), 1) == 0);
   
   if (cfg::log_all) {
     cfg::log_all = true;
@@ -339,10 +339,10 @@ void init_config() {
   }
 
 std::string header = str(boost::format("%s COLSERVE CONFIG [PID %d | PORT %d] %s") 
-                           % std::string(16, '=')
-                           % getpid()
-                           % std::stoi(port)
-                           % std::string(16, '='));
+                          % std::string(16, '=')
+                          % getpid()
+                          % std::stoi(cfg::port)
+                          % std::string(16, '='));
   std::cerr << header << std::endl;
   STREAM_OUTPUT(serve_mode);
   STREAM_OUTPUT(use_shared_tensor);
