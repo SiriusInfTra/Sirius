@@ -115,6 +115,10 @@ if args.azure_profile_memory or args.all_workload:
     enable_azure_profile_memory = True
 if args.hybrid or args.all_workload:
     enable_hybrid = True
+# if args.uniform_v2_wkld_types:
+#     uniform_v2_workload_types = args.uniform_v2_wkld_types
+# if args.skewed_v2_wkld_types:
+#     skew_v2_workload_types = args.skewed_v2_wkld_types
 
 if args.infer_only_without_mps or args.skip_set_mps_pct:
     infer_only_without_mps = True

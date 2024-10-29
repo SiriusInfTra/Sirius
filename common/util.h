@@ -118,12 +118,15 @@ inline std::string GetDefaultShmNamePrefix(int device_id) {
 }
 
 inline std::string GetDefaultShmNamePrefix() {
-  const char *port = getenv("COL_SERVE_PORT");
-  if (port == nullptr) {
-    LOG(WARNING) << "COL_SERVE_PORT is not set, use 0 as default";
-    port = "0";
+  static int colsys_port = -1;
+  if (colsys_port == -1) {
+    colsys_port = std::stoi(std::getenv("COLSYS_PORT"));
+  } else {
+    colsys_port = 0;
   }
-  return (boost::format("colserve_shm_%s_%s") % getuid() % port).str();
+
+  return (boost::format("colserve_shm_%s_p%d") 
+          % getuid() % (colsys_port == -1 ? 0 : colsys_port)).str();
 }
 
 } // namespace colserve
