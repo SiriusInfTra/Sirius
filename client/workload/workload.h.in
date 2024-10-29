@@ -67,8 +67,6 @@ class InferWorker {
     setup_slot_done_ = true;
   }
 
-
-
   void RequestInferBusyLoop(Workload &workload,
                             double delay_before_infer);
   void RequestInferTrace(Workload& workload, 
@@ -123,7 +121,8 @@ private:
 
 class TrainWorker {
  public:
-  TrainWorker(const std::string &model, std::function<void(TrainRequest&)> set_request_fn) : model_(model) {
+  TrainWorker(const std::string &model, std::function<void(TrainRequest&)> set_request_fn) 
+      : model_(model) {
     set_request_fn(request_);  
   }
 
@@ -146,8 +145,13 @@ struct AzureTrace {
 
 class Workload : public IWorkload {
  public:
-  Workload(std::shared_ptr<grpc::Channel> channel, std::chrono::seconds duration, double delay_before_profile, const std::string &infer_timeline)
-      : stub_(NewStub(channel)), duration_(duration), delay_before_profile_(delay_before_profile), timeline_handle_(infer_timeline) {
+  Workload(std::shared_ptr<grpc::Channel> channel, 
+           std::chrono::seconds duration, 
+           double delay_before_profile, 
+           const std::string &infer_timeline)
+      : stub_(NewStub(channel)), duration_(duration), 
+        delay_before_profile_(delay_before_profile), 
+        timeline_handle_(infer_timeline) {
     ready_future_ = std::shared_future<void>{ready_promise_.get_future()};
     CHECK(timeline_handle_.is_open());
     timeline_handle_ << "model_name,start_time,end_time" << std::endl;
@@ -210,11 +214,11 @@ class Workload : public IWorkload {
   void Train(const std::string &model, size_t num_epoch, size_t batch_size);
   void TrainResnet(size_t num_epoch, size_t batch_size);
 
-
   void Report(int verbose = false, std::ostream &os = std::cout);
 
   friend class InferWorker;
   friend class TrainWorker;
+
  private:
   std::function<void(InferRequest&)> GetSetRequestFn(const std::string& model);
   std::function<void(InferRequest&)> SetMnistRequestFn(const std::string &model = "mnist");
