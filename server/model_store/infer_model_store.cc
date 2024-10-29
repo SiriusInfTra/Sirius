@@ -292,7 +292,7 @@ void InferModelStore::ClearColdCache() {
       }
     }
     CHECK_EQ(cold_model_cache->GetCachedNbytes(cold_cache_lock), 0);
-    cold_model_cache->SetNewCapacity(0, cold_cache_lock);
+    cold_model_cache->SetNewCapacity(Config::cold_cache_min_capability_nbytes, cold_cache_lock);
   }
   
 }

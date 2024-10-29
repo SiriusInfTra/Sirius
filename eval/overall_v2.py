@@ -518,7 +518,7 @@ if run_colsys:
         'cold_cache_ratio': 0.5, 
         # 'cold_cache_min_capability_nbytes': int(0.5 * 1024 * 1024 * 1024),
         # 'cold_cache_max_capability_nbytes': int(1 * 1024 * 1024 * 1024),
-        'cold_cache_min_capability_nbytes': int(0.0 * 1024 * 1024 * 1024),
+        'cold_cache_min_capability_nbytes': int(1.0 * 1024 * 1024 * 1024),
         'cold_cache_max_capability_nbytes': int(2.0 * 1024 * 1024 * 1024),
         'dynamic_sm_partition': dynamic_sm_partition,
     }

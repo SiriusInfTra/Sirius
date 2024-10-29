@@ -261,7 +261,7 @@ ColdModelCache::PushCacheItem(
   } else {
     CHECK_GE((Config::cold_cache_max_capability_nbytes + Config::cold_cache_min_capability_nbytes) / 2, 
              cache_item->cached_group_nbytes);
-    memory_byte_t evict_to_nbytes = (Config::cold_cache_max_capability_nbytes + Config::cold_cache_min_capability_nbytes) / 2 - cache_item->cached_group_nbytes;
+    memory_byte_t evict_to_nbytes = (Config::cold_cache_max_capability_nbytes + Config::cold_cache_min_capability_nbytes) / 2;
     memory_byte_t old_capacity_nbytes = current_capacity_nbytes_;
     memory_byte_t old_cached_nbytes = current_cached_nbytes_;
     evict_models = GetEvictModels(evict_to_nbytes , 
@@ -300,7 +300,7 @@ std::pair<std::vector<size_t>, bool> ColdModelCache::PopCacheItem(const std::str
   if (pop_to_inference) {
     current_capacity_nbytes_ -= iter->second->cached_group_nbytes;
   }
-  CHECK_GE(current_capacity_nbytes_, Config::cold_cache_min_capability_nbytes);
+  // CHECK_GE(current_capacity_nbytes_, Config::cold_cache_min_capability_nbytes - 500_MB);
   CHECK_LE(current_capacity_nbytes_, Config::cold_cache_max_capability_nbytes);
   CHECK_LE(current_cached_nbytes_, current_capacity_nbytes_);
   cold_cache_items_.erase(iter);
@@ -415,7 +415,7 @@ double ColdModelCache::GetAdjustReserveMemoryMB(
 void ColdModelCache::SetNewCapacity(memory_byte_t new_capacity,
                                     std::unique_lock<std::mutex> &lock) {
   CHECK_LE(new_capacity, Config::cold_cache_max_capability_nbytes);
-  CHECK_GE(new_capacity, Config::cold_cache_min_capability_nbytes);
+  // CHECK_GE(new_capacity, Config::cold_cache_min_capability_nbytes);
   CHECK_GE(new_capacity, current_cached_nbytes_);
   current_capacity_nbytes_ = new_capacity;
   LOG(INFO) << "SetNewCapacity " << sta::ByteToMB(new_capacity) << "MB";

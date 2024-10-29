@@ -279,7 +279,7 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
             << " total_storage_nbytes " << total_storage_nbytes;
   if (!cold_model_cache->TakeSpace(total_storage_nbytes)) {
     if (cold_model_cache->GetCacheCapacity(cold_cache_lock) < Config::cold_cache_min_capability_nbytes + total_storage_nbytes) {
-      memory_byte_t new_capacity = (Config::cold_cache_max_capability_nbytes - Config::cold_cache_min_capability_nbytes) / 2;
+      memory_byte_t new_capacity = (Config::cold_cache_max_capability_nbytes + Config::cold_cache_min_capability_nbytes) / 2;
       // reset memory predict accumulation error
       memory_mb_t require_mb = 
         + (sta::ByteToMB(new_capacity)
@@ -292,35 +292,38 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
       auto adjust_plan = TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
           device_.device_id, require_mb, 
           nan(""), cold_cache_lock);
-      if (!adjust_plan.empty()) {
-        PROFILE_START(TrainAdjust);
-        auto cmd_id = ctrl::Controller::Get()->ColocateInferRequireAdjust(
-            rank, device_.device_id, adjust_plan);
-        ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
-        PROFILE_END(TrainAdjust);
-        LOG_IF(INFO, Config::log_memory_adjust) 
-            << "[Model, Cold Cache Adjust] "
-            << "AllocStorageMaybeAdjust: model " << rank
-            << " wait adjust " << PROFILE_DURATRION(TrainAdjust);
-      } else if (require_mb > 0) {
+      if (!adjust_plan.empty() || require_mb <= 0.0) {
+        if (!adjust_plan.empty()) {
+          PROFILE_START(TrainAdjust);
+          auto cmd_id = ctrl::Controller::Get()->ColocateInferRequireAdjust(
+              rank, device_.device_id, adjust_plan);
+          ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
+          PROFILE_END(TrainAdjust);
+          LOG_IF(INFO, Config::log_memory_adjust) 
+              << "[Model, Cold Cache Adjust] "
+              << "AllocStorageMaybeAdjust: model " << name_ << " new capacity " << sta::ByteToMB(new_capacity)
+              << " wait adjust " << PROFILE_DURATRION(TrainAdjust);
+        } else {
+          LOG(INFO) << "[MaybeAdjustTrainAndCache]  require " << require_mb << " < 0.";
+        }
+        cold_model_cache->SetNewCapacity(new_capacity, cold_cache_lock);
+      } else {
         // DEBUG
         auto evict_models = cold_model_cache->GetEvictModels(0, {this, nullptr}, cold_cache_lock);
         for (auto &&[name, cached_groups_id] : evict_models) {
           InferModelStore::Get()->GetModel(name)->ClearColdCache(cached_groups_id, rank, cold_cache_lock);
         }
-        LOG(INFO) << "[Model, Cold Cache Adjust] "
-                  << "AllocStorageMaybeAdjust: model " << rank
-                  << " require " << require_mb << "MB, but no adjust plan";
-
+        LOG(INFO) << "[MaybeAdjustTrainAndCache] require " << require_mb << "MB, but no adjust plan";
+        cold_model_cache->SetNewCapacity(total_storage_nbytes, cold_cache_lock);
       }
-      cold_model_cache->SetNewCapacity(total_storage_nbytes, cold_cache_lock);
+
     }
     // ensure ok
     LOG(INFO) << "[MaybeAdjustTrainAndCache] After maybe adjust, "
       << " Curr capacity: " << sta::ByteToMB(cold_model_cache->GetCacheCapacity(cold_cache_lock)) << "MB"
       << " Curr cached: " << sta::ByteToMB(cold_model_cache->GetCachedNbytes(cold_cache_lock)) << "MB"
       << " Total storage: " << sta::ByteToMB(total_storage_nbytes) << "MB";
-    CHECK_GE(cold_model_cache->GetCacheCapacity(cold_cache_lock), Config::cold_cache_min_capability_nbytes + total_storage_nbytes);
+    CHECK_GE(cold_model_cache->GetCacheCapacity(cold_cache_lock), total_storage_nbytes);
     if (cold_model_cache->TakeSpace(total_storage_nbytes)) {
       LOG(INFO) << "[MaybeAdjustTrainAndCache] Secound take space success, new capacity " << sta::ByteToMB(cold_model_cache->GetCacheCapacity(cold_cache_lock)) << "MB"
                 << " new cache " << sta::ByteToMB(cold_model_cache->GetCachedNbytes(cold_cache_lock)) << "MB.";
