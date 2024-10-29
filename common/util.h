@@ -121,6 +121,8 @@ inline std::string GetDefaultShmNamePrefix() {
   static int colsys_port = -1;
   if (colsys_port == -1) {
     colsys_port = std::stoi(std::getenv("COLSYS_PORT"));
+  } else {
+    colsys_port = 0;
   }
 
   return (boost::format("colserve_shm_%s_p%d") 
