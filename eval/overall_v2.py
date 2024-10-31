@@ -513,7 +513,7 @@ if run_colsys:
         'has_warmup' : True,
         'ondemand_adjust' : True,
         'cuda_memory_pool_gb' : "13" if not runner.is_four_gpu() else "12.5",
-        'train_memory_over_predict_mb' : 1500,
+        'train_memory_over_predict_mb' : 1000,
         'infer_model_max_idle_ms' : 5000,
         'cold_cache_ratio': 0.5, 
         # 'cold_cache_min_capability_nbytes': int(0.5 * 1024 * 1024 * 1024),
@@ -655,7 +655,7 @@ if run_strawman:
         'ondemand_adjust' : True,
         
         'pipeline_load' : False,
-        'train_memory_over_predict_mb' : 1000,
+        'train_memory_over_predict_mb' : 1500,
         # 'cuda_memory_pool_gb' : "13" if not runner.is_four_gpu() else "12.5",
         # 'infer_model_max_idle_ms' : 5000,
         # 'cold_cache_ratio': 0.5, 
