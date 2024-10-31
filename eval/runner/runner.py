@@ -677,8 +677,7 @@ class HyperWorkload:
                 custom_args: List[str] = [], **kwargs):
         assert server is not None
         cmd = [
-            # f"./{get_binary_dir()}/client-prefix/src/client-build/{launcher}"
-            f"./{get_binary_dir()}/../client/build/{launcher}",
+            f"./{get_binary_dir()}/client/{launcher}",
             "-p", server.port,
             "-c", str(self.concurrency),
         ]

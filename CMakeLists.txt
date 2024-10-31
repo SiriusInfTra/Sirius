@@ -65,20 +65,23 @@ include(cmake/xsched.cmake)
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/mpool)
 
-
 # building
 add_subdirectory(common)
 add_subdirectory(server)
 add_subdirectory(pytorch)
 
-
+# building client
 include(ExternalProject)
 ExternalProject_Add(client
     SOURCE_DIR ${CMAKE_SOURCE_DIR}/client
+    PREFIX ${CMAKE_BINARY_DIR}/client
     CMAKE_ARGS 
       -DCOLSYS_ROOT_DIR=${CMAKE_SOURCE_DIR}
+      -DCOLSYS_BUILD_DIR=${CMAKE_BINARY_DIR}
       -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+      -DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}
     INSTALL_COMMAND ""
+    USES_TERMINAL_BUILD true
     BUILD_COMMAND ${CMAKE_COMMAND} --build .
 )
 
