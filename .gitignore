@@ -48,6 +48,8 @@ cifar-10-batches-py/*
 
 triton/*
 
+server/triton_models/*
+
 .clangd
 .cache
 workload_data/azurefunctions-dataset2019/app_memory_percentiles.anon.d01.csv

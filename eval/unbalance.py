@@ -108,6 +108,7 @@ for train_adjust_balance in [
         'cold_cache_min_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),
         'cold_cache_max_capability_nbytes': int(2 * 1024  * 1024 * 1024),
         'dynamic_sm_partition': True,
+        'train_adjust_batch_size_limit': 1,
     }
     client_model_list, server_model_config = InferModel.get_multi_model(
         run_comm.UniformConfig_v2.model_list, 40, 1)
