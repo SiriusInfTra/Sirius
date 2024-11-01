@@ -22,7 +22,8 @@ from .hyper_workload import (
 )
 from .config import (
     get_global_seed, get_binary_dir,
-    get_host_name, is_meepo5
+    get_host_name, is_meepo5,
+    get_tensorrt_backend_unified_memory_path
 )
 
 def get_num_gpu():
@@ -127,6 +128,7 @@ class System:
                  port: str = "18080",
                  use_triton: bool = False,
                  train_adjust_balance: bool = True,
+                 train_adjust_batch_size_limit: int = 0,
                  infer_model_config: List[InferModelConfig] | InferModelConfig = None,
                  mps: bool = True,
                  skip_set_mps_thread_percent: bool = False,
@@ -169,6 +171,7 @@ class System:
         self.triton_port = str(int(self.port) + 1000)
         self.use_triton = use_triton
         self.train_adjust_balance = train_adjust_balance
+        self.train_adjust_batch_size_limit = train_adjust_batch_size_limit
         self.server:Optional[subprocess.Popen]= None
         self.log_dir:Optional[str] = None
         self.cmd_trace = []
@@ -244,7 +247,8 @@ class System:
             "--use-sta", "1" if self.use_sta else "0", 
             "--use-sta-train", "1" if self.use_sta_train else "0",
             "--profile-log", profile_log,
-            "--train-adjust-balance", "1" if self.train_adjust_balance else "0"
+            "--train-adjust-balance", "1" if self.train_adjust_balance else "0",
+            "--train-adjust-batch-size-limit", str(self.train_adjust_batch_size_limit),
         ]
         if self.cuda_memory_pool_gb is not None:
             cmd += ["--cuda-memory-pool-gb", str(self.cuda_memory_pool_gb)]
@@ -448,7 +452,9 @@ class System:
                        '-v', os.environ['HOME'] + ':' + os.environ['HOME'],
                        ]
                 if 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:
-                    cmd += ['-v', '/disk2/wyk/tensorrt_backend/install/backends/tensorrt:/opt/tritonserver/backends/tensorrt']
+                    tensorrt_backend_um_path = get_tensorrt_backend_unified_memory_path()
+                    cmd += ['-v', f'{tensorrt_backend_um_path}/backends/tensorrt:/opt/tritonserver/backends/tensorrt']
+                    # cmd += ['-v', '/disk2/wyk/tensorrt_backend/install/backends/tensorrt:/opt/tritonserver/backends/tensorrt']
                 for key, value in os.environ.items():
                     if key.startswith('CUDA_'):
                         cmd += ['-e', f'{key}={value}']
@@ -575,8 +581,6 @@ class System:
         # raise Exception(f"Quit MPS failed: {quit_mps.stderr}")
 
 
-
-
 class HyperWorkload:
     def __init__(self, 
                  concurrency:int, 
@@ -683,7 +687,8 @@ class HyperWorkload:
         ]
         if server.use_triton:
             cmd += ["--triton-port", str(server.triton_port)]
-            cmd += ["--triton-config", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../server/triton_models/config.conf"))]
+            cmd += ["--triton-config", 
+                    os.path.abspath(os.path.join(os.path.dirname(__file__), "../../server/triton_models/config.conf"))]
             triton_model_dir = os.path.join(_project_root, f'triton_models-{server.port}')
             cmd += ["--triton-device-map", os.path.join(triton_model_dir, "device_map.txt")]
             if 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:

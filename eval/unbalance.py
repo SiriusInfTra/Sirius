@@ -1,5 +1,3 @@
-
-
 import os
 import argparse
 import shutil
@@ -13,6 +11,7 @@ import workload_collections as wkld_coll
 import run_comm
 import tempfile
 
+
 def update_sever_config(server_model_config: str, num_workloads: int) -> str:
     for k in range(len(server_model_config)):
         def update(match):
@@ -25,7 +24,9 @@ def update_sever_config(server_model_config: str, num_workloads: int) -> str:
         server_model_config[k] = re.sub(r'\[(\d+)\]', update, server_model_config[k])
     return server_model_config
     
-def merge_workload(workload_list: list[HyperWorkload], trace_cfg_dir: str) -> HyperWorkload:
+
+def merge_workload(workload_list: list[HyperWorkload], 
+                   trace_cfg_dir: str) -> HyperWorkload:
     model_def_text_list: list[list[str]] = []
     model_rep_text_list: list[list[str]]  = []
     for i, workload in enumerate(workload_list):
@@ -79,15 +80,16 @@ def merge_workload(workload_list: list[HyperWorkload], trace_cfg_dir: str) -> Hy
     workload_list[0].manual_trace_cfg = str(trace_cfg)
     return workload_list[0]
 
-train_adjust_balance = False
-
 run_comm.UniformConfig_v2.train_model += "_ddp"
 run_comm.SkewedConfig_v2.train_model += "_ddp"
 run_comm.UniformConfig_v2.train_batch_size = 72 if not runner.is_four_gpu() else 66
 run_comm.retry_limit = True
 run_comm.retry_if_fail = 3
 
-for train_adjust_balance in [True]:
+for train_adjust_balance in [
+    True, 
+    False
+]:
     system_config = {
         'mode' : System.ServerMode.ColocateL1,
         'use_sta' : True, 
@@ -110,7 +112,11 @@ for train_adjust_balance in [True]:
     client_model_list, server_model_config = InferModel.get_multi_model(
         run_comm.UniformConfig_v2.model_list, 40, 1)
     workload_list = [
-        run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False) for wkld_type in ['NormalA', 'NormalB']
+        run_comm.uniform_v2(
+            wkld_type, 
+            client_model_list, 
+            infer_only=False
+        ) for wkld_type in ['NormalA', 'NormalB']
     ]
 
     system = System(port=run_comm.UniformConfig_v2.port, 

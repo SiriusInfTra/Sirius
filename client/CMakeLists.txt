@@ -60,6 +60,7 @@ ExternalProject_Add(triton-client
         -DCMAKE_INSTALL_MESSAGE:STRING=NEVER
         -DTRITON_KEEP_TYPEINFO:BOOL=ON
     INSTALL_COMMAND ""
+    BUILD_ALWAYS OFF
     BUILD_COMMAND cd ${TRITON_CC_CLIENT_BUILD_DIR} &&
         sed -in "s/TRITON_KEEP_TYPEINFO:BOOL=OFF/TRITON_KEEP_TYPEINFO:BOOL=ON/" CMakeCache.txt &&
         ${CMAKE_COMMAND} . && cd - && ${CMAKE_COMMAND} --build .
@@ -93,6 +94,7 @@ ExternalProject_Add(client-impl
         -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=ON
         # INSTALL_COMMAND ""
     USES_TERMINAL_BUILD true
+    BUILD_ALWAYS ON
     BUILD_COMMAND ${CMAKE_COMMAND} --build .
     DEPENDS triton-client
 )

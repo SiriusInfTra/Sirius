@@ -179,6 +179,10 @@ void init_cli_options() {
   app.add_option("--train-adjust-balance", colserve::Config::enable_train_adjust_balance,
       str(boost::format("train adjust balance, default is %d") 
           % colserve::Config::enable_train_adjust_balance));
+  app.add_option("--train-adjust-batch-size-limit", 
+      colserve::Config::train_adjust_batch_size_limit,
+      str(boost::format("train adjust batch size limit, default is %d") 
+          % colserve::Config::train_adjust_batch_size_limit));
   app.add_flag("--dump-adjust-info", 
       colserve::Config::dump_adjust_info,
       str(boost::format("dump adjust info, default is %d") 
@@ -391,7 +395,6 @@ int main(int argc, char *argv[]) {
   init_cli_options();
   CLI11_PARSE(app, argc, argv);
   init_config();
-  CHECK_NE(setenv("COL_SERVE_PORT", colserve::Config::port.c_str(), 1), -1) << "setenv failed";
 
   std::thread shutdown_trigger([](){
     std::this_thread::sleep_for(std::chrono::minutes(max_live_minute));

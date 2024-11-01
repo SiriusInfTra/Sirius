@@ -20,6 +20,8 @@ def get_unique_port():
     port = 18100
     port += cuda_device
     return port
+
+
 class AzureConfig:
     train_model = 'swin_b'
     train_batch_size = 72
@@ -38,6 +40,7 @@ class AzureConfig:
     max_rps = 150
     mps_infer = 30
     mps_train = 70
+
 
 def azure(rps, client_model_list, infer_only=False, rps_fn=None,
           train_model:str = AzureConfig.train_model, 

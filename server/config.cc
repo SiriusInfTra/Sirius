@@ -83,6 +83,8 @@ double Config::infer_exec_time_estimate_scale = 1.1;
 bool Config::enable_train_adjust_balance = true;
 memory_mb_t Config::train_adjust_balance_threshold = 1500;
 
+int Config::train_adjust_batch_size_limit = 0;
+
 bool Config::dummy_adjust = false;
 
 bool Config::system_initialized = false;

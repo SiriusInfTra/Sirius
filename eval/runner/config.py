@@ -2,11 +2,17 @@ import os
 import numpy as np
 import contextlib
 import hashlib
+import pathlib
 
 class RunnerConfig:
     _global_seed = None
     _binary_dir = 'build'
     _multi_gpu_scale_up_workload = True
+
+    # install path of tensorrt backend with unified-memory
+    # env: TENSORRT_BACKEND_UNIFIED_MEMORY_PATH
+    _tensorrt_backend_unified_memory_path = \
+        pathlib.Path(os.path.abspath(__file__)).parent.parent / 'triton' / 'tensorrt_um' / 'install'
     
 
 __global_seed = None
@@ -48,6 +54,37 @@ def get_host_name():
 
 def is_meepo5():
     return get_host_name() == 'meepo5'
+
+
+def get_tensorrt_backend_unified_memory_path():
+    if 'TENSORRT_BACKEND_UNIFIED_MEMORY_PATH' in os.environ:
+            return os.environ['TENSORRT_BACKEND_UNIFIED_MEMORY_PATH']
+
+    if (RunnerConfig._tensorrt_backend_unified_memory_path is None or 
+        not os.path.exists(RunnerConfig._tensorrt_backend_unified_memory_path)
+    ):    
+        raise RuntimeError(f"path to triton tensorrt backend with unified-memory "
+                           f"({RunnerConfig._tensorrt_backend_unified_memory_path})"
+                           f" not found, or set env var `TENSORRT_BACKEND_UNIFIED_MEMORY_PATH`"
+                           f" to use other path")
+    else:
+        if isinstance(RunnerConfig._tensorrt_backend_unified_memory_path, str):
+            tensorrt_backend_path = (
+                pathlib.Path(RunnerConfig._tensorrt_backend_unified_memory_path) 
+                / 'backends' / 'tensorrt' / 'libtriton_tensorrt.so'
+            )
+        else:
+            tensorrt_backend_path = (
+                RunnerConfig._tensorrt_backend_unified_memory_path 
+                / 'backends' / 'tensorrt' / 'libtriton_tensorrt.so'
+            )
+        if not tensorrt_backend_path.exists():
+            raise RuntimeError(f"libtriton_tensorrt.so not found at {tensorrt_backend_path}")
+        return RunnerConfig._tensorrt_backend_unified_memory_path
+    
+
+def set_tensorrt_backend_unified_memory_path(path):
+    RunnerConfig._tensorrt_backend_unified_memory_path = path
 
 
 def set_mps_thread_percent(percent):

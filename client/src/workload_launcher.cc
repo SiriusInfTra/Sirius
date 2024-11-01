@@ -62,7 +62,8 @@ TraceCFG LoadTraceCFG(const std::string &trace_path) {
   
 }
 
-std::vector<std::pair<std::string, std::vector<double>>> GroupByModel(const TraceCFG &trace_cfg) {
+std::vector<std::pair<std::string, std::vector<double>>> 
+GroupByModel(const TraceCFG &trace_cfg) {
   std::unordered_map<std::string, std::vector<double>> groups;
   for(auto && [start_point, model_id] : trace_cfg.start_points) {
     groups[model_id].push_back(start_point);
@@ -96,7 +97,8 @@ int main(int argc, char** argv) {
   }
   
   if (app.duration < min_duration) {
-    LOG(INFO) << "Override duration from " << app.duration << " to " << min_duration << ".";
+    LOG(INFO) << "Override duration from " 
+              << app.duration << " to " << min_duration << ".";
     app.duration = min_duration;
   }
 
@@ -122,12 +124,15 @@ int main(int argc, char** argv) {
       grpc::CreateChannel(triton_target, grpc::InsecureChannelCredentials()),
       std::chrono::seconds(app.duration),
       app.wait_train_setup_sec + app.wait_stable_before_start_profiling_sec,
-      app.infer_timeline, app.triton_max_memory, app.triton_config, app.triton_device_map
+      app.infer_timeline, app.triton_max_memory, 
+      app.triton_config, app.triton_device_map
     );
   }
   // colserve::workload
   CHECK(train_workload == nullptr || train_workload->Hello());
-  CHECK(infer_workload == nullptr || train_workload == infer_workload || infer_workload->Hello());
+  CHECK(infer_workload == nullptr 
+        || train_workload == infer_workload 
+        || infer_workload->Hello());
 
   if (app.enable_infer && !app.infer_trace.empty()) {
     auto groups = GroupByModel(trace_cfg);
@@ -183,7 +188,6 @@ int main(int argc, char** argv) {
   if (train_workload != nullptr && infer_workload != train_workload) {
     train_workload->PostRun();
   }
-
 
 
   // TODO: merge output

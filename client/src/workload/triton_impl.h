@@ -215,8 +215,8 @@ struct AsyncInferResult {
     grpc::ClientAsyncResponseReader<inference::ModelInferResponse>;
   std::unique_ptr<PendingInferResult> value;
 
-  AsyncInferResult(std::unique_ptr<PendingInferResult> result) : value(std::move(result)) {
-
+  AsyncInferResult(std::unique_ptr<PendingInferResult> result) 
+      : value(std::move(result)) {
   }
 
   void Finish(InferResult *result, grpc::Status* status, void* tag) {
