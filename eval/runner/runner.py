@@ -1,6 +1,8 @@
-
 from __future__ import annotations
+import contextlib
 import datetime
+import shutil
+import signal
 import time
 import numpy as np
 import os, io
@@ -10,6 +12,7 @@ import subprocess
 from typing import List, Dict, Optional
 from types import NoneType
 from dataclasses import dataclass
+from .triton_cp import cp_model
 import re
 
 from .hyper_workload import (
@@ -18,10 +21,20 @@ from .hyper_workload import (
 )
 from .config import (
     get_global_seed, get_binary_dir,
-    get_host_name, is_meepo5
+    get_host_name, is_meepo5,
+    get_tensorrt_backend_unified_memory_path
 )
 
+def get_num_gpu():
+    cuda_device_env = os.environ['CUDA_VISIBLE_DEVICES']
+    return len(cuda_device_env.split(','))
 
+
+_project_root = os.path.join(os.path.abspath(__file__), 
+                            os.path.pardir, 
+                            os.path.pardir, 
+                            os.path.pardir)
+_project_root = os.path.abspath(_project_root)
 class CudaMpsCtrl:
     @classmethod
     def launch_cmd(cls, 
@@ -108,8 +121,13 @@ class System:
                  memory_pool_policy: str = MemoryPoolPolicy.BestFit,
                  profile_log: str = "profile-log", 
                  server_log: str = "server-log", 
-                 train_profile:str = "train-profile", 
+                 triton_log: str = "triton_log",
+                 mps_log: str = "mps_log",
+                 train_profile: str = "train-profile", 
                  port: str = "18080",
+                 use_triton: bool = False,
+                 train_adjust_balance: bool = True,
+                 train_adjust_batch_size_limit: int = 0,
                  infer_model_config: List[InferModelConfig] | InferModelConfig = None,
                  mps: bool = True,
                  skip_set_mps_thread_percent: bool = False,
@@ -145,8 +163,14 @@ class System:
         self.memory_pool_policy = memory_pool_policy
         self.profile_log = profile_log
         self.server_log = server_log
+        self.triton_log = triton_log
+        self.mps_log = mps_log
         self.train_profile = train_profile
         self.port = str(int(port) + os.getuid() % 10)
+        self.triton_port = str(int(self.port) + 1000)
+        self.use_triton = use_triton
+        self.train_adjust_balance = train_adjust_balance
+        self.train_adjust_batch_size_limit = train_adjust_batch_size_limit
         self.server:Optional[subprocess.Popen]= None
         self.log_dir:Optional[str] = None
         self.cmd_trace = []
@@ -181,6 +205,7 @@ class System:
         self.max_live_minute = max_live_minute
         self.dcgmi_monitor = None
         self.smi_monitor = None
+        self.triton_server = None
         if System._last_time_stamp is None or not keep_last_time_stamp:
             self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
             System._last_time_stamp = self.time_stamp
@@ -207,6 +232,8 @@ class System:
                 self.log_dir = pathlib.Path("log") / f'{name}' / subdir
         pathlib.Path(self.log_dir).mkdir(parents=True, exist_ok=True)
         server_log = f"{self.log_dir}/{self.server_log}.log"
+        triton_log = f"{self.log_dir}/{self.triton_log}.log"
+        mps_log = f"{self.log_dir}/{self.mps_log}.log"
         profile_log = f"{self.log_dir}/{self.profile_log}.log"
         train_profile = f"{self.log_dir}/{self.train_profile}.csv"
 
@@ -218,7 +245,9 @@ class System:
             "--mode", self.mode, 
             "--use-sta", "1" if self.use_sta else "0", 
             "--use-sta-train", "1" if self.use_sta_train else "0",
-            "--profile-log", profile_log
+            "--profile-log", profile_log,
+            "--train-adjust-balance", "1" if self.train_adjust_balance else "0",
+            "--train-adjust-batch-size-limit", str(self.train_adjust_batch_size_limit),
         ]
         if self.cuda_memory_pool_gb is not None:
             cmd += ["--cuda-memory-pool-gb", str(self.cuda_memory_pool_gb)]
@@ -232,6 +261,8 @@ class System:
                 for config in self.infer_model_config:
                     print(config, end="\n\n", file=f)
             cmd += ["--infer-model-config", self.infer_model_config_path]
+        if self.use_triton:
+            cmd += ['--no-infer', '1']
 
         # first launch mps
         if self.mps:
@@ -248,10 +279,22 @@ class System:
                 #     '--device', os.environ['CUDA_VISIBLE_DEVICES'], 
                 #     '--mps-pipe', os.environ['CUDA_MPS_PIPE_DIRECTORY']],
                 #     stderr=subprocess.PIPE, stdout=subprocess.PIPE, env=os.environ.copy())
-                self.mps_server = subprocess.Popen(
-                    CudaMpsCtrl.launch_cmd(),
-                    stderr=subprocess.PIPE, stdout=subprocess.PIPE, 
-                    env=os.environ.copy())
+                with open(mps_log, 'w') as log_file:
+                    self.mps_server = subprocess.Popen(
+                        CudaMpsCtrl.launch_cmd(),
+                        stderr=subprocess.STDOUT, stdout=log_file, 
+                        env=os.environ.copy())
+                    while True:
+                        if self.mps_server.poll() is not None:
+                            raise RuntimeError("MPS exited")
+                        log_file.flush()
+                        with open(mps_log, 'r') as f:
+                            content = f.read()
+                        if "To connect CUDA applications to this daemon" not in content:
+                            time.sleep(0.1)
+                        else:
+                            print("MPS is ready", end='\n\r')
+                            break
             else:
                 self.mps_server is None
         else:
@@ -330,14 +373,14 @@ class System:
         if self.max_live_minute is not None:
             cmd += ["--max-live-minute", str(self.max_live_minute)]
 
-        print("\n---------------------------\n")
-        print(" ".join(cmd))
+        print("\n---------------------------\n", end='\n\r')
+        print(" ".join(cmd), end='\n\r')
 
         if fake_launch:
-            print(f"  --> fake launch")
+            print(f"  --> fake launch", end='\n\r')
             return
 
-        print(f"  --> [server-log] {server_log}  |  [server-profile] {profile_log}")
+        print(f"  --> [server-log] {server_log}  |  [server-profile] {profile_log}", end='\n\r')
 
         if dcgmi:
             with open(f"{self.log_dir}/dcgmi-monitor.log", "w") as log_file:
@@ -355,12 +398,12 @@ class System:
         with open(server_log, "w") as log_file:
             env_copy = os.environ.copy()
             if self.mps and self.skip_set_mps_thread_percent:
-                print(f'  --> Skip set MPS pct')
+                print(f'  --> Skip set MPS pct', end='\n\r')
             if (not self.skip_set_mps_thread_percent 
                 and '_CUDA_MPS_ACTIVE_THREAD_PERCENTAGE' in env_copy):
                 env_copy['CUDA_MPS_ACTIVE_THREAD_PERCENTAGE'] = \
                     env_copy['_CUDA_MPS_ACTIVE_THREAD_PERCENTAGE']
-                print(f"  --> MPS: {env_copy['CUDA_MPS_ACTIVE_THREAD_PERCENTAGE']}")
+                print(f"  --> MPS: {env_copy['CUDA_MPS_ACTIVE_THREAD_PERCENTAGE']}", end='\n\r')
                 pass
             self.cmd_trace.append(
                 f"CUDA_ENV: "
@@ -373,26 +416,95 @@ class System:
                                            stderr=subprocess.STDOUT, 
                                            env=env_copy)
 
-        print('\n')
+        if self.use_triton:
+            # with open(triton_log, "w") as log_file:
+            with contextlib.nullcontext():
 
+                model_lists = []
+                def parse_and_generate_models(input_string: str):
+                    # example input
+                    """densenet161[38] 
+                        path densenet161-b1
+                        device cuda
+                        batch-size 1
+                        num-worker 1
+                        max-worker 1"""
+                    assert isinstance(input_string, str)
+                    model_info = re.search(r'(\w+)\[(\d+)\]', input_string)
+                    if model_info:
+                        model_name = model_info.group(1)
+                        model_quantity = int(model_info.group(2))
+                        return [f"{model_name}" if i == 0 else f"{model_name}-{i}" for i in range(model_quantity)]
+                    else:
+                        return []
+                for config in self.infer_model_config:
+                    model_lists.extend(parse_and_generate_models(config))
+                triton_model_dir = os.path.join(_project_root, f'triton_models-{self.port}')
+                docker_model_dir = os.path.join('/colsys', f'triton_models-{self.port}')
+                print(f'Generate triton model repo for {model_lists}.', end='\n\r')
+                cp_model(model_lists, get_num_gpu(), triton_model_dir)
+                cmd = ['docker', 'run', '-it', '--user', f'{os.getuid()}:{os.getgid()}',
+                       '--name', f'colsys-triton-{self.triton_port}',
+                       '--rm', '--gpus=all', '--ipc=host',
+                       '-p', f'{self.triton_port}:8001',
+                       '-v', f'{_project_root}:/colsys',
+                       '-v', os.environ['HOME'] + ':' + os.environ['HOME'],
+                       ]
+                if 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:
+                    tensorrt_backend_um_path = get_tensorrt_backend_unified_memory_path()
+                    cmd += ['-v', f'{tensorrt_backend_um_path}/backends/tensorrt:/opt/tritonserver/backends/tensorrt']
+                    # cmd += ['-v', '/disk2/wyk/tensorrt_backend/install/backends/tensorrt:/opt/tritonserver/backends/tensorrt']
+                for key, value in os.environ.items():
+                    if key.startswith('CUDA_'):
+                        cmd += ['-e', f'{key}={value}']
+                cmd += [
+                    'nvcr.io/nvidia/tritonserver:23.12-py3',
+                    'tritonserver',
+                    f'--model-load-thread-count={4 * get_num_gpu()}',
+                    f'--model-repository={docker_model_dir}']
+                if not 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:
+                    cmd += ['--model-control-mode=explicit']
+                self.cmd_trace.append(" ".join(cmd))
+                self.triton_server = subprocess.Popen(cmd, stdout=open(triton_log, "w"), stderr=subprocess.STDOUT)
+        print('\n', end='\n\r')
+        with open(f'{self.log_dir}/cmd-trace', 'w') as f:
+            f.write("\n\n".join(self.cmd_trace))
+
+        print('Wait ColSys Server start...', end='\n\r')
         while True:
             with open(server_log, "r") as log_file:
                 if self.server.poll() is not None:
-                    print(log_file.read())
+                    print(log_file.read(), end='\n\r')
                     self.quit_mps()
                     raise RuntimeError("Server exited")
                 if "GRPCServer start" not in log_file.read():
                     time.sleep(0.5)
                 else:
                     break
+        if self.use_triton:
+            print('Wait Triton Server start...', end='\n\r')
+            while True:
+                with open(triton_log, 'r') as log_file:
+                    if self.triton_server.poll() is not None:
+                        print(log_file.read(), end='\n\r')
+                        self.quit_mps()
+                        raise RuntimeError("Triton exited")
+                    if "Started GRPCInferenceService at" not in log_file.read():
+                        time.sleep(0.5)
+                    else:
+                        break
     
     def stop(self, kill_train: bool = False):
+        print("Stop Server", end='\n\r')
         if self.server is not None:
-            self.server.send_signal(subprocess.signal.SIGINT)
+            self.server.send_signal(signal.SIGINT)
             self.server = None
+        if self.use_triton and self.triton_server is not None:
+            self.triton_server.send_signal(signal.SIGINT)
+            self.triton_log = None
         if kill_train and self.log_dir is not None:
             train_pids = set()
-            print('Force to kill train.')
+            print('Force to kill train.', end='\n\r')
             with open(f'{self.log_dir}/{self.server_log}.log') as f:
                 for line in f:
                     if "[TrainLauncher]: Train TrainJob" in line:
@@ -403,18 +515,21 @@ class System:
                             train_pids.add(pid)
             for pid in train_pids:
                 cmd = f'kill -9 {pid}'
-                print(f'Execute {cmd}')
+                print(f'Execute {cmd}', end='\n\r')
                 os.system(cmd)
         self.infer_model_config_path = None
+        if self.triton_server is not None:
+            stop_triton = subprocess.Popen(['docker', 'stop', f'colsys-triton-{self.triton_port}'])
+            stop_triton.wait()
         if self.mps_server is not None:
             self.quit_mps()
             self.mps_server.wait()
             self.mps_server = None
         if self.dcgmi_monitor is not None:
-            self.dcgmi_monitor.send_signal(subprocess.signal.SIGINT)
+            self.dcgmi_monitor.send_signal(signal.SIGINT)
             self.dcgmi_monitor = None
         if self.smi_monitor is not None:
-            self.smi_monitor.send_signal(subprocess.signal.SIGINT)
+            self.smi_monitor.send_signal(signal.SIGINT)
             self.smi_monitor = None
         if self.log_dir is not None:
             # self.cmd_trace.append(" ".join([
@@ -430,7 +545,7 @@ class System:
     def draw_memory_usage(self):
         cmd = (f'python util/profile/memory_trace.py'
                f' -l {self.exit_log_dir}/profile-log.log -o {self.exit_log_dir}')
-        print(f'execute {cmd}')
+        print(f'execute {cmd}', end='\n\r')
         os.system(cmd)
     
     def draw_trace_cfg(self, time_scale=None):
@@ -438,21 +553,21 @@ class System:
               f' -t {self.exit_log_dir}/trace-cfg -o {self.exit_log_dir}')
         if time_scale:
             cmd += f' --time-scale {time_scale}'
-        print(f'execute {cmd}')
+        print(f'execute {cmd}', end='\n\r')
         os.system(cmd)
 
     def calcuate_train_thpt(self):
         cmd = (f'python util/profile/throughput.py'
                f' --log-dir {self.exit_log_dir}'
                f' > {self.exit_log_dir}/train_thpt 2>&1')
-        print(f'execute {cmd}')
+        print(f'execute {cmd}', end='\n\r')
         os.system(cmd)
 
     def draw_infer_slo(self):
         cmd = (f'python util/profile/collect_infer_ltc.py'
                f' -l {self.exit_log_dir}/workload-log'
                f' --slo-output {self.exit_log_dir}')
-        print(f'execute {cmd}')
+        print(f'execute {cmd}', end='\n\r')
         os.system(cmd)
 
     def quit_mps(self):
@@ -462,6 +577,7 @@ class System:
         #     capture_output=True, env=os.environ.copy())
         quit_mps = subprocess.run(CudaMpsCtrl.quit_cmd(), 
                                   capture_output=True, env=os.environ.copy())
+        # raise Exception(f"Quit MPS failed: {quit_mps.stderr}")
 
 
 class HyperWorkload:
@@ -506,7 +622,7 @@ class HyperWorkload:
         self.wait_train_setup_sec = wait_train_setup_sec
         self.wait_stable_before_start_profiling_sec = wait_stable_before_start_profiling_sec
         self.show_result = show_result
-
+        self.manual_trace_cfg = None
         self.infer_extra_infer_sec = self.wait_stable_before_start_profiling_sec
 
     def set_infer_workloads(self, *infer_workloads: InferWorkloadBase):
@@ -525,6 +641,9 @@ class HyperWorkload:
                         trace_cfg: Optional[PathLike] = None, 
                         **kwargs):
         infer_trace_args = []
+        if self.manual_trace_cfg is not None:
+            trace_cfg = self.manual_trace_cfg
+            shutil.copy(trace_cfg, os.path.join(server.log_dir, self.trace_cfg))
         if trace_cfg is not None:
             infer_trace_args += ["--infer-trace", str(trace_cfg)]
         elif len(self.infer_workloads) > 0:
@@ -565,6 +684,16 @@ class HyperWorkload:
             "-p", server.port,
             "-c", str(self.concurrency),
         ]
+        if server.use_triton:
+            cmd += ["--triton-port", str(server.triton_port)]
+            cmd += ["--triton-config", 
+                    os.path.abspath(os.path.join(os.path.dirname(__file__), "../../server/triton_models/config.conf"))]
+            triton_model_dir = os.path.join(_project_root, f'triton_models-{server.port}')
+            cmd += ["--triton-device-map", os.path.join(triton_model_dir, "device_map.txt")]
+            if 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:
+                cmd += ["--triton-max-memory", "0"]
+            else:
+                cmd += ["--triton-max-memory", str(int(float(server.cuda_memory_pool_gb) * 1024  * get_num_gpu()))]
         if self.duration is not None:
             cmd += ["-d", str(self.duration)]
 
@@ -608,14 +737,15 @@ class HyperWorkload:
         cmd += custom_args
 
         server.cmd_trace.append(" ".join(cmd))
-        print(" ".join(cmd))
+        print(" ".join(cmd), end='\n\r')
 
         if kwargs.get("fake_launch", False):
-            print(f"  --> fake launch")
+            print(f"  --> fake launch", end='\n\r')
             return
 
-        print(f"  --> [workload-profile] {workload_log}\n")
-
+        print(f"  --> [workload-profile] {workload_log}\n", end='\n\r')
+        with open(f'{server.log_dir}/cmd-trace', 'w') as f:
+            f.write("\n\n".join(server.cmd_trace))
         try:
             client_log = pathlib.Path(server.log_dir) / self.client_log
             with open(client_log, "w") as log_file:
@@ -627,6 +757,6 @@ class HyperWorkload:
         except Exception as e:
             print(f"Workload exited with exception, "
                   f"see detail in {server.log_dir}/{server.server_log}.log "
-                  f"and {client_log}")
+                  f"and {client_log}", end='\n\r')
             server.stop(kill_train=True)
             raise e

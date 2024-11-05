@@ -1,9 +1,17 @@
+from contextlib import nullcontext
 from enum import IntEnum
+import os
 import time
 import numpy as np
 import torch
+import torch.distributed
 from torch.utils.data import IterableDataset, get_worker_info
 from typing import Iterator, Optional
+import numpy as np
+import torch
+import torchvision
+import torchvision.transforms as transforms
+from torch.utils.data import DataLoader, Subset
 
 import sys
 import torch_col
@@ -64,13 +72,76 @@ class DynamicBatchDataset(IterableDataset):
         if not _vision_task(self.model_name):
             fake_data = True
         if not fake_data:
-            if _vision_task(self.model_name):
+            if os.environ.get('COL_IMAGENET', '0') == '1':
+                rng = np.random.default_rng(42)
+                image = np.load('imagenet-100/imagenet-100-images.npy', mmap_mode='c')
+                size = image.shape[0]
+                indices = rng.permutation(size)
+                n = size // torch_col.get_train_world_size()
+                rank = torch_col.get_train_rank()
+                image = image[indices[n*rank:n*(rank+1)]]
+                label = np.load('imagenet-100/imagenet-100-labels.npy', mmap_mode='c')
+                label = label[indices[n*rank:n*(rank+1)]]
+                self.all_inputs = {
+                    # 'image': torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_inputs.npy')).pin_memory(),
+                    # 'label': torch.from_numpy(np.load('workload_data/cifiar10/cifiar10_targets.npy')).pin_memory(),
+                    'image': torch.from_numpy(image).pin_memory(),
+                    'label': torch.from_numpy(label).pin_memory(),
+                } 
+                self.size = len(self.all_inputs['label'])           
+                self.num_class = 100
+            elif os.environ.get('COL_CIFAR100', '0') == '1':
+                # rng = np.random.default_rng(42)
+                rng = np.random.default_rng()
+                transform = transforms.Compose([
+                    transforms.ToTensor(),
+                ])
+
+                # 仅下载训练数据集
+                train_dataset = torchvision.datasets.CIFAR100(root='./data', train=True, download=True, transform=transform)
+                size = len(train_dataset)
+                # 打乱数据索引
+                indices = rng.permutation(size)
+
+                # 计算每个进程需要处理的数据量
+                n = size // torch_col.get_train_world_size()
+                rank = torch_col.get_train_rank()
+
+                # 根据当前进程的 rank 获取该进程需要处理的数据索引
+                subset_indices = indices[n*rank:n*(rank+1)]
+                subset_dataset = Subset(train_dataset, subset_indices)
+
+                # 创建 DataLoader
+                train_loader = DataLoader(subset_dataset, batch_size=64, shuffle=False, num_workers=2, pin_memory=True)
+
+                # 提取图像和标签数据
+                all_images = []
+                all_labels = []
+
+                for images, labels in train_loader:
+                    all_images.append(images)
+                    all_labels.append(labels)
+
+                # 拼接所有批次的数据
+                all_images = torch.cat(all_images)
+                all_labels = torch.cat(all_labels)
+
+                # 将图像和标签数据转换为 PyTorch 张量并固定到内存中
+                self.all_inputs = {
+                    'image': all_images.pin_memory(),
+                    'label': all_labels.pin_memory(),
+                }
+
+                # 设置数据大小和类别数量
+                self.size = len(self.all_inputs['label'])
+                self.num_class = 100
+            elif _vision_task(self.model_name):
                 self.all_inputs = {
                     'image': torch.from_numpy(np.load('workload_data/cifar10/cifar10_inputs.npy')).pin_memory(),
                     'label': torch.from_numpy(np.load('workload_data/cifar10/cifar10_targets.npy')).pin_memory()
                 }
                 assert num_class == torch.max(self.all_inputs['label']).item() + 1, \
-                    f"expect num of class: {torch.max(self.all_inputs['label']).item() + 1}."
+                    f"expect num of class: {torch.max(self.all_inputs['label']).item() + 1},."
                 assert size == len(self.all_inputs['image']), f"expect size {len(self.all_inputs['image'])}."
                 assert input_shape == self.all_inputs['image'].shape[1:], \
                     f"expect input shape: {self.all_inputs['image'].shape[1:]}"
@@ -158,8 +229,9 @@ class DynamicBatchDataset(IterableDataset):
                 self.global_batch_iter_idx += self.global_batch_size
                 self.global_batch_size = None
         self.trace_idx += 1
-        # if torch_col.use_shared_tensor():
-        #     torch_col.MemoryPool.empty_cache() # to avoid memory fragmentation
+        if torch_col.is_enable_shared_tensor() and self.last_batch_size != self.batch_size:
+            torch.cuda.synchronize()
+            torch_col.MemoryPool.empty_cache() # to avoid memory fragmentation
 
     def at_global_batch_end(self):
         assert self.enable_accumulation, "only used for accumulation"
@@ -171,6 +243,14 @@ class DynamicBatchDataset(IterableDataset):
             return self.at_global_batch_end()
         else:
             return True
+    
+    def get_context(self, model: torch.nn.parallel.DistributedDataParallel):
+        if self.enable_accumulation and not self.is_do_step():
+            # torch_col.info("no sync")
+            return model.no_sync()
+        else:
+            # torch_col.info("sync")
+            return nullcontext()
         
     def is_do_checkpoint_micro_batch(self):
         if self.enable_accumulation and self.checkpoint_micro_batch:
@@ -201,6 +281,7 @@ class DynamicBatchDataset(IterableDataset):
     def scale_loss(self, loss):
         if self.enable_accumulation:
             scale_factor = self.global_batch_size / self.last_batch_size
+            # print('scale_factor=', scale_factor)
             loss /= scale_factor
             # loss = loss * self.last_batch_size / self.global_batch_size
         else:
@@ -208,7 +289,7 @@ class DynamicBatchDataset(IterableDataset):
 
     def step_stage(self, hook:torch_col.colocate_ctrl.CtrlBase, 
                    optimizer: torch.optim.Optimizer, 
-                   scaler: torch.cuda.amp.GradScaler = None, 
+                   scaler: Optional[torch.cuda.amp.GradScaler] = None, 
                    grad_accumulator:torch_col.accumulate.GradAccumulator = None):
         def _step():
             if scaler is not None:
@@ -237,14 +318,33 @@ class DynamicBatchDataset(IterableDataset):
 
 
     def iter_batch(self) -> Iterator:
-        def _get_batch_size():
-            if self.max_global_batch_size is None: # not use accumulation
-                batch_size = min(self.batch_size, self.size - self.micro_batch_iter_idx)
-            else:
-                if self.global_batch_size is None:
-                    self.global_batch_size = min(self.size - self.global_batch_iter_idx, self.max_global_batch_size)
-                batch_size = min(self.batch_size, self.global_batch_size - self.accumulate_iter_idx)
-            return batch_size
+        if os.environ.get('COL_RAND_BZ', '0') == '1':
+            global np_rng
+            # global torch_rng_cpu
+            # global torch_rng_cuda
+            if 'np_rng' not in globals():
+                np_rng = np.random.default_rng(42)
+                # torch_rng_cpu = torch.random.get_rng_state()
+                # torch_rng_cuda = torch.cuda.random.get_rng_state()
+            def _get_batch_size():
+                batch_size = np_rng.integers(16, 64)
+                if self.max_global_batch_size is None: # not use accumulation
+                    batch_size = min(batch_size, self.size - self.micro_batch_iter_idx)
+                else:
+                    if self.global_batch_size is None:
+                        self.global_batch_size = min(self.size - self.global_batch_iter_idx, self.max_global_batch_size)
+                    batch_size = min(batch_size, self.global_batch_size - self.accumulate_iter_idx)
+                return batch_size
+        else:
+            def _get_batch_size():
+                if self.max_global_batch_size is None: # not use accumulation
+                    batch_size = min(self.batch_size, self.size - self.micro_batch_iter_idx)
+                else:
+                    if self.global_batch_size is None:
+                        self.global_batch_size = min(self.size - self.global_batch_iter_idx, self.max_global_batch_size)
+                    batch_size = min(self.batch_size, self.global_batch_size - self.accumulate_iter_idx)
+                return batch_size
+        
         
         batch_size = _get_batch_size()
         if self.hook.train_mode.is_colocate():
@@ -285,6 +385,11 @@ class DynamicBatchDataset(IterableDataset):
         # return inputs, targets
         return inputs
     
+    def shuffule(self):
+        indices = np.random.permutation(self.size)
+        for k in self.all_inputs.keys():
+            self.all_inputs[k] = self.all_inputs[k][indices]
+    
     def __iter__(self) -> Iterator:
         worker_info = get_worker_info()
         assert worker_info is None or worker_info.num_workers == 1, \
@@ -299,4 +404,5 @@ class DynamicBatchDataset(IterableDataset):
                     self.num_rollback_samples_in_epoch = 0
                 break
             yield self.iter_batch()
+        self.shuffule()
             

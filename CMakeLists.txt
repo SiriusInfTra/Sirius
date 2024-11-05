@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 project(colserve LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 
 include(FetchContent)
 set(FETCHCONTENT_QUIET OFF)
@@ -65,13 +67,28 @@ include(cmake/xsched.cmake)
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/mpool)
 
-
 # building
 add_subdirectory(common)
 add_subdirectory(server)
-add_subdirectory(client)
 add_subdirectory(pytorch)
 
+# building client
+include(ExternalProject)
+ExternalProject_Add(client
+    SOURCE_DIR ${CMAKE_SOURCE_DIR}/client
+    PREFIX ${CMAKE_BINARY_DIR}/client
+    CMAKE_ARGS 
+      -DCOLSYS_ROOT_DIR=${CMAKE_SOURCE_DIR}
+      -DCOLSYS_BUILD_DIR=${CMAKE_BINARY_DIR}
+    CMAKE_CACHE_ARGS
+      -DCMAKE_PREFIX_PATH:PATH=${CMAKE_PREFIX_PATH}
+      -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
+      -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=ON
+    INSTALL_COMMAND ""
+    USES_TERMINAL_BUILD true
+    BUILD_ALWAYS ON
+    BUILD_COMMAND ${CMAKE_COMMAND} --build .
+)
 
 # link release/debug build directory to ./build
 if (NOT ${CMAKE_BINARY_DIR} STREQUAL ${CMAKE_SOURCE_DIR}/build)

@@ -44,7 +44,6 @@
 
 CLI::App app{"ColServe"};
 std::string mode = "normal";
-std::string port = "8080";
 int max_live_minute = 20;
 
 void* memory_pressure_ptr = nullptr;
@@ -65,6 +64,9 @@ void init_cli_options() {
       colserve::Config::use_shared_tensor, 
       str(boost::format("use shared tensor allocator, default is %d") 
           % colserve::Config::use_shared_tensor));
+  app.add_option("--no-infer", 
+      colserve::Config::no_infer, 
+      "no infer, default is 0");
   app.add_option("--use-sta-infer", 
       colserve::Config::use_shared_tensor_infer, 
       str(boost::format("use shared tensor allocator in infer, default is %d") 
@@ -82,8 +84,8 @@ void init_cli_options() {
       str(boost::format("cuda memory pool freelist policy, default is %s") 
           % colserve::Config::mempool_freelist_policy))
         ->check(CLI::IsMember({"first-fit", "next-fit", "best-fit"}));
-  app.add_option("-p,--port", port,
-      str(boost::format("gRPC server port, default is %s") % port));
+  app.add_option("-p,--port", colserve::Config::port,
+      str(boost::format("gRPC server port, default is %s") % colserve::Config::port));
   app.add_option("--max-live-minute", max_live_minute,
       "max server live minute, default is " 
       + std::to_string(max_live_minute) + " minutes");
@@ -174,6 +176,13 @@ void init_cli_options() {
   app.add_option("--has-warmup", colserve::Config::has_warmup,
       str(boost::format("has warmup, default is %d") 
       % colserve::Config::has_warmup));
+  app.add_option("--train-adjust-balance", colserve::Config::enable_train_adjust_balance,
+      str(boost::format("train adjust balance, default is %d") 
+          % colserve::Config::enable_train_adjust_balance));
+  app.add_option("--train-adjust-batch-size-limit", 
+      colserve::Config::train_adjust_batch_size_limit,
+      str(boost::format("train adjust batch size limit, default is %d") 
+          % colserve::Config::train_adjust_batch_size_limit));
   app.add_flag("--dump-adjust-info", 
       colserve::Config::dump_adjust_info,
       str(boost::format("dump adjust info, default is %d") 
@@ -315,7 +324,7 @@ void init_config() {
   READ_ENV_BOOL_CONFIG("COLSERVE_LOG_CONTROLLER", log_controller);
   READ_ENV_BOOL_CONFIG("COLSERVE_LOG_TASK_SWITCH", log_task_switch);
 
-  CHECK(setenv("COLSYS_PORT", port.c_str(), 1) == 0);
+  CHECK(setenv("COLSYS_PORT", cfg::port.c_str(), 1) == 0);
   
   if (cfg::log_all) {
     cfg::log_all = true;
@@ -334,10 +343,10 @@ void init_config() {
   }
 
 std::string header = str(boost::format("%s COLSERVE CONFIG [PID %d | PORT %d] %s") 
-                           % std::string(16, '=')
-                           % getpid()
-                           % std::stoi(port)
-                           % std::string(16, '='));
+                          % std::string(16, '=')
+                          % getpid()
+                          % std::stoi(cfg::port)
+                          % std::string(16, '='));
   std::cerr << header << std::endl;
   STREAM_OUTPUT(serve_mode);
   STREAM_OUTPUT(use_shared_tensor);
@@ -367,6 +376,7 @@ std::string header = str(boost::format("%s COLSERVE CONFIG [PID %d | PORT %d] %s
 }
 
 void Shutdown(int sig) {
+  // FIXME: flush pytorc output
   LOG(INFO) <<"signal " <<  strsignal(sig) << "(" << sig << ")" 
             << " received, shutting down...";
   colserve::Config::running = false;
@@ -391,13 +401,14 @@ int main(int argc, char *argv[]) {
     LOG(INFO) << "max live minute reached, shutting down...";
     Shutdown(SIGINT);
   });
-
-  COL_CU_CALL(cuInit(0));
+  if (!colserve::Config::no_infer) {
+    COL_CU_CALL(cuInit(0));
+  }
   COL_NVML_CALL(nvmlInit());
   colserve::sta::DeviceManager::Init();
   auto free_list_policy = colserve::sta::getFreeListPolicy(
       colserve::Config::mempool_freelist_policy);
-  if (colserve::Config::use_shared_tensor) {
+  if (colserve::Config::use_shared_tensor && !colserve::Config::no_infer) {
     for (int device_id = 0; 
          device_id < colserve::sta::DeviceManager::GetNumVisibleGpu(); 
          device_id++) {
@@ -444,7 +455,7 @@ int main(int argc, char *argv[]) {
     COL_CUDA_CALL(cudaMalloc(&memory_pressure_ptr, nbytes));
   }
 
-  std::string server_address("0.0.0.0:" + port);
+  std::string server_address("0.0.0.0:" + colserve::Config::port);
   colserve::network::GRPCServer server;
   server.Start(server_address);
 
@@ -452,5 +463,5 @@ int main(int argc, char *argv[]) {
   colserve::Config::system_initialized = true;
 
   server.Stop();
-  LOG(INFO) << "server has shotdown";
+  LOG(INFO) << "server has shutdown";
 }

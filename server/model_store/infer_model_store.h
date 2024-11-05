@@ -46,10 +46,16 @@ class InferModelStore {
 
   static void InferingInc(tvm::TVMGraph *graph, tvm::Executor *executor);
   static void InferingDec(tvm::TVMGraph *graph, tvm::Executor *executor);
-  static int GetNumInferingModel() { 
+  static int GetNumInferingModel() {
+    if (Config::no_infer) {
+      return 0;
+    }
     return Get()->num_infering_model_.load(std::memory_order_relaxed); 
   }
-  static size_t GetInferingModelNbytes() { 
+  static size_t GetInferingModelNbytes() {
+    if (Config::no_infer) {
+      return 0;
+    }
     return Get()->infering_model_nbytes_.load(std::memory_order_relaxed); 
   }
 

@@ -3,8 +3,11 @@
 #include <server/train_adjuster.h>
 #include <server/model_store/model_cache.h>
 #include <server/resource_manager.h>
+#include <server/train_launcher.h>
 
+#include <common/device_manager.h>
 #include <common/inf_tra_comm/communicator.h>
+#include <common/inf_tra_comm/shared_info.h>
 
 #include <boost/range/irange.hpp>
 #include <math.h>
@@ -54,8 +57,13 @@ memory_mb_t TrainAdjuster::PredictTrainMemUsageMB(int device_id, bool verbose) {
   if (!ctrl::InfTraCommunicator::GetSinfo()->IsTrainInfoValid(ctrl::kTraRank_0)) {
     return 0;
   }
-  auto target_batch_size_ = 
-      adjuster_->cached_target_batch_sizes_[device_id];
+  auto target_batch_size_ = adjuster_->cached_target_batch_sizes_[device_id];
+#if 0
+  auto current_batch_size = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
+      device_id, current_batch_size);
+  auto batch_size = std::max(target_batch_size_, current_batch_size);
+  return PredictTrainMemUsageMB(device_id, batch_size, verbose);
+#endif
   return PredictTrainMemUsageMB(device_id, target_batch_size_, verbose);
 }
 
@@ -101,10 +109,12 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
   auto train_world_size = adjuster_->cached_train_world_size_;
   int cur_train_target_bs = 
       adjuster_->cached_target_batch_sizes_[device_id];
-
-  if (cur_train_target_bs <= 0) {
+  // int min_train_bs = sta::DeviceManager::GetNumVisibleGpu() > 1 ? 1 : 0;
+  int min_train_bs = Config::train_adjust_batch_size_limit;
+  if (cur_train_target_bs <= min_train_bs) {
     LOG_IF(INFO, Config::log_memory_adjust) 
-        << "[InferRequireMemAdjust] target batch batch is already 0, skip adjust";
+        << "[InferRequireMemAdjust] target batch batch is already " 
+        <<  min_train_bs << ", skip adjust";
     return {};
   }
 
@@ -125,6 +135,9 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
       adjuster_->GetDeltaBatchSize(device_id, adjust_batch_buf_mb);
   CHECK_GE(adjust_batch_buf_mb, 0);
   int target_batch_size = cur_train_target_bs - delta_batch_size;
+  if (sta::DeviceManager::GetNumVisibleGpu() > 1) {
+    target_batch_size = std::max(target_batch_size, min_train_bs);
+  }
 
   // [Note: adjust plan for imbalance]
   // case 1: all batch size is same 

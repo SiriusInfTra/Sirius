@@ -28,7 +28,14 @@ AppBase::AppBase(const std::string &name) : app{name} {
   app.add_option_no_stream("-l,--log", log, "log file");
   app.add_option("-v,--verbose", verbose, "verbose level");
   app.add_option("--show-result", show_result, "show result");
-  app.add_option( "-p,--port", port, "grpc port");
+  app.add_option("--ip", colsys_ip, "colsys grpc ip");
+  app.add_option( "-p,--port", colsys_port, "colsys grpc port");
+  app.add_option("--triton-ip", triton_ip, "triton grpc ip");
+  app.add_option("--triton-port", triton_port, "triton grpc port");
+  app.add_option("--triton-max-memory", triton_max_memory, "max memory of triton server(MB)");
+  app.add_option("--triton-config", triton_config, "triton config file");
+  app.add_option("--triton-device-map", triton_device_map, "triton device map file");
+  
   app.add_option("--seed", seed, "random seed");
 
   app.add_option("--warmup", warmup, "warm up infer model");

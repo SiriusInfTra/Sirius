@@ -1,19 +1,21 @@
 #include <algorithm>
 #include <fstream>
+#include <future>
 #include <iterator>
 #include <limits>
-#include <numeric>
+#include <memory>
 #include <random>
-#include <regex>
 #include <string>
-#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <grpcpp/grpcpp.h>
+#include <grpcpp/channel.h>
+#include <grpcpp/support/status.h>
 
-#include "colserve.grpc.pb.h"
 #include "workload/util.h"
 #include "workload/workload.h"
+
 
 using namespace colserve::workload;
 
@@ -60,7 +62,8 @@ TraceCFG LoadTraceCFG(const std::string &trace_path) {
   
 }
 
-std::vector<std::pair<std::string, std::vector<double>>> GroupByModel(const TraceCFG &trace_cfg) {
+std::vector<std::pair<std::string, std::vector<double>>> 
+GroupByModel(const TraceCFG &trace_cfg) {
   std::unordered_map<std::string, std::vector<double>> groups;
   for(auto && [start_point, model_id] : trace_cfg.start_points) {
     groups[model_id].push_back(start_point);
@@ -94,19 +97,42 @@ int main(int argc, char** argv) {
   }
   
   if (app.duration < min_duration) {
-    LOG(INFO) << "Override duration from " << app.duration << " to " << min_duration << ".";
+    LOG(INFO) << "Override duration from " 
+              << app.duration << " to " << min_duration << ".";
     app.duration = min_duration;
   }
 
-  std::string target = "localhost:" + app.port;
-  colserve::workload::Workload workload(
-      grpc::CreateChannel(target, grpc::InsecureChannelCredentials()),
+  std::string colsys_target = app.colsys_ip + ":" + app.colsys_port;
+  std::string triton_target = app.triton_ip + ":" + app.triton_port;
+
+  std::shared_ptr<IWorkload> train_workload;
+  if (!app.colsys_port.empty()) {
+    LOG(INFO) << "Connect to " << colsys_target;
+    train_workload = GetColsysWorkload(
+      grpc::CreateChannel(colsys_target, grpc::InsecureChannelCredentials()),
       std::chrono::seconds(app.duration),
       app.wait_train_setup_sec + app.wait_stable_before_start_profiling_sec,
       app.infer_timeline
-  );
-  CHECK(workload.Hello());
-
+    );
+  }
+  std::shared_ptr<IWorkload> infer_workload;
+  if (app.triton_port.empty()) {
+    infer_workload = train_workload;
+  } else {
+    LOG(INFO) << "Connect to " << triton_target;
+    infer_workload = GetTritonWorkload(
+      grpc::CreateChannel(triton_target, grpc::InsecureChannelCredentials()),
+      std::chrono::seconds(app.duration),
+      app.wait_train_setup_sec + app.wait_stable_before_start_profiling_sec,
+      app.infer_timeline, app.triton_max_memory, 
+      app.triton_config, app.triton_device_map
+    );
+  }
+  // colserve::workload
+  CHECK(train_workload == nullptr || train_workload->Hello());
+  CHECK(infer_workload == nullptr 
+        || train_workload == infer_workload 
+        || infer_workload->Hello());
 
   if (app.enable_infer && !app.infer_trace.empty()) {
     auto groups = GroupByModel(trace_cfg);
@@ -116,23 +142,24 @@ int main(int argc, char** argv) {
       for (auto &[model_id, _] : groups) {
         auto &model = trace_cfg.models[model_id];
         warm_up_futures.emplace_back(std::async(std::launch::async, 
-            [&workload, &model, &app](){
-              workload.WarmupModel(model.model_name, app.warmup);
+            [&infer_workload, &model, &app](){
+              infer_workload->WarmupModel(model.model_name, app.warmup);
             }
         ));
       }
       for (auto &f : warm_up_futures) {
         f.wait();
       }
+      LOG(INFO) << "Warmup done.";
       if (app.wait_warmup_done_sec > 0) {
         std::this_thread::sleep_for(std::chrono::duration<double>(app.wait_warmup_done_sec));
-        workload.WarmupDone();
+        infer_workload->WarmupDone();
       }
     }
 
     for(auto &&[model_id, start_points] : groups) {
       auto &model = trace_cfg.models[model_id];
-      workload.InferTrace(model.model_name, app.concurrency, 
+      infer_workload->InferTrace(model.model_name, app.concurrency, 
                           start_points, app.wait_train_setup_sec,
                           app.warmup, app.show_result);
     }
@@ -144,20 +171,38 @@ int main(int argc, char** argv) {
     CHECK(app.train_models.size() <= 1);
     if (!app.train_models.empty()) {
       auto model_name = *app.train_models.begin();
-      workload.Train(model_name, app.num_epoch, app.batch_size);
+      train_workload->Train(model_name, app.num_epoch, app.batch_size);
     }
   }
 
-  workload.Run();
+  if (infer_workload != nullptr) {
+    infer_workload->PreRun();
+  }
+  if (train_workload != nullptr && train_workload != infer_workload) {
+    train_workload->PreRun();
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(app.duration));
+  if (infer_workload != nullptr) {
+    infer_workload->PostRun();
+  }
+  if (train_workload != nullptr && infer_workload != train_workload) {
+    train_workload->PostRun();
+  }
 
+
+  // TODO: merge output
   LOG(INFO) << "report result ...";
-  if (app.log.empty()) {
-    workload.Report(app.verbose);
-  } else {
-    std::fstream ofs{app.log, std::ios::out};
-    CHECK(ofs.good());
-    workload.Report(app.verbose, ofs);
-    ofs.close();
+  std::fstream fstream;
+  auto &&ofs = app.log.empty() ? std::cout : (fstream = std::fstream{app.log, std::ios::out});
+  CHECK(ofs.good());
+  if (train_workload != nullptr) {
+    train_workload->Report(app.verbose, ofs);
+  }
+  if (infer_workload != nullptr && infer_workload != train_workload) {
+    infer_workload->Report(app.verbose, ofs);
+  }
+  if (fstream.is_open()) {
+    fstream.close();
   }
   return 0;
 }

@@ -216,7 +216,7 @@ Profiler::Profiler(const std::string &profile_log_path)
   COL_NVML_CALL(nvmlDeviceGetHandleByUUID(gpu_uuid.c_str(), &device));
 
   // CHECK MPS
-  if (colserve::Config::check_mps) {
+  if (colserve::Config::check_mps && !colserve::Config::no_infer) {
     uint32_t info_cnt = 0;
 #if !defined(USE_NVML_V3) || USE_NVML_V3 != 0
     auto nvml_err = nvmlDeviceGetMPSComputeRunningProcesses_v3(
@@ -334,6 +334,9 @@ void Profiler::ProfileThread(std::array<nvmlDevice_t, MAX_DEVICE_NUM> devices) {
 void Profiler::CollectMemoryResourceInfo(
       const std::array<nvmlDevice_t, MAX_DEVICE_NUM> &devices,
       std::array<ResourceInfo, MAX_DEVICE_NUM> &res_infos) {
+  if (Config::no_infer) {
+    return;
+  }
   constexpr uint32_t max_proc_info_cnt = 32;
   nvmlProcessInfo_t proc_infos[32];
 
@@ -352,6 +355,7 @@ void Profiler::CollectMemoryResourceInfo(
           res_info.train_all_mem = res_info.train_mem;
         }
       }
+      
       size_t free, total;
       // COL_CUDA_CALL(cudaSetDevice(device_id));
       COL_CUDA_CALL(cudaMemGetInfo(&free, &total));

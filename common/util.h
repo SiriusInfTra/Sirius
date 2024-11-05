@@ -5,6 +5,7 @@
 #include <common/device_manager.h>
 
 #include <boost/format.hpp>
+#include <cstdlib>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include <nvml.h>
@@ -14,7 +15,6 @@
 #include <iomanip>
 #include <cstdint>
 #include <sstream>
-
 
 namespace colserve {
 

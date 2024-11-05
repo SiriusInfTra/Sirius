@@ -72,6 +72,15 @@ class MemoryPool:
             return (total - free) / 1024 / 1024 / 1024
     
     @classmethod
+    def get_memory_peak_usage(cls):
+        if torch_col.is_enable_shared_tensor():
+            nbytes = torch_col.cuda_memory_pool_train_peak_usage(torch_col.get_train_rank())
+            return nbytes / 1024 / 1024 / 1024
+        else:
+            free, total = torch.cuda.mem_get_info(torch_col.get_train_rank())
+            return (total - free) / 1024 / 1024 / 1024
+    
+    @classmethod
     def get_allocated_memory(cls):
         if torch_col.is_enable_shared_tensor():
             nbytes = torch_col.cuda_memory_pool_train_usage(torch_col.get_train_rank())

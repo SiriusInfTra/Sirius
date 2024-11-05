@@ -1,12 +1,9 @@
 import torch
-from torch.nn.parallel import DistributedDataParallel as DDP
+from torch import nn
 import torch.distributed as torch_dist
 import torch.multiprocessing as torch_mp
-from torch import nn
-from torchvision import models
-from torch.utils.data import DataLoader
-import argparse
-import os, sys
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import Dataset
 
 import torch_col
 from torch_col import MemoryPool, EventManager, TrainMode, ColocateCtrlHookMode
@@ -14,14 +11,19 @@ from torch_col import DynamicBatchDataset, BatchDistributePolicy
 from torch_col import dynamic_batch
 import torch_col.trainer
 import torch_col.xsched
-from typing import Optional
+from torchvision import models
+
+import argparse
+import os, sys
 import time
+from typing import Optional, cast
 
 
 def setup(rank, world_size):
+    cuda_index = torch.cuda._get_nvml_device_index(0)
     torch_col.info(f'[Train rank {rank} PID {os.getpid()} world size {world_size}] setup')
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = str(12345 + os.getuid() % 100)
+    os.environ['MASTER_PORT'] = str(22345 + cuda_index)
     torch_col.setup_colocate_training(rank, world_size, True, True)
 
 def cleanup():
@@ -75,7 +77,7 @@ def train(rank:int, world_size:int,
         enable_grad_accumulate=enable_grad_accumulate,
         checkpoint_micro_batch=checkpoint_micro_batch,
         lazy_batch_distributing=False,
-        batch_distribute_policy=BatchDistributePolicy.BY_PERFORMANCE
+        batch_distribute_policy=BatchDistributePolicy[os.environ.get('COL_BATCH_DISTRIBUTE_POLICY', 'BY_PERFORMANCE')]
     )   
 
     model.train()
@@ -119,7 +121,7 @@ def train(rank:int, world_size:int,
         epoch_stat = trainer.get_last_epoch_stat()
         epoch_duration = trainer.get_last_epoch_duration()
 
-        mem_info = f'mem {MemoryPool.get_memory_usage():.2f}Gb'
+        mem_info = f'mem {MemoryPool.get_memory_usage():.2f}Gb | {MemoryPool.get_memory_peak_usage():.2f}Gb | {MemoryPool.get_allocated_memory():.2f}Gb'
         batch_info = (
             f'batch cnt {epoch_stat.finished_batch} ' 
             + f'avg {epoch_duration/epoch_stat.finished_batch:.1f}ms')

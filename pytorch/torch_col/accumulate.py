@@ -1,10 +1,11 @@
+from typing import Optional
 import torch
 from collections import defaultdict
 from typing import Optional
 
 
 class GradAccumulator:
-    def __init__(self, model):
+    def __init__(self, model: torch.nn.Module):
         self.param_list = []
         self.param_grads = defaultdict(dict)
 
@@ -17,6 +18,7 @@ class GradAccumulator:
 
     def accumulate(self):
         for p in self.param_list:
+            assert isinstance(p, torch.Tensor)
             self.param_grads[p]['global'] += p.grad 
             p.grad.zero_()
 
@@ -26,6 +28,7 @@ class GradAccumulator:
              do_zero_grad=True
     ):
         for p in self.param_list:
+            assert isinstance(p, torch.Tensor)
             assert p.grad is not None
             self.param_grads[p]['local'] = p.grad
             p.grad = self.param_grads[p]['global']
@@ -35,6 +38,7 @@ class GradAccumulator:
         else:
             optmizer.step()
         for p in self.param_list:
+            assert isinstance(p, torch.Tensor)
             p.grad = self.param_grads[p]['local']
 
         if do_zero_grad:
@@ -44,4 +48,4 @@ class GradAccumulator:
         for p in self.param_list:
             self.param_grads[p]['global'].zero_()
 
-    
+

@@ -2,7 +2,7 @@
 #define COLSERVE_GRPC_SERVER_H
 
 // #include <dlpack/dlpack.h>
-#include "colserve.grpc.pb.h"
+#include <colserve.grpc.pb.h>
 
 #include <server/logging_as_glog.h>
 #include <common/tensor/dlpack.h>
@@ -12,12 +12,13 @@
 
 namespace colserve {
 namespace network {
-
+using namespace colsys;
 class CommonHandler;
 class InferHandler;
 class TrainHandler;
 
 class GRPCServer {
+  
  public:
   void Start(const std::string &addr);
   void Stop();

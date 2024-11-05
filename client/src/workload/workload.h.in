@@ -1,38 +1,27 @@
-#ifndef COLSYS_WORKLOAD_H_
-#define COLSYS_WORKLOAD_H_
+#pragma once
 
 #include <climits>
 #include <cstddef>
 #include <iostream>
 #include <ostream>
-#include <random>
-#include <tuple>
-#include <unordered_map>
 #include <vector>
 #include <memory>
 #include <fstream>
 #include <thread>
 #include <chrono>
-#include <iomanip>
 #include <future>
-#include <map>
 #include <pthread.h>
-#include <grpcpp/grpcpp.h>
 #include <glog/logging.h>
 #include <CLI/CLI.hpp>
-#include <queue>
-#include <list>
 #include <mutex>
 #include <shared_mutex>
 #include <memory>
 #include <unordered_set>
 
 #include "util.h"
-#include "colserve.grpc.pb.h"
+#include "workload.h"
 
-
-namespace colserve {
-namespace workload {
+namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE {
 
 using time_point_t = std::chrono::time_point<std::chrono::steady_clock>;
 using double_ms_t = std::chrono::duration<double, std::milli>;
@@ -61,6 +50,23 @@ class InferWorker {
     // }
   }
 
+  bool IsSetupSlotDone() {
+    return setup_slot_done_;
+  }
+
+  void SetupSlot() {
+    std::unique_lock status_lock{slot_status_mutex_};
+    std::unique_lock slot_lock{slot_mutex_};
+    for (size_t i = 0; i < concurrency_; i++) {
+      slots_.emplace_back(std::make_shared<InferSlot>());
+      status_slots_id_[InferReqStatus::kReady].insert(i);
+    }
+    for (auto &slot : slots_) {
+      set_request_fn_(slot->request_);
+    }
+    setup_slot_done_ = true;
+  }
+
   void RequestInferBusyLoop(Workload &workload,
                             double delay_before_infer);
   void RequestInferTrace(Workload& workload, 
@@ -72,10 +78,6 @@ class InferWorker {
   void Report(Workload &workload, int verbose, std::ostream &os);
 
   const std::vector<Record> GetRecord(Workload &workload) const;
-
-  bool IsSetupSlotDone() {
-    return setup_slot_done_;
-  }
 
 private:
   struct InferReqStatus {
@@ -96,21 +98,8 @@ private:
     InferReqStatus req_status_;
     grpc::Status rpc_status_;
     std::unique_ptr<grpc::ClientContext> rpc_context_;
-    std::unique_ptr<grpc::ClientAsyncResponseReader<InferResult>> rpc_;
+    std::unique_ptr<AsyncInferResult> rpc_;
   };
-
-  void SetupSlot() {
-    std::unique_lock status_lock{slot_status_mutex_};
-    std::unique_lock slot_lock{slot_mutex_};
-    for (size_t i = 0; i < concurrency_; i++) {
-      slots_.emplace_back(std::make_shared<InferSlot>());
-      status_slots_id_[InferReqStatus::kReady].insert(i);
-    }
-    for (auto &slot : slots_) {
-      set_request_fn_(slot->request_);
-    }
-    setup_slot_done_ = true;
-  }
 
   std::string model_;
   size_t concurrency_;
@@ -121,18 +110,19 @@ private:
   std::shared_mutex slot_mutex_;
   std::vector<std::shared_ptr<InferSlot>> slots_;
   std::unordered_set<size_t> status_slots_id_[InferReqStatus::kNumStatus];
-  std::atomic<bool> setup_slot_done_{false};
 
   std::function<void(InferRequest&)> set_request_fn_;
 
   // std::vector<double> latency_;
   std::vector<Record> records_;
+  std::atomic<bool> setup_slot_done_{false};
 
 };
 
 class TrainWorker {
  public:
-  TrainWorker(const std::string &model, std::function<void(TrainRequest&)> set_request_fn) : model_(model) {
+  TrainWorker(const std::string &model, std::function<void(TrainRequest&)> set_request_fn) 
+      : model_(model) {
     set_request_fn(request_);  
   }
 
@@ -153,10 +143,15 @@ struct AzureTrace {
   double duration_period;
 };
 
-class Workload {
+class Workload : public IWorkload {
  public:
-  Workload(std::shared_ptr<grpc::Channel> channel, std::chrono::seconds duration, double delay_before_profile, const std::string &infer_timeline)
-      : stub_(ColServe::NewStub(channel)), duration_(duration), delay_before_profile_(delay_before_profile), timeline_handle_(infer_timeline) {
+  Workload(std::shared_ptr<grpc::Channel> channel, 
+           std::chrono::seconds duration, 
+           double delay_before_profile, 
+           const std::string &infer_timeline)
+      : stub_(NewStub(channel)), duration_(duration), 
+        delay_before_profile_(delay_before_profile), 
+        timeline_handle_(infer_timeline) {
     ready_future_ = std::shared_future<void>{ready_promise_.get_future()};
     CHECK(timeline_handle_.is_open());
     timeline_handle_ << "model_name,start_time,end_time" << std::endl;
@@ -171,13 +166,13 @@ class Workload {
   void InferenceWorkloadDone();
   bool HasTrainFirstEpochDone();
 
-  void Run() {
+
+  void PreRun() {
     for (auto &worker : infer_workers_) {
       if (!worker->IsSetupSlotDone()) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
       }
     }
-
     running_ = true;
     ready_promise_.set_value();
     run_btime_ = std::chrono::steady_clock::now();
@@ -186,8 +181,9 @@ class Workload {
     LOG(INFO) << "Workload start at " << start_time_stamp_ 
               << " profiling will begin after " << delay_before_profile_
               << " sec from this time point";
+  }
 
-    std::this_thread::sleep_for(duration_);
+  void PostRun() {
     LOG(INFO) << "Workload timeout ...";
     running_ = false;
     for (auto &thread : infer_threads_) {
@@ -218,11 +214,11 @@ class Workload {
   void Train(const std::string &model, size_t num_epoch, size_t batch_size);
   void TrainResnet(size_t num_epoch, size_t batch_size);
 
-
   void Report(int verbose = false, std::ostream &os = std::cout);
 
   friend class InferWorker;
   friend class TrainWorker;
+
  private:
   std::function<void(InferRequest&)> GetSetRequestFn(const std::string& model);
   std::function<void(InferRequest&)> SetMnistRequestFn(const std::string &model = "mnist");
@@ -242,7 +238,7 @@ class Workload {
   std::vector<std::unique_ptr<InferWorker>> infer_workers_;
   std::vector<std::unique_ptr<TrainWorker>> train_workers_;
 
-  std::unique_ptr<ColServe::Stub> stub_;
+  std::unique_ptr<ServeStub> stub_;
 
   std::unordered_map<std::string, AzureTrace> azure_model_index_;
 
@@ -252,7 +248,6 @@ class Workload {
   double delay_before_profile_;
   long start_time_stamp_;
   long end_time_stamp_;
-
 
 
   // friend class InferRecorder;
@@ -279,6 +274,4 @@ class Workload {
 // };
 
 }
-}
 
-#endif

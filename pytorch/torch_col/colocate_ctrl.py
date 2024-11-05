@@ -56,10 +56,11 @@ class CtrlBase(abc.ABC):
     def register_pytorch_hook(self, module_list: List[torch.nn.Module]):
         pass
         
-    def release_and_reply(self, barrier: bool):
+    def release_and_reply(self, barrier: Optional[bool] = None):
         if self.train_mode.is_colocate():
             return self.adjust()
         if self.train_mode.is_taskswitch():
+            assert barrier is not None
             return self.switch(barrier)
         pass
     

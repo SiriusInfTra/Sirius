@@ -71,7 +71,7 @@ class Config {
   static ColocateConfig colocate_config;
 
   static bool check_mps;
-  
+  static std::string port;
   static std::atomic<bool> running;
 
   static std::string train_profile;
@@ -79,6 +79,7 @@ class Config {
   static bool use_xsched;
 
   static bool use_shared_tensor;
+  static bool no_infer;
   static bool use_shared_tensor_infer;
   static bool use_shared_tensor_train;
   static bool better_alloc;
@@ -138,6 +139,8 @@ class Config {
 
   static bool enable_train_adjust_balance;
   static memory_mb_t train_adjust_balance_threshold;
+
+  static int train_adjust_batch_size_limit;
 
   static bool dummy_adjust;
 

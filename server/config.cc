@@ -21,8 +21,9 @@ std::atomic<bool> Config::running{true};
 std::string Config::train_profile = "train-profile.csv";
 
 bool Config::use_xsched = false;
-
+std::string colserve::Config::port = "8080";
 bool Config::use_shared_tensor = true;
+bool Config::no_infer = false;
 bool Config::use_shared_tensor_infer = true;
 bool Config::use_shared_tensor_train = true;
 bool Config::ondemand_adjust = true;
@@ -82,6 +83,8 @@ double Config::infer_exec_time_estimate_scale = 1.1;
 bool Config::enable_train_adjust_balance = true;
 memory_mb_t Config::train_adjust_balance_threshold = 1500;
 
+int Config::train_adjust_batch_size_limit = 0;
+
 bool Config::dummy_adjust = false;
 
 bool Config::system_initialized = false;
@@ -93,7 +96,7 @@ bool Config::profile_sm_partition = false;
 bool Config::log_all = false;
 bool Config::log_grpc = false;
 bool Config::log_infer_sched = false;
-bool Config::log_train_init = false;
+bool Config::log_train_init = true;
 bool Config::log_warm_cache = false;
 bool Config::log_cold_cache = false;
 bool Config::log_infer_model_init = false;

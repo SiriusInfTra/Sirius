@@ -206,6 +206,7 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job,
 
     CHECK_NE(setenv("COL_HAS_INFER_SERVER", "1", 1), -1);
     extra_env_ss << "COL_HAS_INFER_SERVER=1" << " ";
+
     if (Config::use_shared_tensor_train) {
       CHECK_NE(setenv("COL_USE_SHARED_TENSOR", "1", 1), -1);
       CHECK_NE(setenv("COL_HAS_SHARED_TENSOR_SERVER", "1", 1), -1);
@@ -280,6 +281,14 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job,
                    << Config::train_mps_thread_percent << " ";
       LOG(INFO) << "[TrainLauncher]: set CUDA_MPS_ACTIVE_THREAD_PERCENTAGE to " 
                 << Config::train_mps_thread_percent;
+    }
+
+    if (Config::enable_train_adjust_balance) {
+      CHECK_NE(setenv("COL_BATCH_DISTRIBUTE_POLICY", "BY_PERFORMANCE", 1), -1);
+      extra_env_ss << "COL_BATCH_DISTRIBUTE_POLICY=BY_PERFORMANCE ";
+    } else {
+      CHECK_NE(setenv("COL_BATCH_DISTRIBUTE_POLICY", "FIX", 1), -1);
+      extra_env_ss << "COL_BATCH_DISTRIBUTE_POLICY=FIX ";
     }
 
     LOG(INFO) << "[TrainLauncher]: " << "Train " << job << " ( "
