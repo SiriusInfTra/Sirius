@@ -120,7 +120,9 @@ inline std::string GetDefaultShmNamePrefix(int device_id) {
 inline std::string GetDefaultShmNamePrefix() {
   static int colsys_port = -1;
   if (colsys_port == -1) {
-    colsys_port = std::stoi(std::getenv("COLSYS_PORT"));
+    auto colsys_port_str = std::getenv("COLSYS_PORT");
+    colsys_port = (colsys_port_str != nullptr) 
+                  ? std::stoi(colsys_port_str) : 0;
   } else {
     colsys_port = 0;
   }
