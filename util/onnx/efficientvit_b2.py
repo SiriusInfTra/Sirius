@@ -7,7 +7,7 @@ import timm
 
 platform = 'v100'
 
-batch_size = 1
+batch_size = 4
 # swin = timm.create_model('vit_base_patch16_224.augreg2_in21k_ft_in1k', pretrained=True).eval()
 
 # vit_s_16 = models.vit_b_16(weights=models.ViT_B_16_Weights.DEFAULT).eval()

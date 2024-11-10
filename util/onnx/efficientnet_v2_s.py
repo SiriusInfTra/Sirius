@@ -17,7 +17,7 @@ from transformers import ViTForImageClassification
 
 platform = 'v100'
 
-batch_size = 1
+batch_size = 4
 
 model_name = 'efficientnet_v2_s'
 efficientnet_v2_s = models.efficientnet_v2_s(weights=models.EfficientNet_V2_S_Weights.DEFAULT).eval()

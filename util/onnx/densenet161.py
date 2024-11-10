@@ -5,8 +5,9 @@ import subprocess
 
 
 model_name = "densenet161"
+batch_size = 4
 densenet161 = models.densenet169(weights=models.DenseNet169_Weights.DEFAULT).eval()
-torch.onnx.export(densenet161, torch.rand(1, 3, 224, 224), 
+torch.onnx.export(densenet161, torch.rand(batch_size, 3, 224, 224), 
                 f"{model_name}.onnx", verbose=True,
                 input_names=["input0"], output_names=["output0"], export_params=True)
 
