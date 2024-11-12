@@ -1,19 +1,11 @@
 # raw tvm
-import os
-import subprocess
-import tvm 
-from tvm import relay
-from tvm.relay.backend import Executor
-import pathlib
-import onnx
 import numpy as np
 import torch
-from transformers import DistilBertTokenizer, DistilBertModel, GPT2Model, GPT2Tokenizer
+from transformers import GPT2Model, GPT2Tokenizer
 import tempfile
-from tvm.driver import tvmc
-import tarfile
 
-platform = 'v100'
+import trt_converter
+from trt_converter import TrtModelConfig
 
 model_store = "server/models"
 tmp_dir = tempfile.gettempdir()
@@ -41,8 +33,6 @@ dummy_input = tuple([tokens_tensor, segments_tensors])
 model_name = "distilgpt2"
 print(f"### {enc.vocab_size}")
 
-#NOTE Generate new trace
-# model = DistilBertModel.from_pretrained("distilbert-base-uncased")
 class GPT2NoKVCache(GPT2Model):
     def forward(self, *args, **kwargs):
         # Call the original forward method
@@ -51,19 +41,13 @@ class GPT2NoKVCache(GPT2Model):
         return outputs.last_hidden_state
 model = GPT2Model.from_pretrained("distilgpt2")
 
-print(dummy_input)
-torch.onnx.export(model, tokens_tensor, f"{model_name}.onnx", verbose=True,
-                    input_names=["input_ids",], output_names=["output"], export_params=True,)
+torch.onnx.export(
+    model, tokens_tensor, f"{model_name}.onnx", verbose=True,
+    input_names=["input_ids",], output_names=["output"], export_params=True,
+    dynamic_axes={
+    "input_ids": {0: "batch_size"},
+    "output": {0: "batch_size"}}
+)
 
 
-
-if 'COLSYS_TENSORRT_HOME' in os.environ:
-    tensorrt_home = os.environ['COLSYS_TENSORRT_HOME']
-    amd64_home = f'{tensorrt_home}/targets/x86_64-linux-gnu'
-    envs = os.environ.copy()
-    if 'LD_LIBRARY_PATH' in envs:
-        envs['LD_LIBRARY_PATH'] = f'{amd64_home}/lib:{envs["LD_LIBRARY_PATH"]}'
-    else:
-        envs['LD_LIBRARY_PATH'] = f'{amd64_home}/lib'
-    subprocess.run([f'{amd64_home}/bin/trtexec', f'--onnx={model_name}.onnx', f'--saveEngine={model_name}.plan'], 
-        env=envs)
+trt_converter.convert_to_tensorrt("distilgpt2", 4, TrtModelConfig.Language)
