@@ -8,8 +8,12 @@ class TrtModelConfig(Enum):
     Vison = {
         'input0': '3x224x224',
     }
-    Language = {
+    DistilGPT2 = {
         'input_ids': '64',
+    }
+    DistilBert = {
+        'input_ids': '64',
+        'attention_mask': '64',
     }
 
 def convert_to_tensorrt(model_name: str, batch_size: int, model_config: TrtModelConfig) -> bool:
@@ -46,11 +50,16 @@ instance_group [
         f'--onnx={model_name}.onnx', 
         f'--saveEngine={trt_model_path}'
     ]
-    for input_name, shape in model_config_dict.items():
+    if len(model_config_dict) > 0:
+        min_shapes = ','.join([f'{input_name}:1x{shape}' for input_name, shape in model_config_dict.items()])
+        opt_shapes = ','.join([f'{input_name}:1x{shape}' for input_name, shape in model_config_dict.items()])
+        max_shapes = ','.join([f'{input_name}:{batch_size}x{shape}' for input_name, shape in model_config_dict.items()])
+        shapes = ','.join([f'{input_name}:1x{shape}' for input_name, shape in model_config_dict.items()])
         args.extend([
-            f'--minShapes={input_name}:1x{shape}',
-            f'--optShapes={input_name}:1x{shape}',
-            f'--maxShapes={input_name}:{batch_size}x{shape}',
+            f'--minShapes={min_shapes}',
+            f'--optShapes={opt_shapes}',
+            f'--maxShapes={max_shapes}',
+            f'--shapes={shapes}'
         ])
     subprocess.run(args, env=envs)
     # print(f'Exec args = {args}, envs = {envs}.')

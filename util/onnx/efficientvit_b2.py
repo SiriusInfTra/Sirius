@@ -10,10 +10,12 @@ model = timm.create_model('efficientvit_b2.r224_in1k', pretrained=True)
 
 
 
-torch.onnx.export(model, torch.rand(batch_size, 3, 224, 224), 
-                  f"{model_name}.onnx",verbose=False,
-                  input_names=["input0"], output_names=["output0"], 
-                  export_params=True)
+torch.onnx.export(
+    model, torch.rand(batch_size, 3, 224, 224), 
+    f"{model_name}.onnx",verbose=False,
+    input_names=["input0"], output_names=["output0"], export_params=True,
+    dynamic_axes={"input0": {0: "batch_size"}, "output0": {0: "batch_size"}}
+)
 
 
 trt_converter.convert_to_tensorrt(model_name, batch_size, TrtModelConfig.Vison)

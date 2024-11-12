@@ -50,4 +50,4 @@ torch.onnx.export(
 )
 
 
-trt_converter.convert_to_tensorrt("distilgpt2", 4, TrtModelConfig.Language)
+trt_converter.convert_to_tensorrt("distilgpt2", 4, TrtModelConfig.DistilGPT2)
