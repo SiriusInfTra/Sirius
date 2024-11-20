@@ -12,7 +12,7 @@ std::mutex WarmCache::data_mutex_;
 std::unordered_map<std::string, std::unique_ptr<WarmCache>> WarmCache::loaded_models_;
 std::atomic<int> WarmCache::concurrent_loads[MAX_DEVICE];
 TritonConfig WarmCache::triton_config_;
-size_t WarmCache::curr_memory_usage_ = 0;
+size_t WarmCache::curr_memory_usage_[MAX_DEVICE];
 
 
 
@@ -23,6 +23,9 @@ void WarmCache::Init(TritonConfig config) {
     LOG(INFO) << "[TritonProxy] No memory limit.";
   } else {
     LOG(INFO) << "[TritonProxy] Memory limit: " << triton_config_.max_memory_nbytes << " MB. ";
+  }
+  for (auto &&curr_memory_usage : curr_memory_usage_) {
+    curr_memory_usage = 0;
   }
 }
 
@@ -49,6 +52,7 @@ void WarmCache::IncModel(inference::GRPCInferenceService::Stub &stub, ::grpc::Cl
     // std::unique_lock inc_lock{warm_cache->inc_mutex_};
   }
   std::unique_lock s_lock{warm_cache->s_mutex_};
+  size_t& curr_memory_usage_device = curr_memory_usage_[GetModelDevice(model_name)];
   auto t2 = std::chrono::steady_clock::now();
   LOG(INFO) << "[TritonProxy] MODEL " << model_name << " GET_LOCK " << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count() << "ms.";
 
@@ -59,7 +63,7 @@ void WarmCache::IncModel(inference::GRPCInferenceService::Stub &stub, ::grpc::Cl
     s_lock.lock();
     auto t3 = std::chrono::steady_clock::now();
     LOG(INFO) << "[TritonProxy] MODEL " << model_name << " GET_SWAP_LOCK " << std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2).count() << "ms.";
-    while(curr_memory_usage_ + model_memory_usage > triton_config_.max_memory_nbytes) {
+    while(curr_memory_usage_device + model_memory_usage > triton_config_.max_memory_nbytes) {
       WarmCache *evict_model = nullptr;
       std::unique_lock<std::mutex> evict_lock;
       for (bool try_lock : {true, false}) {
@@ -100,13 +104,13 @@ void WarmCache::IncModel(inference::GRPCInferenceService::Stub &stub, ::grpc::Cl
       auto status = stub.RepositoryModelUnload(&context, request, &response);
       CHECK(status.ok());
       evict_model->alive_ = false;
-      curr_memory_usage_ -= GetModelMemoryUsage(evict_model->model_name_);
+      curr_memory_usage_device -= GetModelMemoryUsage(evict_model->model_name_);
       auto t6 = std::chrono::steady_clock::now();
       LOG(INFO) << "[TritonProxy] MODEL " << model_name << " UNLOAD_MODEL " << std::chrono::duration_cast<std::chrono::milliseconds>(t6 - t5).count() << "ms.";
     }
     auto t7 = std::chrono::steady_clock::now();
     warm_cache->alive_ = true;  
-    curr_memory_usage_ += model_memory_usage;
+    curr_memory_usage_device += model_memory_usage;
     // static std::atomic<int> concurrent_loads[MAX_DEVICE] = {4, 4, 4, 4};
     auto &concurrent_load = concurrent_loads[triton_config_.models_device.find(model_name)->second];
     // static std::atomic<int> concurrent_load = 0;
@@ -123,7 +127,7 @@ void WarmCache::IncModel(inference::GRPCInferenceService::Stub &stub, ::grpc::Cl
     auto t8 = std::chrono::steady_clock::now();
     LOG(INFO) << "[TritonProxy] MODEL " << model_name << " LOAD_MODEL " << std::chrono::duration_cast<std::chrono::milliseconds>(t8 - t7).count() << "ms.";
     LOG(INFO) << "[TritonProxy] MODEL " << model_name << " TOT_INC " << std::chrono::duration_cast<std::chrono::milliseconds>(t8 - t0).count() << "ms.";
-    LOG(INFO) << "[TritonProxy] Model " << model_name << " loaded, predict curr_memory_usage_: " << curr_memory_usage_;
+    LOG(INFO) << "[TritonProxy] Model " << model_name << " loaded, predict curr_memory_usage_: " << curr_memory_usage_device;
   }
   warm_cache->infering_cnt_++;
   warm_cache->hotness_++;
@@ -154,6 +158,16 @@ size_t WarmCache::GetModelMemoryUsage(const std::string &name) {
   std::string name_normalized = name.substr(0, pos);
   auto it = triton_config_.models_memory_nbytes.find(name_normalized);
   CHECK(it != triton_config_.models_memory_nbytes.end())
+      << "Model " << name << " not found in config";
+  return it->second;
+}
+
+size_t WarmCache::GetModelDevice(const std::string &name) {
+  if (triton_config_.max_memory_nbytes == 0) {
+    return 0;
+  }
+  auto it = triton_config_.models_device.find(name);
+  CHECK(it != triton_config_.models_device.end())
       << "Model " << name << " not found in config";
   return it->second;
 }
