@@ -223,7 +223,7 @@ ColdModelCache::PushCacheItem(
   size_t uncache_nbytes = 0;
   for (size_t k = 0; k < groups_nbytes.size(); ++k) {
     memory_byte_t group_nbytes = tvm::GetMemBlockAlignedNBytes(groups_nbytes[k]);
-    if ((k == 0 || cache_item->cached_group_nbytes + groups_nbytes[k] / 2 <= model_max_cached_nbytes)) {
+    if (model_max_cached_nbytes > 0 && (k == 0 || cache_item->cached_group_nbytes + groups_nbytes[k] / 2 <= model_max_cached_nbytes)) {
       cache_item->cached_groups_id.push_back(k);
       cache_item->cached_group_nbytes += group_nbytes;
     } else {
