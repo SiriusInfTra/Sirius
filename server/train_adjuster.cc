@@ -111,7 +111,8 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
   int cur_train_target_bs = 
       adjuster_->cached_target_batch_sizes_[device_id];
   // (((sta::DeviceManager::GetNumVisibleGpu() > 1) && false) ? 1
-  int min_train_bs = sta::DeviceManager::GetNumVisibleGpu() > 1 ? 1 : 0;
+  // int min_train_bs = sta::DeviceManager::GetNumVisibleGpu() > 1 ? 1 : 0;
+  int min_train_bs = 0;
   if (cur_train_target_bs <= min_train_bs) {
     LOG_IF(INFO, Config::log_memory_adjust) 
         << "[InferRequireMemAdjust] target batch batch is already " <<  min_train_bs << ", skip adjust";
