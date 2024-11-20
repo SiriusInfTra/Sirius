@@ -496,7 +496,7 @@ class System:
             self.server = None
         if self.use_triton and self.triton_server is not None:
             self.triton_server.send_signal(signal.SIGINT)
-            self.triton_log = None
+            self.triton_server = None
         if kill_train and self.log_dir is not None:
             train_pids = set()
             print('Force to kill train.')
