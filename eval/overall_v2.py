@@ -237,14 +237,14 @@ class SkewedConfig:
 
 
 class AzureConfig:
-    train_model = 'swin_b'
-    train_batch_size = 72
+    train_model = 'swin_b' if not runner.is_four_gpu() else 'swin_b_ddp'
+    train_batch_size = 72 if not runner.is_four_gpu() else 66
 
     model_list = [InferModel.DenseNet161, InferModel.EfficientNetV2_s, 
                   InferModel.EfficientViT_b2, InferModel.DistilBertBase, 
                   InferModel.ResNet152, InferModel.DistilGPT2] 
     # num_model = 64
-    num_model = 56
+    num_model = scale_up_by_num_gpu(56)
     interval_sec = 5
     duration = 300 
     period_num = duration // interval_sec
@@ -518,8 +518,8 @@ if run_colsys:
         'cold_cache_ratio': 0.5, 
         # 'cold_cache_min_capability_nbytes': int(0.5 * 1024 * 1024 * 1024),
         # 'cold_cache_max_capability_nbytes': int(1 * 1024 * 1024 * 1024),
-        'cold_cache_min_capability_nbytes': int(1.0 * 1024 * 1024 * 1024),
-        'cold_cache_max_capability_nbytes': int(2.0 * 1024 * 1024 * 1024),
+        'cold_cache_min_capability_nbytes': int(2.0 * 1024 * 1024 * 1024),
+        'cold_cache_max_capability_nbytes': int(3.0 * 1024 * 1024 * 1024),
         'dynamic_sm_partition': dynamic_sm_partition,
     }
 
