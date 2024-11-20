@@ -61,9 +61,13 @@ ExternalProject_Add(triton-client
         -DTRITON_KEEP_TYPEINFO:BOOL=ON
     INSTALL_COMMAND ""
     BUILD_ALWAYS OFF
-    BUILD_COMMAND cd ${TRITON_CC_CLIENT_BUILD_DIR} &&
-        sed -in "s/TRITON_KEEP_TYPEINFO:BOOL=OFF/TRITON_KEEP_TYPEINFO:BOOL=ON/" CMakeCache.txt &&
-        ${CMAKE_COMMAND} . && cd - && ${CMAKE_COMMAND} --build .
+    BUILD_COMMAND
+        COMMAND sed -in "s/TRITON_KEEP_TYPEINFO:BOOL=OFF/TRITON_KEEP_TYPEINFO:BOOL=ON/" ${TRITON_BUILD_DIR}/CMakeCache.txt 
+        COMMAND ${CMAKE_COMMAND} . 
+        COMMAND ${CMAKE_COMMAND} --build .
+    LOG_DOWNLOAD ON
+    LOG_INSTALL ON
+    LOG_BUILD ON
 )
 
 set(TRITON_3RD_DIR ${TRITON_BUILD_DIR}/third-party)
@@ -97,4 +101,7 @@ ExternalProject_Add(client-impl
     BUILD_ALWAYS ON
     BUILD_COMMAND ${CMAKE_COMMAND} --build .
     DEPENDS triton-client
+    LOG_DOWNLOAD ON
+    LOG_INSTALL ON
+    LOG_BUILD ON
 )
