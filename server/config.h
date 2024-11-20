@@ -140,6 +140,8 @@ class Config {
   static bool enable_train_adjust_balance;
   static memory_mb_t train_adjust_balance_threshold;
 
+  static int train_adjust_batch_size_limit;
+
   static bool dummy_adjust;
 
   static bool system_initialized;

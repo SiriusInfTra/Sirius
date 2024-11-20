@@ -33,14 +33,17 @@ class IWorkload {
   virtual void Report(int verbose = false, std::ostream &os = std::cout) = 0;
 };
 
-std::unique_ptr<IWorkload> GetColsysWorkload(std::shared_ptr<grpc::Channel> channel,
-           std::chrono::seconds duration, double delay_before_profile,
-           const std::string &infer_timeline);
+std::unique_ptr<IWorkload> GetColsysWorkload(
+    std::shared_ptr<grpc::Channel> channel,
+    std::chrono::seconds duration, double delay_before_profile,
+    const std::string &infer_timeline);
 
-std::unique_ptr<IWorkload> GetTritonWorkload(std::shared_ptr<grpc::Channel> channel,
-           std::chrono::seconds duration, double delay_before_profile,
-           const std::string &infer_timeline, size_t max_memory_nbytes,
-           const std::string &triton_config, const std::string &triton_device_map);
-}
+std::unique_ptr<IWorkload> GetTritonWorkload(
+    std::shared_ptr<grpc::Channel> channel,
+    std::chrono::seconds duration, double delay_before_profile,
+    const std::string &infer_timeline, size_t max_memory_nbytes,
+    const std::string &triton_config, const std::string &triton_device_map);
+
+} // namespace colserve::workload
 
 #endif

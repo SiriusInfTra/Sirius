@@ -179,6 +179,10 @@ void init_cli_options() {
   app.add_option("--train-adjust-balance", colserve::Config::enable_train_adjust_balance,
       str(boost::format("train adjust balance, default is %d") 
           % colserve::Config::enable_train_adjust_balance));
+  app.add_option("--train-adjust-batch-size-limit", 
+      colserve::Config::train_adjust_batch_size_limit,
+      str(boost::format("train adjust batch size limit, default is %d") 
+          % colserve::Config::train_adjust_batch_size_limit));
   app.add_flag("--dump-adjust-info", 
       colserve::Config::dump_adjust_info,
       str(boost::format("dump adjust info, default is %d") 
@@ -319,6 +323,8 @@ void init_config() {
   READ_ENV_BOOL_CONFIG("COLSERVE_LOG_INFER_LOAD_PARAM", log_infer_load_param);
   READ_ENV_BOOL_CONFIG("COLSERVE_LOG_CONTROLLER", log_controller);
   READ_ENV_BOOL_CONFIG("COLSERVE_LOG_TASK_SWITCH", log_task_switch);
+
+  CHECK(setenv("COLSYS_PORT", cfg::port.c_str(), 1) == 0);
   
   if (cfg::log_all) {
     cfg::log_all = true;
@@ -336,10 +342,11 @@ void init_config() {
     cfg::log_task_switch = true;
   }
 
-  std::string header = str(boost::format("%s COLSERVE CONFIG [PID %d] %s") 
-                           % std::string(16, '=')
-                           % getpid()
-                           % std::string(16, '='));
+std::string header = str(boost::format("%s COLSERVE CONFIG [PID %d | PORT %d] %s") 
+                          % std::string(16, '=')
+                          % getpid()
+                          % std::stoi(cfg::port)
+                          % std::string(16, '='));
   std::cerr << header << std::endl;
   STREAM_OUTPUT(serve_mode);
   STREAM_OUTPUT(use_shared_tensor);
@@ -388,7 +395,6 @@ int main(int argc, char *argv[]) {
   init_cli_options();
   CLI11_PARSE(app, argc, argv);
   init_config();
-  CHECK_NE(setenv("COL_SERVE_PORT", colserve::Config::port.c_str(), 1), -1) << "setenv failed";
 
   std::thread shutdown_trigger([](){
     std::this_thread::sleep_for(std::chrono::minutes(max_live_minute));

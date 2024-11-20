@@ -139,7 +139,6 @@ if args.binary_dir != 'build':
 if args.multi_gpu:
     run_comm.UniformConfig_v2.train_model += "_ddp"
     run_comm.SkewedConfig_v2.train_model += "_ddp"
-    # run_comm.UniformConfig_v2.num_model = runner.scale_up_by_num_gpu(50)
 
 retry_limit = args.retry_limit
 retry_if_fail = retry_limit >= 1
@@ -643,7 +642,7 @@ if run_colsys:
                             **system_config)
             run(system, workload, server_model_config, "overall-hybrid", "colsys-hybrid")
 
-## MARK: MARK: strawman
+## MARK: strawman
 if run_strawman:
     system_config = {
         'mode' : System.ServerMode.ColocateL2,

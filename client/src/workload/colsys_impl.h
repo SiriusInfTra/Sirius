@@ -24,8 +24,8 @@ using AsyncInferResult = grpc::ClientAsyncResponseReader<InferResult>;
 using AsyncServerStatus = grpc::ClientAsyncResponseReader<ServerStatus>;
 
 
-
-inline void SetGPTRequest(InferRequest &request, const std::string &model, const std::string &data) {
+inline void SetGPTRequest(InferRequest &request, const std::string &model, 
+                          const std::string &data) {
   request.set_model(model);
   request.add_inputs();
   request.mutable_inputs(0)->set_dtype("int64");
@@ -34,7 +34,8 @@ inline void SetGPTRequest(InferRequest &request, const std::string &model, const
   request.mutable_inputs(0)->set_data(data);
 }
 
-inline void SetBertRequest(InferRequest &request, const std::string &model, const std::string &data, const std::string &mask) {
+inline void SetBertRequest(InferRequest &request, const std::string &model, 
+                           const std::string &data, const std::string &mask) {
   request.set_model(model);
   request.add_inputs();
   request.mutable_inputs(0)->set_dtype("int64");
@@ -48,7 +49,8 @@ inline void SetBertRequest(InferRequest &request, const std::string &model, cons
   request.mutable_inputs(1)->set_data(mask);
 }
 
-inline void SetResnetRequest(InferRequest &request, const std::string &model, const std::string &data) {
+inline void SetResnetRequest(InferRequest &request, const std::string &model, 
+                             const std::string &data) {
   request.set_model(model);
   request.add_inputs();
   request.mutable_inputs(0)->set_dtype("float32");
@@ -59,7 +61,8 @@ inline void SetResnetRequest(InferRequest &request, const std::string &model, co
   request.mutable_inputs(0)->set_data(data);
 }
 
-inline void SetInceptionRequest(InferRequest &request, const std::string &model, const std::string &data) {
+inline void SetInceptionRequest(InferRequest &request, const std::string &model, 
+                                const std::string &data) {
   request.set_model(model);
   request.add_inputs();
   request.mutable_inputs(0)->set_dtype("float32");
@@ -70,7 +73,8 @@ inline void SetInceptionRequest(InferRequest &request, const std::string &model,
   request.mutable_inputs(0)->set_data(data);
 }
 
-inline void SetMnistRequest(InferRequest &request, const std::string &model, const std::string &data) {
+inline void SetMnistRequest(InferRequest &request, const std::string &model, 
+                            const std::string &data) {
   request.set_model(model);
   request.add_inputs();
   request.mutable_inputs(0)->set_dtype("float32");
@@ -84,7 +88,8 @@ inline std::unique_ptr<ServeStub> NewStub(std::shared_ptr<grpc::Channel> channel
   return colsys::ColServe::NewStub(channel);
 }
 
-inline void StubAsyncInferenceDone(ServeStub &stub, ::grpc::ClientContext *context, const std::string &model_name) {
+inline void StubAsyncInferenceDone(ServeStub &stub, ::grpc::ClientContext *context, 
+                                   const std::string &model_name) {
   // only triton backend
 }
 

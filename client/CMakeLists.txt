@@ -7,85 +7,94 @@ if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
   set(CMAKE_CUDA_ARCHITECTURES 70)
 endif()
 
-set(COLSYS_ROOT_DIR ${PROJECT_SOURCE_DIR}/../)
-set(TRITON_BUILD_PREFIX ${PROJECT_SOURCE_DIR}/third_party/build/triton-client-prefix/src/triton-client-build)
-set(TRITON_INSTALL_DIR ${TRITON_BUILD_PREFIX}/cc-clients/install)
-set(TRITON_3RD_DID ${TRITON_BUILD_PREFIX}/third-party)
-message("TRITON_BUILD_PREFIX ${TRITON_BUILD_PREFIX}")
-message("TRITON_INSTALL_DIR ${TRITON_INSTALL_DIR}")
-message("TRITON_3RD_DID ${TRITON_3RD_DID}")
-find_package(TritonCommon REQUIRED NO_DEFAULT_PATH 
-  PATHS ${TRITON_INSTALL_DIR}/lib/cmake/TritonCommon)
+if (NOT DEFINED COLSYS_ROOT_DIR)
+  message(FATAL_ERROR "COLSYS_ROOT_DIR is not defined")
+endif()
+if (NOT DEFINED COLSYS_BUILD_DIR)
+  message(FATAL_ERROR "COLSYS_BUILD_DIR is not defined")
+endif()
 
-find_package(TritonClient REQUIRED NO_DEFAULT_PATH 
-  PATHS ${TRITON_INSTALL_DIR}/lib/cmake/TritonClient)
+set(TRITON_SOURCE_DIR ${PROJECT_SOURCE_DIR}/third_party/triton-client)
+set(TRITON_PREFIX ${COLSYS_BUILD_DIR}/client/triton-client)
+set(TRITON_BUILD_DIR ${TRITON_PREFIX}/src/triton-client-build)
 
-include(/disk2/wyk/gpu-colocation/cmake/glog.cmake)
-include(${TRITON_INSTALL_DIR}/lib/cmake/TritonClient/TritonClientConfig.cmake)
-
-
-include(${TRITON_3RD_DID}/protobuf/lib/cmake/protobuf/protobuf-config.cmake)
-
-
-find_package(absl CONFIG REQUIRED NO_DEFAULT_PATH
-  PATHS ${TRITON_3RD_DID}/grpc/lib/cmake/absl)
-find_package(gRPC CONFIG REQUIRED NODEFAULT_PATH
-  PATHS ${TRITON_3RD_DID}/grpc/lib/cmake/grpc)
-find_package(Protobuf REQUIRED CONFIG NO_DEFAULT_PATH 
-  PATHS ${TRITON_3RD_DID}/protobuf/lib/cmake/protobuf)
-
-
-include(FetchContent)
-FetchContent_Declare(
-  CLI11
-  SOURCE_DIR /disk2/wyk/gpu-colocation/third_party/cli11
+# get triton version
+execute_process(
+    COMMAND git rev-parse HEAD
+    WORKING_DIRECTORY ${TRITON_SOURCE_DIR}
+    OUTPUT_VARIABLE TRITON_SHA1
+    OUTPUT_STRIP_TRAILING_WHITESPACE
 )
-FetchContent_MakeAvailable(CLI11)
-add_library(colsys_proto ${COLSYS_ROOT_DIR}/proto/colserve.proto)
-target_link_libraries(colsys_proto PUBLIC gRPC::grpc++)
-set(PROTO_BINARY_DIR ${CMAKE_BINARY_DIR}/generated_proto)
-set(PROTO_IMPORT_DIRS ${COLSYS_ROOT_DIR}/proto/)
-file(MAKE_DIRECTORY ${PROTO_BINARY_DIR})
-target_include_directories(colsys_proto PUBLIC ${PROTO_BINARY_DIR})
-
-protobuf_generate(
-  TARGET colsys_proto
-  IMPORT_DIRS ${PROTO_IMPORT_DIRS}
-  PROTOC_OUT_DIR "${PROTO_BINARY_DIR}")
-
-protobuf_generate(
-    TARGET colsys_proto
-    LANGUAGE grpc
-    GENERATE_EXTENSIONS .grpc.pb.h .grpc.pb.cc
-    PLUGIN "protoc-gen-grpc=\$<TARGET_FILE:gRPC::grpc_cpp_plugin>"
-    IMPORT_DIRS ${PROTO_IMPORT_DIRS}
-    PROTOC_OUT_DIR "${PROTO_BINARY_DIR}")
-
-
-add_executable(workload_launcher 
-  workload_launcher.cc
-  workload/colsys_impl.cc
-  workload/triton_impl.cc
-  workload/warm_cache.cc
-  workload/util.cc
-)
-target_link_libraries(workload_launcher PUBLIC
-  colsys_proto
-  TritonClient::grpcclient_static
-  glog::glog 
-  CLI11::CLI11
+execute_process(
+    COMMAND git "branch" "-r" "--sort=-committerdate" "--contains" ${TRITON_SHA1}
+    COMMAND sed -nE "s/.*origin\\/([^ ]*).*/\\1/p"
+    WORKING_DIRECTORY ${TRITON_SOURCE_DIR}
+    OUTPUT_VARIABLE TRITON_BRANCH_NAME
+    OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-add_executable(busy_loop_launcher 
-  busy_loop_launcher.cc
-  workload/colsys_impl.cc
-  workload/triton_impl.cc
-  workload/warm_cache.cc
-  workload/util.cc
+
+set(TRITON_CC_CLIENT_BUILD_DIR ${TRITON_BUILD_DIR}/cc-clients)
+
+include(ExternalProject)
+ExternalProject_Add(triton-client
+    SOURCE_DIR ${TRITON_SOURCE_DIR}
+    PREFIX ${TRITON_PREFIX}
+    CMAKE_ARGS 
+        -DTRITON_ENABLE_CC_HTTP=OFF 
+        -DTRITON_ENABLE_CC_GRPC=ON 
+        -DTRITON_ENABLE_PERF_ANALYZER=OFF
+        -DTRITON_ENABLE_PERF_ANALYZER_C_API=OFF 
+        -DTRITON_ENABLE_PERF_ANALYZER_TFS=OFF
+        -DTRITON_ENABLE_PERF_ANALYZER_TS=OFF
+        -DTRITON_ENABLE_GPU=ON 
+        -DTRITON_ENABLE_EXAMPLES=OFF 
+        -DTRITON_ENABLE_TESTS=OFF
+        -DTRITON_COMMON_REPO_TAG=${TRITON_BRANCH_NAME}
+        -DTRITON_THIRD_PARTY_REPO_TAG=${TRITON_BRANCH_NAME}
+        -DTRITON_CORE_REPO_TAG=${TRITON_BRANCH_NAME}
+        -DCMAKE_INSTALL_PREFIX=${TRITON_BUILD_DIR}-install
+        -DOPENSSL_ROOT_DIR=${CMAKE_PREFIX_PATH}
+    CMAKE_CACHE_ARGS
+        -DCMAKE_PREFIX_PATH:PATH=${CMAKE_PREFIX_PATH}
+        -DCMAKE_INSTALL_MESSAGE:STRING=NEVER
+        -DTRITON_KEEP_TYPEINFO:BOOL=ON
+    INSTALL_COMMAND ""
+    BUILD_ALWAYS OFF
+    BUILD_COMMAND cd ${TRITON_CC_CLIENT_BUILD_DIR} &&
+        sed -in "s/TRITON_KEEP_TYPEINFO:BOOL=OFF/TRITON_KEEP_TYPEINFO:BOOL=ON/" CMakeCache.txt &&
+        ${CMAKE_COMMAND} . && cd - && ${CMAKE_COMMAND} --build .
 )
-target_link_libraries(busy_loop_launcher PUBLIC
-  colsys_proto
-  TritonClient::grpcclient_static
-  glog::glog 
-  CLI11::CLI11
+
+set(TRITON_3RD_DIR ${TRITON_BUILD_DIR}/third-party)
+
+message(">> TRITON_SOURCE_DIR: ${TRITON_SOURCE_DIR}")
+message(">> TRITON_PREFIX: ${TRITON_PREFIX}")
+message(">> TRITON_BUILD_DIR: ${TRITON_BUILD_DIR}")
+# message(">> TRITON_INSTALL_DIR: ${TRITON_INSTALL_DIR}")
+message(">> TRITON_BRANCH_NAME: ${TRITON_BRANCH_NAME}")
+message(">> TRITON_3RD_DIR: ${TRITON_3RD_DIR}")
+
+include(ExternalProject)
+ExternalProject_Add(client-impl
+    SOURCE_DIR ${PROJECT_SOURCE_DIR}/src
+    PREFIX ${COLSYS_BUILD_DIR}/client/impl
+    CMAKE_ARGS 
+        -DCOLSYS_ROOT_DIR=${COLSYS_ROOT_DIR}
+        -DCOLSYS_BUILD_DIR=${COLSYS_BUILD_DIR}
+        -DTRITON_SOURCE_DIR=${TRITON_SOURCE_DIR}
+        -DTRITON_BUILD_DIR=${TRITON_BUILD_DIR}
+        -DTRITON_3RD_DIR=${TRITON_3RD_DIR}
+        -DTRITON_INSTALL_DIR=${TRITON_BUILD_DIR}-install
+        # -DOPENSSL_ROOT_DIR=${CMAKE_PREFIX_PATH}
+        # -DCMAKE_INSTALL_MESSAGE=LAZY
+    CMAKE_CACHE_ARGS
+        -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
+        -DCMAKE_PREFIX_PATH:PATH=${CMAKE_PREFIX_PATH}
+        -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=ON
+        # INSTALL_COMMAND ""
+    USES_TERMINAL_BUILD true
+    BUILD_ALWAYS ON
+    BUILD_COMMAND ${CMAKE_COMMAND} --build .
+    DEPENDS triton-client
 )

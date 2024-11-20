@@ -186,8 +186,6 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job,
       close(from_child_pipe[0]);
       dup2(from_child_pipe[1], STDOUT_FILENO);
     }
-    extra_env_ss << "COL_SERVE_PORT=" << Config::port << " ";
-    CHECK_NE(setenv("COL_SERVE_PORT", Config::port.c_str(), 1), -1);
     if (Config::use_xsched) {
       auto xsched_path = Config::binary_directory / "xsched";
       auto xsched_lib_path = xsched_path / "lib";

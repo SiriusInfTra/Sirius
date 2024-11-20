@@ -2,7 +2,7 @@
 
 1. Prepare the a new conda environment or use docker container, cuda version is `11.6`, cudnn version is `8.4`. Install `boost`, `cmake>=3.24` and `ninja`, `gcc` should have `c++17` support.
 
- 
+
 2. Clone and build [tvm](https://ipads.se.sjtu.edu.cn:1312/infer-train/tvm) for inference, and [pytorch](https://ipads.se.sjtu.edu.cn:1312/infer-train/pytorch) for training. Build [torchvision](https://github.com/pytorch/vision/tree/v0.13.1) to avoid symbol issues. Note CUDA backend should be enabled. Pay attention to pytorch `GLIBCXX_USE_CXX11_ABI` flag, which may cause ABI issues. To accelerate building, set `TORCH_CUDA_ARCH_LIST` flag to gpu computing capability, e.g., `TORCH_CUDA_ARCH_LIST=7.0`.
 
 3. Install python dependencies `cython`, `numpy`, `onnxruntime`, `torchvision` and etc.
@@ -61,7 +61,6 @@ Options
 -p,--port, gRPC server port, default is 8080
 ```
 
-
 ### launch client/benchmark
 
 ```
@@ -76,3 +75,39 @@ GLOG_logtostderr=1 ./build/hybrid_workload \
 ```
 
 See help for details.
+
+## Run Triton Benchmark
+
+Triton benchmark need additional steps to setup.
+
+### setup triton models
+
+models are stored at `server/triton_models`, as following. The model have a directory of the trtion compiled model (`model.plan`and `config.pbtxt`)
+
+```
+├── mnist
+│   └── 1
+│   │   └── model.plan
+│   └── model.pbtxt
+├── resnet152
+│   └── 1
+│   │   └── model.plan
+│   └── model.pbtxt
+...
+└── config.conf
+```
+
+`config.conf` is used to configure memory usage of model.
+
+```ini
+resnet152         = 260 # 242MB
+distilgpt2        = 345 # 326MB
+efficientvit_b2   = 125 # 108MB
+efficientnet_v2_s = 115 # 96MB
+densenet161       = 90  # 68MB
+distilbert_base   = 280 # 260MB
+```
+
+### setup triton tensorrt backend with unified memory support
+
+build and install [TensorRT Backend UM](https://ipads.se.sjtu.edu.cn:1312/infer-train/triton_tensorrt_um).

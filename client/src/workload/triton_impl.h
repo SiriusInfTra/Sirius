@@ -36,6 +36,7 @@ struct InferenceWorkloadStartRequest {
     delay_before_profile_ = delay_before_profile;
   }
 };
+
 struct InferWorkloadDoneRequest {
   int64_t time_stamp_;
 
@@ -43,8 +44,6 @@ struct InferWorkloadDoneRequest {
     time_stamp_ = time_stamp;
   }
 };
-
-
 
 struct ServerStatus {
   inference::ServerLiveResponse valaue;
@@ -55,7 +54,6 @@ struct ServerStatus {
   
 };
 
-
 struct InferRequest {
   inference::ModelInferRequest value;
 
@@ -64,9 +62,8 @@ struct InferRequest {
   }
 };
 
-
-
-inline void SetGPTRequest(InferRequest &request, const std::string &model, const std::string &data) {
+inline void SetGPTRequest(InferRequest &request, const std::string &model, 
+                          const std::string &data) {
   CHECK_EQ(request.value.inputs_size(), 0);
   request.value.set_model_name(model);
   auto* input = request.value.add_inputs();
@@ -82,7 +79,8 @@ inline void SetGPTRequest(InferRequest &request, const std::string &model, const
   
 }
 
-inline void SetBertRequest(InferRequest &request, const std::string &model, const std::string &ids, const std::string &mask) {
+inline void SetBertRequest(InferRequest &request, const std::string &model, 
+                           const std::string &ids, const std::string &mask) {
   CHECK_EQ(request.value.inputs_size(), 0);
   request.value.set_model_name(model);
   auto* input = request.value.add_inputs();
@@ -108,7 +106,8 @@ inline void SetBertRequest(InferRequest &request, const std::string &model, cons
   }
 }
 
-inline void SetMnistRequest(InferRequest &request, const std::string &model, const std::string &data) {
+inline void SetMnistRequest(InferRequest &request, const std::string &model, 
+                            const std::string &data) {
   CHECK_EQ(request.value.inputs_size(), 0);
   request.value.set_model_name(model);
   auto* input = request.value.add_inputs();
@@ -123,7 +122,8 @@ inline void SetMnistRequest(InferRequest &request, const std::string &model, con
     contents->add_fp32_contents(reinterpret_cast<const float*>(data.data())[k]);
   }
 }
-inline void SetResnetRequest(InferRequest &request, const std::string &model, const std::string &data) {
+inline void SetResnetRequest(InferRequest &request, const std::string &model, 
+                             const std::string &data) {
   CHECK_EQ(request.value.inputs_size(), 0);
   request.value.set_model_name(model);
   auto* input = request.value.add_inputs();
@@ -140,7 +140,8 @@ inline void SetResnetRequest(InferRequest &request, const std::string &model, co
   }
 }
 
-inline void SetInceptionRequest(InferRequest &request, const std::string &model, const std::string &data) {
+inline void SetInceptionRequest(InferRequest &request, const std::string &model, 
+                                const std::string &data) {
   CHECK_EQ(request.value.inputs_size(), 0);
   request.value.set_model_name(model);
   auto* input = request.value.add_inputs();
@@ -214,8 +215,8 @@ struct AsyncInferResult {
     grpc::ClientAsyncResponseReader<inference::ModelInferResponse>;
   std::unique_ptr<PendingInferResult> value;
 
-  AsyncInferResult(std::unique_ptr<PendingInferResult> result) : value(std::move(result)) {
-
+  AsyncInferResult(std::unique_ptr<PendingInferResult> result) 
+      : value(std::move(result)) {
   }
 
   void Finish(InferResult *result, grpc::Status* status, void* tag) {
@@ -228,7 +229,8 @@ struct AsyncServerStatus {
     grpc::ClientAsyncResponseReader<inference::ServerLiveResponse>;
   std::unique_ptr<PendingServerStatus> value;
 
-  AsyncServerStatus(std::unique_ptr<PendingServerStatus> result) : value(std::move(result)) {
+  AsyncServerStatus(std::unique_ptr<PendingServerStatus> result) 
+      : value(std::move(result)) {
 
   }
 
@@ -252,57 +254,75 @@ public:
   grpc::Status Inference(grpc::ClientContext *context,
                          const InferRequest &request, InferResult *response);
 
-  grpc::Status Train(grpc::ClientContext* context, const TrainRequest& request, TrainResult* response) {
+  grpc::Status Train(grpc::ClientContext* context, const TrainRequest& request,
+                     TrainResult* response) {
     throw std::runtime_error("Not implemented Train");
   }
 
-  std::unique_ptr<AsyncInferResult> AsyncInference(grpc::ClientContext* context, const InferRequest& request, grpc::CompletionQueue* cq) {
+  std::unique_ptr<AsyncInferResult> AsyncInference(
+      grpc::ClientContext* context, 
+      const InferRequest& request, 
+      grpc::CompletionQueue* cq) {
     WarmCache::IncModel(*stub_, context, request.model());
     auto result = stub_->AsyncModelInfer(context, request.value, cq);
     return std::make_unique<AsyncInferResult>(std::move(result));
   }
 
-  grpc::Status GetServerStatus(grpc::ClientContext* context, const EmptyRequest &request, ServerStatus* response) {
+  grpc::Status GetServerStatus(grpc::ClientContext* context, 
+                               const EmptyRequest &request, 
+                               ServerStatus* response) {
     inference::ServerLiveRequest server_live_request;
     return stub_->ServerLive(context, server_live_request, &response->valaue);
   }
 
-  std::unique_ptr<AsyncServerStatus> AsyncGetServerStatus(grpc::ClientContext* context, const EmptyRequest &request, grpc::CompletionQueue* cq) {
+  std::unique_ptr<AsyncServerStatus> AsyncGetServerStatus(
+      grpc::ClientContext* context, 
+      const EmptyRequest &request, 
+      grpc::CompletionQueue* cq) {
     inference::ServerLiveRequest server_live_request;
     auto result = stub_->AsyncServerLive(context, server_live_request, cq);
     return std::make_unique<AsyncServerStatus>(std::move(result));
   }
 
-  grpc::Status WarmupDone(grpc::ClientContext* context, const EmptyRequest &request, EmptyResult* response) {
+  grpc::Status WarmupDone(grpc::ClientContext* context, 
+                          const EmptyRequest &request, 
+                          EmptyResult* response) {
     return grpc::Status::OK; // Triton don't need warmup done!
   }
 
-  grpc::Status InferenceWorkloadStart(grpc::ClientContext* context, const InferenceWorkloadStartRequest &request, EmptyResult* response) {
+  grpc::Status InferenceWorkloadStart(
+      grpc::ClientContext* context, 
+      const InferenceWorkloadStartRequest &request, 
+      EmptyResult* response) {
     return grpc::Status::OK;
   }
 
-  grpc::Status InferenceWorkloadDone(grpc::ClientContext* context, const InferWorkloadDoneRequest &request, EmptyResult* response) {
+  grpc::Status InferenceWorkloadDone(
+      grpc::ClientContext* context, 
+      const InferWorkloadDoneRequest &request, 
+      EmptyResult* response) {
     return grpc::Status::OK;
   }
 
-  grpc::Status GetTrainFirstEpochStatus(grpc::ClientContext* context, const EmptyRequest &request, ServerStatus* response) {
+  grpc::Status GetTrainFirstEpochStatus(
+      grpc::ClientContext* context, 
+      const EmptyRequest &request, 
+      ServerStatus* response) {
     throw std::runtime_error("Not implemented GetTrainFirstEpochStatus");
   }
-
-
-
 };
 
 inline std::unique_ptr<ServeStub> NewStub(std::shared_ptr<grpc::Channel> channel) {
   return std::make_unique<ServeStub>(channel);
 }
 
-
-inline void StubAsyncInferenceDone(ServeStub &stub, ::grpc::ClientContext *context, const std::string &model_name) {
+inline void StubAsyncInferenceDone(
+    ServeStub &stub, 
+    ::grpc::ClientContext *context, 
+    const std::string &model_name) {
   WarmCache::DecModel(stub.Stub(), context, model_name);
 }
 
-}
-
+} // namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE
 
 #endif

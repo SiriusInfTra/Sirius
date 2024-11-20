@@ -38,7 +38,8 @@ int main(int argc, char** argv) {
     auto new_duration = app.duration
                         + app.wait_train_setup_sec
                         + app.wait_stable_before_start_profiling_sec;
-    LOG(INFO) << "Override duration from " << app.duration << " to " << new_duration << ".";
+    LOG(INFO) << "Override duration from " 
+              << app.duration << " to " << new_duration << ".";
     app.duration = new_duration;
   }
 
@@ -65,11 +66,14 @@ int main(int argc, char** argv) {
       grpc::CreateChannel(triton_target, grpc::InsecureChannelCredentials()),
       std::chrono::seconds(app.duration),
       app.wait_train_setup_sec + app.wait_stable_before_start_profiling_sec,
-      app.infer_timeline, app.triton_max_memory, app.triton_config, app.triton_device_map
+      app.infer_timeline, app.triton_max_memory, 
+      app.triton_config, app.triton_device_map
     );
   }
   CHECK(train_workload == nullptr || train_workload->Hello());
-  CHECK(infer_workload == nullptr || train_workload == infer_workload || infer_workload->Hello());
+  CHECK(infer_workload == nullptr 
+        || train_workload == infer_workload 
+        || infer_workload->Hello());
 
   if (app.enable_infer && !app.infer_models.empty()) {
     if (app.warmup > 0) {
@@ -92,8 +96,9 @@ int main(int argc, char** argv) {
       }
     }
     for(auto &model : app.infer_models) {
-      infer_workload->InferBusyLoop(model, app.concurrency, nullptr, app.wait_train_setup_sec, 
-                             app.warmup, app.show_result);
+      infer_workload->InferBusyLoop(
+          model, app.concurrency, nullptr, app.wait_train_setup_sec, 
+          app.warmup, app.show_result);
     }
   }
   
@@ -115,8 +120,6 @@ int main(int argc, char** argv) {
   if (train_workload != nullptr && infer_workload != train_workload) {
     train_workload->PostRun();
   }
-
-
 
   LOG(INFO) << "report result ...";
   std::fstream fstream;

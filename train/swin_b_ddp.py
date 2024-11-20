@@ -1,28 +1,22 @@
-import contextlib
 import torch
-from torch.nn.parallel import DistributedDataParallel as DDP
+from torch import nn
 import torch.distributed as torch_dist
 import torch.multiprocessing as torch_mp
-from torch import nn
-import swin_b_tiny
-from torch.utils.data import TensorDataset, DataLoader
-import argparse
-import os, sys
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import Dataset
+
 import torch_col
 from torch_col import MemoryPool, EventManager, TrainMode, ColocateCtrlHookMode
 from torch_col import DynamicBatchDataset, BatchDistributePolicy
 from torch_col import dynamic_batch
 import torch_col.trainer
 import torch_col.xsched
-from typing import Optional, cast
-import time
-from torch.utils.data import Dataset
-import os
-import torch
-import torchvision
 from torchvision import models
-import torchvision.transforms as transforms
-from torch.utils.data import DataLoader, TensorDataset
+
+import argparse
+import os, sys
+import time
+from typing import Optional, cast
 
 
 def setup(rank, world_size):
