@@ -13,7 +13,7 @@ std::mutex WarmCache::data_mutex_;
 std::unordered_map<std::string, std::unique_ptr<WarmCache>> WarmCache::loaded_models_;
 std::atomic<int> WarmCache::concurrent_loads[MAX_DEVICE];
 TritonConfig WarmCache::triton_config_;
-size_t WarmCache::curr_memory_usage_ = 0;
+size_t WarmCache::curr_memory_usage_[MAX_DEVICE];
 
 
 void WarmCache::Init(TritonConfig config) {
