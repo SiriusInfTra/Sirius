@@ -37,3 +37,5 @@ for model in "${models[@]}"; do
     exit 1
   fi
 done
+
+echo "All models compiled."

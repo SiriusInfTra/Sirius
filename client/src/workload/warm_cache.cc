@@ -109,14 +109,15 @@ void WarmCache::IncModel(inference::GRPCInferenceService::Stub& stub,
           }
         }
         if (evict_model != nullptr) {
+          // try lock success
           break;
         }
       }
 
-      LOG(INFO) << "[TritonProxy] Model " << model_name
+      DLOG(INFO) << "[TritonProxy] Model " << model_name
                 << " try to evict model " << evict_model->model_name_ << ".";
       auto t4 = std::chrono::steady_clock::now();
-      LOG(INFO) << "[TritonProxy] MODEL " << model_name << " FIND_EVICT_MODEL "
+      DLOG(INFO) << "[TritonProxy] MODEL " << model_name << " FIND_EVICT_MODEL "
                 << std::chrono::duration_cast<std::chrono::milliseconds>(t4 - t3).count()
                 << "ms.";
 
@@ -125,7 +126,7 @@ void WarmCache::IncModel(inference::GRPCInferenceService::Stub& stub,
           return evict_model->infering_cnt_ == 0;
       });
       auto t5 = std::chrono::steady_clock::now();
-      LOG(INFO) << "[TritonProxy] Model " << model_name << " WAIT_MODEL_RELEASE "
+      DLOG(INFO) << "[TritonProxy] Model " << model_name << " WAIT_MODEL_RELEASE "
                 << std::chrono::duration_cast<std::chrono::milliseconds>(t5 - t4).count()
                 << "ms.";
 
@@ -139,7 +140,7 @@ void WarmCache::IncModel(inference::GRPCInferenceService::Stub& stub,
       evict_model->alive_ = false;
       curr_memory_usage_device -= GetModelMemoryUsage(evict_model->model_name_);
       auto t6 = std::chrono::steady_clock::now();
-      LOG(INFO) << "[TritonProxy] MODEL " << model_name << " UNLOAD_MODEL "
+      DLOG(INFO) << "[TritonProxy] MODEL " << model_name << " UNLOAD_MODEL "
                 << std::chrono::duration_cast<std::chrono::milliseconds>(t6 - t5).count()
                 << "ms.";
     }
@@ -165,10 +166,9 @@ void WarmCache::IncModel(inference::GRPCInferenceService::Stub& stub,
     concurrent_load.fetch_sub(1);
     auto t8 = std::chrono::steady_clock::now();
     LOG(INFO) << "[TritonProxy] MODEL " << model_name << " LOAD_MODEL "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(t8 - t7).count()
-              << "ms.";
-    LOG(INFO) << "[TritonProxy] MODEL " << model_name << " TOT_INC "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(t8 - t0).count()
+              << std::chrono::duration_cast<std::chrono::milliseconds>(t8 - t7).count() 
+              << "ms. " << " TOT_INC "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(t8 - t0).count() 
               << "ms.";
     LOG(INFO) << "[TritonProxy] Model " << model_name
               << " loaded, predict curr_memory_usage_: " << curr_memory_usage_device;
