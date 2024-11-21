@@ -262,8 +262,9 @@ ColdModelCache::PushCacheItem(
   if (current_capacity_nbytes_ + total_nbytes <= Config::cold_cache_max_capability_nbytes) {
     current_capacity_nbytes_ += total_nbytes;
     current_cached_nbytes_ += cache_item->cached_group_nbytes;
-    LOG(INFO) << "[ColdModelCache] Cache Succes, update Capacity=" 
-              << sta::PrintByte(current_capacity_nbytes_);
+    LOG_IF(INFO, Config::log_cold_cache) 
+        << "[ColdModelCache] Cache Succes, update Capacity=" 
+        << sta::PrintByte(current_capacity_nbytes_);
   } else {
     // CHECK_GE((Config::cold_cache_max_capability_nbytes + Config::cold_cache_min_capability_nbytes) / 2, 
     //          cache_item->cached_group_nbytes);
@@ -279,12 +280,13 @@ ColdModelCache::PushCacheItem(
     current_capacity_nbytes_ = current_cached_nbytes_;
     current_capacity_nbytes_ += cache_item->cached_group_nbytes;
     current_cached_nbytes_ += cache_item->cached_group_nbytes;
-    LOG(INFO) << "[PushCacheItem] Shrink Cache, " 
-              << "capacity: " << sta::PrintByte(old_capacity_nbytes) 
-              << " -> " << sta::PrintByte(current_capacity_nbytes_) << ", "
-              << "cached: " << sta::PrintByte(old_cached_nbytes) 
-              << " -> " << sta::PrintByte(current_cached_nbytes_) << ", "
-              << "evict_to: " << sta::PrintByte(evict_to_nbytes) << ".";
+    LOG_IF(INFO, Config::log_cold_cache) 
+        << "[PushCacheItem] Shrink Cache, " 
+        << "capacity: " << sta::PrintByte(old_capacity_nbytes) 
+        << " -> " << sta::PrintByte(current_capacity_nbytes_) << ", "
+        << "cached: " << sta::PrintByte(old_cached_nbytes) 
+        << " -> " << sta::PrintByte(current_cached_nbytes_) << ", "
+        << "evict_to: " << sta::PrintByte(evict_to_nbytes) << ".";
   }
   CHECK(cold_cache_items_.emplace(std::make_pair(name, cache_item)).second == true) << name;
   DLOG(INFO) << "cached_groups_id = " << cache_item->cached_groups_id; 
