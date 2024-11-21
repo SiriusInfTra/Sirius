@@ -1,13 +1,13 @@
 #ifndef COLSERVE_MODEL_CACHE_H
 #define COLSERVE_MODEL_CACHE_H
 
-#include <cstddef>
-#include <glog/logging.h>
+#include <server/logging_as_glog.h>
 #include <server/config.h>
 #include <server/schedule/job_queue.h>
 
 #include <common/util.h>
 
+#include <cstddef>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -122,7 +122,9 @@ class ColdModelCache {
   using group_id_list = std::vector<size_t>;
 
   ColdModelCache(int device_id)
-    : current_cached_nbytes_{0}, current_capacity_nbytes_(Config::cold_cache_min_capability_nbytes), device_id_{device_id} {}
+    : current_cached_nbytes_{0}, 
+      current_capacity_nbytes_(Config::cold_cache_min_capability_nbytes), 
+      device_id_{device_id} {}
 
   friend class InferModelStore;
 
@@ -259,8 +261,6 @@ class ColdModelCache {
   static void Init();
   static ColdModelCache * Get(int device_id);
 };
-
-
 
 }
 

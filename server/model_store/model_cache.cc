@@ -223,7 +223,9 @@ ColdModelCache::PushCacheItem(
   size_t uncache_nbytes = 0;
   for (size_t k = 0; k < groups_nbytes.size(); ++k) {
     memory_byte_t group_nbytes = tvm::GetMemBlockAlignedNBytes(groups_nbytes[k]);
-    if (model_max_cached_nbytes > 0 && (k == 0 || cache_item->cached_group_nbytes + groups_nbytes[k] / 2 <= model_max_cached_nbytes)) {
+    if (model_max_cached_nbytes > 0 
+        && (k == 0 || cache_item->cached_group_nbytes + groups_nbytes[k] / 2 <= model_max_cached_nbytes)
+    ) {
       cache_item->cached_groups_id.push_back(k);
       cache_item->cached_group_nbytes += group_nbytes;
     } else {
@@ -251,41 +253,60 @@ ColdModelCache::PushCacheItem(
   
   memory_byte_t before_capacity_nbytes = current_capacity_nbytes_;
   memory_byte_t before_cache_nbytes = current_cached_nbytes_;
-  memory_byte_t before_infer_nbytes = ResourceManager::GetInferMemoryMB(sta::DeviceManager::GetCurrentDevice()) * 1024 * 1024;
-  memory_byte_t before_ic_nbytes = before_infer_nbytes - current_cached_nbytes_ + current_capacity_nbytes_;
+  memory_byte_t before_infer_nbytes = 
+      ResourceManager::GetInferMemoryMB(sta::DeviceManager::GetCurrentDevice()) * 1_MB;
+  memory_byte_t before_ic_nbytes = before_infer_nbytes 
+                                   - current_cached_nbytes_ 
+                                   + current_capacity_nbytes_;
   memory_byte_t evict_nbytes = 0;
   if (current_capacity_nbytes_ + total_nbytes <= Config::cold_cache_max_capability_nbytes) {
     current_capacity_nbytes_ += total_nbytes;
     current_cached_nbytes_ += cache_item->cached_group_nbytes;
-    LOG(INFO) << "[ColdModelCache] Cache Succes, update Capacity=" << sta::ByteToMB(current_capacity_nbytes_) << "MB.";
+    LOG(INFO) << "[ColdModelCache] Cache Succes, update Capacity=" 
+              << sta::PrintByte(current_capacity_nbytes_);
   } else {
-    CHECK_GE((Config::cold_cache_max_capability_nbytes + Config::cold_cache_min_capability_nbytes) / 2, 
-             cache_item->cached_group_nbytes);
-    memory_byte_t evict_to_nbytes = (Config::cold_cache_max_capability_nbytes + Config::cold_cache_min_capability_nbytes) / 2;
+    // CHECK_GE((Config::cold_cache_max_capability_nbytes + Config::cold_cache_min_capability_nbytes) / 2, 
+    //          cache_item->cached_group_nbytes);
+    memory_byte_t evict_to_nbytes = (Config::cold_cache_max_capability_nbytes 
+                                     + Config::cold_cache_min_capability_nbytes) / 2;
+    CHECK_GE(evict_to_nbytes, cache_item->cached_group_nbytes);
+
     memory_byte_t old_capacity_nbytes = current_capacity_nbytes_;
     memory_byte_t old_cached_nbytes = current_cached_nbytes_;
     evict_models = GetEvictModels(evict_to_nbytes , 
-                                     {cache_item->model, source_model}, lock);
+                                  {cache_item->model, source_model}, lock);
     evict_nbytes = old_cached_nbytes - current_cached_nbytes_;
     current_capacity_nbytes_ = current_cached_nbytes_;
     current_capacity_nbytes_ += cache_item->cached_group_nbytes;
     current_cached_nbytes_ += cache_item->cached_group_nbytes;
-    LOG(INFO) << "[PushCacheItm] Shrink Cache, capacity: " << sta::ByteToMB(old_capacity_nbytes) << "MB -> " << sta::ByteToMB(current_capacity_nbytes_) << "MB, "
-              << "cached: " << sta::ByteToMB(old_cached_nbytes) << "MB -> " << sta::ByteToMB(current_cached_nbytes_) << "MB, "
-              << "evict_to: " << sta::ByteToMB(evict_to_nbytes) << "MB.";
+    LOG(INFO) << "[PushCacheItem] Shrink Cache, " 
+              << "capacity: " << sta::PrintByte(old_capacity_nbytes) 
+              << " -> " << sta::PrintByte(current_capacity_nbytes_) << ", "
+              << "cached: " << sta::PrintByte(old_cached_nbytes) 
+              << " -> " << sta::PrintByte(current_cached_nbytes_) << ", "
+              << "evict_to: " << sta::PrintByte(evict_to_nbytes) << ".";
   }
   CHECK(cold_cache_items_.emplace(std::make_pair(name, cache_item)).second == true) << name;
   DLOG(INFO) << "cached_groups_id = " << cache_item->cached_groups_id; 
 
   memory_byte_t after_capacity_nbytes = current_capacity_nbytes_;
   memory_byte_t after_cache_nbytes = current_cached_nbytes_;
-  memory_byte_t after_infer_nbytes = ResourceManager::GetInferMemoryMB(sta::DeviceManager::GetCurrentDevice()) * 1024 * 1024;
-  memory_byte_t after_ic_nbytes = after_infer_nbytes - current_cached_nbytes_ + current_capacity_nbytes_ - evict_nbytes;
-  LOG(INFO) << "[PutCacheItem] capacity_nbytes: " << sta::ByteToMB(before_capacity_nbytes) << "MB -> " << sta::ByteToMB(after_capacity_nbytes) << "MB, "
-            << "cache_nbytes: " << sta::ByteToMB(before_cache_nbytes) << "MB -> " << sta::ByteToMB(after_cache_nbytes) << "MB, "
-            << "infer_nbytes: " << sta::ByteToMB(before_infer_nbytes) << "MB -> " << sta::ByteToMB(after_infer_nbytes) << "MB, "
-            << "ic_nbytes: " << sta::ByteToMB(before_ic_nbytes) << "MB -> " << sta::ByteToMB(after_ic_nbytes) << "MB,"
-            << "evict_nbytes" << sta::ByteToMB(evict_nbytes) << "MB.";
+  memory_byte_t after_infer_nbytes = 
+      ResourceManager::GetInferMemoryMB(sta::DeviceManager::GetCurrentDevice()) * 1_MB;
+  memory_byte_t after_ic_nbytes = after_infer_nbytes 
+                                  - current_cached_nbytes_ 
+                                  + current_capacity_nbytes_ 
+                                  - evict_nbytes;
+  LOG(INFO) << "[PutCacheItem] " 
+            << "capacity_nbytes: " << sta::PrintByte(before_capacity_nbytes) 
+            << " -> " << sta::PrintByte(after_capacity_nbytes) << ", "
+            << "cache_nbytes: " << sta::PrintByte(before_cache_nbytes) 
+            << " -> " << sta::PrintByte(after_cache_nbytes) << ", "
+            << "infer_nbytes: " << sta::PrintByte(before_infer_nbytes) 
+            << " -> " << sta::PrintByte(after_infer_nbytes) << ", "
+            << "ic_nbytes: " << sta::PrintByte(before_ic_nbytes) 
+            << " -> " << sta::PrintByte(after_ic_nbytes) << ", "
+            << "evict_nbytes: " << sta::PrintByte(evict_nbytes) << ".";
 
   return {cache_item->cached_groups_id, evict_models, true};
 }
@@ -411,7 +432,6 @@ double ColdModelCache::GetAdjustReserveMemoryMB(
   return GetAdjustReserveMemoryMBUnsafe();
 }
 
-
 void ColdModelCache::SetNewCapacity(memory_byte_t new_capacity,
                                     std::unique_lock<std::mutex> &lock) {
   CHECK_LE(new_capacity, Config::cold_cache_max_capability_nbytes);
@@ -420,24 +440,29 @@ void ColdModelCache::SetNewCapacity(memory_byte_t new_capacity,
   current_capacity_nbytes_ = new_capacity;
   LOG(INFO) << "SetNewCapacity " << sta::ByteToMB(new_capacity) << "MB";
 }
+
 bool ColdModelCache::TakeSpace(memory_byte_t nbytes) {
   auto current_capacity_nbytes = current_capacity_nbytes_;
   if (current_cached_nbytes_ + nbytes <= current_capacity_nbytes_) {
     current_capacity_nbytes_ -= nbytes;
     LOG(INFO) << "[ColdModelCache] TakeSpace Succ " << sta::ByteToMB(nbytes)
               << "MB, current cache " << sta::ByteToMB(current_cached_nbytes_)
-              << "MB: " << sta::ByteToMB(current_capacity_nbytes) << "MB  -> " 
+              << "MB: " << sta::ByteToMB(current_capacity_nbytes) << "MB -> " 
               << sta::ByteToMB(current_capacity_nbytes_) << "MB,"
-              << "FREE: " << ResourceManager::GetFreeMemoryMB(sta::DeviceManager::GetCurrentDevice(), false) << ".";
+              << "FREE: " << ResourceManager::GetFreeMemoryMB(
+                  sta::DeviceManager::GetCurrentDevice(), false) 
+              << ".";
     return true;
   } else {
     LOG(INFO) << "[ColdModelCache] TakeSpace Fail " << sta::ByteToMB(nbytes) 
               << "MB, current cache " << sta::ByteToMB(current_cached_nbytes_)
-              << "MB: " << sta::ByteToMB(current_capacity_nbytes) << "MB  -> " 
+              << "MB: " << sta::ByteToMB(current_capacity_nbytes) << "MB -> " 
               << sta::ByteToMB(current_capacity_nbytes_) << "MB,"
-              << "FREE: " << ResourceManager::GetFreeMemoryMB(sta::DeviceManager::GetCurrentDevice(), false) << ".";
+              << "FREE: " << ResourceManager::GetFreeMemoryMB(
+                  sta::DeviceManager::GetCurrentDevice(), false) 
+              << ".";
     return false;
   }
-
 }
+
 } // namespace colserve
