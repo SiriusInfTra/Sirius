@@ -11,6 +11,7 @@
 #include <common/util.h>
 #include <common/sm_partition.h>
 #include <common/device_manager.h>
+
 #include <algorithm>
 #include <chrono>
 #include <limits>
@@ -228,25 +229,33 @@ bool Model::ReclaimMemory(size_t rank,
 void Model::ClearColdCache(const std::vector<size_t> &cold_cached_group_id, 
                            int rank, 
                            std::unique_lock<std::mutex> &cold_cache_lock) {
+  memory_mb_t cache_before = 0, cache_after = 0;
+
   auto t0 = std::chrono::steady_clock::now();
-  auto cache_before = ResourceManager::GetFreeMemoryMB(
-      sta::DeviceManager::GetCurrentDevice(), false);
+  if (Config::log_cold_cache) {
+    cache_before = ResourceManager::GetFreeMemoryMB(
+        sta::DeviceManager::GetCurrentDevice(), false);
+  }
+
   std::unique_lock other_model_lock{muts_[rank]};
   executors_[rank]->ClearColdCached(cold_cached_group_id);
-  auto dur = std::chrono::steady_clock::now() - t0;
-  auto cache_after = ResourceManager::GetFreeMemoryMB(
-      sta::DeviceManager::GetCurrentDevice(), false);
 
-  LOG(INFO) << "[ClearCache] cost " 
-    << std::chrono::duration_cast<std::chrono::milliseconds>(dur).count() 
-    << "ms: " << cache_before << "MB -> " << cache_after << "MB"
-    << ", cached " 
-    << sta::PrintByte(ColdModelCache::Get(device_.device_id)
-        ->GetCachedNbytes(cold_cache_lock))
-    << ", cap " 
-    << sta::PrintByte(ColdModelCache::Get(device_.device_id)
-        ->GetCacheSizeMBUnsafe()) 
-    << ".";
+  auto dur = std::chrono::steady_clock::now() - t0;
+  if (Config::log_cold_cache) {
+    cache_after = ResourceManager::GetFreeMemoryMB(
+        sta::DeviceManager::GetCurrentDevice(), false);
+  }
+
+  LOG_IF(INFO, Config::log_cold_cache) << "[ClearCache] cost " 
+      << std::chrono::duration_cast<std::chrono::milliseconds>(dur).count() 
+      << "ms: " << cache_before << "MB -> " << cache_after << "MB"
+      << ", cached " 
+      << sta::PrintByte(ColdModelCache::Get(device_.device_id)
+          ->GetCachedNbytes(cold_cache_lock))
+      << ", cap " 
+      << sta::PrintByte(ColdModelCache::Get(device_.device_id)
+          ->GetCacheSizeMBUnsafe()) 
+      << ".";
 }
 
 bool Model::MaybeAdjustTrainAndCache(size_t rank, 
@@ -287,15 +296,16 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
   auto cold_model_cache = ColdModelCache::Get(device_.device_id);
   cold_model_cache->BlockProfilter();
   size_t total_storage_nbytes = executors_[rank]->GetMissingStorageSizeAlign();
-  LOG(INFO) << "[Model, Cold Cache Adjust] "
-            << "AllocStorageMaybeAdjust: model " << rank
-            << " total_storage_nbytes " << total_storage_nbytes;
+  DLOG_IF(INFO, Config::log_memory_adjust) 
+      << "[Model, Cold Cache Adjust] "
+      << "AllocStorageMaybeAdjust: model " << rank
+      << " total_storage_nbytes " << total_storage_nbytes;
 
   if (!cold_model_cache->TakeSpace(total_storage_nbytes)) {
     /* if: need adjust train / infer cache */
     if (cold_model_cache->GetCacheCapacity(cold_cache_lock)
-          < (Config::cold_cache_min_capability_nbytes + total_storage_nbytes)
-    ) {
+          < Config::cold_cache_min_capability_nbytes + total_storage_nbytes
+    ) { // adjust train 
       memory_byte_t new_capacity = 
         (Config::cold_cache_max_capability_nbytes 
          + Config::cold_cache_min_capability_nbytes) / 2;
@@ -304,9 +314,9 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
           + (sta::ByteToMB(new_capacity)
           - sta::ByteToMB(cold_model_cache->GetCachedNbytes(cold_cache_lock)))
           - (ResourceManager::GetFreeMemoryMB(sta::DeviceManager::GetCurrentDevice(), true));
-      LOG(INFO) << "[Model, Cold Cache Adjust] "
-                << "Adjust train " << rank
-                << " require " << require_mb << "MB";
+      LOG_IF(INFO, Config::log_memory_adjust) 
+          << "[Model, Cold Cache Adjust] " << "Adjust train " 
+          << rank << " require " << require_mb << "MB";
       auto adjust_plan = TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
           device_.device_id, require_mb, 
           nan(""), cold_cache_lock);
@@ -323,8 +333,9 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
               << " new capacity " << sta::ByteToMB(new_capacity)
               << " wait adjust " << PROFILE_DURATRION(TrainAdjust);
         } else {
-          LOG(INFO) << "[MaybeAdjustTrainAndCache]  require " 
-                    << require_mb << "MB < 0.";
+          LOG_IF(INFO, Config::log_memory_adjust) 
+              << "[MaybeAdjustTrainAndCache]  require " 
+              << require_mb << "MB < 0.";
         }
         memory_byte_t max_new_capacity = 
             std::max(ResourceManager::GetFreeMemoryMB(sta::DeviceManager::GetCurrentDevice(), false), 
@@ -333,10 +344,11 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
             + total_storage_nbytes;
         
         if (max_new_capacity < new_capacity) {
-          LOG(INFO) << "[MaybeAdjustTrainAndCache] require " 
-                    << require_mb << "MB, but no enough memory. New capacity: " 
-                    << sta::PrintByte(new_capacity) << " -> " 
-                    << sta::PrintByte(max_new_capacity);
+          LOG_IF(INFO, Config::log_memory_adjust) 
+              << "[MaybeAdjustTrainAndCache] require " 
+              << require_mb << "MB, but no enough memory. New capacity: " 
+              << sta::PrintByte(new_capacity) << " -> " 
+              << sta::PrintByte(max_new_capacity);
           new_capacity = std::max(
               max_new_capacity, 
               cold_model_cache->GetCacheCapacity(cold_cache_lock));

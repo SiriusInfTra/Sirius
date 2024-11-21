@@ -445,22 +445,24 @@ bool ColdModelCache::TakeSpace(memory_byte_t nbytes) {
   auto current_capacity_nbytes = current_capacity_nbytes_;
   if (current_cached_nbytes_ + nbytes <= current_capacity_nbytes_) {
     current_capacity_nbytes_ -= nbytes;
-    LOG(INFO) << "[ColdModelCache] TakeSpace Succ " << sta::ByteToMB(nbytes)
-              << "MB, current cache " << sta::ByteToMB(current_cached_nbytes_)
-              << "MB: " << sta::ByteToMB(current_capacity_nbytes) << "MB -> " 
-              << sta::ByteToMB(current_capacity_nbytes_) << "MB,"
-              << "FREE: " << ResourceManager::GetFreeMemoryMB(
-                  sta::DeviceManager::GetCurrentDevice(), false) 
-              << ".";
+    LOG_IF(INFO, Config::log_cold_cache) 
+        << "[ColdModelCache] TakeSpace Succ " << sta::ByteToMB(nbytes)
+        << "MB, current cache " << sta::ByteToMB(current_cached_nbytes_)
+        << "MB: " << sta::ByteToMB(current_capacity_nbytes) << "MB -> " 
+        << sta::ByteToMB(current_capacity_nbytes_) << "MB,"
+        << "FREE: " << ResourceManager::GetFreeMemoryMB(
+            sta::DeviceManager::GetCurrentDevice(), false) 
+        << ".";
     return true;
   } else {
-    LOG(INFO) << "[ColdModelCache] TakeSpace Fail " << sta::ByteToMB(nbytes) 
-              << "MB, current cache " << sta::ByteToMB(current_cached_nbytes_)
-              << "MB: " << sta::ByteToMB(current_capacity_nbytes) << "MB -> " 
-              << sta::ByteToMB(current_capacity_nbytes_) << "MB,"
-              << "FREE: " << ResourceManager::GetFreeMemoryMB(
-                  sta::DeviceManager::GetCurrentDevice(), false) 
-              << ".";
+    LOG_IF(INFO, Config::log_cold_cache) 
+        << "[ColdModelCache] TakeSpace Fail " << sta::ByteToMB(nbytes) 
+        << "MB, current cache " << sta::ByteToMB(current_cached_nbytes_)
+        << "MB: " << sta::ByteToMB(current_capacity_nbytes) << "MB -> " 
+        << sta::ByteToMB(current_capacity_nbytes_) << "MB,"
+        << "FREE: " << ResourceManager::GetFreeMemoryMB(
+            sta::DeviceManager::GetCurrentDevice(), false) 
+        << ".";
     return false;
   }
 }
