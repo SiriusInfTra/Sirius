@@ -1,12 +1,12 @@
-#include "tvm/graph.h"
-#include <algorithm>
+#include <server/tvm/graph.h>
 #include <server/logging_as_glog.h>
 #include <server/model_store/model_cache.h>
-#include <resource_manager.h>
+#include <server/resource_manager.h>
 #include <server/model_store/infer_model_store.h>
+
 #include <common/device_manager.h>
 #include <common/util.h>
-
+#include <algorithm>
 
 namespace colserve {
 

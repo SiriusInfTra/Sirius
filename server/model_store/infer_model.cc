@@ -1,4 +1,3 @@
-#include <cmath>
 #include <server/logging_as_glog.h>
 #include <server/model_store/infer_model_store.h>
 #include <server/model_store/infer_model.h>
@@ -19,6 +18,7 @@
 #include <vector>
 #include <regex>
 #include <unordered_map>
+#include <cmath>
 #include <pthread.h>
 
 constexpr bool SKIP_MULTI_OUTPUT = false;
@@ -232,9 +232,12 @@ void Model::ClearColdCache(const std::vector<size_t> &cold_cached_group_id, int 
   executors_[rank]->ClearColdCached(cold_cached_group_id);
   auto dur = std::chrono::steady_clock::now() - t0;
   auto cache_after = ResourceManager::GetFreeMemoryMB(sta::DeviceManager::GetCurrentDevice(), false);
-  LOG(INFO) << "[ClearCache] cost " << std::chrono::duration_cast<std::chrono::milliseconds>(dur).count() << "ms: " << cache_before << " -> " << cache_after 
-    << ", cached " << sta::ByteToMB(ColdModelCache::Get(device_.device_id)->GetCachedNbytes(cold_cache_lock))
-    << ", cap " <<  ColdModelCache::Get(device_.device_id)->GetCacheSizeMBUnsafe() <<".";
+
+  LOG(INFO) << "[ClearCache] cost " 
+    << std::chrono::duration_cast<std::chrono::milliseconds>(dur).count() << "ms: " 
+    << cache_before << " -> " << cache_after << ", cached " 
+    << sta::ByteToMB(ColdModelCache::Get(device_.device_id)->GetCachedNbytes(cold_cache_lock))
+    << ", cap " << ColdModelCache::Get(device_.device_id)->GetCacheSizeMBUnsafe() << ".";
 }
 
 bool Model::MaybeAdjustTrainAndCache(size_t rank, 

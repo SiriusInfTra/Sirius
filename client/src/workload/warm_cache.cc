@@ -14,9 +14,6 @@ std::atomic<int> WarmCache::concurrent_loads[MAX_DEVICE];
 TritonConfig WarmCache::triton_config_;
 size_t WarmCache::curr_memory_usage_[MAX_DEVICE];
 
-
-
-
 void WarmCache::Init(TritonConfig config) {
   triton_config_ = std::move(config);
   if (triton_config_.max_memory_nbytes == 0) {

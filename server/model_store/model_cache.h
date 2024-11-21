@@ -161,7 +161,9 @@ class ColdModelCache {
    *         and a boolean indicating whether the pop operation was successful.
    */
   std::pair<std::vector<size_t>, bool> 
-  PopCacheItem(const std::string& name, size_t rank, bool pop_to_inference, std::unique_lock<std::mutex> &lock);
+  PopCacheItem(const std::string& name, size_t rank, 
+               bool pop_to_inference, 
+               std::unique_lock<std::mutex> &lock);
 
   /**
    * Retrieves the list of models that are eligible for eviction from the infer model store.
@@ -171,14 +173,13 @@ class ColdModelCache {
    * @param lock A unique lock on the mutex.
    * @return The list of models that should be evicted.
    */
-  evict_list GetEvictModels(memory_byte_t capacity, std::array<Model*, 2> ignore_models, 
+  evict_list GetEvictModels(memory_byte_t capacity, 
+                            std::array<Model*, 2> ignore_models, 
                             std::unique_lock<std::mutex>& lock);
-
 
   std::unique_lock<std::mutex> Lock() {
     return std::unique_lock{mut_};
   }
-
 
   std::pair<size_t, size_t> capacity_and_cache = {0, 0};
   std::pair<size_t, size_t> GetColdCacheCapacityAndCache() {
@@ -201,10 +202,6 @@ class ColdModelCache {
   inline size_t GetCachedNbytes(std::unique_lock<std::mutex> &lock) {
     return current_cached_nbytes_;
   }
-
-
-
-
 
   bool TakeSpace(memory_byte_t nbytes);
 
@@ -232,8 +229,9 @@ class ColdModelCache {
     return current_capacity_nbytes_;
   }
 
-  inline double GetFreeMemoryWithCacheEmpty(double free_memory_MB, 
-                                         std::unique_lock<std::mutex> &lock) {
+  inline double GetFreeMemoryWithCacheEmpty(
+      double free_memory_MB, 
+      std::unique_lock<std::mutex> &lock) {
     if (current_cached_nbytes_ > Config::cold_cache_min_capability_nbytes){
       free_memory_MB += sta::ByteToMB(current_cached_nbytes_ 
                                       - Config::cold_cache_min_capability_nbytes);
@@ -242,8 +240,9 @@ class ColdModelCache {
     return free_memory_MB;
   }
 
-  inline double GetFreeMemoryWithCacheReserve(double free_memory_MB, 
-                                          std::unique_lock<std::mutex> &lock) {
+  inline double GetFreeMemoryWithCacheReserve(
+        double free_memory_MB, 
+        std::unique_lock<std::mutex> &lock) {
     free_memory_MB -= sta::ByteToMB(current_capacity_nbytes_);
     if (free_memory_MB < 0) {
       free_memory_MB = 0;
