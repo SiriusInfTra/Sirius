@@ -224,6 +224,9 @@ ColdModelCache::PushCacheItem(
       static_cast<size_t>(total_nbytes * Config::cold_cache_ratio);
   size_t uncache_nbytes = 0;
 
+  // ----------------------------------------------
+  // 1. determine the cache group, uncached nbytes
+  // ----------------------------------------------
   for (size_t k = 0; k < groups_nbytes.size(); ++k) {
     memory_byte_t group_nbytes = tvm::GetMemBlockAlignedNBytes(groups_nbytes[k]);
     if (model_max_cached_nbytes > 0 
@@ -262,14 +265,19 @@ ColdModelCache::PushCacheItem(
                                    - current_cached_nbytes_ 
                                    + current_capacity_nbytes_;
   memory_byte_t evict_nbytes = 0;
+
+  // -------------------
+  // 2. cache the group
+  // -------------------
   if (current_capacity_nbytes_ + total_nbytes <= Config::cold_cache_max_capability_nbytes
-  ) { /* resereve in cache */ 
-    current_capacity_nbytes_ += total_nbytes;
+  ) { /* 2.1 resereve in cache */ 
+    // note that all memory (whether or not model is partial cached) is reserved in cache
+    current_capacity_nbytes_ += total_nbytes; 
     current_cached_nbytes_ += cache_item->cached_group_nbytes;
     DLOG_IF(INFO, Config::log_cold_cache) 
         << "[ColdModelCache] Cache Succes, update Capacity=" 
         << sta::PrintByte(current_capacity_nbytes_);
-  } else { /* reach limit, evict the coldest */  
+  } else { /* 2.2 reach limit, evict the coldest */  
     // CHECK_GE((Config::cold_cache_max_capability_nbytes + Config::cold_cache_min_capability_nbytes) / 2, 
     //          cache_item->cached_group_nbytes);
     memory_byte_t evict_to_nbytes = (Config::cold_cache_max_capability_nbytes 

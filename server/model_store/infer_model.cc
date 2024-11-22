@@ -314,9 +314,9 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
          + Config::cold_cache_min_capability_nbytes) / 2;
       // reset memory predict accumulation error
       memory_mb_t require_mb = 
-          + (sta::ByteToMB(new_capacity)
-          - sta::ByteToMB(cold_model_cache->GetCachedNbytes(cold_cache_lock)))
-          - (ResourceManager::GetFreeMemoryMB(sta::DeviceManager::GetCurrentDevice(), true));
+          + (sta::ByteToMB(new_capacity) 
+             - sta::ByteToMB(cold_model_cache->GetCachedNbytes(cold_cache_lock))
+          ) - (ResourceManager::GetFreeMemoryMB(sta::DeviceManager::GetCurrentDevice(), true));
       LOG_IF(INFO, Config::log_memory_adjust) 
           << "[Model, Cold Cache Adjust] " << "Adjust train " 
           << rank << " require " << require_mb << "MB";
