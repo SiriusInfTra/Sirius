@@ -501,7 +501,7 @@ class System:
             self.server = None
         if self.use_triton and self.triton_server is not None:
             self.triton_server.send_signal(signal.SIGINT)
-            self.triton_server = None
+            # self.triton_server = None
         if kill_train and self.log_dir is not None:
             train_pids = set()
             print('Force to kill train.', end='\n\r')
@@ -521,6 +521,7 @@ class System:
         if self.triton_server is not None:
             stop_triton = subprocess.Popen(['docker', 'stop', f'colsys-triton-{self.triton_port}'])
             stop_triton.wait()
+            self.triton_server = None
         if self.mps_server is not None:
             self.quit_mps()
             self.mps_server.wait()
