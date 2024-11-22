@@ -67,7 +67,6 @@ memory_mb_t TrainAdjuster::PredictTrainMemUsageMB(int device_id, bool verbose) {
   return PredictTrainMemUsageMB(device_id, target_batch_size_, verbose);
 }
 
-
 memory_mb_t TrainAdjuster::PredictTrainMemUsageMB(
       int device_id, int batch_size, bool verbose) {
   CHECK(adjuster_ != nullptr);
@@ -119,7 +118,8 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
     return {};
   }
 
-  // CHECK_LE(ColdModelCache::Get(device_id)->GetCacheSizeMBUnsafe(), Config::cold_cache_max_capability_nbytes / 1024.0);
+  // CHECK_LE(ColdModelCache::Get(device_id)->GetCacheSizeMBUnsafe(), 
+  //          Config::cold_cache_max_capability_nbytes / 1024.0);
   // ColdModelCache::Get(device_id)->ExpandToMax();
   // memory_mb_t adjust_reserve_mb =
   //     ColdModelCache::Get(device_id)->GetAdjustReserveMemoryMBUnsafe();
@@ -225,7 +225,7 @@ TrainAdjuster::GetInferReleaseMemAdjustPlan() {
 std::vector<TrainAdjuster::AdjustPlan>
 TrainAdjuster::GetInferReleaseMemAdjustPlanWithInLock(
     std::vector<std::unique_lock<std::mutex>> &cold_cache_locks) {
-  LOG(INFO) << "GetInferReleaseMemAdjustPlanWithInLock";
+  // LOG(INFO) << "GetInferReleaseMemAdjustPlanWithInLock";
   CHECK(adjuster_ != nullptr);
   CHECK(cold_cache_locks.size() == sta::DeviceManager::GetNumVisibleGpu());
   

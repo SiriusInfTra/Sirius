@@ -302,6 +302,9 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
       << " total_storage_nbytes " << total_storage_nbytes;
 
   if (!cold_model_cache->TakeSpace(total_storage_nbytes)) {
+    // ---------------------------------------
+    // 1. adjust train if cache is not enough
+    // ---------------------------------------
     /* if: need adjust train / infer cache */
     if (cold_model_cache->GetCacheCapacity(cold_cache_lock)
           < Config::cold_cache_min_capability_nbytes + total_storage_nbytes
@@ -366,21 +369,21 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
         cold_model_cache->SetNewCapacity(total_storage_nbytes, cold_cache_lock);
       }
 
-    }
+    } /* end if: adjust train */
     // ensure ok
-    LOG(INFO) << "[MaybeAdjustTrainAndCache] After maybe adjust, "
-              << " Curr capacity: " 
-              << sta::PrintByte(cold_model_cache->GetCacheCapacity(cold_cache_lock))
-              << " Curr cached: " 
-              << sta::PrintByte(cold_model_cache->GetCachedNbytes(cold_cache_lock))
-              << " Total storage: " 
-              << sta::PrintByte(total_storage_nbytes);
+    LOG_IF(INFO, Config::log_memory_adjust) 
+        << "[MaybeAdjustTrainAndCache] After maybe adjust, "
+        << cold_model_cache->PrintCacheInfo(cold_cache_lock)
+        << " Total storage: " << sta::PrintByte(total_storage_nbytes);
     CHECK_GE(cold_model_cache->GetCacheCapacity(cold_cache_lock), total_storage_nbytes);
     
+    // -------------------------------------------
+    // 2. evict other if cache is still not enough
+    // -------------------------------------------
     if (cold_model_cache->TakeSpace(total_storage_nbytes)) {
-      LOG(INFO) << "[MaybeAdjustTrainAndCache] Secound take space success, new capacity " 
-                << sta::PrintByte(cold_model_cache->GetCacheCapacity(cold_cache_lock))
-                << " new cache " << sta::PrintByte(cold_model_cache->GetCachedNbytes(cold_cache_lock));
+      LOG_IF(INFO, Config::log_memory_adjust) 
+          << "[MaybeAdjustTrainAndCache] Secound take space success, "
+          << "new cold cache: " << cold_model_cache->PrintCacheInfo(cold_cache_lock);
     } else {
       memory_byte_t init_cached_nbytes = cold_model_cache->GetCachedNbytes(cold_cache_lock);
       CHECK_GE(cold_model_cache->GetCacheCapacity(cold_cache_lock), 
@@ -391,22 +394,18 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
       memory_byte_t evict_to_nbytes = cold_model_cache->GetCacheCapacity(cold_cache_lock) 
                                       - total_storage_nbytes;
 
-      LOG(INFO) << "Current capacity: " 
-                << sta::PrintByte(cold_model_cache->GetCacheCapacity(cold_cache_lock))
-                << " Current cached: " 
-                << sta::PrintByte(cold_model_cache->GetCachedNbytes(cold_cache_lock))
-                << " Total storage: " << sta::PrintByte(total_storage_nbytes)
-                << " Evict to: " << sta::PrintByte(evict_to_nbytes);
+      DLOG_IF(INFO, Config::log_memory_adjust) 
+          << "Cache: " << cold_model_cache->PrintCacheInfo(cold_cache_lock)
+          << " Total storage: " << sta::PrintByte(total_storage_nbytes)
+          << " Evict to: " << sta::PrintByte(evict_to_nbytes);
 
       auto evict_models = cold_model_cache->GetEvictModels(
           evict_to_nbytes, {this, nullptr}, cold_cache_lock);
 
-      LOG(INFO) << "Current capacity: " 
-                << sta::PrintByte(cold_model_cache->GetCacheCapacity(cold_cache_lock))
-                << " Current cached: " 
-                << sta::PrintByte(cold_model_cache->GetCachedNbytes(cold_cache_lock))
-                << " Total storage: " << sta::PrintByte(total_storage_nbytes)
-                << " Evict to: " << sta::PrintByte(evict_to_nbytes);
+      DLOG_IF(INFO, Config::log_memory_adjust) 
+          << "Cache: " << cold_model_cache->PrintCacheInfo(cold_cache_lock)
+          << " Total storage: " << sta::PrintByte(total_storage_nbytes)
+          << " Evict to: " << sta::PrintByte(evict_to_nbytes);
                 
       size_t evict_storage = 0;
       for (auto &&[name, cached_groups_id] : evict_models) {
@@ -417,20 +416,18 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
 
       size_t release_nbytes = init_cached_nbytes 
                               - cold_model_cache->GetCachedNbytes(cold_cache_lock);
-      LOG(INFO) << "[MaybeAdjustTrainAndCache] After maybe evict, "
-                << " Curr capacity: " 
-                << sta::PrintByte(cold_model_cache->GetCacheCapacity(cold_cache_lock))
-                << " Curr cached: " 
-                << sta::PrintByte(cold_model_cache->GetCachedNbytes(cold_cache_lock))
-                << " Total storage: " << sta::PrintByte(total_storage_nbytes)
-                << " Evict: " 
-                << sta::PrintByte(evict_storage) << " | " 
-                << sta::PrintByte(release_nbytes) << ".";
-      // CHECK_GE(evict_to_nbytes, cold_model_cache->GetCachedNbytes(cold_cache_lock) + total_storage_nbytes);
+      LOG_IF(INFO, Config::log_memory_adjust) 
+          << "[MaybeAdjustTrainAndCache] After maybe evict, "
+          << "Cache: " << cold_model_cache->PrintCacheInfo(cold_cache_lock)
+          << " Total storage: " << sta::PrintByte(total_storage_nbytes)
+          << " Evict: " << sta::PrintByte(evict_storage) << " | " 
+          << sta::PrintByte(release_nbytes) << ".";
+      // CHECK_GE(evict_to_nbytes, 
+      //          cold_model_cache->GetCachedNbytes(cold_cache_lock) + total_storage_nbytes);
       cold_model_cache->SetNewCapacity(
           cold_model_cache->GetCacheCapacity(cold_cache_lock) - total_storage_nbytes, 
           cold_cache_lock);
-    }
+    } /* end if: evict other */
   } /* end if: need adjust train / infer cache */
   cold_model_cache->UnblockProfilter();
  

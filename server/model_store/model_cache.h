@@ -227,7 +227,7 @@ class ColdModelCache {
   void SetNewCapacity(memory_byte_t new_capacity,
                       std::unique_lock<std::mutex> &lock);
 
-  memory_byte_t GetCacheCapacity(std::unique_lock<std::mutex> &lock) {
+  inline memory_byte_t GetCacheCapacity(std::unique_lock<std::mutex> &lock) {
     return current_capacity_nbytes_;
   }
 
@@ -257,6 +257,8 @@ class ColdModelCache {
   double GetAdjustReserveMemoryMBUnsafe();
   double GetReleaseReserveMemoryMB(std::unique_lock<std::mutex> &lock);  
   double GetAdjustReserveMemoryMB(std::unique_lock<std::mutex> &lock);  
+
+  std::string PrintCacheInfo(std::unique_lock<std::mutex> &lock); 
 
   static void Init();
   static ColdModelCache * Get(int device_id);

@@ -469,4 +469,9 @@ bool ColdModelCache::TakeSpace(memory_byte_t nbytes) {
   }
 }
 
+std::string ColdModelCache::PrintCacheInfo(std::unique_lock<std::mutex> &lock) {
+  return "Capacity: " + sta::PrintByte(GetCacheCapacity(lock)) 
+         + ", Cached: " + sta::PrintByte(GetCachedNbytes(lock));
+}
+
 } // namespace colserve
