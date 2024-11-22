@@ -380,8 +380,7 @@ void Profiler::CollectMemoryResourceInfo(
          
           res_info.infer_mem_in_cold_cache_buffer_mb = 
               ColdModelCache::Get(device_id)->GetColdCacheReleasableMemoryMBUnsafe();
-          res_info.cold_cache_size_mb = 
-              sta::ByteToMB(cap);
+          res_info.cold_cache_size_mb = sta::ByteToMB(cap);
         }
       };
 
