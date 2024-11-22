@@ -10,6 +10,14 @@ from transformers import DistilBertTokenizer, DistilBertModel, GPT2Model, GPT2To
 import tempfile
 from tvm.driver import tvmc
 import tarfile
+import argparse
+import os
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--tune", action="store_true")
+parser.add_argument("--record", type=str, default="")
+args = parser.parse_args()
+
 
 platform = 'v100'
 
@@ -52,19 +60,23 @@ def tvm_compile():
     tvmc_model = tvmc.load(f"{tmp_dir}/distilgpt2.onnx", 
                             shape_dict=shape_dict)
 
-    # tune_records = "./distilgpt2-tune.json"
-    # tvmc.tune(tvmc_model=tvmc_model, target='cuda', 
-    #         tuning_records=tune_records, 
-    #         enable_autoscheduler=False,
-    #         port=9993)
-    
     tune_records = f'util/prepare_model_store/distilgpt2-tune-{platform}.json'
-    # tune_records = None
-    tvmc.compile(tvmc_model=tvmc_model, target='cuda', package_path=f"{tmp_dir}/distilgpt2-tvm.tar", tuning_records=tune_records)
+    if args.record:
+        tune_records = args.record
 
-    model_store_path = f'{model_store}/distilgpt2-b{batch_size}' 
-    pathlib.Path(model_store_path).mkdir(parents=True, exist_ok=True)
-    tarfile.open(f"{tmp_dir}/distilgpt2-tvm.tar").extractall(model_store_path)
+    if args.tune:
+        tvmc.tune(tvmc_model=tvmc_model, target='cuda', 
+                  tuning_records=tune_records, 
+                  enable_autoscheduler=False,
+                  port=9993)
+    else:
+        # tune_records = f'util/prepare_model_store/distilgpt2-tune-{platform}.json'
+        # tune_records = None
+        tvmc.compile(tvmc_model=tvmc_model, target='cuda', package_path=f"{tmp_dir}/distilgpt2-tvm.tar", tuning_records=tune_records)
+
+        model_store_path = f'{model_store}/distilgpt2-b{batch_size}' 
+        pathlib.Path(model_store_path).mkdir(parents=True, exist_ok=True)
+        tarfile.open(f"{tmp_dir}/distilgpt2-tvm.tar").extractall(model_store_path)
 
 
     # onnx_model = onnx.load('{}/distilgpt2.onnx'.format(tmp_dir))
