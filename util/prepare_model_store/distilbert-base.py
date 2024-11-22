@@ -10,7 +10,13 @@ from transformers import DistilBertTokenizer, DistilBertModel
 import tempfile
 from tvm.driver import tvmc
 import tarfile
+import argparse
+import os
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--tune", action="store_true")
+parser.add_argument("--record", type=str, default="")
+args = parser.parse_args()
 
 model_store = "server/models"
 tmp_dir = tempfile.gettempdir()
@@ -37,7 +43,7 @@ dummy_input = tuple([tokens_tensor, segments_tensors])
 
 print(f"### {enc.vocab_size}")
 
-platform = 'a100'
+platform = 'v100'
 
 def get_onnx():
     #NOTE Generate new trace
@@ -46,22 +52,27 @@ def get_onnx():
     torch.onnx.export(model, dummy_input, f"{tmp_dir}/distilbert_base.onnx", verbose=True,
                       input_names=["input_ids", "attention_mask"], output_names=["output"], export_params=True,)
 
+
 def tvm_compile():
     shape_dict = {'input_ids' : [1, token_len], 'attention_mask':[1, token_len]}
     tvmc_model = tvmc.load(f"{tmp_dir}/distilbert_base.onnx", 
                             shape_dict=shape_dict)
 
-    tune_records = f'./distilbert-tune-{platform}.json'
-    tvmc.tune(tvmc_model=tvmc_model, target='cuda', 
-              tuning_records=tune_records, 
-              enable_autoscheduler=False)
+    tune_records = f'util/prepare_model_store/distilbert-tune-{platform}.json'
+    if args.record:
+        tune_records = args.record
 
-    # tune_records = f"util/prepare_model_store/distilbert-tune-{platform}.json"
-    # tvmc.compile(tvmc_model=tvmc_model, target='cuda', package_path=f"{tmp_dir}/distilbert_base-tvm.tar", tuning_records=tune_records)
+    if args.tune:
+        tvmc.tune(tvmc_model=tvmc_model, target='cuda', 
+                tuning_records=tune_records, 
+                enable_autoscheduler=False)
+    else:
+        # tune_records = f"util/prepare_model_store/distilbert-tune-{platform}.json"
+        tvmc.compile(tvmc_model=tvmc_model, target='cuda', package_path=f"{tmp_dir}/distilbert_base-tvm.tar", tuning_records=tune_records)
 
-    # model_store_path = f'{model_store}/distilbert_base-b{batch_size}' 
-    # pathlib.Path(model_store_path).mkdir(parents=True, exist_ok=True)
-    # tarfile.open(f"{tmp_dir}/distilbert_base-tvm.tar").extractall(model_store_path)
+        model_store_path = f'{model_store}/distilbert_base-b{batch_size}' 
+        pathlib.Path(model_store_path).mkdir(parents=True, exist_ok=True)
+        tarfile.open(f"{tmp_dir}/distilbert_base-tvm.tar").extractall(model_store_path)
 
 
     # onnx_model = onnx.load('{}/distilbert_base.onnx'.format(tmp_dir))

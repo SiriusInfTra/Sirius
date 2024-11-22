@@ -1,11 +1,13 @@
 #ifndef COLSERVE_MODEL_CACHE_H
 #define COLSERVE_MODEL_CACHE_H
 
+#include <server/logging_as_glog.h>
 #include <server/config.h>
 #include <server/schedule/job_queue.h>
 
 #include <common/util.h>
 
+#include <cstddef>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -100,6 +102,7 @@ class ColdModelCache {
 
   int device_id_;
   size_t current_cached_nbytes_;
+  size_t current_capacity_nbytes_;
   std::mutex mut_;
   std::unordered_map<
       std::string, std::unique_ptr<CacheItem>
@@ -119,7 +122,9 @@ class ColdModelCache {
   using group_id_list = std::vector<size_t>;
 
   ColdModelCache(int device_id)
-    : current_cached_nbytes_{0}, device_id_{device_id} {}
+    : current_cached_nbytes_{0}, 
+      current_capacity_nbytes_(Config::cold_cache_min_capability_nbytes), 
+      device_id_{device_id} {}
 
   friend class InferModelStore;
 
@@ -158,7 +163,9 @@ class ColdModelCache {
    *         and a boolean indicating whether the pop operation was successful.
    */
   std::pair<std::vector<size_t>, bool> 
-  PopCacheItem(const std::string& name, size_t rank, std::unique_lock<std::mutex> &lock);
+  PopCacheItem(const std::string& name, size_t rank, 
+               bool pop_to_inference, 
+               std::unique_lock<std::mutex> &lock);
 
   /**
    * Retrieves the list of models that are eligible for eviction from the infer model store.
@@ -168,17 +175,37 @@ class ColdModelCache {
    * @param lock A unique lock on the mutex.
    * @return The list of models that should be evicted.
    */
-  evict_list GetEvictModels(memory_byte_t capacity, std::array<Model*, 2> ignore_models, 
+  evict_list GetEvictModels(memory_byte_t capacity, 
+                            std::array<Model*, 2> ignore_models, 
                             std::unique_lock<std::mutex>& lock);
-
 
   std::unique_lock<std::mutex> Lock() {
     return std::unique_lock{mut_};
   }
 
+  std::pair<size_t, size_t> capacity_and_cache = {0, 0};
+  std::pair<size_t, size_t> GetColdCacheCapacityAndCache() {
+    return {current_capacity_nbytes_, current_cached_nbytes_};
+    // if (capacity_and_cache == std::pair<size_t, size_t>{0, 0}) {
+    //   return {current_capacity_nbytes_, current_cached_nbytes_};
+    // } else {
+    //   return capacity_and_cache;
+    // }
+  }
+
+  void BlockProfilter() {
+    capacity_and_cache = {current_capacity_nbytes_, current_cached_nbytes_};
+  }
+
+  void UnblockProfilter() {
+    capacity_and_cache = {0, 0};
+  }
+
   inline size_t GetCachedNbytes(std::unique_lock<std::mutex> &lock) {
     return current_cached_nbytes_;
   }
+
+  bool TakeSpace(memory_byte_t nbytes);
 
   inline size_t GetCachedNbytesUnsafe() {
     return current_cached_nbytes_;
@@ -197,11 +224,30 @@ class ColdModelCache {
 
   double GetCacheSizeMBUnsafe();
 
-  inline double GetColdCacheFreeMemoryMB(double free_memory_MB, 
-                                         std::unique_lock<std::mutex> &lock) {
+  void SetNewCapacity(memory_byte_t new_capacity,
+                      std::unique_lock<std::mutex> &lock);
+
+  inline memory_byte_t GetCacheCapacity(std::unique_lock<std::mutex> &lock) {
+    return current_capacity_nbytes_;
+  }
+
+  inline double GetFreeMemoryWithCacheEmpty(
+      double free_memory_MB, 
+      std::unique_lock<std::mutex> &lock) {
     if (current_cached_nbytes_ > Config::cold_cache_min_capability_nbytes){
       free_memory_MB += sta::ByteToMB(current_cached_nbytes_ 
                                       - Config::cold_cache_min_capability_nbytes);
+    }
+    // LOG(INFO) << "[ColdModelCache] FreeMemory " << free_memory_MB << "MB";
+    return free_memory_MB;
+  }
+
+  inline double GetFreeMemoryWithCacheReserve(
+        double free_memory_MB, 
+        std::unique_lock<std::mutex> &lock) {
+    free_memory_MB -= sta::ByteToMB(current_capacity_nbytes_);
+    if (free_memory_MB < 0) {
+      free_memory_MB = 0;
     }
     // LOG(INFO) << "[ColdModelCache] FreeMemory " << free_memory_MB << "MB";
     return free_memory_MB;
@@ -212,11 +258,11 @@ class ColdModelCache {
   double GetReleaseReserveMemoryMB(std::unique_lock<std::mutex> &lock);  
   double GetAdjustReserveMemoryMB(std::unique_lock<std::mutex> &lock);  
 
+  std::string PrintCacheInfo(std::unique_lock<std::mutex> &lock); 
+
   static void Init();
   static ColdModelCache * Get(int device_id);
 };
-
-
 
 }
 
