@@ -1,9 +1,12 @@
+#include <server/tvm/graph.h>
 #include <server/logging_as_glog.h>
 #include <server/model_store/model_cache.h>
+#include <server/resource_manager.h>
 #include <server/model_store/infer_model_store.h>
 
 #include <common/device_manager.h>
-
+#include <common/util.h>
+#include <algorithm>
 
 namespace colserve {
 
@@ -12,7 +15,7 @@ std::vector<std::unique_ptr<WarmModelCache>> WarmModelCache::warm_model_caches_;
 std::vector<std::unique_ptr<ColdModelCache>> ColdModelCache::cold_model_caches_;
 
 ColdModelCache::ReservePolicy ColdModelCache::reserve_policy_on_release = \
-    ColdModelCache::ReservePolicy::kMaxCap;
+    ColdModelCache::ReservePolicy::kNotReserve;
 
 ColdModelCache::ReservePolicy ColdModelCache::reserve_policy_on_adjust = \
     ColdModelCache::ReservePolicy::kMaxCap;
@@ -207,29 +210,42 @@ ColdModelCache::PushCacheItem(
     const std::string& name, size_t rank, 
     std::vector<size_t> groups_nbytes, size_t total_nbytes, 
     std::unique_lock<std::mutex> &lock, Model *source_model) {
-  DLOG(INFO) << "PushCacheItem, name = " << name 
-             << ", rank = " << rank 
-             << ", groups_nbytes = " << groups_nbytes 
-             << ", total_nbytes = " << total_nbytes;
+  DLOG_IF(INFO, Config::log_cold_cache) 
+      << "PushCacheItem, name = " << name 
+      << ", rank = " << rank 
+      << ", groups_nbytes = " << groups_nbytes 
+      << ", total_nbytes = " << total_nbytes;
   if (cold_cache_items_.count(name) != 0) { return {{}, {}, false}; }
 
   auto* cache_item = new CacheItem();
   cache_item->cached_group_nbytes = 0;
   cache_item->model = InferModelStore::Get()->GetModel(name);
-  size_t model_max_cached_nbytes = static_cast<size_t>(total_nbytes * Config::cold_cache_ratio);
+  size_t model_max_cached_nbytes = 
+      static_cast<size_t>(total_nbytes * Config::cold_cache_ratio);
+  size_t uncache_nbytes = 0;
+
+  // ----------------------------------------------
+  // 1. determine the cache group, uncached nbytes
+  // ----------------------------------------------
   for (size_t k = 0; k < groups_nbytes.size(); ++k) {
-    DLOG(INFO) << "k = " << k << ".";
-    if ((k == 0 || cache_item->cached_group_nbytes + groups_nbytes[k] / 2 <= model_max_cached_nbytes) 
-      && (cache_item->cached_group_nbytes + groups_nbytes[k] < Config::cold_cache_min_capability_nbytes)) {
+    memory_byte_t group_nbytes = tvm::GetMemBlockAlignedNBytes(groups_nbytes[k]);
+    if (model_max_cached_nbytes > 0 
+        && (k == 0 || cache_item->cached_group_nbytes + groups_nbytes[k] / 2 <= model_max_cached_nbytes)
+    ) {
       cache_item->cached_groups_id.push_back(k);
-      cache_item->cached_group_nbytes += groups_nbytes[k];
+      cache_item->cached_group_nbytes += group_nbytes;
     } else {
+      for (; k < groups_nbytes.size(); ++k) {
+        uncache_nbytes += tvm::GetMemBlockAlignedNBytes(groups_nbytes[k]);
+      }
       break;
     }
   }
-  LOG_IF(INFO, Config::log_cold_cache) 
-      <<"[ColdModelCache] decide to cache " << name 
-      << " decide to cache group = [ "<< cache_item->cached_groups_id << " ]," 
+  // CHECK_EQ(uncache_nbytes, 0);
+  CHECK_EQ(cache_item->cached_group_nbytes + uncache_nbytes, total_nbytes);
+  DLOG_IF(INFO, Config::log_cold_cache) 
+      << "[ColdModelCache] decide to cache " << name 
+      << " decide to cache group = [ " << cache_item->cached_groups_id << " ]," 
       << " total " << groups_nbytes.size() << ".";
 
   std::vector<Model*> coldest_model;
@@ -237,23 +253,92 @@ ColdModelCache::PushCacheItem(
     coldest_model.push_back(cache_item->model);
   }
 
-  DLOG(INFO) << "check whether should evict models.";
-  auto evict_models = GetEvictModels(Config::cold_cache_max_capability_nbytes, 
-                                     {cache_item->model, source_model}, lock);
-  current_cached_nbytes_ += cache_item->cached_group_nbytes;
-  DLOG(INFO) << "put to cold_cache_items_.";
+  DLOG_IF(INFO, Config::log_cold_cache) << "check whether should evict models.";
+  evict_list evict_models;
+  // CHECK_EQ(uncache_nbytes, 0);
+  
+  memory_byte_t before_capacity_nbytes = current_capacity_nbytes_;
+  memory_byte_t before_cache_nbytes = current_cached_nbytes_;
+  memory_byte_t before_infer_nbytes = 
+      ResourceManager::GetInferMemoryMB(sta::DeviceManager::GetCurrentDevice()) * 1_MB;
+  memory_byte_t before_ic_nbytes = before_infer_nbytes 
+                                   - current_cached_nbytes_ 
+                                   + current_capacity_nbytes_;
+  memory_byte_t evict_nbytes = 0;
+
+  // -------------------
+  // 2. cache the group
+  // -------------------
+  if (current_capacity_nbytes_ + total_nbytes <= Config::cold_cache_max_capability_nbytes
+  ) { /* 2.1 resereve in cache */ 
+    // note that all memory (whether or not model is partial cached) is reserved in cache
+    current_capacity_nbytes_ += total_nbytes; 
+    current_cached_nbytes_ += cache_item->cached_group_nbytes;
+    DLOG_IF(INFO, Config::log_cold_cache) 
+        << "[ColdModelCache] Cache Succes, update Capacity=" 
+        << sta::PrintByte(current_capacity_nbytes_);
+  } else { /* 2.2 reach limit, evict the coldest */  
+    // CHECK_GE((Config::cold_cache_max_capability_nbytes + Config::cold_cache_min_capability_nbytes) / 2, 
+    //          cache_item->cached_group_nbytes);
+    memory_byte_t evict_to_nbytes = (Config::cold_cache_max_capability_nbytes 
+                                     + Config::cold_cache_min_capability_nbytes) / 2;
+    CHECK_GE(evict_to_nbytes, cache_item->cached_group_nbytes);
+
+    memory_byte_t old_capacity_nbytes = current_capacity_nbytes_;
+    memory_byte_t old_cached_nbytes = current_cached_nbytes_;
+    evict_models = GetEvictModels(evict_to_nbytes , 
+                                  {cache_item->model, source_model}, lock);
+    evict_nbytes = old_cached_nbytes - current_cached_nbytes_;
+    current_capacity_nbytes_ = current_cached_nbytes_;
+    current_capacity_nbytes_ += cache_item->cached_group_nbytes;
+    current_cached_nbytes_ += cache_item->cached_group_nbytes;
+    DLOG_IF(INFO, Config::log_cold_cache) 
+        << "[PushCacheItem] Shrink Cache, " 
+        << "capacity: " << sta::PrintByte(old_capacity_nbytes) 
+        << " -> " << sta::PrintByte(current_capacity_nbytes_) << ", "
+        << "cached: " << sta::PrintByte(old_cached_nbytes) 
+        << " -> " << sta::PrintByte(current_cached_nbytes_) << ", "
+        << "evict_to: " << sta::PrintByte(evict_to_nbytes) << ".";
+  }
   CHECK(cold_cache_items_.emplace(std::make_pair(name, cache_item)).second == true) << name;
-  DLOG(INFO) << "cached_groups_id = " << cache_item->cached_groups_id; 
+  DLOG_IF(INFO, Config::log_cold_cache) 
+      << "cached_groups_id = " << cache_item->cached_groups_id; 
+
+  memory_byte_t after_capacity_nbytes = current_capacity_nbytes_;
+  memory_byte_t after_cache_nbytes = current_cached_nbytes_;
+  memory_byte_t after_infer_nbytes = 
+      ResourceManager::GetInferMemoryMB(sta::DeviceManager::GetCurrentDevice()) * 1_MB;
+  memory_byte_t after_ic_nbytes = after_infer_nbytes 
+                                  - current_cached_nbytes_ 
+                                  + current_capacity_nbytes_ 
+                                  - evict_nbytes;
+  LOG_IF(INFO, Config::log_cold_cache) << "[PutCacheItem] name " << name << ", " 
+      << "capacity_nbytes: " << sta::PrintByte(before_capacity_nbytes) 
+      << " -> " << sta::PrintByte(after_capacity_nbytes) << ", "
+      << "cache_nbytes: " << sta::PrintByte(before_cache_nbytes) 
+      << " -> " << sta::PrintByte(after_cache_nbytes) << ", "
+      << "infer_nbytes: " << sta::PrintByte(before_infer_nbytes) 
+      << " -> " << sta::PrintByte(after_infer_nbytes) << ", "
+      << "ic_nbytes: " << sta::PrintByte(before_ic_nbytes) 
+      << " -> " << sta::PrintByte(after_ic_nbytes) << ", "
+      << "evict_nbytes: " << sta::PrintByte(evict_nbytes) << ".";
+
   return {cache_item->cached_groups_id, evict_models, true};
 }
 
 std::pair<std::vector<size_t>, bool> ColdModelCache::PopCacheItem(const std::string& name,
-    size_t rank, std::unique_lock<std::mutex> &lock) {
+    size_t rank, bool pop_to_inference, std::unique_lock<std::mutex> &lock) {
   auto iter = cold_cache_items_.find(name);
   if (iter == cold_cache_items_.cend()) { return {{}, false}; }
   CHECK(iter != cold_cache_items_.cend());
   auto cached_groups_id = iter->second->cached_groups_id;
   current_cached_nbytes_ -= iter->second->cached_group_nbytes;
+  if (pop_to_inference) {
+    current_capacity_nbytes_ -= iter->second->cached_group_nbytes;
+  }
+  // CHECK_GE(current_capacity_nbytes_, Config::cold_cache_min_capability_nbytes - 500_MB);
+  CHECK_LE(current_capacity_nbytes_, Config::cold_cache_max_capability_nbytes);
+  CHECK_LE(current_cached_nbytes_, current_capacity_nbytes_);
   cold_cache_items_.erase(iter);
   return {cached_groups_id, true};
 }
@@ -280,8 +365,8 @@ ColdModelCache::evict_list ColdModelCache::GetEvictModels(
     DLOG(INFO) << "should evict models.";
     auto *model = coldest_model.back();
     auto& model_id = model->GetName();
-    auto&& [cached_groups_id, succ] =
-        PopCacheItem(model_id, default_rank, lock);
+    auto&& [cached_groups_id, succ] = PopCacheItem(
+        model_id, default_rank, false, lock);
     CHECK(succ);
     evict_models.emplace_back(model_id, std::move(cached_groups_id));
 
@@ -309,42 +394,47 @@ double ColdModelCache::GetBufferMBUnsafe() {
 }
 
 double ColdModelCache::GetCacheSizeMBUnsafe() {
-  auto cold_cache_nbytes = current_cached_nbytes_;
-  auto free_memory_mb = ResourceManager::GetFreeMemoryMB(device_id_, false);
-  return std::min(sta::ByteToMB(Config::cold_cache_max_capability_nbytes),
-                  sta::ByteToMB(cold_cache_nbytes) + std::max(0.0, free_memory_mb));
+  return sta::ByteToMB(current_capacity_nbytes_);
+  // auto cold_cache_nbytes = current_cached_nbytes_;
+  // auto free_memory_mb = ResourceManager::GetFreeMemoryMB(device_id_, false);
+  // LOG(INFO) << "cold_cache_nbytes = " << cold_cache_nbytes << ", free_memory_mb = " << free_memory_mb;
+  // return std::min(sta::ByteToMB(Config::cold_cache_max_capability_nbytes),
+  //                 sta::ByteToMB(cold_cache_nbytes) + std::max(0.0, free_memory_mb));
 }
 
 double ColdModelCache::GetReleaseReserveMemoryMBUnsafe() {
   double cached_MB = sta::ByteToMB(current_cached_nbytes_);
   double min_cap_MB = sta::ByteToMB(Config::cold_cache_min_capability_nbytes);
   double max_cap_MB = sta::ByteToMB(Config::cold_cache_max_capability_nbytes);
-
-  if (ColdModelCache::reserve_policy_on_release == ReservePolicy::kMaxCap) {
-    return std::max(0.0, max_cap_MB - cached_MB);
-  } else if (ColdModelCache::reserve_policy_on_release == ReservePolicy::kMaxMinDiff) {
-    return cached_MB > min_cap_MB 
-           ? std::max(0.0, max_cap_MB - cached_MB) 
-           : max_cap_MB - min_cap_MB;
-  } else {
-    return 0.0;
-  }
+  double cap_MB = sta::ByteToMB(current_capacity_nbytes_);
+  return std::max(0.0, cap_MB - cached_MB);
+  // if (ColdModelCache::reserve_policy_on_release == ReservePolicy::kMaxCap) {
+  //   return std::max(0.0, min_cap_MB - cached_MB);
+  // } else if (ColdModelCache::reserve_policy_on_release == ReservePolicy::kMaxMinDiff) {
+  //   return cached_MB > min_cap_MB 
+  //          ? std::max(0.0, max_cap_MB - cached_MB) 
+  //          : max_cap_MB - min_cap_MB;
+  // } else {
+  //   return 0.0;
+  // }
 }
 
 double ColdModelCache::GetAdjustReserveMemoryMBUnsafe() {
   double cached_MB = sta::ByteToMB(current_cached_nbytes_);
   double min_cap_MB = sta::ByteToMB(Config::cold_cache_min_capability_nbytes);
   double max_cap_MB = sta::ByteToMB(Config::cold_cache_max_capability_nbytes);
+  double cap_MB = sta::ByteToMB(current_capacity_nbytes_);
+  return std::max(0.0, cap_MB - cached_MB);
 
-  if (ColdModelCache::reserve_policy_on_adjust == ReservePolicy::kMaxCap) {
-    return std::max(0.0, max_cap_MB - cached_MB);
-  } else if (ColdModelCache::reserve_policy_on_adjust == ReservePolicy::kMaxMinDiff) {
-    return cached_MB > min_cap_MB 
-           ? std::max(0.0, max_cap_MB - cached_MB) 
-           : max_cap_MB - min_cap_MB;
-  } else {
-    return 0.0;
-  }
+  // if (ColdModelCache::reserve_policy_on_adjust == ReservePolicy::kMaxCap) {
+  //   return std::max(0.0, max_cap_MB - cached_MB);
+  // } else if (ColdModelCache::reserve_policy_on_adjust == ReservePolicy::kMaxMinDiff) {
+  //   return cached_MB > min_cap_MB 
+  //          ? std::max(0.0, max_cap_MB - cached_MB) 
+  //          : max_cap_MB - min_cap_MB;
+  // } else {
+  //   return 0.0;
+  // }
 }
 
 double ColdModelCache::GetReleaseReserveMemoryMB(
@@ -355,6 +445,48 @@ double ColdModelCache::GetReleaseReserveMemoryMB(
 double ColdModelCache::GetAdjustReserveMemoryMB(
     std::unique_lock<std::mutex> &lock) {
   return GetAdjustReserveMemoryMBUnsafe();
+}
+
+void ColdModelCache::SetNewCapacity(memory_byte_t new_capacity,
+                                    std::unique_lock<std::mutex> &lock) {
+  CHECK_LE(new_capacity, Config::cold_cache_max_capability_nbytes);
+  // CHECK_GE(new_capacity, Config::cold_cache_min_capability_nbytes);
+  CHECK_GE(new_capacity, current_cached_nbytes_);
+  current_capacity_nbytes_ = new_capacity;
+  DLOG_IF(INFO, Config::log_cold_cache) 
+      << "SetNewCapacity " << sta::ByteToMB(new_capacity) << "MB";
+}
+
+bool ColdModelCache::TakeSpace(memory_byte_t nbytes) {
+  auto current_capacity_nbytes = current_capacity_nbytes_;
+  if (current_cached_nbytes_ + nbytes <= current_capacity_nbytes_) {
+    current_capacity_nbytes_ -= nbytes;
+    DLOG_IF(INFO, Config::log_cold_cache) 
+        << "[ColdModelCache] TakeSpace Succ " << sta::ByteToMB(nbytes)
+        << "MB, current cache " << sta::ByteToMB(current_cached_nbytes_)
+        << "MB: " << sta::ByteToMB(current_capacity_nbytes) << "MB -> " 
+        << sta::ByteToMB(current_capacity_nbytes_) << "MB,"
+        << "FREE: " << ResourceManager::GetFreeMemoryMB(
+            sta::DeviceManager::GetCurrentDevice(), false) 
+        << ".";
+    return true;
+  } else {
+    DLOG_IF(INFO, Config::log_cold_cache) 
+        << "[ColdModelCache] TakeSpace Fail " << sta::ByteToMB(nbytes) 
+        << "MB, current cache " << sta::ByteToMB(current_cached_nbytes_)
+        << "MB: " << sta::ByteToMB(current_capacity_nbytes) << "MB -> " 
+        << sta::ByteToMB(current_capacity_nbytes_) << "MB,"
+        << "FREE: " << ResourceManager::GetFreeMemoryMB(
+            sta::DeviceManager::GetCurrentDevice(), false) 
+        << ".";
+    return false;
+  }
+}
+
+std::string ColdModelCache::PrintCacheInfo(std::unique_lock<std::mutex> &lock) {
+  return str (boost::format("Capacity: %s, Cached: %s") 
+              % sta::PrintByte(GetCacheCapacity(lock)) 
+              % sta::PrintByte(GetCachedNbytes(lock)));
 }
 
 } // namespace colserve

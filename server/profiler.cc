@@ -371,15 +371,16 @@ void Profiler::CollectMemoryResourceInfo(
             sta::CUDAMemPool::Get(device_id)->TrainAllMemUsage();
         res_info.gpu_used_mem = 
             static_cast<size_t>(Config::cuda_memory_pool_gb * 1_GB);
+         auto [cap, cache] = ColdModelCache::Get(device_id)->GetColdCacheCapacityAndCache();
         if (Config::cold_cache_max_capability_nbytes != 0) {
-          res_info.cold_cache_nbytes = 
-              ColdModelCache::Get(device_id)->GetCachedNbytesUnsafe();
+          res_info.cold_cache_nbytes = cache;
+          
           res_info.cold_cache_buffer_mb = 
               ColdModelCache::Get(device_id)->GetBufferMBUnsafe();
+         
           res_info.infer_mem_in_cold_cache_buffer_mb = 
               ColdModelCache::Get(device_id)->GetColdCacheReleasableMemoryMBUnsafe();
-          res_info.cold_cache_size_mb = 
-              ColdModelCache::Get(device_id)->GetCacheSizeMBUnsafe();
+          res_info.cold_cache_size_mb = sta::ByteToMB(cap);
         }
       };
 

@@ -131,9 +131,13 @@ void Executor::DeInit(const std::vector<size_t> &keep_cold_cached_group_id) {
   cold_cached_group_.clear();
   size_t cold_cached_nbytes = 0;
   for (size_t k : keep_cold_cached_group_id) {
+    size_t aligned_nbytes = tvm::GetMemBlockAlignedNBytes(storage_group_.at(k)->nbytes);
     CHECK_EQ(cold_cached_group_.emplace(
         std::make_pair(k, storage_group_.at(k))).second, true);
-    cold_cached_nbytes += storage_group_.at(k)->nbytes;
+    cold_cached_nbytes += aligned_nbytes;
+    DLOG(INFO) << "Keep " << tvm_graph_.model_name_ 
+              << "cold cached group " << k << " nbytes " 
+              << sta::PrintByte(aligned_nbytes);
   }
 
   LOG_IF(INFO, Config::log_infer_model_reclaim) 

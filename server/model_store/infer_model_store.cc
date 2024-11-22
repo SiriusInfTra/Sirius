@@ -286,13 +286,15 @@ void InferModelStore::ClearColdCache() {
     int rank = 0;
     for (auto &&[name, model]: models_) {
       auto &&[evict_groups_id, succ] = 
-          cold_model_cache->PopCacheItem(name, rank, cold_cache_lock);
+          cold_model_cache->PopCacheItem(name, rank, false, cold_cache_lock);
       if (succ) { 
         model->ClearColdCache(evict_groups_id, rank, cold_cache_lock); 
       }
     }
     CHECK_EQ(cold_model_cache->GetCachedNbytes(cold_cache_lock), 0);
+    cold_model_cache->SetNewCapacity(0, cold_cache_lock);
   }
+  
 }
 
 void InferModelStore::ClearWarmCache() {

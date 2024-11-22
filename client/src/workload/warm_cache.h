@@ -33,7 +33,7 @@ class WarmCache {
   static std::unordered_map<std::string, std::unique_ptr<WarmCache>> loaded_models_;
   static std::atomic<int> concurrent_loads[MAX_DEVICE];
   static TritonConfig triton_config_;
-  static size_t curr_memory_usage_;
+  static size_t curr_memory_usage_[MAX_DEVICE];
 
   std::mutex s_mutex_;
   std::mutex inc_mutex_;
@@ -44,6 +44,7 @@ class WarmCache {
   int infering_cnt_;
 
   static size_t GetModelMemoryUsage(const std::string &name);
+  static size_t GetModelDevice(const std::string &name);
 
 public:
   WarmCache(const std::string &model_name) 
