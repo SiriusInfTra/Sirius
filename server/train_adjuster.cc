@@ -58,7 +58,7 @@ memory_mb_t TrainAdjuster::PredictTrainMemUsageMB(int device_id, bool verbose) {
     return 0;
   }
   auto target_batch_size_ = adjuster_->cached_target_batch_sizes_[device_id];
-#if 0
+#if 1
   auto current_batch_size = COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(
       device_id, current_batch_size);
   auto batch_size = std::max(target_batch_size_, current_batch_size);
