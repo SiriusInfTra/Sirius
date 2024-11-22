@@ -694,7 +694,7 @@ class HyperWorkload:
             if 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:
                 cmd += ["--triton-max-memory", "0"]
             else:
-                cmd += ["--triton-max-memory", str(int(float(server.cuda_memory_pool_gb) * 1024  * get_num_gpu()))]
+                cmd += ["--triton-max-memory", str(int(float(server.cuda_memory_pool_gb) * 1024))]
         if self.duration is not None:
             cmd += ["-d", str(self.duration)]
 
