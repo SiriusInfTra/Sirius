@@ -302,9 +302,17 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
       << " total_storage_nbytes " << total_storage_nbytes;
 
   if (!cold_model_cache->TakeSpace(total_storage_nbytes)) {
-    // ---------------------------------------
-    // 1. adjust train if cache is not enough
-    // ---------------------------------------
+    /** [Note: memory adjust order]
+     *  gpu memory can be classified into 4 types:
+     *  - inference active memory
+     *  - inference cached memory
+     *  - free memory
+     *  - training memory 
+     *  the cold cache capacity = inference cached memory + free memory
+     *  If inference require more memory, it will first ask 
+     *  free memory, cached memory and training memory in order.
+     */
+
     /* if: need adjust train / infer cache */
     if (cold_model_cache->GetCacheCapacity(cold_cache_lock)
           < Config::cold_cache_min_capability_nbytes + total_storage_nbytes
@@ -377,9 +385,6 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
         << " Total storage: " << sta::PrintByte(total_storage_nbytes);
     CHECK_GE(cold_model_cache->GetCacheCapacity(cold_cache_lock), total_storage_nbytes);
     
-    // -------------------------------------------
-    // 2. evict other if cache is still not enough
-    // -------------------------------------------
     if (cold_model_cache->TakeSpace(total_storage_nbytes)) {
       LOG_IF(INFO, Config::log_memory_adjust) 
           << "[MaybeAdjustTrainAndCache] Secound take space success, "
@@ -427,7 +432,7 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
       cold_model_cache->SetNewCapacity(
           cold_model_cache->GetCacheCapacity(cold_cache_lock) - total_storage_nbytes, 
           cold_cache_lock);
-    } /* end if: evict other */
+    }
   } /* end if: need adjust train / infer cache */
   cold_model_cache->UnblockProfilter();
  
