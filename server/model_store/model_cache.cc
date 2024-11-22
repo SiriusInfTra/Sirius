@@ -357,8 +357,8 @@ ColdModelCache::evict_list ColdModelCache::GetEvictModels(
     DLOG(INFO) << "should evict models.";
     auto *model = coldest_model.back();
     auto& model_id = model->GetName();
-    auto&& [cached_groups_id, succ] =
-        PopCacheItem(model_id, default_rank, false, lock);
+    auto&& [cached_groups_id, succ] = PopCacheItem(
+        model_id, default_rank, false, lock);
     CHECK(succ);
     evict_models.emplace_back(model_id, std::move(cached_groups_id));
 
