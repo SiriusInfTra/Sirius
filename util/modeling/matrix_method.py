@@ -1,6 +1,13 @@
 import scipy
 import numpy as np
 import math
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--rps', type=float)
+parser.add_argument('--service-time', type=float)
+parser.add_argument('--cold-start-time', type=float)
+args = parser.parse_args()
 
 
 class hypoexp:
@@ -16,9 +23,9 @@ class hypoexp:
         tail_prob = scipy.linalg.expm(x * self._Theta)[0, :] @ np.ones(len(self.lambdas))
         return 1 - tail_prob
 
-
-rps = 5 / 56                      # \lambda
-service_time = 0.0084                # E[S]
+num_model = 56
+rps = 33 / num_model                      # \lambda
+service_time = 0.0064                # E[S]
 service_rate = 1 / service_time     # \mu
 live_time = 5                       # t
 cold_start_time = 0.0159             # L
@@ -26,6 +33,20 @@ cold_start_rate = 1 / cold_start_time
 hite_rate = 1 / 12                  # a
 
 slo = 0.0293                         # SLO
+
+if args.rps:
+    rps = args.rps / num_model
+
+if args.service_time:
+    service_time = args.service_time
+    service_rate = 1 / service_time
+
+if args.cold_start_time:
+    cold_start_time = args.cold_start_time
+    cold_start_rate = 1 / cold_start_time
+
+
+#==============================================================================
 
 L_0 = np.array([
     [-(1 / live_time + rps),  1 / live_time],
