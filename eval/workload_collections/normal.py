@@ -214,6 +214,114 @@ class NormalA_v0Config(NormalRpsMajorConfigBase):
         )
 
 
+@normal_rps_major("NormalA_LogNormal_RPS_1")
+class NormalA_LogNormal_RPS_1Config(NormalRpsMajorConfigBase):
+    def __init__(self) -> None:
+        super().__init__(
+            get_global_seed_by_hash("NormalA_LogNormal_RPS_1"),
+            dist.LogNormalParam(1, 0.3),
+            dist.AutoCorrelationGenerator('inverse', 5, inverse_decay_param=1),
+            0.4
+        )
+
+@normal_rps_major("NormalA_LogNormal_RPS_2")
+class NormalA_LogNormal_RPS_2Config(NormalRpsMajorConfigBase):
+    def __init__(self) -> None:
+        super().__init__(
+            get_global_seed_by_hash("NormalA_LogNormal_RPS_2"),
+            dist.LogNormalParam(2, 0.3),
+            dist.AutoCorrelationGenerator('inverse', 5, inverse_decay_param=1),
+            0.4
+        )
+
+@normal_rps_major("NormalA_LogNormal_RPS_3")
+class NormalA_LogNormal_RPS_3Config(NormalRpsMajorConfigBase):
+    def __init__(self) -> None:
+        super().__init__(
+            get_global_seed_by_hash("NormalA_LogNormal_RPS_3"),
+            dist.LogNormalParam(3, 0.3),
+            dist.AutoCorrelationGenerator('inverse', 5, inverse_decay_param=1),
+            0.4
+        )
+
+
+@normal_rps_major("NormalA_LogNormal_RPS_4")
+class NormalA_LogNormal_RPS_4Config(NormalRpsMajorConfigBase):
+    def __init__(self) -> None:
+        super().__init__(
+            get_global_seed_by_hash("NormalA_LogNormal_RPS_4"),
+            dist.LogNormalParam(3.5, 0.3),
+            dist.AutoCorrelationGenerator('inverse', 5, inverse_decay_param=1),
+            0.4
+        )
+
+
+@normal_rps_major("NormalA_LogNormal_RPS_5")
+class NormalA_LogNormal_RPS_5Config(NormalRpsMajorConfigBase):
+    def __init__(self) -> None:
+        super().__init__(
+            get_global_seed_by_hash("NormalA_LogNormal_RPS_5"),
+            dist.LogNormalParam(4, 0.3),
+            dist.AutoCorrelationGenerator('inverse', 5, inverse_decay_param=1),
+            0.4
+        )
+
+
+@normal_rps_major("NormalA_LogNormal_RPS_5")
+class NormalA_LogNormal_RPS_5Config(NormalRpsMajorConfigBase):
+    def __init__(self) -> None:
+        super().__init__(
+            get_global_seed_by_hash("NormalA_LogNormal_RPS_5"),
+            dist.LogNormalParam(4, 0.3),
+            dist.AutoCorrelationGenerator('inverse', 5, inverse_decay_param=1),
+            0.4
+        )
+
+
+@normal_rps_major("NormalA_LogNormal_RPS_6")
+class NormalA_LogNormal_RPS_6Config(NormalRpsMajorConfigBase):
+    def __init__(self) -> None:
+        super().__init__(
+            get_global_seed_by_hash("NormalA_LogNormal_RPS_6"),
+            dist.LogNormalParam(4.25, 0.3),
+            dist.AutoCorrelationGenerator('inverse', 5, inverse_decay_param=1),
+            0.4
+        )
+
+
+@normal_rps_major("NormalA_LogNormal_RPS_7")
+class NormalA_LogNormal_RPS_7Config(NormalRpsMajorConfigBase):
+    def __init__(self) -> None:
+        super().__init__(
+            get_global_seed_by_hash("NormalA_LogNormal_RPS_7"),
+            dist.LogNormalParam(4.5, 0.3),
+            dist.AutoCorrelationGenerator('inverse', 5, inverse_decay_param=1),
+            0.4
+        )
+
+
+@normal_rps_major("NormalA_LogNormal_RPS_8")
+class NormalA_LogNormal_RPS_8Config(NormalRpsMajorConfigBase):
+    def __init__(self) -> None:
+        super().__init__(
+            get_global_seed_by_hash("NormalA_LogNormal_RPS_8"),
+            dist.LogNormalParam(4.75, 0.3),
+            dist.AutoCorrelationGenerator('inverse', 5, inverse_decay_param=1),
+            0.4
+        )
+
+
+@normal_rps_major("NormalA_LogNormal_RPS_9")
+class NormalA_LogNormal_RPS_9Config(NormalRpsMajorConfigBase):
+    def __init__(self) -> None:
+        super().__init__(
+            get_global_seed_by_hash("NormalA_LogNormal_RPS_9"),
+            dist.LogNormalParam(5, 0.3),
+            dist.AutoCorrelationGenerator('inverse', 5, inverse_decay_param=1),
+            0.4
+        )
+
+
 @normal_rps_major("Normal_LogNormal_A")
 class Normal_LogNormal_AConfig(NormalRpsMajorConfigBase):
     def __init__(self) -> None:

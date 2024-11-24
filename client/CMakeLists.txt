@@ -55,16 +55,17 @@ ExternalProject_Add(triton-client
         -DTRITON_CORE_REPO_TAG=${TRITON_BRANCH_NAME}
         -DCMAKE_INSTALL_PREFIX=${TRITON_BUILD_DIR}-install
         -DOPENSSL_ROOT_DIR=${CMAKE_PREFIX_PATH}
-    CMAKE_CACHE_ARGS
         -DCMAKE_PREFIX_PATH:PATH=${CMAKE_PREFIX_PATH}
         -DCMAKE_INSTALL_MESSAGE:STRING=NEVER
         -DTRITON_KEEP_TYPEINFO:BOOL=ON
     INSTALL_COMMAND ""
     BUILD_ALWAYS OFF
-    BUILD_COMMAND
-        COMMAND sed -in "s/TRITON_KEEP_TYPEINFO:BOOL=OFF/TRITON_KEEP_TYPEINFO:BOOL=ON/" ${TRITON_BUILD_DIR}/CMakeCache.txt 
-        COMMAND ${CMAKE_COMMAND} . 
-        COMMAND ${CMAKE_COMMAND} --build .
+    # BUILD_COMMAND cd ${TRITON_CC_CLIENT_BUILD_DIR} &&
+    #     sed -in "s/TRITON_KEEP_TYPEINFO:BOOL=OFF/TRITON_KEEP_TYPEINFO:BOOL=ON/" CMakeCache.txt &&
+    #     ${CMAKE_COMMAND} . && cd - && ${CMAKE_COMMAND} --build .
+    BUILD_COMMAND bash ${COLSYS_ROOT_DIR}/client/third_party/triton_cc_client_build_helper.sh ${TRITON_CC_CLIENT_BUILD_DIR}
+        # ${CMAKE_COMMAND} --build .
+
     LOG_DOWNLOAD ON
     LOG_INSTALL ON
     LOG_BUILD ON
@@ -92,7 +93,6 @@ ExternalProject_Add(client-impl
         -DTRITON_INSTALL_DIR=${TRITON_BUILD_DIR}-install
         # -DOPENSSL_ROOT_DIR=${CMAKE_PREFIX_PATH}
         # -DCMAKE_INSTALL_MESSAGE=LAZY
-    CMAKE_CACHE_ARGS
         -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
         -DCMAKE_PREFIX_PATH:PATH=${CMAKE_PREFIX_PATH}
         -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=ON
@@ -104,4 +104,10 @@ ExternalProject_Add(client-impl
     LOG_DOWNLOAD ON
     LOG_INSTALL ON
     LOG_BUILD ON
+)
+
+ExternalProject_Add_Step(client-impl build_triton_client 
+    COMMAND ${CMAKE_COMMAND} --build ${TRITON_BUILD_DIR}
+    DEPENDEES download
+    DEPENDERS configure
 )

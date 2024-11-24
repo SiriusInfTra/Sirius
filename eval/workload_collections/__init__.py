@@ -35,4 +35,14 @@ _set_workload_alias({
     'SkewA'   : 'Skew_LogNormal_A',
     'SkewB'   : 'Skew_LogNormal_C',
     'SkewC'   : 'Skew_Markov_LogNormal_AC',
+
+    'RPS_1'   : 'NormalA_LogNormal_RPS_1',
+    'RPS_2'   : 'NormalA_LogNormal_RPS_2',
+    'RPS_3'   : 'NormalA_LogNormal_RPS_3',
+    'RPS_4'   : 'NormalA_LogNormal_RPS_4',
+    'RPS_5'   : 'NormalA_LogNormal_RPS_5',
+    'RPS_6'   : 'NormalA_LogNormal_RPS_6',
+    'RPS_7'   : 'NormalA_LogNormal_RPS_7',
+    'RPS_8'   : 'NormalA_LogNormal_RPS_8',
+    'RPS_9'   : 'NormalA_LogNormal_RPS_9',
 })
