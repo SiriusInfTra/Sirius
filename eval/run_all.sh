@@ -2,6 +2,8 @@ if [ -z "$TMPDIR" ]; then
   export TMPDIR=/tmp
 fi
 
+export TENSORRT_BACKEND_UNIFIED_MEMORY_PATH=$(pwd)/triton/tensorrt_um/install
+
 single_gpu_env() {
   GPU_UUID=$(nvidia-smi -L | sed -n 's/.*UUID: \(.*\))/\1/p' | head -n1)
   export CUDA_VISIBLE_DEVICES=$GPU_UUID
