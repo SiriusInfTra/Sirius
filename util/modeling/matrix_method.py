@@ -7,6 +7,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--rps', type=float)
 parser.add_argument('--service-time', type=float)
 parser.add_argument('--cold-start-time', type=float)
+parser.add_argument('--hite-rate', type=float)
+parser.add_argument('--live-time', type=float)
 args = parser.parse_args()
 
 
@@ -45,6 +47,11 @@ if args.cold_start_time:
     cold_start_time = args.cold_start_time
     cold_start_rate = 1 / cold_start_time
 
+if args.hite_rate:
+    hite_rate = args.hite_rate
+
+if args.live_time:
+    live_time = args.live_time
 
 #==============================================================================
 
