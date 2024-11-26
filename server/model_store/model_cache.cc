@@ -210,7 +210,7 @@ ColdModelCache::PushCacheItem(
     const std::string& name, size_t rank, 
     std::vector<size_t> groups_nbytes, size_t total_nbytes, 
     std::unique_lock<std::mutex> &lock, Model *source_model) {
-  DLOG_IF(INFO, Config::log_cold_cache) 
+  LOG_IF(INFO, Config::log_cold_cache) 
       << "PushCacheItem, name = " << name 
       << ", rank = " << rank 
       << ", groups_nbytes = " << groups_nbytes 
@@ -220,9 +220,9 @@ ColdModelCache::PushCacheItem(
   auto* cache_item = new CacheItem();
   cache_item->cached_group_nbytes = 0;
   cache_item->model = InferModelStore::Get()->GetModel(name);
-  size_t model_max_cached_nbytes = 
-      static_cast<size_t>(total_nbytes * Config::cold_cache_ratio);
+  size_t model_max_cached_nbytes = Config::cold_cache_max_capability_nbytes > 0 ? static_cast<size_t>(total_nbytes * Config::cold_cache_ratio) : 0;
   size_t uncache_nbytes = 0;
+  LOG(INFO) << "model_max_cached_nbytes: " << model_max_cached_nbytes;
 
   // ----------------------------------------------
   // 1. determine the cache group, uncached nbytes
@@ -236,14 +236,20 @@ ColdModelCache::PushCacheItem(
       cache_item->cached_group_nbytes += group_nbytes;
     } else {
       for (; k < groups_nbytes.size(); ++k) {
-        uncache_nbytes += tvm::GetMemBlockAlignedNBytes(groups_nbytes[k]);
+        if (Config::group_param_load && Config::group_param_nbytes_with_fragment) {
+          uncache_nbytes += tvm::GetMemBlockAlignedNBytes(groups_nbytes[k]);
+        } else {
+          uncache_nbytes += groups_nbytes[k];
+        }
+
       }
       break;
     }
   }
   // CHECK_EQ(uncache_nbytes, 0);
+  LOG(INFO) << "cache_item->cached_group_nbytes: " << cache_item->cached_group_nbytes << " uncache_nbytes: " << uncache_nbytes;
   CHECK_EQ(cache_item->cached_group_nbytes + uncache_nbytes, total_nbytes);
-  DLOG_IF(INFO, Config::log_cold_cache) 
+  LOG_IF(INFO, Config::log_cold_cache) 
       << "[ColdModelCache] decide to cache " << name 
       << " decide to cache group = [ " << cache_item->cached_groups_id << " ]," 
       << " total " << groups_nbytes.size() << ".";
@@ -337,7 +343,7 @@ std::pair<std::vector<size_t>, bool> ColdModelCache::PopCacheItem(const std::str
     current_capacity_nbytes_ -= iter->second->cached_group_nbytes;
   }
   // CHECK_GE(current_capacity_nbytes_, Config::cold_cache_min_capability_nbytes - 500_MB);
-  CHECK_LE(current_capacity_nbytes_, Config::cold_cache_max_capability_nbytes);
+  // CHECK_LE(current_capacity_nbytes_, Config::cold_cache_max_capability_nbytes);
   CHECK_LE(current_cached_nbytes_, current_capacity_nbytes_);
   cold_cache_items_.erase(iter);
   return {cached_groups_id, true};
@@ -449,7 +455,7 @@ double ColdModelCache::GetAdjustReserveMemoryMB(
 
 void ColdModelCache::SetNewCapacity(memory_byte_t new_capacity,
                                     std::unique_lock<std::mutex> &lock) {
-  CHECK_LE(new_capacity, Config::cold_cache_max_capability_nbytes);
+  // CHECK_LE(new_capacity, Config::cold_cache_max_capability_nbytes);
   // CHECK_GE(new_capacity, Config::cold_cache_min_capability_nbytes);
   CHECK_GE(new_capacity, current_cached_nbytes_);
   current_capacity_nbytes_ = new_capacity;

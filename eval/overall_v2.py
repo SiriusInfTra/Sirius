@@ -652,12 +652,11 @@ if run_strawman:
         'use_xsched' : True,
         'has_warmup' : True,
         'ondemand_adjust' : True,
-        
         'pipeline_load' : False,
         'train_memory_over_predict_mb' : 1500,
         # 'cuda_memory_pool_gb' : "13" if not runner.is_four_gpu() else "12.5",
         # 'infer_model_max_idle_ms' : 5000,
-        # 'cold_cache_ratio': 0.5, 
+        'cold_cache_ratio': 0.0, 
         # 'cold_cache_min_capability_nbytes': int(0.5 * 1024 * 1024 * 1024),
         # 'cold_cache_max_capability_nbytes': int(1 * 1024 * 1024 * 1024),
         # 'cold_cache_min_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),

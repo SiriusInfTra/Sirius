@@ -290,7 +290,7 @@ class TVMGraph {
   }
 
   std::vector<memory_byte_t> GetGroupsNbytes() const {
-    return storage_group_nbytes_;
+    return storage_group_nbytes_.empty() ? std::vector<memory_byte_t>{GetStorageAlignedNbytes()} : storage_group_nbytes_;
   }
 
   memory_byte_t GetStorageAlignedNbytes() const {

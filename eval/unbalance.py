@@ -99,7 +99,7 @@ for train_adjust_balance in [
         'has_warmup' : True,
         'ondemand_adjust' : True,
         'cuda_memory_pool_gb' : "13" if not runner.is_four_gpu() else "12.5",
-        'train_memory_over_predict_mb' : 1000,
+        'train_memory_over_predict_mb' : 1500,
         'infer_model_max_idle_ms' : 5000,
         'cold_cache_ratio': 0.5, 
         'train_adjust_balance': train_adjust_balance,
