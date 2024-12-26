@@ -8,7 +8,7 @@ RUN apt update && apt install -y \
   libedit-dev libxml2-dev ninja-build libgoogle-glog-dev \
   libpng-dev libjpeg-dev \
   datacenter-gpu-manager \
-  git curl vim neovim git-lfs wget fish htop && \
+  git curl tmux vim neovim git-lfs wget fish htop && \
   git lfs install && \
   chsh -s /usr/bin/fish
 

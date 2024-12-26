@@ -434,11 +434,14 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
       }
     } /* end if: need adjust train / infer cache */
 
-    // CHECK_GE(cold_model_cache->GetCacheCapacity(cold_cache_lock), Config::cold_cache_min_capability_nbytes);
-    CHECK_LE(cold_model_cache->GetCacheCapacity(cold_cache_lock), Config::cold_cache_max_capability_nbytes);
+    // CHECK_GE(cold_model_cache->GetCacheCapacity(cold_cache_lock), 
+    //          Config::cold_cache_min_capability_nbytes);
+    CHECK_LE(cold_model_cache->GetCacheCapacity(cold_cache_lock), 
+             Config::cold_cache_max_capability_nbytes);
     cold_model_cache->UnblockProfilter();
   } else {
-    if (ResourceManager::GetFreeMemoryMB(sta::DeviceManager::GetCurrentDevice(), false) <= total_storage_nbytes) {
+    if (ResourceManager::GetFreeMemoryMB(
+          sta::DeviceManager::GetCurrentDevice(), false) <= total_storage_nbytes) {
       memory_mb_t require_mb = sta::ByteToMB(total_storage_nbytes) 
         - ResourceManager::GetFreeMemoryMB(sta::DeviceManager::GetCurrentDevice(), false);
       auto adjust_plan = TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
