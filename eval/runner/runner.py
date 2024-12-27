@@ -17,7 +17,8 @@ import re
 
 from .hyper_workload import (
     InferWorkloadBase, TrainWorkload, 
-    InferTraceDumper, InferModel, RandomInferWorkload
+    InferTraceDumper, InferModel, RandomInferWorkload,
+    LLMInferWorkload
 )
 from .config import (
     get_global_seed, get_binary_dir,
@@ -154,6 +155,10 @@ class System:
                  profile_gpu_util: bool = True,
                  profile_sm_partition: bool = True,
                  dummy_adjust: bool = False,
+                 serving_llm: bool = False,
+                 llm_model_name: str = "",
+                 llm_max_seq_len: int = 512,
+                 llm_max_batch_size: int = 1,
                  keep_last_time_stamp: bool = True,
                  max_live_minute: Optional[int] = None) -> None:
         self.mode = mode
@@ -212,6 +217,10 @@ class System:
         else:
             self.time_stamp = System._last_time_stamp
         self.use_xsched = use_xsched
+        self.serving_llm = serving_llm
+        self.llm_model_name = llm_model_name
+        self.llm_max_seq_len = llm_max_seq_len
+        self.llm_max_batch_size = llm_max_batch_size
 
     def next_time_stamp(self):
         self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
@@ -242,7 +251,17 @@ class System:
             # "compute-sanitizer", "--tool", "memcheck",
             f"./{get_binary_dir()}/server/colserve", 
             "-p", self.port, 
-            "--mode", self.mode, 
+            "--mode", self.mode
+        ]
+        if self.serving_llm:
+            cmd += [
+                "--serving-llm", 
+                "--llm-model-name", self.llm_model_name,
+                "--llm-max-seq-len", str(self.llm_max_seq_len),
+                "--llm-max-batch-size", str(self.llm_max_batch_size)
+            ]
+
+        cmd += [
             "--use-sta", "1" if self.use_sta else "0", 
             "--use-sta-train", "1" if self.use_sta_train else "0",
             "--profile-log", profile_log,
@@ -594,7 +613,8 @@ class HyperWorkload:
                  wait_warmup_done_sec: float = 0, # see [Note: client timeline] in client/workload/util.h
                  wait_train_setup_sec: float = 0,
                  wait_stable_before_start_profiling_sec: float = 0, 
-                 show_result: Optional[int] = None) -> None:
+                 show_result: Optional[int] = None,
+                 is_llm_workload = False) -> None:
         """
         Args:
             - concurrency: 
@@ -623,10 +643,15 @@ class HyperWorkload:
         self.wait_train_setup_sec = wait_train_setup_sec
         self.wait_stable_before_start_profiling_sec = wait_stable_before_start_profiling_sec
         self.show_result = show_result
+        self.is_llm_workload = is_llm_workload
         self.manual_trace_cfg = None
         self.infer_extra_infer_sec = self.wait_stable_before_start_profiling_sec
 
     def set_infer_workloads(self, *infer_workloads: InferWorkloadBase):
+        if self.is_llm_workload:
+            assert all([isinstance(workload, LLMInferWorkload) 
+                        for workload in infer_workloads]), \
+                "infer workload should be LLMInferWorkload"
         self.infer_workloads = list(infer_workloads)
     
     def set_train_workload(self, train_workload: TrainWorkload | NoneType):
@@ -641,6 +666,8 @@ class HyperWorkload:
     def launch_workload(self, server: System, 
                         trace_cfg: Optional[PathLike] = None, 
                         **kwargs):
+        if self.is_llm_workload:
+            pass # TODO: handle llm workload
         infer_trace_args = []
         if self.manual_trace_cfg is not None:
             trace_cfg = self.manual_trace_cfg

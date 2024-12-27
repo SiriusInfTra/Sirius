@@ -6,6 +6,7 @@
 #include <atomic>
 #include <iostream>
 #include <filesystem>
+#include <string>
 
 namespace colserve {
 
@@ -143,6 +144,11 @@ class Config {
   static int train_adjust_batch_size_limit;
 
   static bool dummy_adjust;
+
+  static bool serving_llm;
+  static std::string llm_model_name;
+  static int llm_max_seq_len;
+  static int llm_max_batch_size;
 
   static bool system_initialized;
 

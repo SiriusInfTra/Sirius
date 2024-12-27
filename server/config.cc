@@ -1,6 +1,7 @@
 #include <common/util.h>
 
 #include <server/config.h>
+#include <string>
 
 namespace colserve {
 
@@ -84,6 +85,11 @@ bool Config::enable_train_adjust_balance = true;
 memory_mb_t Config::train_adjust_balance_threshold = 1500;
 
 int Config::train_adjust_batch_size_limit = 0;
+
+bool Config::serving_llm = false;
+std::string Config::llm_model_name = "";
+int Config::llm_max_seq_len = 512;
+int Config::llm_max_batch_size = 1;
 
 bool Config::dummy_adjust = false;
 

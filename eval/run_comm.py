@@ -144,6 +144,17 @@ class SkewedConfig_v2:
     enable = enable_skewed
 
 
+class LLMWorkloadConfig:
+    train_model = 'swin_b'
+    train_batch_size = 72
+    train_global_batch_size = 500
+    train_dataset_size = 1000
+    train_epoch_time = 3
+
+    duration = 300
+    port = str(get_unique_port())
+
+
 # MARK: Workload
 ## =========================================================== ##
 
@@ -284,6 +295,33 @@ def skewed_v2(wkld_type, client_model_list, infer_only=True,
                         SkewedConfig_v2.duration)
     
 
+def llm(infer_only=True, 
+        train_model:Optional[str] = None,
+        train_epoch:Optional[int] = None,
+        train_batch_size:Optional[int] = None,
+        train_epoch_time:Optional[float] = None):
+    if train_model is None:
+        train_model = LLMWorkloadConfig.train_model
+    if train_batch_size is None:
+        train_batch_size = LLMWorkloadConfig.train_batch_size
+    if train_epoch_time is None:
+        train_batch_size = LLMWorkloadConfig.train_epoch_time
+    workload = HyperWorkload(concurrency=2048,
+                             warmup=5,
+                             wait_warmup_done_sec=5,
+                             wait_train_setup_sec=60,
+                             wait_stable_before_start_profiling_sec=10,
+                             is_llm_workload=True)
+    if not infer_only:
+        if train_epoch is None:
+            train_epoch = get_train_epoch(train_epoch_time, 
+                                          LLMWorkloadConfig.duration)
+        workload.set_train_workload(
+            train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
+    workload.set_infer_workloads(LLMInferWorkload())
+    return workload
+
+
 def _run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
     try:
         system.launch(unit, tag, time_stamp=use_time_stamp,
@@ -333,5 +371,6 @@ def run(system: System, workload: HyperWorkload,
     else:
         _run(system, workload, server_model_config, unit, tag)
     print("\n===========================\n===========================\n")
+
 
 

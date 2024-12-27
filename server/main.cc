@@ -1,3 +1,4 @@
+#include "llm/llm.h"
 #include <server/logging_as_glog.h>
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/c_runtime_api.h>
@@ -14,6 +15,7 @@
 
 #include <server/grpc/grpc_server.h>
 #include <server/model_store/infer_model_store.h>
+#include <server/llm/llm.h>
 #include <server/train_launcher.h>
 #include <server/train_adjuster.h>
 #include <server/resource_manager.h>
@@ -183,6 +185,18 @@ void init_cli_options() {
       colserve::Config::train_adjust_batch_size_limit,
       str(boost::format("train adjust batch size limit, default is %d") 
           % colserve::Config::train_adjust_batch_size_limit));
+  app.add_flag("--serving-llm", colserve::Config::serving_llm,
+      str(boost::format("serving llm, default is %d") 
+          % colserve::Config::serving_llm));
+  app.add_option("--llm-model-name", colserve::Config::llm_model_name,
+      str(boost::format("llm model name, default is %s") 
+          % colserve::Config::llm_model_name));
+  app.add_option("--llm-max-seq-len", colserve::Config::llm_max_seq_len,
+      str(boost::format("llm max seq len, default is %d") 
+          % colserve::Config::llm_max_seq_len));
+  app.add_option("--llm-max-batch-size", colserve::Config::llm_max_batch_size,
+      str(boost::format("llm max batch size, default is %d") 
+          % colserve::Config::llm_max_batch_size));
   app.add_flag("--dump-adjust-info", 
       colserve::Config::dump_adjust_info,
       str(boost::format("dump adjust info, default is %d") 
@@ -370,6 +384,10 @@ std::string header = str(boost::format("%s COLSERVE CONFIG [PID %d | PORT %d] %s
   STREAM_OUTPUT(dynamic_sm_partition);
   STREAM_OUTPUT(enable_train_adjust_balance);
   STREAM_OUTPUT(train_adjust_balance_threshold);
+  STREAM_OUTPUT(serving_llm);
+  STREAM_OUTPUT(llm_model_name);
+  STREAM_OUTPUT(llm_max_seq_len);
+  STREAM_OUTPUT(llm_max_batch_size);
   STREAM_OUTPUT(colocate_config.skip_malloc);
   STREAM_OUTPUT(colocate_config.skip_loading);
   std::cerr << std::string(header.size(), '=') << std::endl;
@@ -447,7 +465,14 @@ int main(int argc, char *argv[]) {
   colserve::Profiler::Init(colserve::Config::profile_log_path);
   colserve::TrainLauncher::Init("train");
   colserve::TrainAdjuster::Init();
-  colserve::InferModelStore::Init("server/models");
+  if (!colserve::Config::serving_llm) {
+    colserve::InferModelStore::Init("server/models");
+  } else {
+    colserve::LLMServer::Init(
+        colserve::Config::llm_model_name,
+        colserve::Config::llm_max_seq_len,
+        colserve::Config::llm_max_batch_size);
+  }
   colserve::Profiler::Start();
 
   if (colserve::Config::memory_pressure_mb > 0) { 

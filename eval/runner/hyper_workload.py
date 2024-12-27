@@ -776,6 +776,19 @@ class MicrobenchmarkInferWorkload_ModelMajor(MicrobenchmarkInferWorkloadBase):
             poisson_param_arr[:, i] = model_rps            
 
 
+class LLMInferWorkload(RandomInferWorkload):
+    def __init__(self, ):
+        super().__init__(None)
+        pass
+
+    def get_trace(self):
+        pass
+
+    def summary_trace(self, text_io=None, verbose=False):
+        pass
+
+
+
 class InferTraceDumper:
     def __init__(self, 
                  infer_workloads: list[InferWorkloadBase], 
