@@ -28,10 +28,15 @@ RUN wget https://github.com/conda-forge/miniforge/releases/download/24.3.0-0/Mam
   conda create -n colserve python=3.10 && \
   conda activate colserve && \
   conda install -y conda-forge::python-devtools && \
-  conda install -y conda-forge::boost>=1.82 && \
   conda init fish && \
   rm Mambaforge-24.3.0-0-Linux-x86_64.sh
 
+# conda boost require higher version glibc, 
+# so we install boost via compile from source
+# (conda install -y conda-forge::boost>=1.82)
+
+# TODO: install boost in docker
+  
 COPY requirements.txt /tmp/requirements.txt
 RUN source /opt/mambaforge/bin/activate colserve && \
   pip install --upgrade pip && \
