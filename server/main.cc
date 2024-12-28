@@ -468,10 +468,7 @@ int main(int argc, char *argv[]) {
   if (!colserve::Config::serving_llm) {
     colserve::InferModelStore::Init("server/models");
   } else {
-    colserve::LLMServer::Init(
-        colserve::Config::llm_model_name,
-        colserve::Config::llm_max_seq_len,
-        colserve::Config::llm_max_batch_size);
+    colserve::LLMServer::Init();
   }
   colserve::Profiler::Start();
 

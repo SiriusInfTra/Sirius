@@ -323,8 +323,12 @@ void Profiler::ProfileThread(std::array<nvmlDevice_t, MAX_DEVICE_NUM> devices) {
       resource_infos_[device_id].emplace_back(Profiler::GetTimeStamp(), 
                                               cur_resource_infos[device_id]);
     }
-    infering_memory_nbytes_.emplace_back(Profiler::GetTimeStamp(), 
-                                         InferModelStore::GetInferingModelNbytes());
+
+    if (!Config::serving_llm) {
+      infering_memory_nbytes_.emplace_back(
+          Profiler::GetTimeStamp(), 
+          InferModelStore::GetInferingModelNbytes());
+    }
 
     std::this_thread::sleep_for(
         std::chrono::milliseconds(monitor_interval_ms_));
@@ -334,7 +338,7 @@ void Profiler::ProfileThread(std::array<nvmlDevice_t, MAX_DEVICE_NUM> devices) {
 void Profiler::CollectMemoryResourceInfo(
       const std::array<nvmlDevice_t, MAX_DEVICE_NUM> &devices,
       std::array<ResourceInfo, MAX_DEVICE_NUM> &res_infos) {
-  if (Config::no_infer) {
+  if (Config::no_infer || Config::serving_llm) {
     return;
   }
   constexpr uint32_t max_proc_info_cnt = 32;
@@ -403,6 +407,10 @@ void Profiler::CollectMemoryResourceInfo(
 void Profiler::CollectComputingResourcesInfo(
       const std::array<nvmlDevice_t, MAX_DEVICE_NUM> &devices,
       std::array<ResourceInfo, MAX_DEVICE_NUM> &res_infos) {
+  if (Config::serving_llm) {
+    return;
+  }
+
   int num_device = sta::DeviceManager::GetNumVisibleGpu();
   for (int device_id = 0; device_id < num_device; device_id++) {
     auto &res_info = res_infos[device_id];

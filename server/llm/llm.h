@@ -1,29 +1,38 @@
 #pragma once
 
-#include <memory>
 #include <Python.h>
 #include <boost/python.hpp>
-#include <object.h>
+#include <memory>
 #include <string>
+#include <vector>
 
 namespace colserve {
 
-namespace bpy = boost::python;
+namespace bp = boost::python;
 
+class LLMWrapper;
 class LLMServer {
  public:
-  static void Init(const std::string &model_name,
-                   int max_seq_len, int max_batch_size);
+  static void Init();
 
-  LLMServer(const std::string &model_name,
-            int max_seq_len, int max_batch_size);
+  LLMServer();
   // ~LLMServer();
 
  private:
   static std::unique_ptr<LLMServer> llm_server_;
-  static bpy::object py_module_;
+  
+  std::vector<std::unique_ptr<LLMWrapper>> llm_wrappers_;
+};
 
-  bpy::object llm_infer_;
+class LLMWrapper {
+ public:
+  LLMWrapper();
+
+  friend LLMServer;
+ private:
+  static bp::object py_module_;
+  bp::object llm_infer_;
+
 };
 
 }

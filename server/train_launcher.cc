@@ -7,6 +7,7 @@
 #include <server/profiler.h>
 #include <server/config.h>
 
+#include <string>
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/c_runtime_api.h>
 #include <tvm/runtime/packed_func.h>
