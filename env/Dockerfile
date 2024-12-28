@@ -4,7 +4,7 @@ FROM nvcr.io/nvidia/cuda:11.6.1-cudnn8-devel-ubuntu20.04
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt update && apt install -y \
-  gcc llvm llvm-dev libtinfo-dev zlib1g-dev build-essential libtool autoconf unzip \
+  gcc gdb llvm llvm-dev libtinfo-dev zlib1g-dev build-essential libtool autoconf unzip \
   libedit-dev libxml2-dev ninja-build libgoogle-glog-dev \
   libpng-dev libjpeg-dev \
   datacenter-gpu-manager \
