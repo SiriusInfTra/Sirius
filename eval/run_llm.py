@@ -62,7 +62,7 @@ if run_colsys:
         'skip_set_mps_thread_percent': False,
         'use_xsched': True,
         'has_warmup': True,
-        'cuda_memory_pool_gb': '13',
+        'cuda_memory_pool_gb': '70',
         'train_memory_over_predict_mb': 1000,
         # 'infer_model_max_idle_ms': 5000,
         # 'cold_cache_ratio': 0.5,

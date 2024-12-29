@@ -25,9 +25,9 @@ SHELL ["/bin/bash", "-c"]
 RUN wget https://github.com/conda-forge/miniforge/releases/download/24.3.0-0/Mambaforge-24.3.0-0-Linux-x86_64.sh && \
   bash Mambaforge-24.3.0-0-Linux-x86_64.sh -b -p /opt/mambaforge && \
   source /opt/mambaforge/bin/activate && \
-  conda create -n colserve python=3.10 && \
+  conda create -n colserve python=3.12 && \
   conda activate colserve && \
-  conda install -y conda-forge::python-devtools && \
+  conda install -y conda-forge::python-devtools nvitop && \
   conda init fish && \
   rm Mambaforge-24.3.0-0-Linux-x86_64.sh
 

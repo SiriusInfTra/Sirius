@@ -18,7 +18,9 @@ add_executable(${PROJECT_NAME}
   grpc/grpc_server.cc
   tvm/graph.cc
   tvm/executor.cc
+  
   llm/llm.cc
+  llm/torch_allocator_plugin.cc
 )
 
 # add tvm runtime
