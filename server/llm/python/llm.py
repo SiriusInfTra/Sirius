@@ -1,4 +1,3 @@
-
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import pipeline
 import torch
@@ -6,8 +5,6 @@ import typing
 import logging
 import pathlib
 
-# _HUGGINGFACE_ROOT = pathlib.Path('/huggingface')
-# _LLAMA_31_8B_PATH = _HUGGINGFACE_ROOT / 
 
 class LLMWorker:
     def __init__(self, 
@@ -19,6 +16,10 @@ class LLMWorker:
         self.model = AutoModelForCausalLM.from_pretrained(model_name)
         
         # self.model = self.model.cuda()
+        self._init_infer()
+
+    def _init_infer(self):
+        pass
 
     def decode(self):
         pass
@@ -40,12 +41,3 @@ class LLMInference:
     def enqueue_infer(self,
                       prompt: str):
         pass
-
-
-
-
-    
-
-        
-        
-        
