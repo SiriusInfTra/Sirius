@@ -11,6 +11,7 @@
 #include <thread>
 #include <utility>
 #include <mutex>
+#include <boost/json.hpp>
 
 #include "glog/logging.h"
 #include "workload.h"
@@ -518,6 +519,8 @@ std::function<void(InferRequest&)> Workload::GetSetRequestFn(const std::string &
     return SetBertRequestFn(model);
   } else if (model.find("gpt") != std::string::npos) {
     return SetGPTRequestFn(model);
+  } else if (model.find("llama") != std::string::npos) {
+    return SetLLMRequestFn(model, false, 0, 0, 0);
   } else {
     LOG(FATAL) << "unable to find SetRequestFn for " << model;
     throw std::runtime_error("unable to find SetRequestFn for " + model);
@@ -631,6 +634,54 @@ std::function<void(InferRequest&)> Workload::SetGPTRequestFn(const std::string &
     i++;
   };
   return set_gpt_request_fn;
+}
+
+std::function<void(InferRequest&)> Workload::SetLLMRequestFn(
+    const std::string &model,
+    bool random_gen, int seq_len, int token_min, int token_max) {
+  static std::mutex llm_input_datas_mutex;
+  static std::vector<std::string> llm_input_datas;
+  static int num_prompt;
+
+  {
+    std::unique_lock lock{llm_input_datas_mutex};
+    if (llm_input_datas.empty()) {
+      if (!random_gen) {
+        std::filesystem::path prompt_data_path{"sharegpt/prompt.json"};
+        CHECK(std::filesystem::exists(prompt_data_path)) 
+            << "prompt data file (sharegpt/prompt.json) not found";
+
+        std::ifstream prompt_file(prompt_data_path);
+        std::stringstream buffer;
+        buffer << prompt_file.rdbuf();
+        boost::json::value jv = boost::json::parse(buffer.str());
+        boost::json::array& prompts = jv.as_array();
+        for (auto& prompt : prompts) {
+          llm_input_datas.push_back(prompt.as_string().c_str());
+        }
+        num_prompt = llm_input_datas.size();
+
+        for (int i = 0; i < 5; i++) {
+          LOG(INFO) << "prompt[" << i << "]=" << llm_input_datas[i];
+        }
+      } else {
+        LOG(FATAL) << "random gen prompt not implemented";
+      }
+    }
+  }
+  
+  auto set_llm_request_fn = [&](InferRequest &request) {
+    static std::mt19937 gen(AppBase::seed);
+    static std::uniform_int_distribution<int> prompt_dist(0, num_prompt - 1);
+
+    if (random_gen) {
+      LOG(FATAL) << "random gen prompt not implemented";
+    } else {
+      SetLLMRequest(request, model, llm_input_datas[prompt_dist(gen)]);
+    }
+  };
+
+  return set_llm_request_fn;
 }
 
 void Workload::InferBusyLoop(const std::string &model, size_t concurrency, 

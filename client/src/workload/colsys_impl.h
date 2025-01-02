@@ -3,6 +3,7 @@
 
 #include <colserve.grpc.pb.h>
 #include <grpcpp/channel.h>
+#include <glog/logging.h>
 
 #define COLSYS_CLIENT_IMPL_NAMESPACE colsys_backend
 namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE {
@@ -81,6 +82,15 @@ inline void SetMnistRequest(InferRequest &request, const std::string &model,
   request.mutable_inputs(0)->add_shape(1);
   request.mutable_inputs(0)->add_shape(28);
   request.mutable_inputs(0)->add_shape(28);
+  request.mutable_inputs(0)->set_data(data);
+}
+
+inline void SetLLMRequest(InferRequest &request, const std::string &model,
+                          const std::string &data) {
+  request.set_model(model);
+  request.add_inputs();
+  request.mutable_inputs(0)->set_dtype("char");
+  request.mutable_inputs(0)->add_shape(data.size());
   request.mutable_inputs(0)->set_data(data);
 }
 

@@ -21,6 +21,34 @@
 #include "util.h"
 #include "workload.h"
 
+#if defined (DEV_MACRO)
+  static_assert(false, "Please undefine DEV_MACRO, this macro is used for code completion");
+#endif
+
+#if defined(DEV_MACRO) && COLSYS_CLIENT_IMPL_NAMESPACE == colsys_backend
+  #include <colserve.grpc.pb.h>
+  using TrainRequest = colsys::TrainRequest;
+  using TrainResult = colsys::TrainResult;
+  using EmptyRequest = colsys::EmptyRequest;
+  using EmptyResult = colsys::EmptyResult;
+
+  using InferRequest = colsys::InferRequest;
+  using InferResult = colsys::InferResult;
+
+  using ServerStatus = colsys::ServerStatus;
+  using ServeStub = colsys::ColServe::Stub;
+  using InferWorkloadDoneRequest = colsys::InferWorkloadDoneRequest;
+  using InferenceWorkloadStartRequest = colsys::InferenceWorkloadStartRequest;
+
+  using AsyncInferResult = grpc::ClientAsyncResponseReader<InferResult>;
+  using AsyncServerStatus = grpc::ClientAsyncResponseReader<ServerStatus>;
+#elif defined(DEV_MACRO) && COLSYS_CLIENT_IMPL_NAMESPACE == triton_backend
+  using TrainRequest = colsys::TrainRequest;
+  using TrainResult = colsys::TrainResult;
+  using EmptyRequest = colsys::EmptyRequest;
+  using EmptyResult = colsys::EmptyResult;
+#endif  
+
 namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE {
 
 using time_point_t = std::chrono::time_point<std::chrono::steady_clock>;
@@ -226,6 +254,10 @@ class Workload : public IWorkload {
   std::function<void(InferRequest&)> SetInceptionRequestFn(const std::string &model);
   std::function<void(InferRequest&)> SetBertRequestFn(const std::string &model);
   std::function<void(InferRequest&)> SetGPTRequestFn(const std::string &model);
+  std::function<void(InferRequest&)> SetLLMRequestFn(
+      const std::string &model,
+      // args for random gen
+      bool random_gen, int seq_len, int token_min, int token_max); 
 
   void InferOverallReport(std::ostream &os);
 
