@@ -72,6 +72,11 @@ add_subdirectory(common)
 add_subdirectory(server)
 add_subdirectory(pytorch)
 
+set(client_cmake_extra_args)
+if (DEFINED BOOST_ROOT)
+  list(APPEND client_cmake_extra_args -DBOOST_ROOT=${BOOST_ROOT})
+endif()
+
 # building client
 include(ExternalProject)
 ExternalProject_Add(client
@@ -80,6 +85,7 @@ ExternalProject_Add(client
     CMAKE_ARGS 
       -DCOLSYS_ROOT_DIR=${CMAKE_SOURCE_DIR}
       -DCOLSYS_BUILD_DIR=${CMAKE_BINARY_DIR}
+      ${client_cmake_extra_args}
     CMAKE_CACHE_ARGS
       -DCMAKE_PREFIX_PATH:PATH=${CMAKE_PREFIX_PATH}
       -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}

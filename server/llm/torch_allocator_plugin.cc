@@ -151,7 +151,7 @@ void CUDAColAllocator::raw_delete(void* ptr) {
 
 void CUDAColAllocator::emptyCache() {
   ProcessEvents();
-  for (int i = 0; i < sta::DeviceManager::GetNumGpu(); i++) {
+  for (int i = 0; i < sta::DeviceManager::GetNumVisibleGpu(); i++) {
     colserve::sta::CUDAMemPool::Get(i)->FreeTrainLocals();
   }
 }

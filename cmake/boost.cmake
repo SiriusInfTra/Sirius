@@ -10,6 +10,6 @@ elseif(DEFINED CONDA_PREFIX)
   message(STATUS "Use conda Boost: ${CONDA_PREFIX}")
 endif()
 
-find_package(Boost 1.80 REQUIRED COMPONENTS python)
+find_package(Boost 1.80 REQUIRED COMPONENTS python json)
 
 message(STATUS "Find Boost ${Boost_VERSION}: ${Boost_INCLUDE_DIR}")

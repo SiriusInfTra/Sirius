@@ -1,6 +1,7 @@
 #include <server/logging_as_glog.h>
 #include <server/config.h>
 #include <server/llm/llm.h>
+#include <server/llm/llm_util.h>
 #include <server/llm/torch_allocator_plugin.h>
 
 #include <boost/format.hpp>
@@ -14,8 +15,16 @@ namespace colserve {
 
 std::unique_ptr<LLMServer> LLMServer::llm_server_ = nullptr;
 
+BOOST_PYTHON_MODULE(llm_server)
+{
+  bp::def("get_llm_requests", &LLMServer::GetLLMRequests);
+  bp::def("info", &CallGLOG_INFO);
+  bp::def("dinfo", &CallGLOG_DINFO);
+}
+
 void LLMServer::Init() {
   try {
+    PyImport_AppendInittab("llm_server", &PyInit_llm_server);
     Py_Initialize();
     LOG(INFO) << "[LLMServer] python initialized";
     llm_server_ = std::make_unique<LLMServer>();
@@ -24,6 +33,44 @@ void LLMServer::Init() {
     LOG(ERROR) << "Error importing python module";
   }
   LOG(INFO) << "[LLMServer] initialized";
+
+}
+
+bool LLMServer::IsLLMModel(const std::string &model_name) {
+  if (model_name.find("llama") != std::string::npos) {
+    return true;
+  }
+  return false;
+}
+
+bool LLMServer::AddJob(network::InferHandler::InferData *data) {
+  if (data->GetModelName() != Config::llm_model_name) {
+    return false;
+  }
+
+  CHECK(llm_server_ != nullptr);
+  CHECK(llm_server_->llm_wrappers_.size() > 0);
+  // llm_server_->llm_wrappers_.front()->AddJob(data);
+  llm_server_->job_queue_.Put(std::make_shared<InferJob>(data));
+  return true;
+}
+
+std::vector<LLMServer::LLMRequest>
+LLMServer::GetLLMRequests(int batch_size, bool block) {
+  while (true) {
+    auto jobs = job_queue_.GetBatch(batch_size, 10, 10);
+    if (jobs.size() > 0) {
+      std::vector<LLMRequest> llm_reqs;
+      for (auto & job : jobs) {
+        auto req_id = job->GetInferData()->GetId();
+        flight_reqs_[req_id] = job;
+        llm_reqs.push_back({req_id, job->GetInferData()->GetInputData(0)});
+      }
+      return llm_reqs;
+    } else if (!block) {
+      return {};
+    }
+  }
 }
 
 LLMServer::LLMServer() {
@@ -50,15 +97,17 @@ void LLMServer::PyInit() {
       "import sys\nprint(sys.path)\n")
     ).str().c_str());
 
-    py_module_ = bp::import("llm");
-
+    bp::import("torch");
     if (Config::use_shared_tensor_infer) {
       torch::cuda::CUDAColAllocator::CUDAColAllocator::Init();
       torch::cuda::CUDAColAllocator::CUDAColAllocator::Get()
           ->init(sta::DeviceManager::GetNumVisibleGpu());
       torch::cuda::CUDAColAllocator::CUDAColAllocator::Get()
           ->SetCurrentAllocator();
+      LOG(INFO) << "[LLM Server] torch cuda allocator initialized";
     }
+    py_module_ = bp::import("llm");
+  
   } catch (const bp::error_already_set&) {
     PyErr_Print();
     LOG(FATAL) << "[LLM Server] python module init failed";
@@ -75,6 +124,9 @@ LLMWrapper::LLMWrapper(int rank,
         Config::llm_max_seq_len,
         Config::llm_max_batch_size
     );
+    
+    PyThreadState *pts = PyThreadState_Get();
+    PyEval_ReleaseThread(pts);
   } catch (const bp::error_already_set&) {
     PyErr_Print();
     LOG(FATAL) << "[LLMWrapper] create infer backend failed";
@@ -84,9 +136,23 @@ LLMWrapper::LLMWrapper(int rank,
 
 void LLMWrapper::Inference(pthread_barrier_t* barrier) {
   pthread_barrier_wait(barrier);
-  while (true) {
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+  // llm_infer_.attr("serving_loop");
+  try {
+    PyGILState_Ensure();
+    if (!PyObject_HasAttrString(llm_infer_.ptr(), "serving_loop")) {
+      LOG(FATAL) << "[LLMWrapper] rank " << rank_
+                << " serving_loop not found";
+    }
+    // PyGILState_Release();
+    auto serving_loop = llm_infer_.attr("serving_loop");
+    serving_loop();
+  } catch (const bp::error_already_set &) {
+    PyErr_Print();
+    LOG(FATAL) << "[LLMWrapper] rank " << rank_ 
+               << " serving_loop failed";
   }
+  
+  LOG(INFO) << "[LLMWrapper] rank " << rank_ << " exit";
 }
 
 } // namespace colserve

@@ -3,6 +3,7 @@
 #include <server/model_store/infer_model_store.h>
 #include <server/model_store/infer_model.h>
 #include <server/train_launcher.h>
+#include <server/llm/llm.h>
 #include <server/control/controller.h>
 #include <server/config.h>
 
@@ -188,8 +189,6 @@ void InferHandler::Stop() {
   LOG(INFO) << "InferHandler stop";
 }
 
-
-
 DLDataType InferHandler::InferData::GetInputDType(size_t i) {
   if (request_.inputs(i).dtype() == "float32") {
     return DLDataType{kDLFloat, 32, 1};
@@ -249,7 +248,13 @@ bool InferHandler::InferData::Process(bool ok) {
           << "[gPRC Process InferData] [" << GetModelName() << ", Id " << id_ << "]";
       status_ = Status::kFinish;
       
-      auto res = InferModelStore::AddJob(GetModelName(), this);
+      bool res;
+      if (!LLMServer::IsLLMModel(GetModelName())) {
+        res = InferModelStore::AddJob(GetModelName(), this);
+      } else {
+        res = LLMServer::AddJob(this);
+      }
+
       if (!res) {
         LOG(FATAL) << "[Process InferData] Model " << GetModelName() << " not found";
         response_.set_result("model not found");

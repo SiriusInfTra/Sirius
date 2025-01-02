@@ -1,42 +1,41 @@
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from transformers import pipeline
+import vllm
 import torch
-import typing
-import logging
-import pathlib
+from vllm import LLMEngine, EngineArgs
 
-
-class LLMWorker:
-    def __init__(self, 
-                 model_name: str, 
-                 max_seq_len: int):
-        self.model_name = model_name
-        self.max_seq_len = max_seq_len
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(model_name)
-        
-        # self.model = self.model.cuda()
-        self._init_infer()
-
-    def _init_infer(self):
-        pass
-
-    def decode(self):
-        pass
-        
+import llm_server
 
 class LLMInference:
     def __init__(self, 
                  model_name: str,
-                 max_seq_len: int = 512, 
+                 max_seq_len: int = None, 
                  max_batch_size: int = None):
-        print("Model Name: ", model_name)
+        # print("Model Name: ", model_name)
+        llm_server.info(f"LLMInfer: Model Name: {model_name}")
         self.model_name = model_name
-        self.max_seq_len = max_seq_len
-        self.max_batch_size = max_batch_size
-        self.flight_requests = []
-        self.queueing_requests = []
-        self.llm_worker = LLMWorker(model_name, max_seq_len)
+        engine_args = EngineArgs(
+            model=model_name,
+            dtype="half",
+            max_model_len=None,
+            enforce_eager=True,
+            enable_chunked_prefill=False,
+            use_v2_block_manager=True,
+            gpu_memory_utilization=0.5,
+        )
+        self.llm_engine = LLMEngine.from_engine_args(engine_args)
+
+    def serving_loop(self):
+        llm_server.info("LLM Engine Serving Start ...")
+        while True:
+            if not self.llm_engine.has_unfinished_requests():
+                llm_reqs = llm_server.get_llm_requests(1, True)
+                print(llm_reqs)
+                pass
+
+            request_outputs = self.llm_engine.step()
+            # print(request_outputs)
+
+    def process_new_requests(self):
+        pass
 
     def enqueue_infer(self,
                       prompt: str):

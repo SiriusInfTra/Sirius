@@ -22,6 +22,7 @@ endif()
 
 # dep
 include(${COLSYS_ROOT_DIR}/cmake/glog.cmake)
+include(${COLSYS_ROOT_DIR}/cmake/boost.cmake)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -86,6 +87,7 @@ target_link_libraries(workload_launcher PUBLIC
   TritonClient::grpcclient_static
   glog::glog 
   CLI11::CLI11
+  Boost::json
 )
 
 add_executable(busy_loop_launcher 
@@ -100,6 +102,7 @@ target_link_libraries(busy_loop_launcher PUBLIC
   TritonClient::grpcclient_static
   glog::glog 
   CLI11::CLI11
+  Boost::json
 )
 
 

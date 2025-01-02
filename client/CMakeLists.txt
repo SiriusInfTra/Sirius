@@ -14,6 +14,12 @@ if (NOT DEFINED COLSYS_BUILD_DIR)
   message(FATAL_ERROR "COLSYS_BUILD_DIR is not defined")
 endif()
 
+set(client_impl_cmake_extra_args)
+if (DEFINED BOOST_ROOT)
+    list(APPEND client_impl_cmake_extra_args -DBOOST_ROOT=${BOOST_ROOT})
+    message(STATUS ">>> Client: Use Boost: ${BOOST_ROOT}")
+endif()
+
 set(TRITON_SOURCE_DIR ${PROJECT_SOURCE_DIR}/third_party/triton-client)
 set(TRITON_PREFIX ${COLSYS_BUILD_DIR}/client/triton-client)
 set(TRITON_BUILD_DIR ${TRITON_PREFIX}/src/triton-client-build)
@@ -58,6 +64,7 @@ ExternalProject_Add(triton-client
         -DCMAKE_PREFIX_PATH:PATH=${CMAKE_PREFIX_PATH}
         -DCMAKE_INSTALL_MESSAGE:STRING=NEVER
         -DTRITON_KEEP_TYPEINFO:BOOL=ON
+        ${client_impl_cmake_extra_args}
     INSTALL_COMMAND ""
     BUILD_ALWAYS OFF
     # BUILD_COMMAND cd ${TRITON_CC_CLIENT_BUILD_DIR} &&
@@ -96,6 +103,7 @@ ExternalProject_Add(client-impl
         -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
         -DCMAKE_PREFIX_PATH:PATH=${CMAKE_PREFIX_PATH}
         -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=ON
+        ${client_impl_cmake_extra_args}
         # INSTALL_COMMAND ""
     USES_TERMINAL_BUILD true
     BUILD_ALWAYS ON

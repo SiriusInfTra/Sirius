@@ -26,7 +26,8 @@ std::array<std::unique_ptr<CUDAMemPool>, MAX_DEVICE_NUM> CUDAMemPool::cuda_mem_p
 
 CUDAMemPool* CUDAMemPool::Get(int device_id) {
   auto ret = cuda_mem_pools_.at(device_id).get();
-  CHECK(ret != nullptr) << "CUDAMemPool not initialized";
+  CHECK(ret != nullptr) << "CUDAMemPool not initialized, "
+                        << "device_id " << device_id;
   return ret;
 }
 
@@ -44,6 +45,9 @@ void CUDAMemPool::Init(int device_id, std::size_t nbytes,
   allocate_tensor_from_memory_pool_ = enable_mpool;
   cuda_mem_pools_[device_id] = std::make_unique<CUDAMemPool>(
       device_id, nbytes, cleanup, observe, free_list_policy);
+    
+  LOG(INFO) << "[CUDAMemPool] initialized device " << device_id
+            << " nbytes " << sta::PrintByte(nbytes);
 }
 
 CUDAMemPool::CUDAMemPool(int device_id, std::size_t nbytes, 
