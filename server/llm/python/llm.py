@@ -65,9 +65,9 @@ class LLMInference:
                         len(req_out.outputs[0].token_ids),
                         (req_out.metrics.first_scheduled_time - req_out.metrics.arrival_time) * 1000,
                         (req_out.metrics.first_token_time - req_out.metrics.first_scheduled_time) * 1000,
-                        (req_out.metrics.finished_time - req_out.metrics.first_token_time) * 1000,
+                        (req_out.metrics.last_token_time - req_out.metrics.first_token_time) * 1000,
                     )
-                    llm_server.info(f'metric: {metric}')
+                    # llm_server.info(f'metric: {metric} | {(req_out.metrics.finished_time - req_out.metrics.last_token_time) * 1000}')
                     llm_server.finish_llm_request(
                         req_out.request_id, 
                         req_out.outputs[0].text,

@@ -18,6 +18,7 @@ std::unique_ptr<LLMServer> LLMServer::llm_server_ = nullptr;
 
 BOOST_PYTHON_MODULE(llm_server)
 {
+  bp::def("is_running", &LLMServer::IsRunning);
   bp::def("get_llm_requests", &LLMServer::GetLLMRequests);
   bp::def("finish_llm_request", &LLMServer::FinishLLMRequest);
   bp::def("info", &CallGLOG_INFO);
@@ -34,6 +35,28 @@ BOOST_PYTHON_MODULE(llm_server)
               % self.prompt 
               % self.max_tokens);
       }); 
+  bp::class_<LLMRequestMetric>("LLMRequestMetric")
+      .def_readwrite("num_prompt_token", &LLMRequestMetric::num_prompt_token)
+      .def_readwrite("num_output_token", &LLMRequestMetric::num_output_token)
+      .def_readwrite("queue_ms", &LLMRequestMetric::queue_ms)
+      .def_readwrite("prefill_ms", &LLMRequestMetric::prefill_ms)
+      .def_readwrite("generate_ms", &LLMRequestMetric::decode_ms)
+      .def(bp::init<int,int,double,double,double>(
+          (bp::arg("num_prompt_token"),
+           bp::arg("num_output_token"),
+           bp::arg("queue_ms"),
+           bp::arg("prefill_ms"),
+           bp::arg("generate_ms"))))
+      .def("__repr__", +[](const LLMRequestMetric& self) -> std::string {
+          return str(boost::format(
+              "LLMRequestMetric(num_prompt_token=%d, num_output_token=%d, "
+              "queue_ms=%.2f, prefill_ms=%.2f, generate_ms=%.2f)") 
+              % self.num_prompt_token 
+              % self.num_output_token 
+              % self.queue_ms 
+              % self.prefill_ms 
+              % self.decode_ms);
+      });
 
   bp::to_python_converter<std::vector<LLMRequest>, 
                           LLMRequestsConvert, false>();
@@ -48,7 +71,15 @@ void LLMServer::Init() {
     LOG(ERROR) << "Error importing python module";
   }
   LOG(INFO) << "[LLMServer] initialized";
+}
 
+void LLMServer::Shutdown() {
+  CHECK(llm_server_ != nullptr);
+  llm_server_->running_.store(false, std::memory_order_release);
+  for (auto &wrapper : llm_server_->llm_wrappers_) {
+    wrapper->Shutdown();
+  }
+  LOG(INFO) << "[LLMServer] shutdown";
 }
 
 bool LLMServer::IsLLMModel(const std::string &model_name) {
@@ -84,7 +115,8 @@ LLMServer::GetLLMRequests(int batch_size, int timeout_ms, bool block) {
       for (auto & job : jobs) {
         auto llm_job = std::dynamic_pointer_cast<LLMInferJob>(job);
         auto req_id = job->GetInferData()->GetId();        
-        llm_server_->flight_reqs_[req_id] = job;
+        // llm_server_->flight_reqs_[req_id] = llm_job;
+        llm_server_->AddFlightRequest(req_id, llm_job);
         llm_reqs.emplace_back(LLMRequest{
             .request_id = req_id,
             .prompt = std::string{llm_job->GetPrompt()},
@@ -95,12 +127,26 @@ LLMServer::GetLLMRequests(int batch_size, int timeout_ms, bool block) {
     } else if (!block) {
       return {};
     }
+    if (!llm_server_->IsRunning()) {
+      return {};
+    }
   }
 }
 
-void LLMServer::FinishLLMRequest(int request_id, std::string output, 
-                                 int num_output_token) {
+void LLMServer::AddFlightRequest(uint64_t request_id, 
+                                 std::shared_ptr<LLMInferJob> job) {
+  std::unique_lock lock{mut_};
+  CHECK(flight_reqs_.find(request_id) == flight_reqs_.end())
+      << "[LLMServer] request " << request_id << " already exists";
+  flight_reqs_[request_id] = job;
+}
+
+void LLMServer::FinishLLMRequest(
+    int request_id, std::string output, 
+    LLMRequestMetric metric) {
   CHECK(llm_server_ != nullptr);
+  std::unique_lock lock{llm_server_->mut_};
+
   auto it = llm_server_->flight_reqs_.find(request_id);
   if (it == llm_server_->flight_reqs_.end()) {
     LOG(ERROR) << "[LLMServer] request " << request_id << " not found";
@@ -110,11 +156,16 @@ void LLMServer::FinishLLMRequest(int request_id, std::string output,
   LOG_IF_EVERY_N(INFO, 
       Config::llm_show_gen_result, Config::llm_show_gen_result_period) 
     << "[LLMServer] Finish request " << request_id 
-    << ", num_output_token " << num_output_token
+    << ", num_prompt_token " << metric.num_prompt_token
+    << ", num_output_token " << metric.num_output_token
     << ", generate output: " << output;
 
   auto job = it->second;
+  job->RecordFinished();
+  job->RecordProfile(metric);
+
   auto data = job->GetInferData();
+  // generate result
   data->AddOuput();
   data->SetOutputShape(0, {static_cast<int64_t>(output.size())});
   data->SetOutputDType(0, "char");
@@ -122,12 +173,26 @@ void LLMServer::FinishLLMRequest(int request_id, std::string output,
   output_data->resize(output.size());
   std::memcpy(output_data->data(), output.data(), output.size());
 
+  // llm infer info
+  boost::json::object llm_info;
+  llm_info["num_prompt_token"] = metric.num_prompt_token;
+  llm_info["num_output_token"] = metric.num_output_token;
+  llm_info["prefill_ms"] = metric.prefill_ms;
+  llm_info["decode_ms"] = metric.decode_ms;
+  auto info_str = boost::json::serialize(llm_info);
+  data->AddOuput();
+  data->SetOutputShape(1, {static_cast<int64_t>(info_str.size())});
+  data->SetOutputDType(1, "char");
+  auto info_data = data->MutableOutputData(1);
+  info_data->resize(info_str.size());
+  std::memcpy(info_data->data(), info_str.data(), info_str.size());
+
   job->RecordFinished();
   data->GetResponder().Finish(data->GetResponse(), grpc::Status::OK, data);
   llm_server_->flight_reqs_.erase(it);
 }
 
-LLMServer::LLMServer() {
+LLMServer::LLMServer() : running_(true) {
   PyInit();
   pthread_barrier_t barrier;
   pthread_barrier_init(&barrier, nullptr, 1 + llm_wrappers_.size());
@@ -208,9 +273,14 @@ void LLMWrapper::Inference(pthread_barrier_t* barrier) {
     PyErr_Print();
     LOG(FATAL) << "[LLMWrapper] rank " << rank_ 
                << " serving_loop failed";
-  }
-  
+  }  
   LOG(INFO) << "[LLMWrapper] rank " << rank_ << " exit";
+}
+
+void LLMWrapper::Shutdown() {
+  if (thread_ != nullptr) {
+    thread_->join();
+  }
 }
 
 } // namespace colserve
