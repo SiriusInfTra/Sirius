@@ -27,6 +27,10 @@ class InferModel:
     EfficientNetV2_s = "efficientnet_v2_s"
     EfficientViT_b2 = "efficientvit_b2"
 
+    Llama3_8B = 'meta-llama/Meta-Llama-3-8B'
+    Llama3_8B_Inst = 'meta-llama/Meta-Llama-3-8B-Instruct'
+    OPT_128M = 'facebook/opt-125m'
+
     model_cnt = 0
 
     def __init__(self, model_name: str) -> None:
@@ -40,6 +44,15 @@ class InferModel:
     def __repr__(self) -> str:
         return f"InferModel({self.model_id}, {self.model_name})"
 
+    @classmethod
+    def get_llm_max_model_length(cls, model_name: str) -> int:
+        if model_name == cls.OPT_128M:
+            return 2048
+        elif model_name == cls.Llama3_8B or model_name == cls.Llama3_8B_Inst:
+            return 8192
+        else:
+            raise Exception(f"Model {model_name} not supported")
+    
     @classmethod
     def reset_model_cnt(cls):
         InferModel.model_cnt = 0

@@ -31,7 +31,8 @@ _set_workload_alias({
     'NormalA' : 'Normal_LogNormal_A',
     'NormalB' : 'Normal_LogNormal_C',
     'NormalC' : 'Normal_Markov_LogNormal_AC',
-
+    # 'NormalD' : 'Normal_Markov_LogNormal_AB', 
+ 
     'SkewA'   : 'Skew_LogNormal_A',
     'SkewB'   : 'Skew_LogNormal_C',
     'SkewC'   : 'Skew_Markov_LogNormal_AC',

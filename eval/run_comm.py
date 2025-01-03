@@ -295,7 +295,7 @@ def skewed_v2(wkld_type, client_model_list, infer_only=True,
                         SkewedConfig_v2.duration)
     
 
-def llm(infer_only=True, 
+def burstgpt(infer_only=True, 
         train_model:Optional[str] = None,
         train_epoch:Optional[int] = None,
         train_batch_size:Optional[int] = None,

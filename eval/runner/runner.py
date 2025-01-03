@@ -157,8 +157,10 @@ class System:
                  dummy_adjust: bool = False,
                  serving_llm: bool = False,
                  llm_model_name: str = "",
-                 llm_max_seq_len: int = 512,
-                 llm_max_batch_size: int = 1,
+                 llm_max_seq_len: int = None,
+                 llm_max_model_len: int = None,
+                 llm_show_gen_result: bool = False,
+                 llm_show_gen_result_period: int = 10, 
                  keep_last_time_stamp: bool = True,
                  max_live_minute: Optional[int] = None) -> None:
         self.mode = mode
@@ -220,7 +222,9 @@ class System:
         self.serving_llm = serving_llm
         self.llm_model_name = llm_model_name
         self.llm_max_seq_len = llm_max_seq_len
-        self.llm_max_batch_size = llm_max_batch_size
+        self.llm_max_model_len = llm_max_model_len
+        self.llm_show_gen_result = llm_show_gen_result
+        self.llm_show_gen_result_period = llm_show_gen_result_period
 
     def next_time_stamp(self):
         self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
@@ -257,9 +261,15 @@ class System:
             cmd += [
                 "--serving-llm", 
                 "--llm-model-name", self.llm_model_name,
-                "--llm-max-seq-len", str(self.llm_max_seq_len),
-                "--llm-max-batch-size", str(self.llm_max_batch_size)
             ]
+            if self.llm_max_model_len:
+                cmd += ["--llm-max-model-len", str(self.llm_max_model_len)]
+            if self.llm_max_seq_len:
+                cmd += ["--llm-max-seq-len", str(self.llm_max_seq_len)]
+            if self.llm_show_gen_result:
+                cmd += ["--llm-show-gen-result"]
+                cmd += ["--llm-show-gen-result-period", 
+                        str(self.llm_show_gen_result_period)]
 
         cmd += [
             "--use-sta", "1" if self.use_sta else "0", 

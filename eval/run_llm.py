@@ -14,6 +14,8 @@ parser.add_argument('--task-switch', action='store_true', help='Run task switch'
 parser.add_argument('--static-partition', action='store_true', help='Run static partition')
 parser.add_argument('--static-partition-i', action='store_true', help='Run static partition I')
 parser.add_argument('--static-partition-f', action='store_true', help='Run static partition F')
+parser.add_argument('--uniform-v2', action='store_true', help='Run uniform-v2')
+parser.add_argument('--burstgpt', action='store_true', help='Run burstgpt')
 
 args = parser.parse_args()
 
@@ -23,6 +25,13 @@ run_task_switch = False
 run_static_partition = False
 run_static_partition_I = False
 run_static_partition_F = False
+
+enable_burstgpt = False
+enable_uniform_v2 = False
+
+uniform_v2_wkld_types = [
+    'NormalA',
+]
 
 if args.colsys:
     run_colsys = True
@@ -41,10 +50,15 @@ if args.static_partition_f:
     run_static_partition = True
     run_static_partition_F = True
 
+if args.burstgpt:
+    enable_burstgpt = True
+if args.uniform_v2:
+    enable_uniform_v2 = True
+
 # LLM Workload
-llm_model = "meta-llama/Llama-3.1-8B"
-llm_max_seq_len = 512
-llm_max_batch_size = 8
+llm_model = InferModel.Llama3_8B_Inst
+# llm_max_model_len = 16000
+llm_max_model_len = InferModel.get_llm_max_model_length(llm_model)
 
 # Other config
 port = run_comm.get_unique_port()
@@ -69,15 +83,23 @@ if run_colsys:
         'dynamic_sm_partition': True,
         'serving_llm': True,
         'llm_model_name': llm_model,
-        'llm_max_seq_len': llm_max_seq_len,
-        'llm_max_batch_size': llm_max_batch_size,
+        'llm_max_model_len': llm_max_model_len,
+        'llm_show_gen_result': True,
     }
-    workload = run_comm.llm(infer_only=True)
-    system = System(**system_config)
-    run_comm.run(system, workload, None, 
-                 f"llm-{runner.get_num_gpu()}gpu", f"colsys")
-    # ...additional colsys logic...
-
+    if enable_burstgpt:
+        workload = run_comm.burstgpt(infer_only=True)
+        system = System(**system_config)
+        run_comm.run(system, workload, None, 
+                    f"burstgpt-{runner.get_num_gpu()}gpu", f"colsys")
+        # ...additional colsys logic...
+    
+    if enable_uniform_v2:
+        for wkld_type in uniform_v2_wkld_types:
+            client_model_list, _ = InferModel.get_multi_model([llm_model], 1, 1)
+            workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=True)
+            system = System(**system_config)
+            run_comm.run(system, workload, None,
+                         f'{wkld_type}-{runner.get_num_gpu()}gpu', f'colsys')
 
 # MARK: task switch
 if run_task_switch:
