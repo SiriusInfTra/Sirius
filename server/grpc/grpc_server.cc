@@ -114,7 +114,11 @@ void CommonHandler::SetupCallData() {
     LOG(INFO) << "[Common Data]: WarmupDone";
     Profiler::Get()->Clear();
     // InferModelStore::Get()->ClearColdCache();
-    InferModelStore::WarmupDone();
+    if (!Config::serving_llm) {
+      InferModelStore::WarmupDone();
+    } else {
+      // Maybe TODO
+    }
     data->responder_.Finish(data->response_, grpc::Status::OK, (void*)data);
   };
   new CommonData<EmptyRequest, EmptyResult>{
@@ -211,6 +215,10 @@ std::vector<int64_t> InferHandler::InferData::GetInputShape(size_t i) {
 
 const char* InferHandler::InferData::GetInputData(size_t i) {
   return request_.inputs(i).data().c_str();
+}
+
+int InferHandler::InferData::GetNumInputData() {
+  return request_.inputs_size();
 }
 
 size_t InferHandler::InferData::GetInputBytes(size_t i) {

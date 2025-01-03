@@ -15,4 +15,13 @@ void CallGLOG_DINFO(const char* str) {
 #endif
 }
 
+PyObject* LLMRequestsConvert::convert(
+    const std::vector<LLMRequest>& requests) {
+  bp::list py_requests;
+  for (const auto& request : requests) {
+    py_requests.append(request);
+  }
+  return bp::incref(py_requests.ptr());
+}
+
 }

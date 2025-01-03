@@ -1,4 +1,3 @@
-#include "llm/llm.h"
 #include <server/logging_as_glog.h>
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/c_runtime_api.h>
@@ -194,9 +193,15 @@ void init_cli_options() {
   app.add_option("--llm-max-seq-len", colserve::Config::llm_max_seq_len,
       str(boost::format("llm max seq len, default is %d") 
           % colserve::Config::llm_max_seq_len));
-  app.add_option("--llm-max-batch-size", colserve::Config::llm_max_batch_size,
-      str(boost::format("llm max batch size, default is %d") 
-          % colserve::Config::llm_max_batch_size));
+  app.add_option("--llm-max-model-len", colserve::Config::llm_max_model_len,
+      str(boost::format("llm max model len, default is %d") 
+          % colserve::Config::llm_max_model_len));
+  app.add_flag("--llm-show-gen-result", colserve::Config::llm_show_gen_result,
+      str(boost::format("llm show gen result, default is %d") 
+          % colserve::Config::llm_show_gen_result));
+  app.add_option("--llm-show-gen-result-period", colserve::Config::llm_show_gen_result_period,
+      str(boost::format("llm show gen result period, default is %d") 
+          % colserve::Config::llm_show_gen_result_period));
   app.add_flag("--dump-adjust-info", 
       colserve::Config::dump_adjust_info,
       str(boost::format("dump adjust info, default is %d") 
@@ -386,8 +391,8 @@ std::string header = str(boost::format("%s COLSERVE CONFIG [PID %d | PORT %d] %s
   STREAM_OUTPUT(train_adjust_balance_threshold);
   STREAM_OUTPUT(serving_llm);
   STREAM_OUTPUT(llm_model_name);
+  STREAM_OUTPUT(llm_max_model_len);
   STREAM_OUTPUT(llm_max_seq_len);
-  STREAM_OUTPUT(llm_max_batch_size);
   STREAM_OUTPUT(colocate_config.skip_malloc);
   STREAM_OUTPUT(colocate_config.skip_loading);
   std::cerr << std::string(header.size(), '=') << std::endl;

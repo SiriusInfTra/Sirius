@@ -9,8 +9,11 @@ namespace workload {
 
 std::string ReadInput(std::filesystem::path data_path);
 
+int GetLLMMaxModelLen(const std::string &model_name);
+
 inline long GetTimeStamp() {
-  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
 struct InferModel {

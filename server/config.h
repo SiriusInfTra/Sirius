@@ -148,7 +148,10 @@ class Config {
   static bool serving_llm;
   static std::string llm_model_name;
   static int llm_max_seq_len;
-  static int llm_max_batch_size;
+  static int llm_max_model_len;
+  static bool llm_show_gen_result;
+  static int llm_show_gen_result_period;
+
 
   static bool system_initialized;
 

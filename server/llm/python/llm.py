@@ -1,41 +1,80 @@
 import vllm
 import torch
-from vllm import LLMEngine, EngineArgs
+import os
+from typing import Optional
+from vllm import LLMEngine, EngineArgs, SamplingParams
 
 import llm_server
 
 class LLMInference:
     def __init__(self, 
                  model_name: str,
-                 max_seq_len: int = None, 
-                 max_batch_size: int = None):
-        # print("Model Name: ", model_name)
-        llm_server.info(f"LLMInfer: Model Name: {model_name}")
+                 max_model_len: Optional[int] = None,
+                 max_seq_len: Optional[int] = None):
         self.model_name = model_name
+        self.max_model_len = max_model_len
+        self.max_seq_len = max_seq_len
+        self._process_args()
+
+        # print("Model Name: ", model_name)
+        # if os.environ['https_proxy'] is None:
+        if 'https_proxy' not in os.environ:
+            os.environ['https_proxy'] = 'http://127.0.0.1:7890'
+        llm_server.info(f"LLMInfer: Model Name: {self.model_name}")
         engine_args = EngineArgs(
-            model=model_name,
+            model=self.model_name,
             dtype="half",
-            max_model_len=None,
+            max_model_len=self.max_model_len,
             enforce_eager=True,
             enable_chunked_prefill=False,
             use_v2_block_manager=True,
             gpu_memory_utilization=0.5,
         )
         self.llm_engine = LLMEngine.from_engine_args(engine_args)
+        del os.environ['https_proxy']
+
+    def _process_args(self):
+        if self.max_model_len == 0:
+            self.max_model_len = None
+        if self.max_seq_len == 0:
+            self.max_seq_len = None
+
+        llm_server.info(f'LLMInfer Args: \n'
+                        f'\tModel Name: {self.model_name}\n'
+                        f'\tmax_model_len {self.max_model_len}'
+                        f' | max_seq_len {self.max_seq_len}')
 
     def serving_loop(self):
         llm_server.info("LLM Engine Serving Start ...")
         while True:
             if not self.llm_engine.has_unfinished_requests():
-                llm_reqs = llm_server.get_llm_requests(1, True)
-                print(llm_reqs)
-                pass
-
+                llm_reqs = llm_server.get_llm_requests(1, 10, True)
+                assert len(llm_reqs) > 0, "No requests to process"
+                self.process_new_requests(llm_reqs)
+                
+            llm_reqs = llm_server.get_llm_requests(1, 0, False)
+            if len(llm_reqs) > 0:
+                self.process_new_requests(llm_reqs)
+    
             request_outputs = self.llm_engine.step()
+            for req_out in request_outputs:
+                if req_out.finished:
+                    llm_server.finish_llm_request(req_out.request_id, 
+                                                  req_out.outputs[0].text,
+                                                  len(req_out.outputs[0].token_ids))
+                    
             # print(request_outputs)
 
-    def process_new_requests(self):
-        pass
+    def process_new_requests(self, llm_reqs):
+        for req in llm_reqs:
+            self.llm_engine.add_request(
+                request_id=req.request_id, 
+                prompt=req.prompt, 
+                sampling_params=SamplingParams(
+                    temperature=0.8, top_p=0.95,
+                    max_tokens=req.max_tokens,
+                )
+            )
 
     def enqueue_infer(self,
                       prompt: str):

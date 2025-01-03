@@ -161,7 +161,8 @@ inline void SetInceptionRequest(InferRequest &request, const std::string &model,
 }
 
 inline void SetLLMRequest(InferRequest &request, const std::string &model,
-                          const std::string &data) {
+                          const std::string &data,
+                          int input_length, int output_length) {
   CHECK_EQ(request.value.inputs_size(), 0);
   request.value.set_model_name(model);
   auto* input = request.value.add_inputs();

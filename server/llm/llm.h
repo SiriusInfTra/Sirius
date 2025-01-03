@@ -14,10 +14,15 @@ namespace colserve {
 
 namespace bp = boost::python;
 
+struct LLMRequest {
+  uint64_t request_id;
+  std::string prompt;
+  int max_tokens;
+};
+
 class LLMWrapper;
 class LLMServer {
  public:
-  using LLMRequest = std::pair<uint64_t, std::string>;
 
   static void Init();
   static bp::object GetLLMPyModule() { 
@@ -25,8 +30,10 @@ class LLMServer {
   }
   static bool IsLLMModel(const std::string &model_name);
   static bool AddJob(network::InferHandler::InferData *data);
-  std::vector<LLMRequest> GetLLMRequests(
-      int batch_size, bool block);
+  static std::vector<LLMRequest> GetLLMRequests(
+      int batch_size, int timeout_ms, bool block);
+  static void FinishLLMRequest(int request_id, std::string output,
+                               int num_output_token);
 
   LLMServer();
   // ~LLMServer();

@@ -338,7 +338,7 @@ void Profiler::ProfileThread(std::array<nvmlDevice_t, MAX_DEVICE_NUM> devices) {
 void Profiler::CollectMemoryResourceInfo(
       const std::array<nvmlDevice_t, MAX_DEVICE_NUM> &devices,
       std::array<ResourceInfo, MAX_DEVICE_NUM> &res_infos) {
-  if (Config::no_infer || Config::serving_llm) {
+  if (Config::no_infer) {
     return;
   }
   constexpr uint32_t max_proc_info_cnt = 32;
@@ -368,14 +368,8 @@ void Profiler::CollectMemoryResourceInfo(
         res_info.infer_mem = sta::CUDAMemPool::Get(device_id)->InferMemUsage();
       }
     } else {
-      auto read_resource_info = [&]() {
-        res_info.infer_mem = sta::CUDAMemPool::Get(device_id)->InferMemUsage();
-        res_info.train_mem = sta::CUDAMemPool::Get(device_id)->TrainMemUsage();
-        res_info.train_all_mem = 
-            sta::CUDAMemPool::Get(device_id)->TrainAllMemUsage();
-        res_info.gpu_used_mem = 
-            static_cast<size_t>(Config::cuda_memory_pool_gb * 1_GB);
-         auto [cap, cache] = ColdModelCache::Get(device_id)->GetColdCacheCapacityAndCache();
+      auto read_cold_cache_info = [&]() {
+        auto [cap, cache] = ColdModelCache::Get(device_id)->GetColdCacheCapacityAndCache();
         if (Config::cold_cache_max_capability_nbytes != 0) {
           res_info.cold_cache_nbytes = cache;
           
@@ -385,6 +379,19 @@ void Profiler::CollectMemoryResourceInfo(
           res_info.infer_mem_in_cold_cache_buffer_mb = 
               ColdModelCache::Get(device_id)->GetColdCacheReleasableMemoryMBUnsafe();
           res_info.cold_cache_size_mb = sta::ByteToMB(cap);
+        }
+      };
+
+      auto read_resource_info = [&]() {
+        res_info.infer_mem = sta::CUDAMemPool::Get(device_id)->InferMemUsage();
+        res_info.train_mem = sta::CUDAMemPool::Get(device_id)->TrainMemUsage();
+        res_info.train_all_mem = 
+            sta::CUDAMemPool::Get(device_id)->TrainAllMemUsage();
+        res_info.gpu_used_mem = 
+            static_cast<size_t>(Config::cuda_memory_pool_gb * 1_GB);
+        
+        if (!Config::serving_llm) {
+          read_cold_cache_info();
         }
       };
 

@@ -52,9 +52,24 @@ class InferJob : public Job {
   InferJob(network::InferHandler::InferData* data);
   network::InferHandler::InferData* GetInferData() override { return data_; }
 
- private:
+ protected:
   network::InferHandler::InferData* data_;
   virtual std::ostream& Print(std::ostream& os) const;
+};
+
+class LLMInferJob : public InferJob {
+ public:
+  LLMInferJob(network::InferHandler::InferData* data);
+  std::string_view GetPrompt() {
+    return prompt_;
+  }
+  int GetMaxTokens() {
+    return max_tokens_;
+  }
+
+ private:
+  std::string_view prompt_;
+  int max_tokens_;
 };
 
 class TrainJob : public Job {

@@ -147,6 +147,7 @@ class InferHandler : public GRPCServer::Handler {
     DLDataType GetInputDType(size_t i);
     std::vector<int64_t> GetInputShape(size_t i);
     const char* GetInputData(size_t i);
+    int GetNumInputData();
     size_t GetInputBytes(size_t i);
 
     void AddOuput();

@@ -88,8 +88,10 @@ int Config::train_adjust_batch_size_limit = 0;
 
 bool Config::serving_llm = false;
 std::string Config::llm_model_name = "";
-int Config::llm_max_seq_len = 512;
-int Config::llm_max_batch_size = 1;
+int Config::llm_max_seq_len = 0;
+int Config::llm_max_model_len = 0;
+bool Config::llm_show_gen_result = false;
+int Config::llm_show_gen_result_period = 10;
 
 bool Config::dummy_adjust = false;
 

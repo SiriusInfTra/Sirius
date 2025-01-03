@@ -17,6 +17,17 @@ std::string ReadInput(std::filesystem::path data_path) {
   return data;
 }
 
+int GetLLMMaxModelLen(const std::string &model_name) {
+  if (model_name == "meta-llama/Meta-Llama-3-8B") {
+    return 8192;
+  } else if (model_name == "meta-llama/Meta-Llama-3-8B-Instruct") {
+    return 8192;
+  } else if (model_name == "facebook/opt-125m") {
+    return 2048;
+  }
+  LOG(FATAL) << "Unknown model name: " << model_name;
+} 
+
 AppBase::AppBase(const std::string &name) : app{name} {
   app.add_flag("--infer,!--no-infer", enable_infer, "enable infer workload");
   app.add_flag("--train,!--no-train", enable_train, "enable train workload");

@@ -4,6 +4,7 @@
 #include <colserve.grpc.pb.h>
 #include <grpcpp/channel.h>
 #include <glog/logging.h>
+#include <boost/json.hpp>
 
 #define COLSYS_CLIENT_IMPL_NAMESPACE colsys_backend
 namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE {
@@ -86,12 +87,22 @@ inline void SetMnistRequest(InferRequest &request, const std::string &model,
 }
 
 inline void SetLLMRequest(InferRequest &request, const std::string &model,
-                          const std::string &data) {
+                          const std::string &data,
+                          int input_length, int output_length) {
   request.set_model(model);
   request.add_inputs();
   request.mutable_inputs(0)->set_dtype("char");
   request.mutable_inputs(0)->add_shape(data.size());
   request.mutable_inputs(0)->set_data(data);
+
+  boost::json::object json_obj;
+  json_obj["max_tokens"] = output_length;
+  std::string json_str = boost::json::serialize(json_obj);
+
+  request.add_inputs();
+  request.mutable_inputs(1)->set_dtype("char"); 
+  request.mutable_inputs(1)->add_shape(json_str.size());
+  request.mutable_inputs(1)->set_data(json_str);
 }
 
 inline std::unique_ptr<ServeStub> NewStub(std::shared_ptr<grpc::Channel> channel) {

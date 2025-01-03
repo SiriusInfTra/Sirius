@@ -189,6 +189,7 @@ void InferModelStore::WarmupDone() {
   // for static partition, we don't need to clear models.
   // As cold cache is zero for static partition, 
   // the result is same if we dnot clear cold cache for static partition.
+  CHECK(infer_model_store_ != nullptr);
   if (Config::IsColocateMode() || Config::IsSwitchMode()) {
     infer_model_store_->ClearWarmCache();
     infer_model_store_->ClearColdCache();
