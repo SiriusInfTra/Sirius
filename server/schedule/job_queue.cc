@@ -2,8 +2,9 @@
 #include <server/grpc/grpc_server.h>
 #include <server/schedule/job_queue.h>
 #include <server/config.h>
-#include <boost/json.hpp>
+#include <server/llm/llm_util.h>
 
+#include <boost/json.hpp>
 #include <chrono> 
 
 namespace colserve {
@@ -33,6 +34,20 @@ LLMInferJob::LLMInferJob(network::InferHandler::InferData* data)
     max_tokens_ = json_value.at("max_tokens").as_int64();
   } catch (const std::exception& e) {
     LOG(FATAL) << "LLMInferJob: " << e.what();
+  }
+}
+
+void LLMInferJob::RecordProfile(const LLMRequestMetric &metric) {
+  InferJob::RecordProfile();
+  Profiler::Get()->RecordPerf(Profiler::PerfItem::LLMNumPromptTokens,
+    metric.num_prompt_token);
+  Profiler::Get()->RecordPerf(Profiler::PerfItem::LLMNumGenTokens, 
+    metric.num_output_token);
+  Profiler::Get()->RecordPerf(Profiler::PerfItem::LLMTimeToFirstToken, 
+    metric.prefill_ms);
+  if (metric.num_output_token > 1) {
+    Profiler::Get()->RecordPerf(Profiler::PerfItem::LLMTimeBetweenTokens, 
+      metric.decode_ms / (metric.num_output_token - 1));
   }
 }
 

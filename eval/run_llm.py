@@ -30,7 +30,8 @@ enable_burstgpt = False
 enable_uniform_v2 = False
 
 uniform_v2_wkld_types = [
-    'NormalA',
+    # 'NormalB',
+    'Normal_LogNormal_B'
 ]
 
 if args.colsys:
@@ -84,7 +85,7 @@ if run_colsys:
         'serving_llm': True,
         'llm_model_name': llm_model,
         'llm_max_model_len': llm_max_model_len,
-        'llm_show_gen_result': True,
+        'llm_show_gen_result': False,
     }
     if enable_burstgpt:
         workload = run_comm.burstgpt(infer_only=True)

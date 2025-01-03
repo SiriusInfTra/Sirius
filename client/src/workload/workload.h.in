@@ -149,7 +149,8 @@ private:
 
 class TrainWorker {
  public:
-  TrainWorker(const std::string &model, std::function<void(TrainRequest&)> set_request_fn) 
+  TrainWorker(const std::string &model, 
+              std::function<void(TrainRequest&)> set_request_fn) 
       : model_(model) {
     set_request_fn(request_);  
   }
@@ -193,7 +194,7 @@ class Workload : public IWorkload {
   bool InferenceWorkloadStart();
   void InferenceWorkloadDone();
   bool HasTrainFirstEpochDone();
-
+  bool IsLLMInferWorkload();
 
   void PreRun() {
     for (auto &worker : infer_workers_) {
@@ -281,7 +282,7 @@ class Workload : public IWorkload {
   long start_time_stamp_;
   long end_time_stamp_;
 
-
+  bool is_llm_infer_workload_{false};
   // friend class InferRecorder;
 
 };

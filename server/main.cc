@@ -403,7 +403,11 @@ void Shutdown(int sig) {
   LOG(INFO) <<"signal " <<  strsignal(sig) << "(" << sig << ")" 
             << " received, shutting down...";
   colserve::Config::running = false;
-  colserve::InferModelStore::Shutdown();
+  if (!colserve::Config::serving_llm) {
+    colserve::InferModelStore::Shutdown();
+  } else {
+    colserve::LLMServer::Shutdown();
+  }
   colserve::TrainLauncher::Shutdown();
   colserve::Profiler::Shutdown();
   COL_NVML_CALL(nvmlShutdown());
@@ -421,7 +425,8 @@ int main(int argc, char *argv[]) {
 
   std::thread shutdown_trigger([](){
     std::this_thread::sleep_for(std::chrono::minutes(max_live_minute));
-    LOG(INFO) << "max live minute reached, shutting down...";
+    LOG(INFO) << "max live minute (" << max_live_minute
+              << ") reached, shutting down...";
     Shutdown(SIGINT);
   });
   if (!colserve::Config::no_infer) {

@@ -80,6 +80,10 @@ bool Workload::HasTrainFirstEpochDone() {
   return result.status() == "1";
 }
 
+bool Workload::IsLLMInferWorkload() {
+  return is_llm_infer_workload_;
+}
+
 void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_infer) {
   SetupSlot();
   std::stringstream log_prefix;
@@ -226,6 +230,8 @@ void InferWorker::FetchInferResult(Workload &workload,
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << this << ") " << model_ << "] ";
 
+  bool is_llm_workload = workload.IsLLMInferWorkload();
+
   workload.ready_future_.wait();
   LOG(INFO) << log_prefix.str() << "FetchInferResult start";
   void *tag;
@@ -270,11 +276,13 @@ void InferWorker::FetchInferResult(Workload &workload,
 
     {
       std::shared_lock slot_lock{slot_mutex_};
-      auto latency = std::chrono::duration<double, std::milli>(response_time - slots_[slot]->req_status_.request_time_).count();
+      auto latency = std::chrono::duration<double, std::milli>(
+          response_time - slots_[slot]->req_status_.request_time_
+        ).count();
       records_.push_back({slots_[slot]->request_.model(), latency, 
                          slots_[slot]->req_status_.time_stamp_, GetTimeStamp(), 
                          slots_[slot]->req_status_.request_time_, response_time});
-      if (show_result > 0) { // check outputs
+      if (show_result > 0 && !is_llm_workload) { // check outputs
         std::stringstream ss;
         size_t numel = slots_[slot]->result_.outputs(0).data().size() / sizeof(float);
         ss << "request " << slot << " model " << slots_[slot]->request_.model() 
@@ -284,7 +292,7 @@ void InferWorker::FetchInferResult(Workload &workload,
         }
         ss << "\n";
         std::cout << ss.str();
-      } else if (show_result < 0) {
+      } else if (show_result < 0 && !is_llm_workload) {
         std::stringstream ss;
         size_t numel = slots_[slot]->result_.outputs(0).data().size() / sizeof(float);
         ss << "request " << slot << " model " << slots_[slot]->request_.model() 
@@ -707,6 +715,9 @@ void Workload::InferBusyLoop(const std::string &model, size_t concurrency,
                              std::function<double_ms_t(size_t)> interval_fn,
                              double delay_before_infer, int warmup,
                              int64_t show_result) {
+  if (IsLLM(model)) {
+    is_llm_infer_workload_ = true;
+  }
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);
@@ -722,6 +733,9 @@ void Workload::InferTrace(const std::string &model, size_t concurrency,
                           const std::vector<double> &start_points, 
                           double delay_before_infer,
                           int warmup, int64_t show_result) {
+  if (IsLLM(model)) {
+    is_llm_infer_workload_ = true;
+  }
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);

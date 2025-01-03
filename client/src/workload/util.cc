@@ -28,6 +28,11 @@ int GetLLMMaxModelLen(const std::string &model_name) {
   LOG(FATAL) << "Unknown model name: " << model_name;
 } 
 
+bool IsLLM(const std::string &model_name) {
+  return model_name.find("llama") != std::string::npos
+    || model_name.find("opt") != std::string::npos;
+}
+
 AppBase::AppBase(const std::string &name) : app{name} {
   app.add_flag("--infer,!--no-infer", enable_infer, "enable infer workload");
   app.add_flag("--train,!--no-train", enable_train, "enable train workload");

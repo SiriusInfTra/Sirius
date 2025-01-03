@@ -10,6 +10,7 @@ namespace workload {
 std::string ReadInput(std::filesystem::path data_path);
 
 int GetLLMMaxModelLen(const std::string &model_name);
+bool IsLLM(const std::string &model_name);
 
 inline long GetTimeStamp() {
   return std::chrono::duration_cast<std::chrono::milliseconds>(

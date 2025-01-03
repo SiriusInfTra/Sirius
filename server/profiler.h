@@ -141,6 +141,13 @@ class Profiler {
 
     InferModelColdCacheHit,
 
+    // LLM
+    LLMNumPromptTokens,
+    LLMNumGenTokens,
+
+    LLMTimeToFirstToken,
+    LLMTimeBetweenTokens,
+
     NumPerfItem,
   };
 

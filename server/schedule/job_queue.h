@@ -29,7 +29,7 @@ class Job {
   inline void RecordEnqueued() { en_queue_time_ = std::chrono::steady_clock::now(); }
   inline void RecordDequeued() { de_queue_time_ = std::chrono::steady_clock::now(); }
   inline void RecordFinished() { finish_time_ = std::chrono::steady_clock::now(); }
-  inline void RecordProfile() {
+  inline virtual void RecordProfile() {
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferJobQueue, 
         std::chrono::duration<double, std::milli>(de_queue_time_ - en_queue_time_).count());
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferJobProcess,
@@ -57,6 +57,7 @@ class InferJob : public Job {
   virtual std::ostream& Print(std::ostream& os) const;
 };
 
+struct LLMRequestMetric;
 class LLMInferJob : public InferJob {
  public:
   LLMInferJob(network::InferHandler::InferData* data);
@@ -66,6 +67,7 @@ class LLMInferJob : public InferJob {
   int GetMaxTokens() {
     return max_tokens_;
   }
+  void RecordProfile(const LLMRequestMetric &metric);
 
  private:
   std::string_view prompt_;

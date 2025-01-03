@@ -46,10 +46,11 @@ class LLMInference:
 
     def serving_loop(self):
         llm_server.info("LLM Engine Serving Start ...")
-        while True:
+        while llm_server.is_running() or self.llm_engine.has_unfinished_requests():
             if not self.llm_engine.has_unfinished_requests():
                 llm_reqs = llm_server.get_llm_requests(1, 10, True)
-                assert len(llm_reqs) > 0, "No requests to process"
+                if len(llm_reqs) == 0:
+                    break
                 self.process_new_requests(llm_reqs)
                 
             llm_reqs = llm_server.get_llm_requests(1, 0, False)
@@ -59,11 +60,22 @@ class LLMInference:
             request_outputs = self.llm_engine.step()
             for req_out in request_outputs:
                 if req_out.finished:
-                    llm_server.finish_llm_request(req_out.request_id, 
-                                                  req_out.outputs[0].text,
-                                                  len(req_out.outputs[0].token_ids))
+                    metric = llm_server.LLMRequestMetric(
+                        len(req_out.prompt_token_ids),
+                        len(req_out.outputs[0].token_ids),
+                        (req_out.metrics.first_scheduled_time - req_out.metrics.arrival_time) * 1000,
+                        (req_out.metrics.first_token_time - req_out.metrics.first_scheduled_time) * 1000,
+                        (req_out.metrics.finished_time - req_out.metrics.first_token_time) * 1000,
+                    )
+                    llm_server.info(f'metric: {metric}')
+                    llm_server.finish_llm_request(
+                        req_out.request_id, 
+                        req_out.outputs[0].text,
+                        metric   
+                    )
                     
             # print(request_outputs)
+        llm_server.info("LLM Engine Serving End ...")
 
     def process_new_requests(self, llm_reqs):
         for req in llm_reqs:
