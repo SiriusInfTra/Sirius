@@ -43,7 +43,9 @@ void LLMInferJob::RecordProfile(const LLMRequestMetric &metric) {
     metric.num_prompt_token);
   Profiler::Get()->RecordPerf(Profiler::PerfItem::LLMNumGenTokens, 
     metric.num_output_token);
-  Profiler::Get()->RecordPerf(Profiler::PerfItem::LLMTimeToFirstToken, 
+  Profiler::Get()->RecordPerf(Profiler::PerfItem::LLMBackendQueue, 
+    metric.queue_ms);
+  Profiler::Get()->RecordPerf(Profiler::PerfItem::LLMPrefill, 
     metric.prefill_ms);
   if (metric.num_output_token > 1) {
     Profiler::Get()->RecordPerf(Profiler::PerfItem::LLMTimeBetweenTokens, 

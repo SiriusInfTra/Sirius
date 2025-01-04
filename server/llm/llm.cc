@@ -40,17 +40,17 @@ BOOST_PYTHON_MODULE(llm_server)
       .def_readwrite("num_output_token", &LLMRequestMetric::num_output_token)
       .def_readwrite("queue_ms", &LLMRequestMetric::queue_ms)
       .def_readwrite("prefill_ms", &LLMRequestMetric::prefill_ms)
-      .def_readwrite("generate_ms", &LLMRequestMetric::decode_ms)
+      .def_readwrite("decode_ms", &LLMRequestMetric::decode_ms)
       .def(bp::init<int,int,double,double,double>(
           (bp::arg("num_prompt_token"),
            bp::arg("num_output_token"),
            bp::arg("queue_ms"),
            bp::arg("prefill_ms"),
-           bp::arg("generate_ms"))))
+           bp::arg("decode_ms"))))
       .def("__repr__", +[](const LLMRequestMetric& self) -> std::string {
           return str(boost::format(
               "LLMRequestMetric(num_prompt_token=%d, num_output_token=%d, "
-              "queue_ms=%.2f, prefill_ms=%.2f, generate_ms=%.2f)") 
+              "queue_ms=%.2f, prefill_ms=%.2f, decode_ms=%.2f)") 
               % self.num_prompt_token 
               % self.num_output_token 
               % self.queue_ms 

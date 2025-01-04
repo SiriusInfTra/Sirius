@@ -120,6 +120,12 @@ std::ostream& operator<<(std::ostream &os, Profiler::PerfItem item) {
     LOG_ITEM(Profiler::PerfItem, InferRealBatchSize)
     LOG_ITEM(Profiler::PerfItem, InferModelLoad)
     LOG_ITEM(Profiler::PerfItem, InferModelColdCacheHit)
+
+    LOG_ITEM(Profiler::PerfItem, LLMNumPromptTokens)
+    LOG_ITEM(Profiler::PerfItem, LLMNumGenTokens)
+    LOG_ITEM(Profiler::PerfItem, LLMBackendQueue)
+    LOG_ITEM(Profiler::PerfItem, LLMPrefill)
+    LOG_ITEM(Profiler::PerfItem, LLMTimeBetweenTokens)
   default:
     return os;
   }

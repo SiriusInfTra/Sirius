@@ -25,7 +25,7 @@
   static_assert(false, "Please undefine DEV_MACRO, this macro is used for code completion");
 #endif
 
-#if defined(DEV_MACRO) && COLSYS_CLIENT_IMPL_NAMESPACE == colsys_backend
+#if defined(DEV_MACRO) && __COLSYS_CLIENT_BACKEND__ == __COLSYS_BACKEND__
   #include <colserve.grpc.pb.h>
   using TrainRequest = colsys::TrainRequest;
   using TrainResult = colsys::TrainResult;
@@ -42,12 +42,13 @@
 
   using AsyncInferResult = grpc::ClientAsyncResponseReader<InferResult>;
   using AsyncServerStatus = grpc::ClientAsyncResponseReader<ServerStatus>;
-#elif defined(DEV_MACRO) && COLSYS_CLIENT_IMPL_NAMESPACE == triton_backend
+#elif defined(DEV_MACRO) && __COLSYS_CLIENT_BACKEND__ == __TRITON_BACKEND__
   using TrainRequest = colsys::TrainRequest;
   using TrainResult = colsys::TrainResult;
   using EmptyRequest = colsys::EmptyRequest;
   using EmptyResult = colsys::EmptyResult;
 #endif  
+
 
 namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE {
 
@@ -60,6 +61,10 @@ struct Record {
   long end_time_stamp_;
   time_point_t request_time_;
   time_point_t response_time_;
+
+  // llm 
+  int num_output_token_;
+  double decode_ms_;
 };
 
 class Workload;

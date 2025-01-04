@@ -4,6 +4,9 @@
 #include <CLI/CLI.hpp>
 #include <glog/logging.h>
 
+#define __COLSYS_BACKEND__ 1
+#define __TRITON_BACKEND__ 2
+
 namespace colserve {
 namespace workload {
 

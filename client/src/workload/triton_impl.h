@@ -17,6 +17,7 @@
 #include "warm_cache.h"
 
 #define COLSYS_CLIENT_IMPL_NAMESPACE triton_backend
+#define __COLSYS_CLIENT_BACKEND__ __TRITON_BACKEND__
 
 namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE {
 using TrainRequest = colsys::TrainRequest;

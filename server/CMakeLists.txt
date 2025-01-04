@@ -20,7 +20,7 @@ add_executable(${PROJECT_NAME}
   tvm/executor.cc
   
   llm/llm.cc
-  llm/torch_allocator_plugin.cc
+  llm/llm_torch_allocator_plugin.cc
   llm/llm_util.cc
 )
 

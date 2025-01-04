@@ -5,8 +5,11 @@
 #include <grpcpp/channel.h>
 #include <glog/logging.h>
 #include <boost/json.hpp>
+#include "util.h"
 
 #define COLSYS_CLIENT_IMPL_NAMESPACE colsys_backend
+#define __COLSYS_CLIENT_BACKEND__ __COLSYS_BACKEND__
+
 namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE {
 
 using TrainRequest = colsys::TrainRequest;

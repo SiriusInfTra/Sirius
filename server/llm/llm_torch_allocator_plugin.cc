@@ -1,4 +1,4 @@
-#include <server/llm/torch_allocator_plugin.h>
+#include <server/llm/llm_torch_allocator_plugin.h>
 #include <server/config.h>
 
 #include <common/device_manager.h>

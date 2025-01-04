@@ -16,7 +16,6 @@
 #include "glog/logging.h"
 #include "workload.h"
 
-
 namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE {
 
 double ComputeThpt(const std::vector<Record> &records) {
@@ -279,9 +278,30 @@ void InferWorker::FetchInferResult(Workload &workload,
       auto latency = std::chrono::duration<double, std::milli>(
           response_time - slots_[slot]->req_status_.request_time_
         ).count();
-      records_.push_back({slots_[slot]->request_.model(), latency, 
-                         slots_[slot]->req_status_.time_stamp_, GetTimeStamp(), 
-                         slots_[slot]->req_status_.request_time_, response_time});
+
+      int num_output_token = 0;
+      double decode_ms = 0;
+      if (is_llm_workload) {
+// #define COLSYS_CLIENT_IMPL_NAMESPACE colsys_backend_
+#if __COLSYS_CLIENT_BACKEND__ == __COLSYS_BACKEND__
+        CHECK_EQ(slots_[slot]->result_.outputs_size(), 2); // text, json infer info 
+        auto llm_info = boost::json::parse(slots_[slot]->result_.outputs(1).data());
+        LOG(INFO) << "llm infer info: " << llm_info;
+        num_output_token = llm_info.at("num_output_token").as_int64();
+        decode_ms = llm_info.at("decode_ms").as_double();
+#endif
+      }
+
+      records_.push_back({
+          .model_name_ = slots_[slot]->request_.model(), 
+          .latency_ = latency, 
+          .start_time_stamp_ = slots_[slot]->req_status_.time_stamp_, 
+          .end_time_stamp_ = GetTimeStamp(), 
+          .request_time_ = slots_[slot]->req_status_.request_time_, 
+          .response_time_ = response_time,
+          .num_output_token_ = num_output_token,
+          .decode_ms_ = decode_ms
+        });
       if (show_result > 0 && !is_llm_workload) { // check outputs
         std::stringstream ss;
         size_t numel = slots_[slot]->result_.outputs(0).data().size() / sizeof(float);
@@ -303,6 +323,10 @@ void InferWorker::FetchInferResult(Workload &workload,
         }
         ss << "\n";
         std::cout << ss.str();
+      } else if (show_result > 0 && is_llm_workload) {
+        // TODO
+      } else if (show_result < 0 && is_llm_workload) {
+        // TODO
       }
     }
     {
@@ -789,6 +813,8 @@ void Workload::Report(int verbose, std::ostream &os) {
 
 void Workload::InferOverallReport(std::ostream &os) {
   std::vector<Record> all_records;
+  std::vector<double> first_token_ms;
+  std::vector<double> time_between_tokens_ms;
   for (auto &worker : infer_workers_) {
     auto records = worker->GetRecord(*this);
     all_records.insert(all_records.end(), records.begin(), records.end());
@@ -807,6 +833,16 @@ void Workload::InferOverallReport(std::ostream &os) {
                        << ","  << record.end_time_stamp_ << "\n";
     }
   }
+  { // llm
+    for (const auto & record : all_records) {
+      first_token_ms.push_back(record.latency_ - record.decode_ms_);
+      if (record.num_output_token_ > 1) {
+        time_between_tokens_ms.push_back(
+          record.decode_ms_ / (record.num_output_token_ - 1));
+      }
+    }
+  }
+
   auto ltc_avg = std::accumulate(all_records.begin(), all_records.end(), 0.0, 
       [](double acc, const Record &record) {
         return acc + record.latency_;
@@ -832,6 +868,45 @@ void Workload::InferOverallReport(std::ostream &os) {
      << "p60 " << all_records[all_records.size() * 60 / 100].latency_ << " "
      << "p50 " << all_records[all_records.size() * 50 / 100].latency_ << "\n"
      << std::endl;
+
+  if (is_llm_infer_workload_) {
+    auto printVecStats = [&](const std::string& name, const std::vector<double> &vals) {
+      if (vals.empty()) {
+        os << name << ": no record" << std::endl;
+      }
+      std::vector<double> copy = vals;
+      std::sort(copy.begin(), copy.end());
+      double sum = std::accumulate(copy.begin(), copy.end(), 0.0);
+      double avg = sum / copy.size();
+      double minv = copy.front();
+      double maxv = copy.back();
+      double p50 = copy[copy.size() * 50 / 100];
+      double p99 = copy[copy.size() * 99 / 100];
+      double p95 = copy[copy.size() * 95 / 100];
+      double p90 = copy[copy.size() * 90 / 100];
+      double p80 = copy[copy.size() * 80 / 100];
+      double p70 = copy[copy.size() * 70 / 100];
+      double p60 = copy[copy.size() * 60 / 100];
+      os << name << ":" << std::endl 
+         << "    cnt " << copy.size()
+         << " avg " << avg
+         << " max " << maxv
+         << " min " << minv 
+         << std::endl
+         << "    p99 " << p99
+         << " p95 " << p95
+         << " p90 " << p90
+         << " p80 " << p80
+         << " p70 " << p70
+         << " p60 " << p60
+         << " p50 " << p50
+         << std::endl;
+    };
+    os << "[Infer Overall] LLM Infer Stats" << std::endl;
+    printVecStats("time_to_first_token", first_token_ms);
+    printVecStats("time_between_token", time_between_tokens_ms);
+    os << std::endl;
+  }
 }
 
 } // namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE

@@ -145,7 +145,8 @@ class Profiler {
     LLMNumPromptTokens,
     LLMNumGenTokens,
 
-    LLMTimeToFirstToken,
+    LLMBackendQueue, 
+    LLMPrefill,
     LLMTimeBetweenTokens,
 
     NumPerfItem,
