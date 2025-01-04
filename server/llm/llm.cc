@@ -22,8 +22,11 @@ BOOST_PYTHON_MODULE(llm_server)
   bp::def("is_running", &LLMServer::IsRunning);
   bp::def("get_llm_requests", &LLMServer::GetLLMRequests);
   bp::def("finish_llm_request", &LLMServer::FinishLLMRequest);
-  bp::def("check_kv_cache_block_nbytes", &KVCachePool::CheckKVCacheBlockNbytes);
+  bp::def("maybe_set_kv_cache_block_nbytes", &KVCachePool::MaybeSetKVCacheBlockNbytes);
   bp::def("get_num_gpu_kv_cache_blocks", &KVCachePool::GetNumGpuKVCacheBlocks);
+  bp::def("ensure_kv_cache_block", &KVCachePool::EnsureKVCacheBlock);
+  bp::def("free_kv_cache_block", &KVCachePool::FreeKVCacheBlock);
+  bp::def("alloc_kv_cache_block", &KVCachePool::AllocKVCacheBlock);
   bp::def("init_kv_cache", &KVCachePool::InitKVCache);
   bp::def("info", &CallGLOG_INFO);
   bp::def("dinfo", &CallGLOG_DINFO);
@@ -68,7 +71,6 @@ BOOST_PYTHON_MODULE(llm_server)
 
 void LLMServer::Init() {
   CHECK(IsLLMModel(Config::llm_model_name));
-  KVCachePool::Init();
   try {
     llm_server_ = std::make_unique<LLMServer>();
   } catch (boost::python::error_already_set const &) {
@@ -198,13 +200,17 @@ void LLMServer::FinishLLMRequest(
 }
 
 LLMServer::LLMServer() : running_(true) {
+  KVCachePool::Init();
   PyInit();
+
   pthread_barrier_t barrier;
   pthread_barrier_init(&barrier, nullptr, 1 + llm_wrappers_.size());
   for (auto i : boost::irange(sta::DeviceManager::GetNumVisibleGpu())) {
     llm_wrappers_.push_back(std::make_unique<LLMWrapper>(
         i, py_module_, &barrier));
   }
+
+  KVCachePool::PostInit();
 
   // release GIL
   main_py_ts_ = PyEval_SaveThread();
