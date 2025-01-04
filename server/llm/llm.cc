@@ -2,7 +2,8 @@
 #include <server/config.h>
 #include <server/llm/llm.h>
 #include <server/llm/llm_util.h>
-#include <server/llm/torch_allocator_plugin.h>
+// #include <server/llm/llm_torch_allocator_plugin.h>
+#include <server/llm/kv_cache_pool.h>
 #include <boost/json.hpp>
 
 #include <boost/format.hpp>
@@ -21,6 +22,9 @@ BOOST_PYTHON_MODULE(llm_server)
   bp::def("is_running", &LLMServer::IsRunning);
   bp::def("get_llm_requests", &LLMServer::GetLLMRequests);
   bp::def("finish_llm_request", &LLMServer::FinishLLMRequest);
+  bp::def("check_kv_cache_block_nbytes", &KVCachePool::CheckKVCacheBlockNbytes);
+  bp::def("get_num_gpu_kv_cache_blocks", &KVCachePool::GetNumGpuKVCacheBlocks);
+  bp::def("init_kv_cache", &KVCachePool::InitKVCache);
   bp::def("info", &CallGLOG_INFO);
   bp::def("dinfo", &CallGLOG_DINFO);
 
@@ -64,6 +68,7 @@ BOOST_PYTHON_MODULE(llm_server)
 
 void LLMServer::Init() {
   CHECK(IsLLMModel(Config::llm_model_name));
+  KVCachePool::Init();
   try {
     llm_server_ = std::make_unique<LLMServer>();
   } catch (boost::python::error_already_set const &) {
@@ -222,15 +227,15 @@ void LLMServer::PyInit() {
       "import sys\nprint(sys.path)\n")
     ).str().c_str());
 
-    bp::import("torch");
-    if (Config::use_shared_tensor_infer) {
-      torch::cuda::CUDAColAllocator::CUDAColAllocator::Init();
-      torch::cuda::CUDAColAllocator::CUDAColAllocator::Get()
-          ->init(sta::DeviceManager::GetNumVisibleGpu());
-      torch::cuda::CUDAColAllocator::CUDAColAllocator::Get()
-          ->SetCurrentAllocator();
-      LOG(INFO) << "[LLM Server] torch cuda allocator initialized";
-    }
+    // bp::import("torch");
+    // if (Config::use_shared_tensor_infer) {
+    //   torch::cuda::CUDAColAllocator::CUDAColAllocator::Init();
+    //   torch::cuda::CUDAColAllocator::CUDAColAllocator::Get()
+    //       ->init(sta::DeviceManager::GetNumVisibleGpu());
+    //   torch::cuda::CUDAColAllocator::CUDAColAllocator::Get()
+    //       ->SetCurrentAllocator();
+    //   LOG(INFO) << "[LLM Server] torch cuda allocator initialized";
+    // }
     py_module_ = bp::import("llm");
   
   } catch (const bp::error_already_set&) {

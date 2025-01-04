@@ -1,5 +1,9 @@
+#pragma once
+
 #include <server/llm/llm.h>
 #include <boost/python.hpp>
+
+namespace bp = boost::python;
 
 namespace colserve {
 

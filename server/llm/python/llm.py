@@ -28,7 +28,7 @@ class LLMInference:
             enforce_eager=True,
             enable_chunked_prefill=False,
             use_v2_block_manager=True,
-            gpu_memory_utilization=0.5,
+            gpu_memory_utilization=0.95,
         )
         self.llm_engine = LLMEngine.from_engine_args(engine_args)
         del os.environ['https_proxy']
