@@ -206,6 +206,31 @@ void KVCachePool::PostInit() {
   }
 
   kv_cache_pool_->initialized_ = true;
+
+  /////////////////////////////////////
+  // reclaim allocated free blocks
+  
+}
+
+void KVCachePool::SetupFreeKVCacheBlockIndices(bp::list block_ids) {
+  CHECK(kv_cache_pool_ != nullptr);
+  std::vector<uint64_t> blk_ids_vec;
+  for (auto i : boost::irange(bp::len(block_ids))) {
+    CHECK_EQ(i, bp::extract<uint64_t>(block_ids[i]));
+    blk_ids_vec.push_back(bp::extract<uint64_t>(block_ids[i]));
+  } 
+  CHECK(GetNumGpuKVCacheBlocks() == blk_ids_vec.size());
+
+  std::unique_lock lock{kv_cache_pool_->mut_};
+  kv_cache_pool_->free_blk_indices_.insert(blk_ids_vec.begin(), blk_ids_vec.end());
+  kv_cache_pool_->free_blk_indices_not_allocted_.clear();
+}
+
+uint64_t KVCachePool::GetNumFreeBlocks() {
+  CHECK(kv_cache_pool_ != nullptr);
+  std::unique_lock lock{kv_cache_pool_->mut_};
+  return kv_cache_pool_->free_blk_indices_.size()
+      + kv_cache_pool_->free_blk_indices_not_allocted_.size();
 }
 
 void KVCachePool::EnsureKVCacheBlock(uint64_t blk_idx) {
@@ -225,6 +250,10 @@ void KVCachePool::FreeKVCacheBlock(uint64_t blk_idx) {
   CHECK(kv_cache_pool_ != nullptr);
   std::unique_lock lock{kv_cache_pool_->mut_};
 
+  CHECK(kv_cache_pool_->free_blk_indices_.find(blk_idx) == 
+        kv_cache_pool_->free_blk_indices_.end());
+  kv_cache_pool_->free_blk_indices_.insert(blk_idx);
+
   auto & kvc_page_grps = kv_cache_pool_->kvc_page_groups_;
   auto [pg_grp_idx, blk_idx_in_page] = kv_cache_pool_->BlkIdxToPageGrpIdx(blk_idx);
   CHECK(pg_grp_idx < kvc_page_grps.size());
@@ -243,9 +272,16 @@ void KVCachePool::FreeKVCacheBlock(uint64_t blk_idx) {
   }
 }
 
-void KVCachePool::AllocKVCacheBlock(uint64_t blk_idx) {
+uint64_t KVCachePool::AllocKVCacheBlock() {
   CHECK(kv_cache_pool_ != nullptr);
   std::unique_lock lock{kv_cache_pool_->mut_};
+
+  if (kv_cache_pool_->free_blk_indices_.empty()) {
+    LOG(FATAL) << "no free kv_cache_block";
+  }
+
+  auto blk_idx = *kv_cache_pool_->free_blk_indices_.begin();
+  kv_cache_pool_->free_blk_indices_.erase(blk_idx);
 
   auto & kvc_page_grps = kv_cache_pool_->kvc_page_groups_;
   auto [pg_grp_idx, blk_idx_in_page] = kv_cache_pool_->BlkIdxToPageGrpIdx(blk_idx);
@@ -264,6 +300,8 @@ void KVCachePool::AllocKVCacheBlock(uint64_t blk_idx) {
   } else {
     LOG(FATAL) << "KVCacheBlock " << blk_idx << " is already used";
   }
+
+  return blk_idx;
 }
 
 }

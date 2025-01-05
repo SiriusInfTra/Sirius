@@ -9,6 +9,7 @@ namespace colserve {
 
 void CallGLOG_INFO(const char* str);
 void CallGLOG_DINFO(const char* str);
+void CallGLOG_INFO_WITH_FRAME(const char* str);
 
 struct LLMRequestsConvert {
   static PyObject* convert(const std::vector<LLMRequest>& requests);

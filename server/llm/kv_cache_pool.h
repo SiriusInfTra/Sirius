@@ -2,6 +2,7 @@
 
 #include <server/llm/llm_util.h>
 #include <common/cuda_allocator.h>
+#include <boost/python/dict.hpp>
 
 #include <ATen/Tensor.h>
 #include <ATen/ATen.h>
@@ -35,9 +36,14 @@ class KVCachePool {
       int64_t item_size);
   static void PostInit();
 
+  static void SetupFreeKVCacheBlockIndices(bp::list num_blocks);
+  static uint64_t GetNumFreeBlocks();
   static void EnsureKVCacheBlock(uint64_t blk_idx);
   static void FreeKVCacheBlock(uint64_t blk_idx);
-  static void AllocKVCacheBlock(uint64_t blk_idx);
+  static uint64_t AllocKVCacheBlock();
+  // static void ReclaimKVCacheBlocks(
+  //     bp::object free_block_indiecs, 
+  //     bp::object free_blk_indices_not_allocted);
 
   KVCachePool() = default;
 
@@ -77,6 +83,9 @@ class KVCachePool {
   
   std::array<uint64_t, 128> kvc_space_base_addrs_{0};
   std::vector<KVCachePageGroup> kvc_page_groups_;
+
+  std::set<uint64_t> free_blk_indices_,
+                     free_blk_indices_not_allocted_;
 
   bool initialized_{false};
 };

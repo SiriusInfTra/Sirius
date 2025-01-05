@@ -24,11 +24,14 @@ BOOST_PYTHON_MODULE(llm_server)
   bp::def("finish_llm_request", &LLMServer::FinishLLMRequest);
   bp::def("maybe_set_kv_cache_block_nbytes", &KVCachePool::MaybeSetKVCacheBlockNbytes);
   bp::def("get_num_gpu_kv_cache_blocks", &KVCachePool::GetNumGpuKVCacheBlocks);
+  bp::def("setup_free_kv_cache_block_indices", &KVCachePool::SetupFreeKVCacheBlockIndices);
   bp::def("ensure_kv_cache_block", &KVCachePool::EnsureKVCacheBlock);
   bp::def("free_kv_cache_block", &KVCachePool::FreeKVCacheBlock);
   bp::def("alloc_kv_cache_block", &KVCachePool::AllocKVCacheBlock);
+  bp::def("get_num_free_blocks", &KVCachePool::GetNumFreeBlocks);
   bp::def("init_kv_cache", &KVCachePool::InitKVCache);
   bp::def("info", &CallGLOG_INFO);
+  bp::def("info_with_frame", &CallGLOG_INFO_WITH_FRAME);
   bp::def("dinfo", &CallGLOG_DINFO);
 
   bp::class_<LLMRequest>("LLMRequest")
@@ -212,7 +215,7 @@ LLMServer::LLMServer() : running_(true) {
 
   KVCachePool::PostInit();
 
-  // release GIL
+  // release GIL, start serving
   main_py_ts_ = PyEval_SaveThread();
   pthread_barrier_wait(&barrier);
 }
