@@ -7,6 +7,21 @@
 
 namespace colserve {
 
+std::ostream & operator << (
+    std::ostream &os,
+    const KVCachePool::KVCacheBlockGroup&kvc_page_group) {
+  os << "stat " << kvc_page_group.stat.allocted
+      << " " << kvc_page_group.stat.num_idle_blks
+      << " " << kvc_page_group.stat.num_used_blks
+      << ", blk_idx " << kvc_page_group.block_indices[0]
+      << "..." << kvc_page_group.block_indices.back()
+      << ", base_addr (k,v) " << std::hex 
+      << "0x" << kvc_page_group.layer_kvc_page_base_addr[0].first
+      << " 0x" << kvc_page_group.layer_kvc_page_base_addr[0].second
+      << std::dec;
+  return os;
+}
+
 std::unique_ptr<KVCachePool> KVCachePool::kv_cache_pool_ = nullptr;
 
 void KVCachePool::Init() {
@@ -58,7 +73,7 @@ PyObject* KVCachePool::InitKVCache(
   }
 
   CHECK(kv_cache_pool_ != nullptr);
-  CHECK(layer <= kv_cache_pool_->layer_kvc_blk_pages.size());
+  CHECK(layer <= kv_cache_pool_->kvc_blk_pages_.size());
   // at::ten
   // torch::from_blob()
   memory_byte_t total_nbytes_per_layer = 1;
@@ -66,11 +81,12 @@ PyObject* KVCachePool::InitKVCache(
     // block_nbytes_per_layer *= dim;
     total_nbytes_per_layer *= dim;
   }
-  CHECK_EQ(shape.size(), 3) << "shape " << shape;
-  memory_byte_t block_nbytes_per_layer = shape[2];
+  CHECK(shape.size() == 3 && shape[0] == 2) << "shape " << shape;
+  memory_byte_t block_nbytes_per_layer = shape[2] * shape[0];
 
   CHECK_EQ(block_nbytes_per_layer, 
-    kv_cache_pool_->num_heads_ 
+    2 
+    * kv_cache_pool_->num_heads_ 
     * kv_cache_pool_->block_size_ 
     * kv_cache_pool_->head_size_
   );
@@ -78,25 +94,34 @@ PyObject* KVCachePool::InitKVCache(
   total_nbytes_per_layer *= itemsize;
   
   CHECK(total_nbytes_per_layer % 32_MB == 0);
-  auto num_blocks_per_page = 32_MB / block_nbytes_per_layer;
+  auto num_blocks_per_page = 
+      32_MB / block_nbytes_per_layer 
+      * 2 /* k-cache in a page, v-cache in other page */;
   auto num_pages_per_layer = total_nbytes_per_layer / 32_MB;
 
-  if (kv_cache_pool_->num_blocks_per_page_ == 0) {
-    kv_cache_pool_->num_blocks_per_page_ = num_blocks_per_page;
+  CHECK(num_pages_per_layer % 2 == 0);
+  auto num_blk_grps_per_layer = (
+    num_pages_per_layer / 2 /* k-cache in a page, v-cache in other page */
+  );
+
+  if (kv_cache_pool_->kvc_blk_grp_size_ == 0) {
+    kv_cache_pool_->kvc_blk_grp_size_ = num_blocks_per_page;
   } else {
-    CHECK_EQ(kv_cache_pool_->num_blocks_per_page_, num_blocks_per_page);
+    CHECK_EQ(kv_cache_pool_->kvc_blk_grp_size_, num_blocks_per_page);
   }
-  if (kv_cache_pool_->num_pages_per_layer_ == 0) {
-    kv_cache_pool_->num_pages_per_layer_ = num_pages_per_layer;
+  if (kv_cache_pool_->num_kvc_blk_grp_per_layer_ == 0) {
+    kv_cache_pool_->num_kvc_blk_grp_per_layer_ = num_blk_grps_per_layer;
   } else {
-    CHECK_EQ(kv_cache_pool_->num_pages_per_layer_, num_pages_per_layer);
+    CHECK_EQ(kv_cache_pool_->num_kvc_blk_grp_per_layer_, num_blk_grps_per_layer);
   }
   
   DLOG(INFO) << "[InitKVCache] layer " << layer
             << " block_nbytes_per_layer " << sta::PrintByte(block_nbytes_per_layer)
             << " total_nbytes_per_layer " << sta::PrintByte(total_nbytes_per_layer)
-            << " num_blocks_per_page " << num_blocks_per_page
-            << " num_pages_per_layer " << num_pages_per_layer;
+            << " kvc_blk_grp_size " << kv_cache_pool_->kvc_blk_grp_size_
+            << " num_pages_per_layer " << num_pages_per_layer
+            << " num_kvc_blk_grp_per_layer " 
+            << kv_cache_pool_->num_kvc_blk_grp_per_layer_;
 
   std::unique_lock lock{kv_cache_pool_->mut_};
   std::shared_ptr<sta::CUDAMemPool::PoolEntry> last_entry = nullptr, 
@@ -108,7 +133,7 @@ PyObject* KVCachePool::InitKVCache(
     auto entry = sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice())
         ->Alloc(32_MB, sta::MemType::kInfer, false);
     CHECK((reinterpret_cast<size_t>(entry->addr) & (32_MB - 1)) == 0);
-    kv_cache_pool_->layer_kvc_blk_pages[layer][
+    kv_cache_pool_->kvc_blk_pages_[layer][
         reinterpret_cast<uint64_t>(entry->addr)
       ] = entry;
     // auto& layer_kv_cache_blocks = 
@@ -162,54 +187,87 @@ void KVCachePool::PostInit() {
   CHECK(kv_cache_pool_->num_layer_ != 0);
   CHECK(kv_cache_pool_->num_heads_ != 0);
   CHECK(kv_cache_pool_->head_size_ != 0);
-  CHECK(kv_cache_pool_->num_blocks_per_page_ != 0);
-  CHECK(kv_cache_pool_->num_pages_per_layer_ != 0);
+  CHECK(kv_cache_pool_->kvc_blk_grp_size_ != 0);
+  CHECK(kv_cache_pool_->num_kvc_blk_grp_per_layer_ != 0);
   for (auto i : boost::irange(kv_cache_pool_->num_layer_)) {
     CHECK(kv_cache_pool_->kvc_space_base_addrs_[i] != 0);
   }
 
   LOG(INFO) << "[KVCachePool] PostInit, "
-            << "cache_block_nbytes " << sta::PrintByte(kv_cache_pool_->cache_block_nbytes_)
+            << "cache_block_nbytes " 
+            << sta::PrintByte(kv_cache_pool_->cache_block_nbytes_)
             << " block_size " << kv_cache_pool_->block_size_
             << " num_layer " << kv_cache_pool_->num_layer_
             << " num_heads " << kv_cache_pool_->num_heads_
             << " head_size " << kv_cache_pool_->head_size_
-            << " num_blocks_per_page " << kv_cache_pool_->num_blocks_per_page_
-            << " num_pages_per_layer " << kv_cache_pool_->num_pages_per_layer_;
+            << " kvc_blk_grp_size " << kv_cache_pool_->kvc_blk_grp_size_
+            << " num_kvc_blk_grp_per_layer " 
+            << kv_cache_pool_->num_kvc_blk_grp_per_layer_;
 
-  auto & kv_cache_page_groups = kv_cache_pool_->kvc_page_groups_;
-  kv_cache_page_groups.resize(kv_cache_pool_->num_pages_per_layer_);
+  auto & kvc_block_grps = kv_cache_pool_->kvc_block_grps_;
+  kvc_block_grps.resize(kv_cache_pool_->num_kvc_blk_grp_per_layer_);
   
-  for (auto i : boost::irange(kv_cache_page_groups.size())) {
-    kv_cache_page_groups[i].stat = KVCachePageGroup::Stat{
+  for (auto i : boost::irange(kvc_block_grps.size())) {
+    kvc_block_grps[i].stat = KVCacheBlockGroup::Stat{
       .allocted = true,
-      .num_idle_blks = kv_cache_pool_->num_blocks_per_page_,
+      .num_idle_blks = kv_cache_pool_->kvc_blk_grp_size_,
       .num_used_blks = 0
     };
-    kv_cache_page_groups[i].stat.blk_usage_bm.reset();
-    kv_cache_page_groups[i].stat.blk_usage_bm.flip();
-    for (auto j : boost::irange(kv_cache_pool_->num_blocks_per_page_)) {
-      kv_cache_page_groups[i].stat.blk_usage_bm[j] = false;
+    kvc_block_grps[i].stat.blk_usage_bm.reset();
+    kvc_block_grps[i].stat.blk_usage_bm.flip();
+    for (auto j : boost::irange(kv_cache_pool_->kvc_blk_grp_size_)) {
+      kvc_block_grps[i].stat.blk_usage_bm[j] = false;
+    }
+    auto block_indices = boost::irange(
+        i * kv_cache_pool_->kvc_blk_grp_size_, 
+        (i + 1) * kv_cache_pool_->kvc_blk_grp_size_);
+    kvc_block_grps[i].block_indices.assign(
+        block_indices.begin(), block_indices.end());
+  }
+
+  for (auto layer_idx : boost::irange(kv_cache_pool_->num_layer_)) {
+    auto & layer_kvc_pages = kv_cache_pool_->kvc_blk_pages_[layer_idx];
+    auto & layer_kvc_space_base_addr = kv_cache_pool_->kvc_space_base_addrs_[layer_idx];
+
+    CHECK(layer_kvc_pages.size() % 2 == 0);
+    auto num_k_cache_pages = layer_kvc_pages.size() / 2;
+
+    for (auto & [addr, entry] : layer_kvc_pages) {
+      auto page_idx = 
+          (reinterpret_cast<size_t>(addr) - layer_kvc_space_base_addr) / 32_MB;
+      if (page_idx < num_k_cache_pages) {
+        CHECK(page_idx < kvc_block_grps.size());
+        auto & kvc_blk_grp = kvc_block_grps[page_idx];
+        kvc_blk_grp.layer_kvc_page_base_addr[layer_idx].first = reinterpret_cast<size_t>(addr);
+      } else {
+        CHECK(page_idx - num_k_cache_pages < kvc_block_grps.size());
+        auto & kvc_blk_grp = kvc_block_grps[page_idx - num_k_cache_pages];
+        kvc_blk_grp.layer_kvc_page_base_addr[layer_idx].second = reinterpret_cast<size_t>(addr);
+      }
     }
   }
 
-  for (auto i : boost::irange(kv_cache_pool_->num_layer_)) {
-    auto & layer_kvc_block_pages = kv_cache_pool_->layer_kvc_blk_pages[i];
-    auto & layer_kvc_space_base_addr = kv_cache_pool_->kvc_space_base_addrs_[i];
-    for (auto & [addr, entry] : layer_kvc_block_pages) {
-      auto page_idx = 
-          (reinterpret_cast<size_t>(addr) - layer_kvc_space_base_addr) / 32_MB;
-      CHECK(page_idx < kv_cache_page_groups.size());
-      auto & kvc_page_grp = kv_cache_page_groups[page_idx];
-      kvc_page_grp.layer_kvc_blk_page_base_addr[i] = reinterpret_cast<size_t>(addr);
-    }
-  }
+  LOG(INFO) << "total page_groups " << kvc_block_grps.size()
+            << " | kv_cache_page_group[0]: "
+            << kvc_block_grps[0]
+            << " | kv_cache_page_group[-1]: "
+            << kvc_block_grps.back();
 
   kv_cache_pool_->initialized_ = true;
 
   /////////////////////////////////////
   // reclaim allocated free blocks
-  
+  auto blk_idx_it = kv_cache_pool_->free_blk_indices_.begin();
+  while (blk_idx_it != kv_cache_pool_->free_blk_indices_.end()) {
+    auto blk_idx = *blk_idx_it;
+    bool succ = kv_cache_pool_
+        ->ReclaimKVCachePageGroupByBlkIdxWithoutLock(blk_idx);
+    if (succ) {
+      blk_idx_it = kv_cache_pool_->free_blk_indices_.lower_bound(blk_idx);
+    } else {
+      blk_idx_it++;
+    }
+  }
 }
 
 void KVCachePool::SetupFreeKVCacheBlockIndices(bp::list block_ids) {
@@ -224,6 +282,8 @@ void KVCachePool::SetupFreeKVCacheBlockIndices(bp::list block_ids) {
   std::unique_lock lock{kv_cache_pool_->mut_};
   kv_cache_pool_->free_blk_indices_.insert(blk_ids_vec.begin(), blk_ids_vec.end());
   kv_cache_pool_->free_blk_indices_not_allocted_.clear();
+
+  LOG(INFO) << "free_blk_indices_ " << kv_cache_pool_->free_blk_indices_.size();
 }
 
 uint64_t KVCachePool::GetNumFreeBlocks() {
@@ -237,7 +297,7 @@ void KVCachePool::EnsureKVCacheBlock(uint64_t blk_idx) {
   CHECK(kv_cache_pool_ != nullptr);
   std::unique_lock lock{kv_cache_pool_->mut_};
 
-  auto & kvc_page_grps = kv_cache_pool_->kvc_page_groups_;
+  auto & kvc_page_grps = kv_cache_pool_->kvc_block_grps_;
 
   auto [pg_grp_idx, blk_idx_in_page] = kv_cache_pool_->BlkIdxToPageGrpIdx(blk_idx);
   CHECK(pg_grp_idx < kvc_page_grps.size());
@@ -254,7 +314,7 @@ void KVCachePool::FreeKVCacheBlock(uint64_t blk_idx) {
         kv_cache_pool_->free_blk_indices_.end());
   kv_cache_pool_->free_blk_indices_.insert(blk_idx);
 
-  auto & kvc_page_grps = kv_cache_pool_->kvc_page_groups_;
+  auto & kvc_page_grps = kv_cache_pool_->kvc_block_grps_;
   auto [pg_grp_idx, blk_idx_in_page] = kv_cache_pool_->BlkIdxToPageGrpIdx(blk_idx);
   CHECK(pg_grp_idx < kvc_page_grps.size());
 
@@ -277,19 +337,19 @@ uint64_t KVCachePool::AllocKVCacheBlock() {
   std::unique_lock lock{kv_cache_pool_->mut_};
 
   if (kv_cache_pool_->free_blk_indices_.empty()) {
-    LOG(FATAL) << "no free kv_cache_block";
+    auto succ = kv_cache_pool_->AllocKVCachePageGroupWithoutLock();
+    CHECK(succ) << "OOM: no free block";
   }
 
   auto blk_idx = *kv_cache_pool_->free_blk_indices_.begin();
   kv_cache_pool_->free_blk_indices_.erase(blk_idx);
 
-  auto & kvc_page_grps = kv_cache_pool_->kvc_page_groups_;
+  auto & kvc_page_grps = kv_cache_pool_->kvc_block_grps_;
   auto [pg_grp_idx, blk_idx_in_page] = kv_cache_pool_->BlkIdxToPageGrpIdx(blk_idx);
   CHECK(pg_grp_idx < kvc_page_grps.size());
 
   if (!kvc_page_grps[pg_grp_idx].stat.allocted) {
-    // LOG(FATAL) << "KVCachePageGroup " << pg_grp_idx << " is not allocted";
-    
+    LOG(FATAL) << "KVCachePageGroup " << pg_grp_idx << " is not allocted";
   }
 
   auto & kvc_page_grp = kvc_page_grps[pg_grp_idx];
@@ -304,4 +364,89 @@ uint64_t KVCachePool::AllocKVCacheBlock() {
   return blk_idx;
 }
 
+bool KVCachePool::ReclaimKVCachePageGroupByBlkIdxWithoutLock(uint64_t blk_idx) {
+  auto [pg_grp_idx, blk_idx_in_page] = BlkIdxToPageGrpIdx(blk_idx);
+  CHECK(pg_grp_idx < kvc_block_grps_.size());
+  CHECK(kvc_block_grps_[pg_grp_idx].stat.allocted) 
+      << "KVCachePageGroup " << pg_grp_idx 
+      << " (blk_idx "<< blk_idx << ") is not allocted " 
+      << kvc_block_grps_[pg_grp_idx].stat.allocted
+      << " | stat: num_idle_blks " << kvc_block_grps_[pg_grp_idx].stat.num_idle_blks
+      << " num_used_blks " << kvc_block_grps_[pg_grp_idx].stat.num_used_blks;
+  
+  if (kvc_block_grps_[pg_grp_idx].stat.num_used_blks > 0) {
+    return false;
+  }
+
+  // maintain the free block index
+  auto & block_indices = kvc_block_grps_[pg_grp_idx].block_indices;
+  for (auto blk_idx : block_indices) {
+    auto it = free_blk_indices_.find(blk_idx);
+    CHECK(it != free_blk_indices_.end());
+    free_blk_indices_.erase(it);
+    auto [_, succ] = free_blk_indices_not_allocted_.insert(blk_idx);
+    CHECK(succ);
+  }
+
+  // unmap pages
+  for (auto l : boost::irange(num_layer_)) {
+    auto kvc_page = {
+      kvc_block_grps_[pg_grp_idx].layer_kvc_page_base_addr[l].first,
+      kvc_block_grps_[pg_grp_idx].layer_kvc_page_base_addr[l].second
+    };
+    for (auto addr : kvc_page) {
+      auto it = kvc_blk_pages_[l].find(addr);
+      CHECK(it != kvc_blk_pages_[l].end());
+      sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice())
+          ->Unmap(it->second);
+    }
+  }
+
+  LOG(INFO) << "set " << pg_grp_idx << " " 
+            << free_blk_indices_.size() << " " 
+            << free_blk_indices_not_allocted_.size();
+  kvc_block_grps_[pg_grp_idx].stat.allocted = false;
+  return true;
 }
+
+bool KVCachePool::AllocKVCachePageGroupWithoutLock() {
+  auto it = free_blk_indices_not_allocted_.begin();
+  if (it == free_blk_indices_not_allocted_.end()) {
+    return false;
+  }
+
+  auto blk_idx = *it;
+  auto [pg_grp_idx, blk_idx_in_page] = BlkIdxToPageGrpIdx(blk_idx);
+  CHECK(pg_grp_idx < kvc_block_grps_.size());
+  CHECK(!kvc_block_grps_[pg_grp_idx].stat.allocted) 
+      << "KVCachePageGroup " << pg_grp_idx << " is already allocted";
+
+  // mapping pages
+  for (auto l : boost::irange(num_layer_)) {
+    auto kvc_page = {
+      kvc_block_grps_[pg_grp_idx].layer_kvc_page_base_addr[l].first,
+      kvc_block_grps_[pg_grp_idx].layer_kvc_page_base_addr[l].second
+    };
+    for (auto addr : kvc_page) {
+      auto it = kvc_blk_pages_[l].find(addr);
+      CHECK(it != kvc_blk_pages_[l].end());
+      sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice())
+          ->Map(it->second);
+    }
+  }
+
+  // maintain the free block indices
+  auto & block_indices = kvc_block_grps_[pg_grp_idx].block_indices;
+  for (auto blk_idx : block_indices) {
+    auto it = free_blk_indices_not_allocted_.find(blk_idx);
+    CHECK(it != free_blk_indices_not_allocted_.end());
+    free_blk_indices_not_allocted_.erase(it);
+    auto [_, succ] = free_blk_indices_.insert(blk_idx);
+    CHECK(succ);
+  }
+
+  kvc_block_grps_[pg_grp_idx].stat.allocted = true;
+  return true;
+}
+
+} // namespace colserve

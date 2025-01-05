@@ -47,13 +47,11 @@ class KVCachePool {
 
   KVCachePool() = default;
 
- private:
-  static std::unique_ptr<KVCachePool> kv_cache_pool_;
-
-  // a group of kv-cache blocks (cross all layers), 
-  // in each layer, the kv-cache blocks consist of a page of 32MB
-  struct KVCachePageGroup {
-    std::array<uint64_t, 128> layer_kvc_blk_page_base_addr;
+  struct KVCacheBlockGroup {
+    std::array<
+      std::pair<uint64_t, uint64_t>, 128
+    > layer_kvc_page_base_addr; // [k-cache-page, v-cache-page] x layer
+    std::vector<uint64_t> block_indices;
     struct Stat {
       bool allocted{false};
       uint64_t num_idle_blks{0};
@@ -62,27 +60,38 @@ class KVCachePool {
     } stat;
   };
 
+ private:
+  static std::unique_ptr<KVCachePool> kv_cache_pool_;
+
+  // a group of kv-cache blocks (cross all layers), 
+  // in each layer, the kv-cache blocks consist of a page of 32MB
+
+  // struct KVCacheMemBlockExtraData {
+  // };
 
   std::pair<uint64_t, uint64_t> BlkIdxToPageGrpIdx(uint64_t blk_idx) {
-    return {blk_idx / num_blocks_per_page_, 
-            blk_idx % num_blocks_per_page_};
+    return {blk_idx / kvc_blk_grp_size_, 
+            blk_idx % kvc_blk_grp_size_};
   }
+  bool ReclaimKVCachePageGroupByBlkIdxWithoutLock(uint64_t blk_idx);
+  bool AllocKVCachePageGroupWithoutLock();
 
   std::mutex mut_;
   int64_t block_size_{0}, num_layer_{0}, 
           num_heads_{0}, head_size_{0};
   memory_byte_t cache_block_nbytes_{0};
-  uint64_t num_blocks_per_page_{0};
-  uint64_t num_pages_per_layer_{0};
+  uint64_t kvc_blk_grp_size_{0};
+  uint64_t num_kvc_blk_grp_per_layer_{0};
 
+  // layout [k-cache-blocks, .... | v-cache-blocks, ...]
   std::array<
-    std::unordered_map<
+    std::map<
       uint64_t, 
       std::shared_ptr<sta::CUDAMemPool::PoolEntry>
-    >, 128> layer_kvc_blk_pages;
+    >, 128> kvc_blk_pages_;
   
   std::array<uint64_t, 128> kvc_space_base_addrs_{0};
-  std::vector<KVCachePageGroup> kvc_page_groups_;
+  std::vector<KVCacheBlockGroup> kvc_block_grps_;
 
   std::set<uint64_t> free_blk_indices_,
                      free_blk_indices_not_allocted_;

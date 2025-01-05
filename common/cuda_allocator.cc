@@ -207,6 +207,33 @@ CUDAMemPool::HostAlloc(size_t nbytes, MemType mtype) {
       });
 }
 
+void CUDAMemPool::Map(std::shared_ptr<PoolEntry> entry) {
+  if (entry->addr == nullptr) {
+    return;
+  }
+  if (entry->mtype == MemType::kInfer) {
+    tvm_allocator_->GetObject()->Map(entry->block);
+  } else if (entry->mtype == MemType::kTrain) {
+    LOG(FATAL) << "Unsupport";
+  } else {
+    LOG(FATAL) << "Unknown mtype: " << static_cast<size_t>(entry->mtype);
+  }
+}
+
+void CUDAMemPool::Unmap(std::shared_ptr<PoolEntry> entry) {
+  if (entry->addr == nullptr) {
+    return;
+  }
+  if (entry->mtype == MemType::kInfer) {
+    // tvm_allocator_->GetObject()->Free(entry->block, 0);
+    tvm_allocator_->GetObject()->Unmap(entry->block);
+  } else if (entry->mtype == MemType::kTrain) {
+    LOG(FATAL) << "Unsupport";
+  } else {
+    LOG(FATAL) << "Unknown mtype: " << static_cast<size_t>(entry->mtype);
+  }
+}
+
 CUDAMemPool::~CUDAMemPool() {
   delete torch_allocator_;
   delete tvm_allocator_;

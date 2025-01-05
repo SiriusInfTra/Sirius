@@ -99,6 +99,9 @@ class CUDAMemPool {
   std::shared_ptr<PoolEntry> AllocWithStream(std::size_t nbytes, MemType mtype, 
                                              cudaStream_t stream, bool allow_nullptr);
 
+  void Map(std::shared_ptr<PoolEntry> entry);
+  void Unmap(std::shared_ptr<PoolEntry> entry);
+
   void RegisterOOMHandler(std::function<void()> oom_handler, MemType mtype);
 
   static double TrainAllocMs();

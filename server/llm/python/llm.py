@@ -45,7 +45,7 @@ class LLMInference:
                         f' | max_seq_len {self.max_seq_len}')
 
     def serving_loop(self):
-        llm_server.info("LLM Engine Serving Start ...")
+        llm_server.info_with_frame("LLM Engine Serving Start ...")
         while llm_server.is_running() or self.llm_engine.has_unfinished_requests():
             if not self.llm_engine.has_unfinished_requests():
                 llm_reqs = llm_server.get_llm_requests(1, 10, True)
@@ -75,7 +75,7 @@ class LLMInference:
                     )
                     
             # print(request_outputs)
-        llm_server.info("LLM Engine Serving End ...")
+        llm_server.info_with_frame("LLM Engine Serving End ...")
 
     def process_new_requests(self, llm_reqs):
         for req in llm_reqs:
