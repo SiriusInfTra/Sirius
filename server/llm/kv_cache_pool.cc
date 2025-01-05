@@ -253,6 +253,10 @@ void KVCachePool::PostInit() {
             << " | kv_cache_page_group[-1]: "
             << kvc_block_grps.back();
 
+  auto & kvc_pool_stat = kv_cache_pool_->kvc_pool_stat_;
+  kvc_pool_stat.num_idle_blk_grps_ = kvc_block_grps.size();
+  kvc_pool_stat.num_allocated_blk_grps_ = kvc_block_grps.size();
+  kvc_pool_stat.num_used_blks_ = 0;
   kv_cache_pool_->initialized_ = true;
 
   /////////////////////////////////////
@@ -261,7 +265,7 @@ void KVCachePool::PostInit() {
   while (blk_idx_it != kv_cache_pool_->free_blk_indices_.end()) {
     auto blk_idx = *blk_idx_it;
     bool succ = kv_cache_pool_
-        ->ReclaimKVCachePageGroupByBlkIdxWithoutLock(blk_idx);
+        ->ReclaimKVCacheBlkGrpByBlkIdxWithoutLock(blk_idx);
     if (succ) {
       blk_idx_it = kv_cache_pool_->free_blk_indices_.lower_bound(blk_idx);
     } else {
@@ -299,7 +303,7 @@ void KVCachePool::EnsureKVCacheBlock(uint64_t blk_idx) {
 
   auto & kvc_page_grps = kv_cache_pool_->kvc_block_grps_;
 
-  auto [pg_grp_idx, blk_idx_in_page] = kv_cache_pool_->BlkIdxToPageGrpIdx(blk_idx);
+  auto [pg_grp_idx, blk_idx_in_page] = kv_cache_pool_->BlkIdxToBlkGrpIdx(blk_idx);
   CHECK(pg_grp_idx < kvc_page_grps.size());
   if (!kvc_page_grps[pg_grp_idx].stat.allocted) {
     LOG(FATAL) << "KVCachePageGroup " << pg_grp_idx << " is not allocted";
@@ -315,7 +319,7 @@ void KVCachePool::FreeKVCacheBlock(uint64_t blk_idx) {
   kv_cache_pool_->free_blk_indices_.insert(blk_idx);
 
   auto & kvc_page_grps = kv_cache_pool_->kvc_block_grps_;
-  auto [pg_grp_idx, blk_idx_in_page] = kv_cache_pool_->BlkIdxToPageGrpIdx(blk_idx);
+  auto [pg_grp_idx, blk_idx_in_page] = kv_cache_pool_->BlkIdxToBlkGrpIdx(blk_idx);
   CHECK(pg_grp_idx < kvc_page_grps.size());
 
   if (!kvc_page_grps[pg_grp_idx].stat.allocted) {
@@ -330,29 +334,46 @@ void KVCachePool::FreeKVCacheBlock(uint64_t blk_idx) {
   } else {
     LOG(FATAL) << "KVCacheBlock " << blk_idx << " is not used";
   }
+
+  auto & kvc_pool_stat = kv_cache_pool_->kvc_pool_stat_;
+  if (kvc_page_grp.stat.num_used_blks == 0) {
+    auto num_idle = kvc_pool_stat.num_idle_blk_grps_.fetch_add(
+        1, std::memory_order_relaxed);
+    if (num_idle >= 1) {
+      kv_cache_pool_->ReclaimKVCacheBlkGrpByBlkIdxWithoutLock(blk_idx);
+    }
+  }
 }
 
 uint64_t KVCachePool::AllocKVCacheBlock() {
   CHECK(kv_cache_pool_ != nullptr);
   std::unique_lock lock{kv_cache_pool_->mut_};
 
+  bool new_blk_grp = false;
   if (kv_cache_pool_->free_blk_indices_.empty()) {
-    auto succ = kv_cache_pool_->AllocKVCachePageGroupWithoutLock();
+    auto succ = kv_cache_pool_->AllocKVCacheBlkGrpWithoutLock();
     CHECK(succ) << "OOM: no free block";
+    new_blk_grp = true;
   }
 
   auto blk_idx = *kv_cache_pool_->free_blk_indices_.begin();
   kv_cache_pool_->free_blk_indices_.erase(blk_idx);
 
   auto & kvc_page_grps = kv_cache_pool_->kvc_block_grps_;
-  auto [pg_grp_idx, blk_idx_in_page] = kv_cache_pool_->BlkIdxToPageGrpIdx(blk_idx);
+  auto [pg_grp_idx, blk_idx_in_page] = kv_cache_pool_->BlkIdxToBlkGrpIdx(blk_idx);
   CHECK(pg_grp_idx < kvc_page_grps.size());
 
-  if (!kvc_page_grps[pg_grp_idx].stat.allocted) {
+  auto & kvc_page_grp = kvc_page_grps[pg_grp_idx];
+
+  if (!kvc_page_grp.stat.allocted) {
     LOG(FATAL) << "KVCachePageGroup " << pg_grp_idx << " is not allocted";
   }
+  if (new_blk_grp) CHECK(kvc_page_grp.stat.num_used_blks == 0);
 
-  auto & kvc_page_grp = kvc_page_grps[pg_grp_idx];
+  if (kvc_page_grp.stat.num_used_blks == 0) {
+    kv_cache_pool_->kvc_pool_stat_.num_idle_blk_grps_.fetch_sub(
+        1, std::memory_order_relaxed);
+  }
   if (!kvc_page_grp.stat.blk_usage_bm[blk_idx_in_page]) {
     kvc_page_grp.stat.blk_usage_bm[blk_idx_in_page] = true;
     kvc_page_grp.stat.num_idle_blks--;
@@ -364,8 +385,8 @@ uint64_t KVCachePool::AllocKVCacheBlock() {
   return blk_idx;
 }
 
-bool KVCachePool::ReclaimKVCachePageGroupByBlkIdxWithoutLock(uint64_t blk_idx) {
-  auto [pg_grp_idx, blk_idx_in_page] = BlkIdxToPageGrpIdx(blk_idx);
+bool KVCachePool::ReclaimKVCacheBlkGrpByBlkIdxWithoutLock(uint64_t blk_idx) {
+  auto [pg_grp_idx, blk_idx_in_page] = BlkIdxToBlkGrpIdx(blk_idx);
   CHECK(pg_grp_idx < kvc_block_grps_.size());
   CHECK(kvc_block_grps_[pg_grp_idx].stat.allocted) 
       << "KVCachePageGroup " << pg_grp_idx 
@@ -406,17 +427,21 @@ bool KVCachePool::ReclaimKVCachePageGroupByBlkIdxWithoutLock(uint64_t blk_idx) {
             << free_blk_indices_.size() << " " 
             << free_blk_indices_not_allocted_.size();
   kvc_block_grps_[pg_grp_idx].stat.allocted = false;
+  kvc_pool_stat_.num_idle_blk_grps_.fetch_sub(
+      1, std::memory_order_relaxed);
+  kvc_pool_stat_.num_allocated_blk_grps_.fetch_sub(
+      1, std::memory_order_relaxed);
   return true;
 }
 
-bool KVCachePool::AllocKVCachePageGroupWithoutLock() {
+bool KVCachePool::AllocKVCacheBlkGrpWithoutLock() {
   auto it = free_blk_indices_not_allocted_.begin();
   if (it == free_blk_indices_not_allocted_.end()) {
     return false;
   }
 
   auto blk_idx = *it;
-  auto [pg_grp_idx, blk_idx_in_page] = BlkIdxToPageGrpIdx(blk_idx);
+  auto [pg_grp_idx, blk_idx_in_page] = BlkIdxToBlkGrpIdx(blk_idx);
   CHECK(pg_grp_idx < kvc_block_grps_.size());
   CHECK(!kvc_block_grps_[pg_grp_idx].stat.allocted) 
       << "KVCachePageGroup " << pg_grp_idx << " is already allocted";
@@ -446,7 +471,48 @@ bool KVCachePool::AllocKVCachePageGroupWithoutLock() {
   }
 
   kvc_block_grps_[pg_grp_idx].stat.allocted = true;
+  kvc_pool_stat_.num_idle_blk_grps_.fetch_add(
+      1, std::memory_order_relaxed);
+  kvc_pool_stat_.num_allocated_blk_grps_.fetch_add(
+      1, std::memory_order_relaxed);
   return true;
+}
+
+double KVCachePool::GetKVCacheMemPageUtil() {
+  auto & kvc_pool_stat = kv_cache_pool_->kvc_pool_stat_;
+  if (kvc_pool_stat.num_allocated_blk_grps_.load(std::memory_order_relaxed) == 0) {
+    return std::nan("");
+  }
+  return 1 - (
+    1.0 * kvc_pool_stat.num_idle_blk_grps_.load(std::memory_order_relaxed) / 
+        kvc_pool_stat.num_allocated_blk_grps_.load(std::memory_order_relaxed)
+  );
+}
+
+KVCachePoolStat KVCachePool::GetKVCachePoolStat() {
+  auto & stat = kv_cache_pool_->kvc_pool_stat_;
+
+#if 0
+  {
+    std::unique_lock lock{kv_cache_pool_->mut_};
+    std::stringstream ss;
+    ss << "kvc_blk_grps stat: ";
+    for (auto & kvc_blk_grp : kv_cache_pool_->kvc_block_grps_) {
+      if (kvc_blk_grp.stat.allocted) {
+        ss << kvc_blk_grp.stat.num_used_blks << " "
+          << kvc_blk_grp.stat.num_idle_blks << ", ";
+      }
+    }
+    LOG(INFO) << ss.str();
+  }
+#endif
+
+  return KVCachePoolStat {
+    .num_idle_blk_grps = 
+        stat.num_idle_blk_grps_.load(std::memory_order_relaxed),
+    .num_allocated_blk_grps = 
+        stat.num_allocated_blk_grps_.load(std::memory_order_relaxed)
+  };
 }
 
 } // namespace colserve

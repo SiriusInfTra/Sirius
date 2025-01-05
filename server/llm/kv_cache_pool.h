@@ -19,6 +19,10 @@ namespace colserve {
 //   vLLM use manage kv-cache by block idx. We should map the block idx
 //   to the memory block of mpool
 
+struct KVCachePoolStat {
+  uint64_t num_idle_blk_grps;
+  uint64_t num_allocated_blk_grps;
+};
 
 class KVCachePool {
  public:
@@ -41,6 +45,10 @@ class KVCachePool {
   static void EnsureKVCacheBlock(uint64_t blk_idx);
   static void FreeKVCacheBlock(uint64_t blk_idx);
   static uint64_t AllocKVCacheBlock();
+  static double GetKVCacheMemPageUtil();
+  static KVCachePoolStat GetKVCachePoolStat();
+
+
   // static void ReclaimKVCacheBlocks(
   //     bp::object free_block_indiecs, 
   //     bp::object free_blk_indices_not_allocted);
@@ -69,12 +77,12 @@ class KVCachePool {
   // struct KVCacheMemBlockExtraData {
   // };
 
-  std::pair<uint64_t, uint64_t> BlkIdxToPageGrpIdx(uint64_t blk_idx) {
+  std::pair<uint64_t, uint64_t> BlkIdxToBlkGrpIdx(uint64_t blk_idx) {
     return {blk_idx / kvc_blk_grp_size_, 
             blk_idx % kvc_blk_grp_size_};
   }
-  bool ReclaimKVCachePageGroupByBlkIdxWithoutLock(uint64_t blk_idx);
-  bool AllocKVCachePageGroupWithoutLock();
+  bool ReclaimKVCacheBlkGrpByBlkIdxWithoutLock(uint64_t blk_idx);
+  bool AllocKVCacheBlkGrpWithoutLock();
 
   std::mutex mut_;
   int64_t block_size_{0}, num_layer_{0}, 
@@ -88,13 +96,21 @@ class KVCachePool {
     std::map<
       uint64_t, 
       std::shared_ptr<sta::CUDAMemPool::PoolEntry>
-    >, 128> kvc_blk_pages_;
+  >, 128> kvc_blk_pages_;
   
   std::array<uint64_t, 128> kvc_space_base_addrs_{0};
   std::vector<KVCacheBlockGroup> kvc_block_grps_;
 
   std::set<uint64_t> free_blk_indices_,
                      free_blk_indices_not_allocted_;
+
+  struct KVCachePoolStatInternal {
+    // a blk_grp is used when any block in it is used
+    std::atomic<uint64_t> num_idle_blk_grps_{0};
+    std::atomic<uint64_t> num_allocated_blk_grps_{0};
+
+    std::atomic<uint64_t> num_used_blks_{0};
+  } kvc_pool_stat_;
 
   bool initialized_{false};
 };

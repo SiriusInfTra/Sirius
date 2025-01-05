@@ -29,6 +29,8 @@ BOOST_PYTHON_MODULE(llm_server)
   bp::def("free_kv_cache_block", &KVCachePool::FreeKVCacheBlock);
   bp::def("alloc_kv_cache_block", &KVCachePool::AllocKVCacheBlock);
   bp::def("get_num_free_blocks", &KVCachePool::GetNumFreeBlocks);
+  bp::def("get_kv_cache_mem_page_util", &KVCachePool::GetKVCacheMemPageUtil);
+  bp::def("get_kv_cache_pool_stat", &KVCachePool::GetKVCachePoolStat);
   bp::def("init_kv_cache", &KVCachePool::InitKVCache);
   bp::def("info", &CallGLOG_INFO);
   bp::def("info_with_frame", &CallGLOG_INFO_WITH_FRAME);
@@ -66,6 +68,15 @@ BOOST_PYTHON_MODULE(llm_server)
               % self.queue_ms 
               % self.prefill_ms 
               % self.decode_ms);
+      });
+  bp::class_<KVCachePoolStat>("KVCachePoolStat")
+      .def_readwrite("num_idle_blk_grps", &KVCachePoolStat::num_idle_blk_grps)
+      .def_readwrite("num_allocated_blk_grps", &KVCachePoolStat::num_allocated_blk_grps)
+      .def("__repr__", +[](const KVCachePoolStat& self) -> std::string {
+          return str(boost::format(
+              "KVCachePoolStat(num_idle_blk_grps=%d, num_allocated_blk_grps=%d)") 
+              % self.num_idle_blk_grps 
+              % self.num_allocated_blk_grps);
       });
 
   bp::to_python_converter<std::vector<LLMRequest>, 
