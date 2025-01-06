@@ -1,4 +1,9 @@
 #include <server/llm/kv_cache_pool.h>
+#include <server/config.h>
+#include <server/train_adjuster.h>
+#include <server/control/controller.h>
+#include <server/train_launcher.h>
+
 #include <boost/range/irange.hpp>
 
 #include <c10/core/TensorImpl.h>
@@ -179,7 +184,7 @@ PyObject* KVCachePool::InitKVCache(
 
 void KVCachePool::PostInit() {
   CHECK(kv_cache_pool_ != nullptr);
-  LOG(INFO) << "[KVCachePool] PostInit";
+  DLOG(INFO) << "[KVCachePool] PostInit";
   std::unique_lock lock{kv_cache_pool_->mut_};
 
   CHECK(kv_cache_pool_->cache_block_nbytes_ != 0);
@@ -261,17 +266,7 @@ void KVCachePool::PostInit() {
 
   /////////////////////////////////////
   // reclaim allocated free blocks
-  auto blk_idx_it = kv_cache_pool_->free_blk_indices_.begin();
-  while (blk_idx_it != kv_cache_pool_->free_blk_indices_.end()) {
-    auto blk_idx = *blk_idx_it;
-    bool succ = kv_cache_pool_
-        ->ReclaimKVCacheBlkGrpByBlkIdxWithoutLock(blk_idx);
-    if (succ) {
-      blk_idx_it = kv_cache_pool_->free_blk_indices_.lower_bound(blk_idx);
-    } else {
-      blk_idx_it++;
-    }
-  }
+  kv_cache_pool_->ReclaimAllKVCache(lock);
 }
 
 void KVCachePool::SetupFreeKVCacheBlockIndices(bp::list block_ids) {
@@ -293,8 +288,29 @@ void KVCachePool::SetupFreeKVCacheBlockIndices(bp::list block_ids) {
 uint64_t KVCachePool::GetNumFreeBlocks() {
   CHECK(kv_cache_pool_ != nullptr);
   std::unique_lock lock{kv_cache_pool_->mut_};
-  return kv_cache_pool_->free_blk_indices_.size()
-      + kv_cache_pool_->free_blk_indices_not_allocted_.size();
+  if (ctrl::Controller::Get()->IsTrainIdle()) {
+    return kv_cache_pool_->free_blk_indices_.size()
+        + kv_cache_pool_->free_blk_indices_not_allocted_.size();
+  } else {
+    static uint64_t num_blk_used_by_train_base = 0;
+    if (num_blk_used_by_train_base == 0) {
+      auto num_used_pages = Config::train_base_usage_nbytes / 32_MB;
+      auto num_page_per_blk_grp = kv_cache_pool_->num_layer_ * 2;
+      auto num_used_blk_grp = (
+          num_used_pages + num_page_per_blk_grp - 1) / num_page_per_blk_grp;
+      num_blk_used_by_train_base = num_used_blk_grp * kv_cache_pool_->kvc_blk_grp_size_;
+      LOG(INFO) << "[KVCachePool GetNumFreeBlocks]"
+                << " train_base_usage_nbytes " << Config::train_base_usage_nbytes
+                << " num_used_pages " << num_used_pages
+                << " num_page_per_blk_grp " << num_page_per_blk_grp
+                << " num_blk_used_by_train_base " << num_blk_used_by_train_base;
+    }
+    return (
+      kv_cache_pool_->free_blk_indices_.size()
+        + kv_cache_pool_->free_blk_indices_not_allocted_.size()
+        - num_blk_used_by_train_base
+    );
+  }
 }
 
 void KVCachePool::EnsureKVCacheBlock(uint64_t blk_idx) {
@@ -306,7 +322,7 @@ void KVCachePool::EnsureKVCacheBlock(uint64_t blk_idx) {
   auto [pg_grp_idx, blk_idx_in_page] = kv_cache_pool_->BlkIdxToBlkGrpIdx(blk_idx);
   CHECK(pg_grp_idx < kvc_page_grps.size());
   if (!kvc_page_grps[pg_grp_idx].stat.allocted) {
-    LOG(FATAL) << "KVCachePageGroup " << pg_grp_idx << " is not allocted";
+    LOG(FATAL) << "KVCacheBlkGroup " << pg_grp_idx << " is not allocted";
   }
 }
 
@@ -323,7 +339,7 @@ void KVCachePool::FreeKVCacheBlock(uint64_t blk_idx) {
   CHECK(pg_grp_idx < kvc_page_grps.size());
 
   if (!kvc_page_grps[pg_grp_idx].stat.allocted) {
-    LOG(FATAL) << "KVCachePageGroup " << pg_grp_idx << " is not allocted";
+    LOG(FATAL) << "KVCacheBlkGroup " << pg_grp_idx << " is not allocted";
   }
 
   auto & kvc_page_grp = kvc_page_grps[pg_grp_idx];
@@ -340,7 +356,7 @@ void KVCachePool::FreeKVCacheBlock(uint64_t blk_idx) {
     auto num_idle = kvc_pool_stat.num_idle_blk_grps_.fetch_add(
         1, std::memory_order_relaxed);
     if (num_idle >= 1) {
-      kv_cache_pool_->ReclaimKVCacheBlkGrpByBlkIdxWithoutLock(blk_idx);
+      kv_cache_pool_->ReclaimKVCacheBlkGrpByBlkIdx(blk_idx, lock);
     }
   }
 }
@@ -351,7 +367,7 @@ uint64_t KVCachePool::AllocKVCacheBlock() {
 
   bool new_blk_grp = false;
   if (kv_cache_pool_->free_blk_indices_.empty()) {
-    auto succ = kv_cache_pool_->AllocKVCacheBlkGrpWithoutLock();
+    auto succ = kv_cache_pool_->AllocKVCacheBlkGrp(lock);
     CHECK(succ) << "OOM: no free block";
     new_blk_grp = true;
   }
@@ -366,7 +382,7 @@ uint64_t KVCachePool::AllocKVCacheBlock() {
   auto & kvc_page_grp = kvc_page_grps[pg_grp_idx];
 
   if (!kvc_page_grp.stat.allocted) {
-    LOG(FATAL) << "KVCachePageGroup " << pg_grp_idx << " is not allocted";
+    LOG(FATAL) << "KVCacheBlkGroup " << pg_grp_idx << " is not allocted";
   }
   if (new_blk_grp) CHECK(kvc_page_grp.stat.num_used_blks == 0);
 
@@ -385,22 +401,26 @@ uint64_t KVCachePool::AllocKVCacheBlock() {
   return blk_idx;
 }
 
-bool KVCachePool::ReclaimKVCacheBlkGrpByBlkIdxWithoutLock(uint64_t blk_idx) {
-  auto [pg_grp_idx, blk_idx_in_page] = BlkIdxToBlkGrpIdx(blk_idx);
-  CHECK(pg_grp_idx < kvc_block_grps_.size());
-  CHECK(kvc_block_grps_[pg_grp_idx].stat.allocted) 
-      << "KVCachePageGroup " << pg_grp_idx 
+bool KVCachePool::ReclaimKVCacheBlkGrpByBlkIdx(
+    uint64_t blk_idx, 
+    std::unique_lock<std::mutex> &kvc_pool_lock) {
+  auto [blk_grp_idx, blk_idx_in_page] = BlkIdxToBlkGrpIdx(blk_idx);
+  CHECK(blk_grp_idx < kvc_block_grps_.size());
+  CHECK(kvc_block_grps_[blk_grp_idx].stat.allocted) 
+      << "KVCacheBlkGroup " << blk_grp_idx 
       << " (blk_idx "<< blk_idx << ") is not allocted " 
-      << kvc_block_grps_[pg_grp_idx].stat.allocted
-      << " | stat: num_idle_blks " << kvc_block_grps_[pg_grp_idx].stat.num_idle_blks
-      << " num_used_blks " << kvc_block_grps_[pg_grp_idx].stat.num_used_blks;
+      << kvc_block_grps_[blk_grp_idx].stat.allocted
+      << " | stat: num_idle_blks " << kvc_block_grps_[blk_grp_idx].stat.num_idle_blks
+      << " num_used_blks " << kvc_block_grps_[blk_grp_idx].stat.num_used_blks;
   
-  if (kvc_block_grps_[pg_grp_idx].stat.num_used_blks > 0) {
+  if (kvc_block_grps_[blk_grp_idx].stat.num_used_blks > 0) {
     return false;
   }
 
+  auto relciam_begin_t = Profiler::Now();
+
   // maintain the free block index
-  auto & block_indices = kvc_block_grps_[pg_grp_idx].block_indices;
+  auto & block_indices = kvc_block_grps_[blk_grp_idx].block_indices;
   for (auto blk_idx : block_indices) {
     auto it = free_blk_indices_.find(blk_idx);
     CHECK(it != free_blk_indices_.end());
@@ -412,8 +432,8 @@ bool KVCachePool::ReclaimKVCacheBlkGrpByBlkIdxWithoutLock(uint64_t blk_idx) {
   // unmap pages
   for (auto l : boost::irange(num_layer_)) {
     auto kvc_page = {
-      kvc_block_grps_[pg_grp_idx].layer_kvc_page_base_addr[l].first,
-      kvc_block_grps_[pg_grp_idx].layer_kvc_page_base_addr[l].second
+      kvc_block_grps_[blk_grp_idx].layer_kvc_page_base_addr[l].first,
+      kvc_block_grps_[blk_grp_idx].layer_kvc_page_base_addr[l].second
     };
     for (auto addr : kvc_page) {
       auto it = kvc_blk_pages_[l].find(addr);
@@ -423,34 +443,50 @@ bool KVCachePool::ReclaimKVCacheBlkGrpByBlkIdxWithoutLock(uint64_t blk_idx) {
     }
   }
 
-  LOG(INFO) << "set " << pg_grp_idx << " " 
-            << free_blk_indices_.size() << " " 
-            << free_blk_indices_not_allocted_.size();
-  kvc_block_grps_[pg_grp_idx].stat.allocted = false;
+  // LOG(INFO) << "set " << pg_grp_idx << " " 
+  //           << free_blk_indices_.size() << " " 
+  //           << free_blk_indices_not_allocted_.size();
+  kvc_block_grps_[blk_grp_idx].stat.allocted = false;
   kvc_pool_stat_.num_idle_blk_grps_.fetch_sub(
       1, std::memory_order_relaxed);
   kvc_pool_stat_.num_allocated_blk_grps_.fetch_sub(
       1, std::memory_order_relaxed);
+
+  auto reclaim_time = Profiler::MilliFrom(relciam_begin_t);
+  Profiler::Get()->RecordPerf(
+      Profiler::PerfItem::LLMReclaimKVCacheBlkGrp, reclaim_time);
+  DLOG(INFO) << "reclaim KVCacheBlkGroup " << blk_grp_idx 
+            << " (blk_idx "<< blk_idx << ") takes " << reclaim_time << " ms";
+
+  if (!ctrl::Controller::Get()->IsTrainIdle()) {
+    ReclaimMemToTrain(kvc_pool_lock);
+  }
   return true;
 }
 
-bool KVCachePool::AllocKVCacheBlkGrpWithoutLock() {
+bool KVCachePool::AllocKVCacheBlkGrp(
+    std::unique_lock<std::mutex> &kvc_pool_lock) {
   auto it = free_blk_indices_not_allocted_.begin();
   if (it == free_blk_indices_not_allocted_.end()) {
     return false;
   }
 
+  auto alloc_begin_t = Profiler::Now();
+
   auto blk_idx = *it;
-  auto [pg_grp_idx, blk_idx_in_page] = BlkIdxToBlkGrpIdx(blk_idx);
-  CHECK(pg_grp_idx < kvc_block_grps_.size());
-  CHECK(!kvc_block_grps_[pg_grp_idx].stat.allocted) 
-      << "KVCachePageGroup " << pg_grp_idx << " is already allocted";
+  auto [blk_grp_idx, blk_idx_in_page] = BlkIdxToBlkGrpIdx(blk_idx);
+  CHECK(blk_grp_idx < kvc_block_grps_.size());
+  CHECK(!kvc_block_grps_[blk_grp_idx].stat.allocted) 
+      << "KVCacheBlkGroup " << blk_grp_idx << " is already allocted";
+
+  int num_required_pages = num_layer_ * 2; // #layer x 2 (k-cache, v-cache)
+  MaybeAdjustTrain(num_required_pages);
 
   // mapping pages
   for (auto l : boost::irange(num_layer_)) {
     auto kvc_page = {
-      kvc_block_grps_[pg_grp_idx].layer_kvc_page_base_addr[l].first,
-      kvc_block_grps_[pg_grp_idx].layer_kvc_page_base_addr[l].second
+      kvc_block_grps_[blk_grp_idx].layer_kvc_page_base_addr[l].first,
+      kvc_block_grps_[blk_grp_idx].layer_kvc_page_base_addr[l].second
     };
     for (auto addr : kvc_page) {
       auto it = kvc_blk_pages_[l].find(addr);
@@ -461,7 +497,7 @@ bool KVCachePool::AllocKVCacheBlkGrpWithoutLock() {
   }
 
   // maintain the free block indices
-  auto & block_indices = kvc_block_grps_[pg_grp_idx].block_indices;
+  auto & block_indices = kvc_block_grps_[blk_grp_idx].block_indices;
   for (auto blk_idx : block_indices) {
     auto it = free_blk_indices_not_allocted_.find(blk_idx);
     CHECK(it != free_blk_indices_not_allocted_.end());
@@ -470,12 +506,89 @@ bool KVCachePool::AllocKVCacheBlkGrpWithoutLock() {
     CHECK(succ);
   }
 
-  kvc_block_grps_[pg_grp_idx].stat.allocted = true;
+  kvc_block_grps_[blk_grp_idx].stat.allocted = true;
   kvc_pool_stat_.num_idle_blk_grps_.fetch_add(
       1, std::memory_order_relaxed);
   kvc_pool_stat_.num_allocated_blk_grps_.fetch_add(
       1, std::memory_order_relaxed);
+
+  auto alloc_time = Profiler::MilliFrom(alloc_begin_t);
+  Profiler::Get()->RecordPerf(
+      Profiler::PerfItem::LLMAllocKVCacheBlkGrp, alloc_time);
+  DLOG(INFO) << "alloc KVCacheBlkGroup " << blk_grp_idx 
+            << " (blk_idx "<< blk_idx << ") takes " << alloc_time << " ms";
   return true;
+}
+
+void KVCachePool::ReclaimAllKVCacache(bool require_to_be_empty) {
+  CHECK(kv_cache_pool_ != nullptr);
+  std::unique_lock lock{kv_cache_pool_->mut_};
+  kv_cache_pool_->ReclaimAllKVCache(lock);
+  if (require_to_be_empty) {
+    CHECK(kv_cache_pool_->free_blk_indices_.empty());
+  }
+}
+
+
+void KVCachePool::ReclaimAllKVCache(
+    std::unique_lock<std::mutex> &kvc_pool_lock) {
+  auto blk_idx_it = kv_cache_pool_->free_blk_indices_.begin();
+  while (blk_idx_it != kv_cache_pool_->free_blk_indices_.end()) {
+    auto blk_idx = *blk_idx_it;
+    bool succ = kv_cache_pool_
+        ->ReclaimKVCacheBlkGrpByBlkIdx(blk_idx, kvc_pool_lock);
+    if (succ) {
+      blk_idx_it = kv_cache_pool_->free_blk_indices_.lower_bound(blk_idx);
+    } else {
+      blk_idx_it++;
+    }
+  }
+}
+
+void KVCachePool::MaybeAdjustTrain(uint64_t num_required_pages) {
+  auto device_id = sta::DeviceManager::GetCurrentDevice();
+  auto mpool = sta::CUDAMemPool::Get(device_id);
+  const auto page_size = 32_MB;
+  uint64_t num_free_pages = mpool->NumFreePages();
+  if (num_free_pages > num_required_pages) {
+    return;
+  }
+  memory_mb_t require_mb = sta::ByteToMB(
+    num_required_pages * page_size
+    + Config::train_over_adjust_nbytes
+  );
+  LOG_IF(INFO, Config::log_memory_adjust)
+      << "[KVCachePool, Memory Adjust] " 
+      << " num_required_pages " << num_required_pages
+      << ", " << require_mb << " MB";
+
+  std::mutex fake_mut;
+  std::unique_lock fake_lock{fake_mut, std::defer_lock};
+  auto adjust_plan = TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
+      device_id, require_mb, std::nan(""), fake_lock);
+  if (!adjust_plan.empty()) {
+    PROFILE_START(TrainAdjust);
+    auto cmd_id = ctrl::Controller::Get()->ColocateInferRequireAdjust(
+        0, device_id, adjust_plan);
+    ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
+    PROFILE_END(TrainAdjust);
+    LOG_IF(INFO, Config::log_memory_adjust) 
+        << "[KVCachePool, Memory Adjust] "
+        << "AllocStorageMaybeAdjust: wait adjust " 
+        << " free_pages " << mpool->NumFreePages()
+        << PROFILE_DURATRION(TrainAdjust);
+  }
+  CHECK_GE(mpool->NumFreePages(), num_required_pages);
+}
+
+void KVCachePool::ReclaimMemToTrain(
+    std::unique_lock<std::mutex> &kvc_pool_lock) {
+  auto adjust_plan = TrainAdjuster::GetLLMInferReleaseMemAdjustPlan(
+      kvc_pool_lock);
+  if (adjust_plan.empty()) {
+    return;
+  }
+  ctrl::Controller::Get()->ColocateInferReleaseAdjust(adjust_plan);
 }
 
 double KVCachePool::GetKVCacheMemPageUtil() {

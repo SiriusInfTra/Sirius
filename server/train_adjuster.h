@@ -32,7 +32,10 @@ class TrainAdjuster {
       memory_mb_t cold_cache_free_mem_mb,
       std::unique_lock<std::mutex> &cold_cache_lock);
 
+  // TODO: Refactor the interface
   static std::vector<AdjustPlan> GetInferReleaseMemAdjustPlan();
+  static std::vector<AdjustPlan> GetLLMInferReleaseMemAdjustPlan(
+      std::unique_lock<std::mutex> &kvc_pool_lock); // will be called within kv-cache-pool lock
   static std::vector<AdjustPlan> GetInferReleaseMemAdjustPlanWithInLock(
       std::vector<std::unique_lock<std::mutex>> &cold_cache_locks);
 

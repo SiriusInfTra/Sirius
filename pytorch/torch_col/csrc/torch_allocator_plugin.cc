@@ -144,7 +144,8 @@ void CUDAColAllocator::raw_delete(void* ptr) {
   DLOG(INFO) << "[CUDAColAllocator] raw_delete " << ptr;
 
   auto it = entry_map_.find(ptr);
-  CHECK(it != entry_map_.end()) << "not found ptr " << ptr;
+  CHECK(it != entry_map_.end()) << "not found ptr " << ptr
+      << ", entry_map size " << entry_map_.size();
 
   auto extra_data = GetMemBlockExtraData(it->second.get());
   CHECK(extra_data != nullptr);

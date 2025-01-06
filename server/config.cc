@@ -60,6 +60,7 @@ double Config::cold_cache_ratio = 0.3;
 size_t Config::train_over_adjust_nbytes = 500_MB;
 
 size_t Config::max_warm_cache_nbytes = 0_GB;
+size_t Config::train_base_usage_nbytes = 0_GB;
 
 bool Config::enable_warm_cache_fallback = true;
 

@@ -408,14 +408,24 @@ void InferWorker::Report(Workload &workload, int verbose, std::ostream &os) {
       return a.request_time_ < b.request_time_;
     });
     os << "[InferWorker TRACE " << model_ 
-       << "] start_time_stamp, end_time_stamp, request_time(ms), response_time(ms), latency(ms)" 
-       << std::endl;
+       << "] start_time_stamp, end_time_stamp, request_time(ms), response_time(ms), latency(ms)";
+    if (IsLLM(model_)) {
+      os << ", first_token(ms), time_between_token(ms)";
+    }
+    os << std::endl;
     for (auto &record : records) {
       os << std::fixed << std::setprecision(1)
          << record.start_time_stamp_ << ", " << record.end_time_stamp_ << ", "
          << std::chrono::duration<double, std::milli>(record.request_time_ - workload.run_btime_).count() << ", "
          << std::chrono::duration<double, std::milli>(record.response_time_ - workload.run_btime_).count() << ", "
-         << record.latency_ << std::endl;
+         << record.latency_;
+      if (IsLLM(model_)) {
+        os << ", " << record.latency_ - record.decode_ms_ 
+           << ", " << (record.num_output_token_ > 1 
+            ? record.decode_ms_ / (record.num_output_token_ - 1) 
+            : 0);
+      }
+      os << std::endl;
     }
   }
 }

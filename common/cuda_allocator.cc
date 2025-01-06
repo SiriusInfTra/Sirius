@@ -249,6 +249,12 @@ size_t CUDAMemPool::InferMemUsage() {
   return nbytes;
 }
 
+memory_byte_t CUDAMemPool::InferMemUsageByPage() {
+  CHECK(CUDAMemPool::IsEnable());
+  return (tvm_allocator_->GetObject()->belong.GetPagesNum()
+          * pages_pool_->GetObject()->config.page_nbytes);
+}
+
 size_t CUDAMemPool::TrainMemUsage() {
   CHECK(CUDAMemPool::IsEnable());
   auto status = torch_allocator_->GetObject()->GetStats();
@@ -268,6 +274,11 @@ size_t CUDAMemPool::TrainAllMemUsage() {
   CHECK(CUDAMemPool::IsEnable());
   return (torch_allocator_->GetObject()->belong.GetPagesNum() 
           * pages_pool_->GetObject()->config.page_nbytes);
+}
+
+size_t CUDAMemPool::NumFreePages() {
+  CHECK(CUDAMemPool::IsEnable());
+  return pages_pool_->GetObject()->GetBelong("FREE").GetPagesNum();
 }
 
 size_t CUDAMemPool::PoolNbytes() {

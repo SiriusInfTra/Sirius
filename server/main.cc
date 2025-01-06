@@ -344,7 +344,14 @@ void init_config() {
   READ_ENV_BOOL_CONFIG("COLSERVE_LOG_TASK_SWITCH", log_task_switch);
 
   CHECK(setenv("COLSYS_PORT", cfg::port.c_str(), 1) == 0);
-  
+
+  if (cfg::serving_llm) {
+    if (cfg::enable_train_adjust_balance) {
+      LOG(WARNING) << "Serving LLM, currently disable train adjust balance";
+      cfg::enable_train_adjust_balance = false;
+    }
+  }
+
   if (cfg::log_all) {
     cfg::log_all = true;
     cfg::log_grpc = true;

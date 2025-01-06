@@ -23,6 +23,7 @@ class LLMServer {
 
   static void Init();
   static void Shutdown();
+  static void WramupDone();
   static bp::object GetLLMPyModule() { 
     return llm_server_->py_module_; 
   }

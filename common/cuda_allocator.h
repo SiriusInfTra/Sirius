@@ -78,17 +78,23 @@ class CUDAMemPool {
 
   static std::shared_ptr<PoolEntry> 
       HostAlloc(size_t nbytes, MemType mtype);
+  constexpr static memory_byte_t PageNbytes() {
+    return 32_MB;
+  }
 
   CUDAMemPool(int device_id, std::size_t nbytes, 
               bool cleanup, bool observe, 
               FreeListPolicyType free_list_policy);
 
   size_t InferMemUsage();
+  memory_byte_t InferMemUsageByPage();
   size_t TrainMemUsage();
   size_t TrainPeakMemUsage();
   size_t TrainAllMemUsage();
   size_t FreeMemUsage();
+  size_t NumFreePages();
   size_t PoolNbytes();
+  
   void FreeTrainLocals();
   void DumpDumpBlockList();
   std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes, MemType mtype);

@@ -47,6 +47,7 @@ class KVCachePool {
   static uint64_t AllocKVCacheBlock();
   static double GetKVCacheMemPageUtil();
   static KVCachePoolStat GetKVCachePoolStat();
+  static void ReclaimAllKVCacache(bool require_to_be_empty);
 
 
   // static void ReclaimKVCacheBlocks(
@@ -81,8 +82,11 @@ class KVCachePool {
     return {blk_idx / kvc_blk_grp_size_, 
             blk_idx % kvc_blk_grp_size_};
   }
-  bool ReclaimKVCacheBlkGrpByBlkIdxWithoutLock(uint64_t blk_idx);
-  bool AllocKVCacheBlkGrpWithoutLock();
+  bool ReclaimKVCacheBlkGrpByBlkIdx(uint64_t blk_idx, std::unique_lock<std::mutex> &lock);
+  bool AllocKVCacheBlkGrp(std::unique_lock<std::mutex> &lock);
+  void ReclaimAllKVCache(std::unique_lock<std::mutex> &lock);
+  void MaybeAdjustTrain(uint64_t num_required_pages);
+  void ReclaimMemToTrain(std::unique_lock<std::mutex> &kvc_pool_lock);
 
   std::mutex mut_;
   int64_t block_size_{0}, num_layer_{0}, 

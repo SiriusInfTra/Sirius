@@ -113,6 +113,7 @@ class Config {
   static size_t infer_alloc_buffer_nbytes;
   static size_t train_over_adjust_nbytes;
   static size_t max_warm_cache_nbytes;
+  static memory_byte_t train_base_usage_nbytes;
   static double cold_cache_ratio;
 
   static bool enable_warm_cache_fallback;

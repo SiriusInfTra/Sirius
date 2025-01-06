@@ -103,6 +103,12 @@ void LLMServer::Shutdown() {
   LOG(INFO) << "[LLMServer] shutdown";
 }
 
+void LLMServer::WramupDone() {
+  CHECK(llm_server_ != nullptr);
+  KVCachePool::ReclaimAllKVCacache(true);
+  LOG(INFO) << "[LLMServer] warmup done";
+}
+
 bool LLMServer::IsLLMModel(const std::string &model_name) {
   if (model_name.find("llama") != std::string::npos) {
     return true;

@@ -126,6 +126,9 @@ std::ostream& operator<<(std::ostream &os, Profiler::PerfItem item) {
     LOG_ITEM(Profiler::PerfItem, LLMBackendQueue)
     LOG_ITEM(Profiler::PerfItem, LLMPrefill)
     LOG_ITEM(Profiler::PerfItem, LLMTimeBetweenTokens)
+
+    LOG_ITEM(Profiler::PerfItem, LLMReclaimKVCacheBlkGrp)
+    LOG_ITEM(Profiler::PerfItem, LLMAllocKVCacheBlkGrp)
   default:
     return os;
   }
@@ -389,7 +392,11 @@ void Profiler::CollectMemoryResourceInfo(
       };
 
       auto read_resource_info = [&]() {
-        res_info.infer_mem = sta::CUDAMemPool::Get(device_id)->InferMemUsage();
+        if (!Config::serving_llm) {
+          res_info.infer_mem = sta::CUDAMemPool::Get(device_id)->InferMemUsage();
+        } else {
+          res_info.infer_mem = sta::CUDAMemPool::Get(device_id)->InferMemUsageByPage();
+        }
         res_info.train_mem = sta::CUDAMemPool::Get(device_id)->TrainMemUsage();
         res_info.train_all_mem = 
             sta::CUDAMemPool::Get(device_id)->TrainAllMemUsage();

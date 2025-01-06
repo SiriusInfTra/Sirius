@@ -149,6 +149,9 @@ class Profiler {
     LLMPrefill,
     LLMTimeBetweenTokens,
 
+    LLMReclaimKVCacheBlkGrp,
+    LLMAllocKVCacheBlkGrp,
+
     NumPerfItem,
   };
 

@@ -118,6 +118,7 @@ void CommonHandler::SetupCallData() {
       InferModelStore::WarmupDone();
     } else {
       // Maybe TODO
+      LLMServer::WramupDone();
     }
     data->responder_.Finish(data->response_, grpc::Status::OK, (void*)data);
   };
