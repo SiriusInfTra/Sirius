@@ -310,6 +310,49 @@ class NormalA_LogNormal_RPS_8Config(NormalRpsMajorConfigBase):
             0.4
         )
 
+@normal_rps_major("Normal_LogNormal_LLM_A")
+class Normal_LogNormal_LLM_AConfig(NormalRpsMajorConfigBase):
+    def __init__(self) -> None:
+        super().__init__(
+            get_global_seed_by_hash("Normal_LogNormal_LLM_A"),
+            dist.LogNormalParam(0, 0.3),
+            dist.AutoCorrelationGenerator('inverse', 5, inverse_decay_param=1),
+            0.4
+        )
+
+@normal_rps_major("Normal_LogNormal_LLM_B")
+class Normal_LogNormal_LLM_BConfig(NormalRpsMajorConfigBase):
+    def __init__(self) -> None:
+        super().__init__(
+            get_global_seed_by_hash("Normal_LogNormal_LLM_B"),
+            dist.LogNormalParam(0.75, 0.3),
+            dist.AutoCorrelationGenerator('inverse', 5, inverse_decay_param=1),
+            0.4
+        )
+
+@normal_rps_major("Normal_LogNormal_LLM_C")
+class Normal_LogNormal_LLM_CConfig(NormalRpsMajorConfigBase):
+    def __init__(self) -> None:
+        super().__init__(
+            get_global_seed_by_hash("Normal_LogNormal_LLM_C"),
+        dist.LogNormalParam(1, 0.3),
+            dist.AutoCorrelationGenerator('inverse', 5, inverse_decay_param=1),
+            0.4
+        )
+
+@normal_rps_major("Normal_LogNormal_LLM_D")
+class Normal_LogNormal_LLM_DConfig(NormalRpsMajorConfigBase):
+    def __init__(self) -> None:
+        super().__init__(
+            get_global_seed_by_hash("Normal_LogNormal_LLM_D") + 1,
+        # dist.LogNormalParam(-0.5, 1.5),
+        # dist.LogNormalParam(-1, 1.5),
+        # dist.LogNormalParam(-0.75, 1.5),
+        dist.LogNormalParam(-1, 1.75),
+            dist.AutoCorrelationGenerator('inverse', 5, inverse_decay_param=1),
+            0.4
+        )
+
 
 @normal_rps_major("NormalA_LogNormal_RPS_9")
 class NormalA_LogNormal_RPS_9Config(NormalRpsMajorConfigBase):
@@ -485,6 +528,17 @@ class Normal_Markov_Weibull_CDConfig(NormalRpsMajorConfigBase,
         config_a=Normal_Weibull_CConfig(), config_b=Normal_Weibull_DConfig()):
     pass
 
+@normal_rps_major("Normal_Markov_LogNormal_LLM_BC")
+class Normal_Markov_LogNormal_LLM_BCConfig(
+        NormalRpsMajorConfigBase, metaclass=combine_rps_major_config_by_markov,
+        config_a=Normal_LogNormal_LLM_BConfig(), config_b=Normal_LogNormal_LLM_CConfig()):
+    pass
+
+@normal_rps_major("Normal_Markov_LogNormal_LLM_AC")
+class Normal_Markov_LogNormal_LLM_ACConfig(
+        NormalRpsMajorConfigBase, metaclass=combine_rps_major_config_by_markov,
+        config_a=Normal_LogNormal_LLM_AConfig(), config_b=Normal_LogNormal_LLM_CConfig()):
+    pass
 
 # @normal_rps_major("NormalA_v1")
 # class NormalA_v1Config(NormalRpsMajorConfigBase):

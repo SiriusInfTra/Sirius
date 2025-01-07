@@ -4,4 +4,5 @@
 client/data/sharegpt/prompt_with_length.json filter=lfs diff=lfs merge=lfs -text
 client/data/sharegpt/prompt_with_length_llama2.json filter=lfs diff=lfs merge=lfs -text
 client/data/sharegpt/prompt_with_length_llama3.json filter=lfs diff=lfs merge=lfs -text
+workload_data/burstgpt/BurstGPT_1.csv filter=lfs diff=lfs merge=lfs -text
 workload_data/azurefunctions-dataset2019/invocations_per_function_md.anon.d01.csv filter=lfs diff=lfs merge=lfs -text

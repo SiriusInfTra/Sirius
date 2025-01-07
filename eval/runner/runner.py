@@ -18,7 +18,7 @@ import re
 from .hyper_workload import (
     InferWorkloadBase, TrainWorkload, 
     InferTraceDumper, InferModel, RandomInferWorkload,
-    LLMInferWorkload
+    BurstGPTInferWorkload
 )
 from .config import (
     get_global_seed, get_binary_dir,
@@ -659,7 +659,7 @@ class HyperWorkload:
 
     def set_infer_workloads(self, *infer_workloads: InferWorkloadBase):
         if self.is_llm_workload:
-            assert all([isinstance(workload, LLMInferWorkload) 
+            assert all([isinstance(workload, BurstGPTInferWorkload) 
                         for workload in infer_workloads]), \
                 "infer workload should be LLMInferWorkload"
         self.infer_workloads = list(infer_workloads)

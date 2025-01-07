@@ -144,12 +144,18 @@ class SkewedConfig_v2:
     enable = enable_skewed
 
 
-class LLMWorkloadConfig:
+class BurstGPTConfig:
     train_model = 'swin_b'
-    train_batch_size = 72
+    train_batch_size = 400
     train_global_batch_size = 500
     train_dataset_size = 1000
     train_epoch_time = 3
+
+    model_list = [InferModel.Llama3_8B_Inst]
+
+    time_scale = 1000
+    max_rps = 10
+    start_point = 1000 + 200
 
     duration = 300
     port = str(get_unique_port())
@@ -301,11 +307,11 @@ def burstgpt(infer_only=True,
         train_batch_size:Optional[int] = None,
         train_epoch_time:Optional[float] = None):
     if train_model is None:
-        train_model = LLMWorkloadConfig.train_model
+        train_model = BurstGPTConfig.train_model
     if train_batch_size is None:
-        train_batch_size = LLMWorkloadConfig.train_batch_size
+        train_batch_size = BurstGPTConfig.train_batch_size
     if train_epoch_time is None:
-        train_batch_size = LLMWorkloadConfig.train_epoch_time
+        train_epoch_time = BurstGPTConfig.train_epoch_time
     workload = HyperWorkload(concurrency=2048,
                              warmup=5,
                              wait_warmup_done_sec=5,
@@ -315,10 +321,17 @@ def burstgpt(infer_only=True,
     if not infer_only:
         if train_epoch is None:
             train_epoch = get_train_epoch(train_epoch_time, 
-                                          LLMWorkloadConfig.duration)
+                                          BurstGPTConfig.duration)
         workload.set_train_workload(
             train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
-    workload.set_infer_workloads(LLMInferWorkload())
+    workload.set_infer_workloads(BurstGPTInferWorkload(
+        BurstGPTInferWorkload.TRACE_BurstGPT,
+        duration=BurstGPTConfig.duration,
+        time_line_scale_factor=BurstGPTConfig.time_scale,
+        max_request_sec=BurstGPTConfig.max_rps,
+        model_list=InferModel.get_model_list(BurstGPTConfig.model_list[0], 1),
+        start_point=BurstGPTConfig.start_point,
+    ))
     return workload
 
 

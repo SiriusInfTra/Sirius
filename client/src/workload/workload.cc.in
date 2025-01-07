@@ -692,8 +692,9 @@ std::function<void(InferRequest&)> Workload::SetLLMRequestFn(
     std::unique_lock lock{llm_input_datas_mutex};
     if (llm_input_datas.empty()) {
       if (!random_gen) {
-        std::filesystem::path prompt_data_path{
-            "client/data/sharegpt/prompt_with_length.json"};
+        // std::filesystem::path prompt_data_path{
+        //     "client/data/sharegpt/prompt_with_length.json"};
+        std::filesystem::path prompt_data_path{GetLLMPromptJsonPath(model)};
         CHECK(std::filesystem::exists(prompt_data_path)) 
             << "prompt data file (sharegpt/prompt.json) not found";
 

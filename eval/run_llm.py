@@ -14,6 +14,7 @@ parser.add_argument('--task-switch', action='store_true', help='Run task switch'
 parser.add_argument('--static-partition', action='store_true', help='Run static partition')
 parser.add_argument('--static-partition-i', action='store_true', help='Run static partition I')
 parser.add_argument('--static-partition-f', action='store_true', help='Run static partition F')
+parser.add_argument('--infer-only', action='store_true')
 parser.add_argument('--uniform-v2', action='store_true', help='Run uniform-v2')
 parser.add_argument('--burstgpt', action='store_true', help='Run burstgpt')
 
@@ -25,14 +26,21 @@ run_task_switch = False
 run_static_partition = False
 run_static_partition_I = False
 run_static_partition_F = False
+run_infer_only = False
 
 enable_burstgpt = False
 enable_uniform_v2 = False
 
 uniform_v2_wkld_types = [
     # 'NormalB',
-    'Normal_LogNormal_B'
+    # 'Normal_LogNormal_A'
+    'Normal_LogNormal_LLM_D'
+    # 'Normal_LogNormal_LLM_C'
+    # 'Normal_Markov_LogNormal_LLM_AC'
 ]
+
+run_comm.UniformConfig_v2.train_batch_size = 400
+run_comm.UniformConfig_v2.interval_sec = 20
 
 if args.colsys:
     run_colsys = True
@@ -50,6 +58,8 @@ if args.static_partition_i:
 if args.static_partition_f:
     run_static_partition = True
     run_static_partition_F = True
+if args.infer_only:
+    run_infer_only = True
 
 if args.burstgpt:
     enable_burstgpt = True
@@ -57,15 +67,47 @@ if args.uniform_v2:
     enable_uniform_v2 = True
 
 # LLM Workload
-llm_model = InferModel.Llama3_8B_Inst
+llm_model = InferModel.Llama2_7B_HF
+# llm_model = InferModel.Llama2_13B_HF
+
 # llm_max_model_len = 16000
 llm_max_model_len = InferModel.get_llm_max_model_length(llm_model)
 
 # Other config
+run_comm.BurstGPTConfig.model_list = [llm_model]
 port = run_comm.get_unique_port()
 
 
 print(run_colsys)
+
+
+def get_cuda_memory_pool_gb():
+    if llm_model == InferModel.Llama3_8B_Inst:
+        return '58'
+    elif llm_model == InferModel.Llama2_7B_HF:
+        return '62'
+    elif llm_model == InferModel.Llama2_13B_HF:
+        return '50'
+    else:
+        raise ValueError(f"Unknown model: {llm_model}")
+    
+def get_cuda_memory_pool_gb_sp_f():
+    if llm_model == InferModel.Llama3_8B_Inst:
+        return '30'
+    elif llm_model == InferModel.Llama2_7B_HF:
+        return '32'
+    else:
+        raise ValueError(f"Unknown model: {llm_model}")
+    
+def get_cuda_memory_pool_gb_sp_i():
+    if llm_model == InferModel.Llama3_8B_Inst:
+        return '44'
+    elif llm_model == InferModel.Llama2_7B_HF:
+        return '46'
+    else:
+        raise ValueError(f"Unknown model: {llm_model}")
+
+
 
 # MARK: colsys
 if run_colsys:
@@ -77,30 +119,35 @@ if run_colsys:
         'skip_set_mps_thread_percent': False,
         'use_xsched': True,
         'has_warmup': True,
-        'cuda_memory_pool_gb': '70',
-        'train_memory_over_predict_mb': 1000,
+        # 'cuda_memory_pool_gb': '58', # LLama3-8B
+        # 'cuda_memory_pool_gb': '62', # LLama2-7B
+        'cuda_memory_pool_gb': get_cuda_memory_pool_gb(),
+        'train_memory_over_predict_mb': 2000,
         # 'infer_model_max_idle_ms': 5000,
         # 'cold_cache_ratio': 0.5,
-        'dynamic_sm_partition': True,
+        'dynamic_sm_partition': False,
         'serving_llm': True,
         'llm_model_name': llm_model,
         'llm_max_model_len': llm_max_model_len,
         'llm_show_gen_result': False,
     }
     if enable_burstgpt:
-        workload = run_comm.burstgpt(infer_only=True)
-        system = System(**system_config)
+        workload = run_comm.burstgpt(infer_only=False)
+        system = System(port=port, **system_config)
         run_comm.run(system, workload, None, 
-                    f"burstgpt-{runner.get_num_gpu()}gpu", f"colsys")
+                    f"burstgpt-{runner.get_num_gpu()}gpu", 
+                    f"colsys")
         # ...additional colsys logic...
     
     if enable_uniform_v2:
         for wkld_type in uniform_v2_wkld_types:
             client_model_list, _ = InferModel.get_multi_model([llm_model], 1, 1)
-            workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=True)
-            system = System(**system_config)
+            workload = run_comm.uniform_v2(wkld_type, client_model_list, 
+                                           infer_only=False)
+            system = System(port=port, **system_config)
             run_comm.run(system, workload, None,
-                         f'{wkld_type}-{runner.get_num_gpu()}gpu', f'colsys')
+                         f'{wkld_type}-{runner.get_num_gpu()}gpu', 
+                         f'colsys')
 
 # MARK: task switch
 if run_task_switch:
@@ -119,22 +166,89 @@ if run_task_switch:
 
 
 # MARK: static partition
-if run_static_partition:
-    # Implement static-partition logic
-    system_config = {
+# Implement static-partition logic
+for tag, item in {
+    'I': ({
         'mode': System.ServerMode.Normal,
-        'use_sta': True,
+        'use_sta': False, # not using kv-cache pool
         'mps': True,
-        'skip_set_mps_thread_percent': False,
-        'use_xsched': False,
+        'skip_set_mps_thread_percent': True,
+        'use_xsched': True,
         'has_warmup': True,
-        'max_warm_cache_nbytes': int(9 * 1024 ** 3),
-        'cuda_memory_pool_gb': '10.5',
-        'use_sta_train': False
-    }
-    system = System(**system_config)
+        'dynamic_sm_partition': False,
+        # 'cuda_memory_pool_gb': '44', # Llama3-8B
+        # 'cuda_memory_pool_gb': '46', # Llama2-7B
+        'cuda_memory_pool_gb': get_cuda_memory_pool_gb_sp_i(),
+        'use_sta_train': False,
+        'serving_llm': True,
+        'llm_model_name': llm_model,
+        'llm_max_model_len': llm_max_model_len,
+        'llm_show_gen_result': False,
+    }, {'train_batch_size': 100}),
+    'F': ({
+        'mode': System.ServerMode.Normal,
+        'use_sta': False, # not using kv-cache pool
+        'mps': True,
+        'skip_set_mps_thread_percent': True,
+        'use_xsched': True,
+        'has_warmup': True,
+        'dynamic_sm_partition': False,
+        # 'cuda_memory_pool_gb': '30', # Llama3-8B
+        # 'cuda_memory_pool_gb': '32', # Llama2-7B
+        'cuda_memory_pool_gb': get_cuda_memory_pool_gb_sp_f(),
+        'use_sta_train': False,
+        'serving_llm': True,
+        'llm_model_name': llm_model,
+        'llm_max_model_len': llm_max_model_len,
+        'llm_show_gen_result': False,
+    }, {'train_batch_size': 180}),
+}.items():
+    if not run_static_partition:
+        break
+    if tag == 'F' and not run_static_partition_F:
+        continue
+    if tag == 'I' and not run_static_partition_I:
+        continue
+
+    system_config, workload_config = item
+    if enable_burstgpt:
+        workload = run_comm.burstgpt(
+            infer_only=False,
+            train_batch_size=workload_config['train_batch_size'])
+        system = System(port=port, **system_config)
+        run_comm.run(system, workload, workload_config,
+                    f"burstgpt-{runner.get_num_gpu()}gpu", 
+                    f"static-partition-{tag}")
+
+    if enable_uniform_v2:
+        for wkld_type in uniform_v2_wkld_types:
+            client_model_list, _ = InferModel.get_multi_model([llm_model], 1, 1)
+            workload = run_comm.uniform_v2(
+                wkld_type, client_model_list, infer_only=False,
+                train_batch_size=workload_config['train_batch_size']
+            )
+            system = System(port=port, **system_config)
+            run_comm.run(system, workload, workload_config,
+                        f'{wkld_type}-{runner.get_num_gpu()}gpu', 
+                        f'static-partition-{tag}')
+
+    # system_config = {
+    #     'mode': System.ServerMode.Normal,
+    #     'use_sta': False, # not using kv-cache pool
+    #     'mps': True,
+    #     'skip_set_mps_thread_percent': False,
+    #     'use_xsched': False,
+    #     'has_warmup': True,
+    #     'max_warm_cache_nbytes': int(9 * 1024 ** 3),
+    #     'cuda_memory_pool_gb': '10.5',
+    #     'use_sta_train': False
+    # }
+    # system = System(port=port, **system_config)
     # ...additional static-partition logic...
 
+# MARK: Task Switch
+if run_task_switch:
+    pass
 
 # MARK: UM MPS
 if run_um_mps:
@@ -142,6 +256,9 @@ if run_um_mps:
     system_config = {
         'mode': System.ServerMode.Normal,
         'use_sta': False,
+        # 'cuda_memory_pool_gb': '58', # LLama3-8B
+        # 'cuda_memory_pool_gb': '62', # LLama2-7B
+        'cuda_memory_pool_gb': get_cuda_memory_pool_gb(),
         'mps': True,
         'skip_set_mps_thread_percent': False,
         'use_xsched': False,
@@ -155,4 +272,33 @@ if run_um_mps:
 
     # ...additional UM+MPS logic...
 
-# ...existing code...
+# MARK: infer only
+if run_infer_only:
+    system_config = {
+        'mode': System.ServerMode.Normal,
+        'use_sta': False,
+        # 'cuda_memory_pool_gb': '58', # LLama3-8B
+        # 'cuda_memory_pool_gb': '62', # LLama2-7B
+        'cuda_memory_pool_gb': get_cuda_memory_pool_gb(),
+        'mps': True,
+        'skip_set_mps_thread_percent': True,
+        'use_xsched': False,
+        'has_warmup': True,
+        'serving_llm': True,
+        'llm_model_name': llm_model,
+        'llm_max_model_len': llm_max_model_len,
+        'llm_show_gen_result': False,
+    }
+    if enable_burstgpt:
+        workload = run_comm.burstgpt(infer_only=True)
+        system = System(port=port, **system_config)
+        run_comm.run(system, workload, None,
+                    f"burstgpt-{runner.get_num_gpu()}gpu", f"infer-only")
+
+    if enable_uniform_v2:
+        for wkld_type in uniform_v2_wkld_types:
+            client_model_list, _ = InferModel.get_multi_model([llm_model], 1, 1)
+            workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=True)
+            system = System(port=port, **system_config)
+            run_comm.run(system, workload, None,
+                         f'{wkld_type}-{runner.get_num_gpu()}gpu', f'infer-only')

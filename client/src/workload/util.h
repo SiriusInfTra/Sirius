@@ -14,6 +14,7 @@ std::string ReadInput(std::filesystem::path data_path);
 
 int GetLLMMaxModelLen(const std::string &model_name);
 bool IsLLM(const std::string &model_name);
+std::string GetLLMPromptJsonPath(const std::string &model);
 
 inline long GetTimeStamp() {
   return std::chrono::duration_cast<std::chrono::milliseconds>(
