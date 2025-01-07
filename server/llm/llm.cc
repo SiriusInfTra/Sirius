@@ -31,6 +31,7 @@ BOOST_PYTHON_MODULE(llm_server)
   bp::def("get_num_free_blocks", &KVCachePool::GetNumFreeBlocks);
   bp::def("get_kv_cache_mem_page_util", &KVCachePool::GetKVCacheMemPageUtil);
   bp::def("get_kv_cache_pool_stat", &KVCachePool::GetKVCachePoolStat);
+  bp::def("use_kv_cache_pool", +[]() ->bool { return Config::UseSharedTensor(); });
   bp::def("init_kv_cache", &KVCachePool::InitKVCache);
   bp::def("info", &CallGLOG_INFO);
   bp::def("info_with_frame", &CallGLOG_INFO_WITH_FRAME);
@@ -105,7 +106,9 @@ void LLMServer::Shutdown() {
 
 void LLMServer::WramupDone() {
   CHECK(llm_server_ != nullptr);
-  KVCachePool::ReclaimAllKVCacache(true);
+  if (Config::use_shared_tensor) {
+    KVCachePool::ReclaimAllKVCacache(true);
+  }
   LOG(INFO) << "[LLMServer] warmup done";
 }
 
@@ -220,7 +223,9 @@ void LLMServer::FinishLLMRequest(
 }
 
 LLMServer::LLMServer() : running_(true) {
-  KVCachePool::Init();
+  if (Config::use_shared_tensor) {
+    KVCachePool::Init();
+  }
   PyInit();
 
   pthread_barrier_t barrier;
@@ -230,7 +235,9 @@ LLMServer::LLMServer() : running_(true) {
         i, py_module_, &barrier));
   }
 
-  KVCachePool::PostInit();
+  if (Config::use_shared_tensor) {
+    KVCachePool::PostInit();
+  }
 
   // release GIL, start serving
   main_py_ts_ = PyEval_SaveThread();

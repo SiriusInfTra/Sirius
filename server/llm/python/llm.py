@@ -39,10 +39,11 @@ class LLMInference:
         if self.max_seq_len == 0:
             self.max_seq_len = None
 
-        llm_server.info(f'LLMInfer Args: \n'
-                        f'\tModel Name: {self.model_name}\n'
-                        f'\tmax_model_len {self.max_model_len}'
-                        f' | max_seq_len {self.max_seq_len}')
+        llm_server.info_with_frame(
+            f'LLMInfer Args: \n'
+            f'\tModel Name: {self.model_name}\n'
+            f'\tmax_model_len {self.max_model_len}'
+            f' | max_seq_len {self.max_seq_len}')
 
     def serving_loop(self):
         llm_server.info_with_frame("LLM Engine Serving Start ...")

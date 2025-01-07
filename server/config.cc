@@ -37,6 +37,7 @@ bool Config::group_param_dump = false;
 bool Config::group_param_nbytes_with_fragment = true;
 size_t Config::group_param_load_threshold = 8_MB;
 
+// for llm, use this var to ctrl kv-cache size
 double Config::cuda_memory_pool_gb = 12;
 
 std::string Config::mempool_freelist_policy= "best-fit";
@@ -93,6 +94,7 @@ int Config::llm_max_seq_len = 0;
 int Config::llm_max_model_len = 0;
 bool Config::llm_show_gen_result = false;
 int Config::llm_show_gen_result_period = 10;
+int Config::llm_blk_grp_adjust_size = 2;
 
 bool Config::dummy_adjust = false;
 

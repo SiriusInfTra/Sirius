@@ -152,7 +152,7 @@ class Config {
   static int llm_max_model_len;
   static bool llm_show_gen_result;
   static int llm_show_gen_result_period;
-
+  static int llm_blk_grp_adjust_size;
 
   static bool system_initialized;
 
@@ -184,6 +184,10 @@ class Config {
   inline static bool IsColocateMode() {
     return Config::serve_mode == ServeMode::kColocateL1
         || Config::serve_mode == ServeMode::kColocateL2;
+  }
+
+  inline static bool UseSharedTensor() {
+    return Config::use_shared_tensor;
   }
 
 };

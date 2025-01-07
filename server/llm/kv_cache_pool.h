@@ -71,6 +71,7 @@ class KVCachePool {
 
  private:
   static std::unique_ptr<KVCachePool> kv_cache_pool_;
+  static uint64_t cls_kv_cache_block_nbytes_;
 
   // a group of kv-cache blocks (cross all layers), 
   // in each layer, the kv-cache blocks consist of a page of 32MB
@@ -82,10 +83,13 @@ class KVCachePool {
     return {blk_idx / kvc_blk_grp_size_, 
             blk_idx % kvc_blk_grp_size_};
   }
-  bool ReclaimKVCacheBlkGrpByBlkIdx(uint64_t blk_idx, std::unique_lock<std::mutex> &lock);
+  bool ReclaimKVCacheBlkGrpByBlkIdx(uint64_t blk_idx, 
+                                    std::unique_lock<std::mutex> &lock);
   bool AllocKVCacheBlkGrp(std::unique_lock<std::mutex> &lock);
   void ReclaimAllKVCache(std::unique_lock<std::mutex> &lock);
-  void MaybeAdjustTrain(uint64_t num_required_pages);
+  uint64_t MaybeAdjustTrain(uint64_t num_required_pages, 
+                        uint64_t min_num_required_pages,
+                        std::unique_lock<std::mutex> &lock);
   void ReclaimMemToTrain(std::unique_lock<std::mutex> &kvc_pool_lock);
 
   std::mutex mut_;

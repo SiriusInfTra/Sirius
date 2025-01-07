@@ -28,6 +28,7 @@ std::ostream & operator << (
 }
 
 std::unique_ptr<KVCachePool> KVCachePool::kv_cache_pool_ = nullptr;
+uint64_t KVCachePool::cls_kv_cache_block_nbytes_ = 0;
 
 void KVCachePool::Init() {
   CHECK(sta::CUDAMemPool::IsEnable());
@@ -40,6 +41,19 @@ void KVCachePool::MaybeSetKVCacheBlockNbytes(
     int64_t num_heads, 
     int64_t head_size, 
     memory_byte_t block_nbytes) {
+  if (KVCachePool::cls_kv_cache_block_nbytes_ == 0) {
+    KVCachePool::cls_kv_cache_block_nbytes_ = block_nbytes;
+  } else {
+    CHECK(KVCachePool::cls_kv_cache_block_nbytes_ == block_nbytes)
+        << "block_nbytes " << sta::PrintByte(block_nbytes) 
+        << " is not consistent with previous value "
+        << sta::PrintByte(KVCachePool::cls_kv_cache_block_nbytes_);
+  }
+
+  if (!Config::use_shared_tensor) {
+    return;
+  }
+
   CHECK(kv_cache_pool_ != nullptr);
   std::unique_lock lock{kv_cache_pool_->mut_};
 
@@ -64,6 +78,10 @@ void KVCachePool::MaybeSetKVCacheBlockNbytes(
 }
 
 int KVCachePool::GetNumGpuKVCacheBlocks() {
+  if (!Config::use_shared_tensor) {
+    return Config::cuda_memory_pool_gb * 1_GB / KVCachePool::cls_kv_cache_block_nbytes_;
+  }
+
   CHECK(kv_cache_pool_ != nullptr);
   auto ret = sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice())
       ->PoolNbytes() / kv_cache_pool_->cache_block_nbytes_;
@@ -355,7 +373,7 @@ void KVCachePool::FreeKVCacheBlock(uint64_t blk_idx) {
   if (kvc_page_grp.stat.num_used_blks == 0) {
     auto num_idle = kvc_pool_stat.num_idle_blk_grps_.fetch_add(
         1, std::memory_order_relaxed);
-    if (num_idle >= 1) {
+    if (num_idle >= Config::llm_blk_grp_adjust_size) {
       kv_cache_pool_->ReclaimKVCacheBlkGrpByBlkIdx(blk_idx, lock);
     }
   }
@@ -472,51 +490,64 @@ bool KVCachePool::AllocKVCacheBlkGrp(
   }
 
   auto alloc_begin_t = Profiler::Now();
+  int num_adjust_blk_grp = Config::llm_blk_grp_adjust_size;
 
-  auto blk_idx = *it;
-  auto [blk_grp_idx, blk_idx_in_page] = BlkIdxToBlkGrpIdx(blk_idx);
-  CHECK(blk_grp_idx < kvc_block_grps_.size());
-  CHECK(!kvc_block_grps_[blk_grp_idx].stat.allocted) 
-      << "KVCacheBlkGroup " << blk_grp_idx << " is already allocted";
+  int num_pages_per_blk_grp = num_layer_ * 2;
+  int num_required_pages = 
+      num_adjust_blk_grp * num_layer_ * 2; // #layer x 2 (k-cache, v-cache)
 
-  int num_required_pages = num_layer_ * 2; // #layer x 2 (k-cache, v-cache)
-  MaybeAdjustTrain(num_required_pages);
+  int num_free_pages = MaybeAdjustTrain(num_required_pages, 
+                                        num_pages_per_blk_grp, // at least one blk grp
+                                        kvc_pool_lock);
 
-  // mapping pages
-  for (auto l : boost::irange(num_layer_)) {
-    auto kvc_page = {
-      kvc_block_grps_[blk_grp_idx].layer_kvc_page_base_addr[l].first,
-      kvc_block_grps_[blk_grp_idx].layer_kvc_page_base_addr[l].second
-    };
-    for (auto addr : kvc_page) {
-      auto it = kvc_blk_pages_[l].find(addr);
-      CHECK(it != kvc_blk_pages_[l].end());
-      sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice())
-          ->Map(it->second);
+  do {
+    auto blk_idx = *it;
+    auto [blk_grp_idx, blk_idx_in_page] = BlkIdxToBlkGrpIdx(blk_idx);
+    CHECK(blk_grp_idx < kvc_block_grps_.size());
+    CHECK(!kvc_block_grps_[blk_grp_idx].stat.allocted) 
+        << "KVCacheBlkGroup " << blk_grp_idx << " is already allocted";
+
+    // mapping pages
+    for (auto l : boost::irange(num_layer_)) {
+      auto kvc_page = {
+        kvc_block_grps_[blk_grp_idx].layer_kvc_page_base_addr[l].first,
+        kvc_block_grps_[blk_grp_idx].layer_kvc_page_base_addr[l].second
+      };
+      for (auto addr : kvc_page) {
+        auto it = kvc_blk_pages_[l].find(addr);
+        CHECK(it != kvc_blk_pages_[l].end());
+        sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice())
+            ->Map(it->second);
+      }
     }
-  }
 
-  // maintain the free block indices
-  auto & block_indices = kvc_block_grps_[blk_grp_idx].block_indices;
-  for (auto blk_idx : block_indices) {
-    auto it = free_blk_indices_not_allocted_.find(blk_idx);
-    CHECK(it != free_blk_indices_not_allocted_.end());
-    free_blk_indices_not_allocted_.erase(it);
-    auto [_, succ] = free_blk_indices_.insert(blk_idx);
-    CHECK(succ);
-  }
+    // maintain the free block indices
+    auto & block_indices = kvc_block_grps_[blk_grp_idx].block_indices;
+    for (auto blk_idx : block_indices) {
+      auto it = free_blk_indices_not_allocted_.find(blk_idx);
+      CHECK(it != free_blk_indices_not_allocted_.end());
+      free_blk_indices_not_allocted_.erase(it);
+      auto [_, succ] = free_blk_indices_.insert(blk_idx);
+      CHECK(succ);
+    }
 
-  kvc_block_grps_[blk_grp_idx].stat.allocted = true;
-  kvc_pool_stat_.num_idle_blk_grps_.fetch_add(
-      1, std::memory_order_relaxed);
-  kvc_pool_stat_.num_allocated_blk_grps_.fetch_add(
-      1, std::memory_order_relaxed);
+    kvc_block_grps_[blk_grp_idx].stat.allocted = true;
+    kvc_pool_stat_.num_idle_blk_grps_.fetch_add(
+        1, std::memory_order_relaxed);
+    kvc_pool_stat_.num_allocated_blk_grps_.fetch_add(
+        1, std::memory_order_relaxed);
+
+    num_free_pages -= num_pages_per_blk_grp;
+    it = free_blk_indices_not_allocted_.begin();
+  } while (num_free_pages >= num_pages_per_blk_grp 
+           && --num_adjust_blk_grp > 0
+           && it != free_blk_indices_not_allocted_.end());
 
   auto alloc_time = Profiler::MilliFrom(alloc_begin_t);
   Profiler::Get()->RecordPerf(
       Profiler::PerfItem::LLMAllocKVCacheBlkGrp, alloc_time);
-  DLOG(INFO) << "alloc KVCacheBlkGroup " << blk_grp_idx 
-            << " (blk_idx "<< blk_idx << ") takes " << alloc_time << " ms";
+  // DLOG(INFO) << "alloc KVCacheBlkGroup " << blk_grp_idx 
+  //           << " (blk_idx "<< blk_idx << ") takes " << alloc_time << " ms";
   return true;
 }
 
@@ -545,13 +576,15 @@ void KVCachePool::ReclaimAllKVCache(
   }
 }
 
-void KVCachePool::MaybeAdjustTrain(uint64_t num_required_pages) {
+uint64_t KVCachePool::MaybeAdjustTrain(uint64_t num_required_pages,
+                                   uint64_t min_num_required_pages,
+                                   std::unique_lock<std::mutex> &kvc_pool_lock) {
   auto device_id = sta::DeviceManager::GetCurrentDevice();
   auto mpool = sta::CUDAMemPool::Get(device_id);
   const auto page_size = 32_MB;
   uint64_t num_free_pages = mpool->NumFreePages();
   if (num_free_pages > num_required_pages) {
-    return;
+    return num_free_pages;
   }
   memory_mb_t require_mb = sta::ByteToMB(
     num_required_pages * page_size
@@ -562,11 +595,14 @@ void KVCachePool::MaybeAdjustTrain(uint64_t num_required_pages) {
       << " num_required_pages " << num_required_pages
       << ", " << require_mb << " MB";
 
-  std::mutex fake_mut;
-  std::unique_lock fake_lock{fake_mut, std::defer_lock};
-  auto adjust_plan = TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
-      device_id, require_mb, std::nan(""), fake_lock);
+  // std::mutex fake_mut;
+  // std::unique_lock fake_lock{fake_mut, std::defer_lock};
+  // auto adjust_plan = TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
+  //     device_id, require_mb, std::nan(""), fake_lock);
+  auto adjust_plan = TrainAdjuster::GetLLMInferRequireMemAdjustPlan(
+      device_id, require_mb, kvc_pool_lock);
   if (!adjust_plan.empty()) {
+    auto t0 = Profiler::Now();
     PROFILE_START(TrainAdjust);
     auto cmd_id = ctrl::Controller::Get()->ColocateInferRequireAdjust(
         0, device_id, adjust_plan);
@@ -574,11 +610,13 @@ void KVCachePool::MaybeAdjustTrain(uint64_t num_required_pages) {
     PROFILE_END(TrainAdjust);
     LOG_IF(INFO, Config::log_memory_adjust) 
         << "[KVCachePool, Memory Adjust] "
-        << "AllocStorageMaybeAdjust: wait adjust " 
-        << " free_pages " << mpool->NumFreePages()
-        << PROFILE_DURATRION(TrainAdjust);
+        << "AllocStorageMaybeAdjust: wait adjust" 
+        << " num_free_pages " << mpool->NumFreePages()
+        << " " << PROFILE_DURATRION(TrainAdjust) << "ms";
   }
-  CHECK_GE(mpool->NumFreePages(), num_required_pages);
+  uint64_t num_free_pages_after = mpool->NumFreePages();
+  CHECK_GE(num_free_pages_after, min_num_required_pages);
+  return num_free_pages_after;
 }
 
 void KVCachePool::ReclaimMemToTrain(
