@@ -102,6 +102,7 @@ static void setup_sm_control_11() {
 #define CU_11_8_MASK_OFF 0x47c
 #define CU_12_0_MASK_OFF 0x4cc
 #define CU_12_3_MASK_OFF 0x49c
+#define CU_12_4_MASK_OFF 0x4ac
 // CUDA 12.0 and 12.1 use the same offset
 // CUDA 12.3 try to use 0x4cc - 48
 
@@ -161,7 +162,8 @@ void libsmctrl_set_next_mask(uint64_t mask) {
 // 12.2 tested on 535.129.03
 #define CU_12_3_MASK_OFF 0x49c
 // 12.3 tested on 545.23.08, 0x49c=0x49c-72
-
+#define CU_12_4_MASK_OFF 0x4ac
+// 12.4 550.54.15
 
 // Offsets for the stream struct on aarch64
 // All tested on Nov 13th, 2023
@@ -246,6 +248,8 @@ void libsmctrl_set_stream_mask_ext(void* stream, uint128_t mask) {
 	case 12030:
 		hw_mask_v2 = (struct stream_sm_mask_v2*)(stream_struct_base + CU_12_3_MASK_OFF);
 		break;
+	case 12040:
+		hw_mask_v2 = (struct stream_sm_mask_v2*)(stream_struct_base + CU_12_4_MASK_OFF);
 #elif __aarch64__
 	case 9000: {
 		// Jetson TX2 offset is slightly different on CUDA 9.0.

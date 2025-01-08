@@ -60,7 +60,11 @@ class SMPartitioner {
   TpcData* tpc_data_;
 
   int min_train_tpc_num_ = 5;
+#if 0 // v100
   int max_train_tpc_num_ = 40;
+#else // a100
+  int max_train_tpc_num_ = 56;
+#endif
 
   // assume one thread per stream, so no need for lock  
   static thread_local 
