@@ -129,6 +129,9 @@ std::ostream& operator<<(std::ostream &os, Profiler::PerfItem item) {
 
     LOG_ITEM(Profiler::PerfItem, LLMReclaimKVCacheBlkGrp)
     LOG_ITEM(Profiler::PerfItem, LLMAllocKVCacheBlkGrp)
+
+    LOG_ITEM(Profiler::PerfItem, LLMKVCacheMap)
+    LOG_ITEM(Profiler::PerfItem, LLMKVCacheUnMap)
   default:
     return os;
   }

@@ -88,6 +88,8 @@ void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_i
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << this << ") " << model_ << " BUSY LOOP] ";
 
+  bool is_llm = IsLLM(model_);
+
   workload.ready_future_.wait();
   std::this_thread::sleep_for(delay_before_infer * std::chrono::seconds(1));
 
@@ -103,6 +105,12 @@ void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_i
           if (std::chrono::steady_clock::now() >= slots_[s]->req_status_.ready_time_) {
             slot = s;
             status_slots_id_[InferReqStatus::kDone].erase(slot);
+#if __COLSYS_CLIENT_BACKEND__ == __COLSYS_BACKEND__
+            if (is_llm) { // refresh prompt
+              slots_[slot]->request_.Clear();
+              set_request_fn_(slots_[slot]->request_);
+            }
+#endif
             status_slots_id_[InferReqStatus::kWait].insert(slot);
             break;
           }

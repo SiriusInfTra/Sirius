@@ -152,6 +152,9 @@ class Profiler {
     LLMReclaimKVCacheBlkGrp,
     LLMAllocKVCacheBlkGrp,
 
+    LLMKVCacheMap,
+    LLMKVCacheUnMap,
+
     NumPerfItem,
   };
 
