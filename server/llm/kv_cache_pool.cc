@@ -57,9 +57,12 @@ void KVCachePool::MaybeSetKVCacheBlockNbytes(
   CHECK(kv_cache_pool_ != nullptr);
   std::unique_lock lock{kv_cache_pool_->mut_};
 
-  CHECK(32_MB % block_nbytes == 0) 
-      << "block_nbytes " << block_nbytes 
-      << " is not a factor of 32_MB";
+  uint64_t layer_k_or_v_blk_nbytes = block_size * num_heads * head_size; // size of k (or v) blk size
+  CHECK(PhyPageFactor() * sta::CUDAMemPool::PageNbytes() % layer_k_or_v_blk_nbytes == 0) 
+      << "k/v block_nbytes of a layer " << layer_k_or_v_blk_nbytes
+      << " is not a factor of " 
+      << sta::PrintByte(sta::CUDAMemPool::PageNbytes())
+      << " x " << PhyPageFactor();
   if (kv_cache_pool_->cache_block_nbytes_ == 0) {
     kv_cache_pool_->cache_block_nbytes_ = block_nbytes;
     kv_cache_pool_->block_size_ = block_size;
@@ -78,13 +81,35 @@ void KVCachePool::MaybeSetKVCacheBlockNbytes(
 }
 
 int KVCachePool::GetNumGpuKVCacheBlocks() {
+  CHECK(KVCachePool::cls_kv_cache_block_nbytes_ != 0);
   if (!Config::use_shared_tensor) {
     return Config::cuda_memory_pool_gb * 1_GB / KVCachePool::cls_kv_cache_block_nbytes_;
   }
 
   CHECK(kv_cache_pool_ != nullptr);
+  size_t item_size = 2;
+  size_t layer_k_or_v_blk_nbytes = (
+      item_size * kv_cache_pool_->block_size_ 
+      * kv_cache_pool_->num_heads_ 
+      * kv_cache_pool_->head_size_);
+  CHECK(layer_k_or_v_blk_nbytes != 0);
+  size_t blk_grp_size = KVCachePool::KVCPageNybtes() / layer_k_or_v_blk_nbytes;
+
+  size_t kvc_blk_grp_nbytes = 
+      layer_k_or_v_blk_nbytes 
+      * 2 /* k-cache in a page, v-cache in other page */
+      * blk_grp_size 
+      * kv_cache_pool_->num_layer_;
+
+  LOG(INFO) << "[GetNumGpuKVCacheBlocks] "
+            << "layer_k_or_v_blk_nbytes " << sta::PrintByte(layer_k_or_v_blk_nbytes)
+            << " blk_grp_size " << blk_grp_size
+            << " kvc_blk_grp_nbytes " << sta::PrintByte(kvc_blk_grp_nbytes);
+
+  // auto ret = sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice())
+  //     ->PoolNbytes() / kv_cache_pool_->cache_block_nbytes_;
   auto ret = sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice())
-      ->PoolNbytes() / kv_cache_pool_->cache_block_nbytes_;
+      ->PoolNbytes() / kvc_blk_grp_nbytes * blk_grp_size;
   return ret;
 }
 
@@ -116,11 +141,13 @@ PyObject* KVCachePool::InitKVCache(
   block_nbytes_per_layer *= itemsize;
   total_nbytes_per_layer *= itemsize;
   
-  CHECK(total_nbytes_per_layer % 32_MB == 0);
+  // CHECK(total_nbytes_per_layer % sta::CUDAMemPool::PageNbytes() == 0);
+  CHECK(total_nbytes_per_layer % KVCPageNybtes() == 0);
   auto num_blocks_per_page = 
-      32_MB / block_nbytes_per_layer 
+      KVCPageNybtes() / block_nbytes_per_layer 
       * 2 /* k-cache in a page, v-cache in other page */;
-  auto num_pages_per_layer = total_nbytes_per_layer / 32_MB;
+  auto num_pages_per_layer = 
+      total_nbytes_per_layer / KVCPageNybtes();
 
   CHECK(num_pages_per_layer % 2 == 0);
   auto num_blk_grps_per_layer = (
@@ -154,8 +181,8 @@ PyObject* KVCachePool::InitKVCache(
   // concurrent allocation must be avoided
   for (auto i : boost::irange(num_pages_per_layer)) {
     auto entry = sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice())
-        ->Alloc(32_MB, sta::MemType::kInfer, false);
-    CHECK((reinterpret_cast<size_t>(entry->addr) & (32_MB - 1)) == 0);
+        ->Alloc(KVCPageNybtes(), sta::MemType::kInfer, false);
+    CHECK((reinterpret_cast<size_t>(entry->addr) & (sta::CUDAMemPool::PageNbytes() - 1)) == 0);
     kv_cache_pool_->kvc_blk_pages_[layer][
         reinterpret_cast<uint64_t>(entry->addr)
       ] = entry;
@@ -168,7 +195,8 @@ PyObject* KVCachePool::InitKVCache(
     //   .num_used_blks = 0
     // };
     if (last_entry != nullptr) {
-      CHECK_EQ(reinterpret_cast<size_t>(last_entry->addr) + 32_MB, 
+      CHECK_EQ(reinterpret_cast<size_t>(last_entry->addr) 
+                + KVCPageNybtes(), 
                reinterpret_cast<size_t>(entry->addr))
           << "kv_cache_block for a layer must be continuous";
     }
@@ -256,8 +284,8 @@ void KVCachePool::PostInit() {
     auto num_k_cache_pages = layer_kvc_pages.size() / 2;
 
     for (auto & [addr, entry] : layer_kvc_pages) {
-      auto page_idx = 
-          (reinterpret_cast<size_t>(addr) - layer_kvc_space_base_addr) / 32_MB;
+      auto page_idx = (reinterpret_cast<size_t>(addr) 
+          - layer_kvc_space_base_addr) / KVCPageNybtes();
       if (page_idx < num_k_cache_pages) {
         CHECK(page_idx < kvc_block_grps.size());
         auto & kvc_blk_grp = kvc_block_grps[page_idx];
@@ -312,7 +340,8 @@ uint64_t KVCachePool::GetNumFreeBlocks() {
   } else {
     static uint64_t num_blk_used_by_train_base = 0;
     if (num_blk_used_by_train_base == 0) {
-      auto num_used_pages = Config::train_base_usage_nbytes / 32_MB;
+      auto num_used_pages = 
+          Config::train_base_usage_nbytes / KVCPageNybtes();
       auto num_page_per_blk_grp = kv_cache_pool_->num_layer_ * 2;
       auto num_used_blk_grp = (
           num_used_pages + num_page_per_blk_grp - 1) / num_page_per_blk_grp;
@@ -448,6 +477,7 @@ bool KVCachePool::ReclaimKVCacheBlkGrpByBlkIdx(
   }
 
   // unmap pages
+  PROFILE_START(LLMKVCacheUnMap);
   for (auto l : boost::irange(num_layer_)) {
     auto kvc_page = {
       kvc_block_grps_[blk_grp_idx].layer_kvc_page_base_addr[l].first,
@@ -460,6 +490,7 @@ bool KVCachePool::ReclaimKVCacheBlkGrpByBlkIdx(
           ->Unmap(it->second);
     }
   }
+  PROFILE_END(LLMKVCacheUnMap);
 
   // LOG(INFO) << "set " << pg_grp_idx << " " 
   //           << free_blk_indices_.size() << " " 
@@ -508,6 +539,7 @@ bool KVCachePool::AllocKVCacheBlkGrp(
         << "KVCacheBlkGroup " << blk_grp_idx << " is already allocted";
 
     // mapping pages
+    PROFILE_START(LLMKVCacheMap);
     for (auto l : boost::irange(num_layer_)) {
       auto kvc_page = {
         kvc_block_grps_[blk_grp_idx].layer_kvc_page_base_addr[l].first,
@@ -520,6 +552,7 @@ bool KVCachePool::AllocKVCacheBlkGrp(
             ->Map(it->second);
       }
     }
+    PROFILE_END(LLMKVCacheMap);
 
     // maintain the free block indices
     auto & block_indices = kvc_block_grps_[blk_grp_idx].block_indices;
@@ -581,13 +614,14 @@ uint64_t KVCachePool::MaybeAdjustTrain(uint64_t num_required_pages,
                                    std::unique_lock<std::mutex> &kvc_pool_lock) {
   auto device_id = sta::DeviceManager::GetCurrentDevice();
   auto mpool = sta::CUDAMemPool::Get(device_id);
-  const auto page_size = 32_MB;
-  uint64_t num_free_pages = mpool->NumFreePages();
+  // const auto page_size = 32_MB;
+  // const auto page_size = sta::CUDAMemPool::PageNbytes();
+  uint64_t num_free_pages = mpool->NumFreePages() / PhyPageFactor();
   if (num_free_pages > num_required_pages) {
     return num_free_pages;
   }
   memory_mb_t require_mb = sta::ByteToMB(
-    num_required_pages * page_size
+    num_required_pages * KVCPageNybtes()
     + Config::train_over_adjust_nbytes
   );
   LOG_IF(INFO, Config::log_memory_adjust)
@@ -611,10 +645,10 @@ uint64_t KVCachePool::MaybeAdjustTrain(uint64_t num_required_pages,
     LOG_IF(INFO, Config::log_memory_adjust) 
         << "[KVCachePool, Memory Adjust] "
         << "AllocStorageMaybeAdjust: wait adjust" 
-        << " num_free_pages " << mpool->NumFreePages()
+        << " num_free_pages(mpool) " << mpool->NumFreePages()
         << " " << PROFILE_DURATRION(TrainAdjust) << "ms";
   }
-  uint64_t num_free_pages_after = mpool->NumFreePages();
+  uint64_t num_free_pages_after = mpool->NumFreePages() / PhyPageFactor();
   CHECK_GE(num_free_pages_after, min_num_required_pages);
   return num_free_pages_after;
 }

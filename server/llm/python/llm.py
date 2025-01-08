@@ -14,6 +14,9 @@ class LLMInference:
         self.model_name = model_name
         self.max_model_len = max_model_len
         self.max_seq_len = max_seq_len
+        self.stream = torch.cuda.Stream()
+        llm_server.info(f'LLMInfer: Stream {self.stream.cuda_stream}')
+        torch.cuda.set_stream(self.stream)
         self._process_args()
 
         # print("Model Name: ", model_name)
@@ -46,7 +49,9 @@ class LLMInference:
             f' | max_seq_len {self.max_seq_len}')
 
     def serving_loop(self):
-        llm_server.info_with_frame("LLM Engine Serving Start ...")
+        torch.cuda.set_stream(self.stream)
+        llm_server.info_with_frame(
+            f"LLM Engine Serving Start, current stream {torch.cuda.current_stream().cuda_stream}")
         while llm_server.is_running() or self.llm_engine.has_unfinished_requests():
             if not self.llm_engine.has_unfinished_requests():
                 llm_reqs = llm_server.get_llm_requests(1, 10, True)
@@ -88,6 +93,9 @@ class LLMInference:
                     max_tokens=req.max_tokens,
                 )
             )
+
+    def get_exec_stream(self):
+        return self.stream.cuda_stream
 
     def enqueue_infer(self,
                       prompt: str):

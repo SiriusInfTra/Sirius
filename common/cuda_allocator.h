@@ -79,7 +79,11 @@ class CUDAMemPool {
   static std::shared_ptr<PoolEntry> 
       HostAlloc(size_t nbytes, MemType mtype);
   constexpr static memory_byte_t PageNbytes() {
+#if 0
     return 32_MB;
+#else
+    return 8_MB;
+#endif
   }
 
   CUDAMemPool(int device_id, std::size_t nbytes, 

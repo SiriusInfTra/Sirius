@@ -61,7 +61,7 @@ CUDAMemPool::CUDAMemPool(int device_id, std::size_t nbytes,
   std::string prefix = GetDefaultShmNamePrefix(device_id);
   mpool::PagesPoolConf pages_pool_config{
       .device_id = device_id,
-      .page_nbytes = 32_MB,
+      .page_nbytes = CUDAMemPool::PageNbytes(),
       .pool_nbytes = nbytes,
       .shm_name = prefix + "_pages_pool",
       .log_prefix = "[PagesPool] ",
@@ -81,7 +81,7 @@ CUDAMemPool::CUDAMemPool(int device_id, std::size_t nbytes,
       .shm_nbytes = 64_MB,
       .va_range_scale = 1 ,
       .belong_name = "TVM",
-      .small_block_nbytes = 32_MB,
+      .small_block_nbytes = CUDAMemPool::PageNbytes(),
       .align_nbytes = 512};
   if (cleanup) {
     mpool::PagesPool::RemoveShm(pages_pool_config);

@@ -73,6 +73,13 @@ class KVCachePool {
   static std::unique_ptr<KVCachePool> kv_cache_pool_;
   static uint64_t cls_kv_cache_block_nbytes_;
 
+  constexpr static uint64_t PhyPageFactor() {
+    return 5;
+  }
+  constexpr static uint64_t KVCPageNybtes() {
+    return sta::CUDAMemPool::PageNbytes() * PhyPageFactor();
+  }
+
   // a group of kv-cache blocks (cross all layers), 
   // in each layer, the kv-cache blocks consist of a page of 32MB
 

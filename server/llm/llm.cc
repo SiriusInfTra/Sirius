@@ -4,12 +4,13 @@
 #include <server/llm/llm_util.h>
 // #include <server/llm/llm_torch_allocator_plugin.h>
 #include <server/llm/kv_cache_pool.h>
-#include <boost/json.hpp>
+#include <common/sm_partition.h>
 
+#include <boost/json.hpp>
 #include <boost/format.hpp>
 #include <boost/range/irange.hpp>
-#include <filesystem>
 
+#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -33,6 +34,10 @@ BOOST_PYTHON_MODULE(llm_server)
   bp::def("get_kv_cache_pool_stat", &KVCachePool::GetKVCachePoolStat);
   bp::def("use_kv_cache_pool", +[]() ->bool { return Config::UseSharedTensor(); });
   bp::def("init_kv_cache", &KVCachePool::InitKVCache);
+  bp::def("set_num_required_tpc", +[](int tpc_num) {
+      SMPartitioner::Get(sta::DeviceManager::GetCurrentDevice())
+        ->SetInferRequiredTpcNum(tpc_num);
+  });
   bp::def("info", &CallGLOG_INFO);
   bp::def("info_with_frame", &CallGLOG_INFO_WITH_FRAME);
   bp::def("dinfo", &CallGLOG_DINFO);
@@ -260,15 +265,6 @@ void LLMServer::PyInit() {
       "import sys\nprint(sys.path)\n")
     ).str().c_str());
 
-    // bp::import("torch");
-    // if (Config::use_shared_tensor_infer) {
-    //   torch::cuda::CUDAColAllocator::CUDAColAllocator::Init();
-    //   torch::cuda::CUDAColAllocator::CUDAColAllocator::Get()
-    //       ->init(sta::DeviceManager::GetNumVisibleGpu());
-    //   torch::cuda::CUDAColAllocator::CUDAColAllocator::Get()
-    //       ->SetCurrentAllocator();
-    //   LOG(INFO) << "[LLM Server] torch cuda allocator initialized";
-    // }
     py_module_ = bp::import("llm");
   
   } catch (const bp::error_already_set&) {
