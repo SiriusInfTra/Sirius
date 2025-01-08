@@ -831,7 +831,9 @@ class BurstGPTInferWorkload(RandomInferWorkload):
         if self.timeline is not None:
             avg_rps = len(self.timeline) / self.duration
             max_rps = np.max(np.histogram(self.timeline, bins=int(self.duration))[0])
-            print(f'BurstGPT trace: avg_rps {avg_rps:.3f} max_rps {max_rps:.3f}',
+            print(f'BurstGPT trace: \n'
+                  f'\ttime_scale {self.time_line_scale_factor} start_point {self.start_point}\n'
+                  f'\tavg_rps {avg_rps:.3f} max_rps {max_rps:.3f}',
                   file=text_io)
 
     def read_trace_cfg(self, trace_cfg: str,

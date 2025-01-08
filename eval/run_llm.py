@@ -17,6 +17,8 @@ parser.add_argument('--static-partition-f', action='store_true', help='Run stati
 parser.add_argument('--infer-only', action='store_true')
 parser.add_argument('--uniform-v2', action='store_true', help='Run uniform-v2')
 parser.add_argument('--burstgpt', action='store_true', help='Run burstgpt')
+parser.add_argument('--burstgpt-rps', type=int, help='BurstGPT RPS', required=False)
+parser.add_argument('--train-mps-pct', type=int, help='Train MPS Pct', required=False)
 
 args = parser.parse_args()
 
@@ -66,9 +68,12 @@ if args.burstgpt:
 if args.uniform_v2:
     enable_uniform_v2 = True
 
+if args.burstgpt_rps:
+    run_comm.BurstGPTConfig.max_rps = args.burstgpt_rps
+
 # LLM Workload
-llm_model = InferModel.Llama2_7B_HF
-# llm_model = InferModel.Llama2_13B_HF
+# llm_model = InferModel.Llama2_7B_HF
+llm_model = InferModel.Llama2_13B_HF
 
 # llm_max_model_len = 16000
 llm_max_model_len = InferModel.get_llm_max_model_length(llm_model)
@@ -77,7 +82,10 @@ llm_max_model_len = InferModel.get_llm_max_model_length(llm_model)
 run_comm.BurstGPTConfig.model_list = [llm_model]
 port = run_comm.get_unique_port()
 
-
+train_mps_pct = None
+if args.train_mps_pct:
+    train_mps_pct = args.train_mps_pct
+    print('Train MPS Pct:', train_mps_pct)
 print(run_colsys)
 
 
@@ -96,6 +104,8 @@ def get_cuda_memory_pool_gb_sp_f():
         return '30'
     elif llm_model == InferModel.Llama2_7B_HF:
         return '32'
+    elif llm_model == InferModel.Llama2_13B_HF:
+        return '25'
     else:
         raise ValueError(f"Unknown model: {llm_model}")
     
@@ -104,6 +114,8 @@ def get_cuda_memory_pool_gb_sp_i():
         return '44'
     elif llm_model == InferModel.Llama2_7B_HF:
         return '46'
+    elif llm_model == InferModel.Llama2_13B_HF:
+        return '37.5'
     else:
         raise ValueError(f"Unknown model: {llm_model}")
 
@@ -122,7 +134,7 @@ if run_colsys:
         # 'cuda_memory_pool_gb': '58', # LLama3-8B
         # 'cuda_memory_pool_gb': '62', # LLama2-7B
         'cuda_memory_pool_gb': get_cuda_memory_pool_gb(),
-        'train_memory_over_predict_mb': 2000,
+        'train_memory_over_predict_mb': 1500,
         # 'infer_model_max_idle_ms': 5000,
         # 'cold_cache_ratio': 0.5,
         'dynamic_sm_partition': False,
@@ -132,12 +144,13 @@ if run_colsys:
         'llm_show_gen_result': False,
     }
     if enable_burstgpt:
-        workload = run_comm.burstgpt(infer_only=False)
-        system = System(port=port, **system_config)
-        run_comm.run(system, workload, None, 
-                    f"burstgpt-{runner.get_num_gpu()}gpu", 
-                    f"colsys")
-        # ...additional colsys logic...
+        with mps_thread_percent(None):
+            workload = run_comm.burstgpt(infer_only=False)
+            system = System(port=port, train_mps_thread_percent=train_mps_pct,
+                            **system_config)
+            run_comm.run(system, workload, None, 
+                        f"burstgpt-{runner.get_num_gpu()}gpu", 
+                        f"colsys")
     
     if enable_uniform_v2:
         for wkld_type in uniform_v2_wkld_types:
@@ -148,6 +161,7 @@ if run_colsys:
             run_comm.run(system, workload, None,
                          f'{wkld_type}-{runner.get_num_gpu()}gpu', 
                          f'colsys')
+
 
 # MARK: task switch
 if run_task_switch:
@@ -172,36 +186,38 @@ for tag, item in {
         'mode': System.ServerMode.Normal,
         'use_sta': False, # not using kv-cache pool
         'mps': True,
-        'skip_set_mps_thread_percent': True,
+        'skip_set_mps_thread_percent': False,
         'use_xsched': True,
         'has_warmup': True,
         'dynamic_sm_partition': False,
-        # 'cuda_memory_pool_gb': '44', # Llama3-8B
-        # 'cuda_memory_pool_gb': '46', # Llama2-7B
         'cuda_memory_pool_gb': get_cuda_memory_pool_gb_sp_i(),
         'use_sta_train': False,
         'serving_llm': True,
         'llm_model_name': llm_model,
         'llm_max_model_len': llm_max_model_len,
         'llm_show_gen_result': False,
-    }, {'train_batch_size': 100}),
+    }, {
+        # 'train_batch_size': 100
+        'train_batch_size': 75
+    }),
     'F': ({
         'mode': System.ServerMode.Normal,
         'use_sta': False, # not using kv-cache pool
         'mps': True,
-        'skip_set_mps_thread_percent': True,
+        'skip_set_mps_thread_percent': False,
         'use_xsched': True,
         'has_warmup': True,
         'dynamic_sm_partition': False,
-        # 'cuda_memory_pool_gb': '30', # Llama3-8B
-        # 'cuda_memory_pool_gb': '32', # Llama2-7B
         'cuda_memory_pool_gb': get_cuda_memory_pool_gb_sp_f(),
         'use_sta_train': False,
         'serving_llm': True,
         'llm_model_name': llm_model,
         'llm_max_model_len': llm_max_model_len,
         'llm_show_gen_result': False,
-    }, {'train_batch_size': 180}),
+    }, {
+        # 'train_batch_size': 180
+        'train_batch_size': 165
+    }),
 }.items():
     if not run_static_partition:
         break
@@ -212,43 +228,35 @@ for tag, item in {
 
     system_config, workload_config = item
     if enable_burstgpt:
-        workload = run_comm.burstgpt(
-            infer_only=False,
-            train_batch_size=workload_config['train_batch_size'])
-        system = System(port=port, **system_config)
-        run_comm.run(system, workload, workload_config,
-                    f"burstgpt-{runner.get_num_gpu()}gpu", 
-                    f"static-partition-{tag}")
+        with mps_thread_percent(None):
+            workload = run_comm.burstgpt(
+                infer_only=False,
+                train_batch_size=workload_config['train_batch_size'])
+            system = System(port=port, train_mps_thread_percent=train_mps_pct,
+                            **system_config)
+            run_comm.run(system, workload, workload_config,
+                        f"burstgpt-{runner.get_num_gpu()}gpu", 
+                        f"static-partition-{tag}")
 
     if enable_uniform_v2:
         for wkld_type in uniform_v2_wkld_types:
-            client_model_list, _ = InferModel.get_multi_model([llm_model], 1, 1)
-            workload = run_comm.uniform_v2(
-                wkld_type, client_model_list, infer_only=False,
-                train_batch_size=workload_config['train_batch_size']
-            )
-            system = System(port=port, **system_config)
-            run_comm.run(system, workload, workload_config,
-                        f'{wkld_type}-{runner.get_num_gpu()}gpu', 
-                        f'static-partition-{tag}')
+            with mps_thread_percent(None):
+                client_model_list, _ = InferModel.get_multi_model([llm_model], 1, 1)
+                workload = run_comm.uniform_v2(
+                    wkld_type, client_model_list, infer_only=False,
+                    train_batch_size=workload_config['train_batch_size']
+                )
+                system = System(port=port, train_mps_thread_percent=train_mps_pct,
+                                **system_config)
+                run_comm.run(system, workload, workload_config,
+                            f'{wkld_type}-{runner.get_num_gpu()}gpu', 
+                            f'static-partition-{tag}')
 
-    # system_config = {
-    #     'mode': System.ServerMode.Normal,
-    #     'use_sta': False, # not using kv-cache pool
-    #     'mps': True,
-    #     'skip_set_mps_thread_percent': False,
-    #     'use_xsched': False,
-    #     'has_warmup': True,
-    #     'max_warm_cache_nbytes': int(9 * 1024 ** 3),
-    #     'cuda_memory_pool_gb': '10.5',
-    #     'use_sta_train': False
-    # }
-    # system = System(port=port, **system_config)
-    # ...additional static-partition logic...
 
 # MARK: Task Switch
 if run_task_switch:
     pass
+
 
 # MARK: UM MPS
 if run_um_mps:
@@ -266,11 +274,16 @@ if run_um_mps:
         'use_triton': True,
         'dynamic_sm_partition': False,
     }
-    with mps_thread_percent(None):
-        system = System(port=port, **system_config)
+    if enable_burstgpt:
+        with um_mps(None):
+            workload = run_comm.burstgpt(infer_only=False)
+            system = System(port=port, 
+                            train_mps_thread_percent=train_mps_pct,
+                            **system_config)
+            run_comm.run(system, workload, None,
+                        f"burstgpt-{runner.get_num_gpu()}gpu", 
+                        f"um-mps")
 
-
-    # ...additional UM+MPS logic...
 
 # MARK: infer only
 if run_infer_only:

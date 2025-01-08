@@ -146,16 +146,20 @@ class SkewedConfig_v2:
 
 class BurstGPTConfig:
     train_model = 'swin_b'
-    train_batch_size = 400
+    train_batch_size = 350
     train_global_batch_size = 500
     train_dataset_size = 1000
     train_epoch_time = 3
 
     model_list = [InferModel.Llama3_8B_Inst]
 
-    time_scale = 1000
+    # time_scale = 1000
+    # max_rps = 10
+    # start_point = 1000 + 200
+
+    time_scale = 100
     max_rps = 10
-    start_point = 1000 + 200
+    start_point = 5500
 
     duration = 300
     port = str(get_unique_port())
