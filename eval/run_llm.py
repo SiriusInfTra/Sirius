@@ -134,7 +134,7 @@ if run_colsys:
         # 'cuda_memory_pool_gb': '58', # LLama3-8B
         # 'cuda_memory_pool_gb': '62', # LLama2-7B
         'cuda_memory_pool_gb': get_cuda_memory_pool_gb(),
-        'train_memory_over_predict_mb': 1500,
+        'train_memory_over_predict_mb': 5000,
         # 'infer_model_max_idle_ms': 5000,
         # 'cold_cache_ratio': 0.5,
         'dynamic_sm_partition': False,

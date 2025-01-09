@@ -73,7 +73,8 @@ CUDAMemPool::CUDAMemPool(int device_id, std::size_t nbytes,
       .shm_nbytes = 64_MB,
       .va_range_scale = 8,
       .belong_name = "Torch",
-      .small_block_nbytes = 2_MB,
+      .small_block_nbytes = CUDAMemPool::PageNbytes() / 16
+      ,
       .align_nbytes = 1024};
   mpool::VMMAllocatorConfig tvm_allocator_config{
       .log_prefix = "[TVMAllocator] ",

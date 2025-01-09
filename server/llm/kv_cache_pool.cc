@@ -113,7 +113,7 @@ int KVCachePool::GetNumGpuKVCacheBlocks() {
   return ret;
 }
 
-PyObject* KVCachePool::InitKVCache(
+PyObject* KVCachePool:: b  InitKVCache(
     int layer, const bp::list &shape_, std::string dtype, int64_t itemsize) {
   std::vector<int64_t> shape;
   for (auto i : boost::irange(bp::len(shape_))) {
@@ -217,6 +217,8 @@ PyObject* KVCachePool::InitKVCache(
       tensor_opt = tensor_opt.dtype(at::kFloat);
     } else if (dtype == "torch.float16") {
       tensor_opt = tensor_opt.dtype(at::kHalf);
+    } else if (dtype == "torch.bfloat16") {
+      tensor_opt = tensor_opt.dtype(at::kBFloat16);
     } else {
       LOG(FATAL) << "unsupported dtype " << dtype;
     }

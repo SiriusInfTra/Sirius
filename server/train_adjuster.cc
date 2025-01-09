@@ -354,7 +354,7 @@ TrainAdjuster::GetLLMInferReleaseMemAdjustPlan(
     auto num_free_page_nbytes = (
       sta::CUDAMemPool::Get(device_id)->NumFreePages()
       * sta::CUDAMemPool::PageNbytes()
-    ) - Config::train_memory_over_predict_mb;
+    ) - Config::train_memory_over_predict_mb * 1_MB;
     free_mem_mbs.push_back(sta::ByteToMB(num_free_page_nbytes));
     train_avail_mem_mbs.push_back(sta::ByteToMB(
         num_free_page_nbytes 
@@ -680,6 +680,18 @@ std::pair<double, double> TrainAdjuster::GetModelMemParam(
         AFTER EMPTY CACHE: 2.4 ~ 2.9 
        */
       return {2700, 490}; 
+    } else if (model_name == "qwen") {
+      /*
+        1 8.48
+        2 8.81
+        4 9.45
+        8 11.18
+        16 15.79
+        32 24.99
+        64 43.55
+        96 62.24
+      */
+      return {9000, 600};
     } else if (model_name == "bert_large") {
       LOG(FATAL) << "Unsupported model: " << model_name;
     } else {

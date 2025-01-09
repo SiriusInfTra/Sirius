@@ -145,8 +145,8 @@ class SkewedConfig_v2:
 
 
 class BurstGPTConfig:
-    train_model = 'swin_b'
-    train_batch_size = 350
+    train_model = 'qwen'
+    train_batch_size = 64
     train_global_batch_size = 500
     train_dataset_size = 1000
     train_epoch_time = 3

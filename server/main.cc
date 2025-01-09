@@ -451,7 +451,7 @@ int main(int argc, char *argv[]) {
         static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
         true, false, free_list_policy, true);
       colserve::sta::CUDAMemPool::Get(device_id)->RegisterOOMHandler([]() {
-        LOG(INFO) << "[CUDAMemPool OOM] train predict memory" 
+        LOG(INFO) << "[CUDAMemPool INFER OOM] train predict memory" 
                   << boost::accumulate(
                       boost::irange(colserve::sta::DeviceManager::GetNumVisibleGpu()), 
                       std::string{""}, [](std::string acc, int device_id) {
@@ -460,6 +460,16 @@ int main(int argc, char *argv[]) {
                       }) 
                   << ".";
         }, colserve::sta::MemType::kInfer);
+        colserve::sta::CUDAMemPool::Get(device_id)->RegisterOOMHandler([]() {
+        LOG(INFO) << "[CUDAMemPool TRAIN OOM] train predict memory" 
+                  << boost::accumulate(
+                      boost::irange(colserve::sta::DeviceManager::GetNumVisibleGpu()), 
+                      std::string{""}, [](std::string acc, int device_id) {
+                        return acc + " " + std::to_string(
+                            colserve::TrainAdjuster::PredictTrainMemUsageMB(device_id, true));
+                      }) 
+                  << ".";
+        }, colserve::sta::MemType::kTrain);
     }
   } else {
     for (int device_id = 0; 

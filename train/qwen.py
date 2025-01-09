@@ -1,11 +1,10 @@
 import torch
 from torch import nn
-from torchvision import models
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 import argparse
 import os, sys
 
 import torch_col
-
 from torch_col import MemoryPool, EventManager
 from torch_col import dynamic_batch
 from typing import Optional
@@ -13,56 +12,55 @@ from typing import Optional
 
 def setup():
     import time
-
     torch_col.info(f'[Train PID {os.getpid()}] setup')
     torch_col.setup_colocate_training(0, 1, False, False)
-    
-    time.sleep(5)
+
 
 def cleanup():
     torch_col.cleanup_colocate_training(False)
 
 
-def train(num_epoch: int, batch_size: int, 
+def train(num_epoch: int, batch_size: int,
           global_batch_size: Optional[int] = None):
     setup()
-    torch_col.init_train_info(batch_size, batch_size, 
-                              model_name='swin_b')
-
+    torch_col.init_train_info(batch_size, batch_size,
+                              model_name='qwen')
+    
     train_mode = torch_col.get_colocate_train_mode()
     hook_mode = torch_col.get_colocate_ctrl_hook_mode()
 
     if torch_col.is_enable_shared_tensor():
         torch_col.tag_model_start()
 
-    model = models.swin_b(weights=models.Swin_B_Weights.DEFAULT).cuda()
-
+    # TODO: flash attention
+    config = AutoConfig.from_pretrained('Qwen/Qwen2-0.5B')
+    # config._attn_implementation = 'sdpa'
+    model: nn.Module = AutoModelForCausalLM.from_pretrained('Qwen/Qwen2-0.5B', config=config)
+    model = model.cuda()
     print(f"Train params memory usage: {torch_col.MemoryPool.get_memory_usage() * 1024:.2f}M")
 
-    criterion = nn.CrossEntropyLoss().cuda(0)
-    optimizer = torch.optim.SGD(model.parameters(), 0.001, 
+    optimizer = torch.optim.SGD(model.parameters(), 0.001,
                                 momentum=0.9, weight_decay=1e-4)
     scaler = torch.cuda.amp.GradScaler()
 
     print(f"Train after init memory pool usage: {MemoryPool.get_memory_usage() * 1024:.2f}M")
     
     col_ctrl = torch_col.create_colocate_ctrl(train_mode, hook_mode, num_epoch, batch_size)
-    col_ctrl.register_pytorch_hook([model, criterion])
-    checkpoint_micro_batch = col_ctrl.train_mode.is_kill_batch()
+    col_ctrl.register_pytorch_hook([model])
 
-    enable_grad_accumulator = (global_batch_size is not None 
-                               or col_ctrl.train_mode.is_colocate())
     checkpoint_micro_batch = col_ctrl.train_mode.is_kill_batch()
+    enable_grad_accumulator = (global_batch_size is not None
+                                or col_ctrl.train_mode.is_colocate())
+    
     train_dataset, batch_manager = torch_col.init_dynamic_batch(
-        dataset_size=4000,
-        dataset_type=dynamic_batch.DatasetType.VISION,
-        dataset_config=dynamic_batch.VisionDatasetConfig((3, 224, 224), 10),
+        dataset_size=1000,
+        dataset_type=dynamic_batch.DatasetType.TEXT_GEN,
+        dataset_config=dynamic_batch.TextDatasetConfig(128),
         batch_size=batch_size,
         global_batch_size=global_batch_size,
         enable_grad_accumulate=enable_grad_accumulator,
         checkpoint_micro_batch=checkpoint_micro_batch,
         lazy_batch_distributing=False,
-        fake_data=True,
         batch_distribute_policy=dynamic_batch.BatchDistributePolicy.BY_PERFORMANCE
     )
 
@@ -75,25 +73,24 @@ def train(num_epoch: int, batch_size: int,
     else:
         grad_accumulator = None
 
-    print('swin after initialize, allocated {} cached {}'.format(
+    print('qwen-0.5B after initialize, allocated {} cached {}'.format(
         torch_col.MemoryPool.get_allocated_memory(), 
         torch_col.MemoryPool.get_memory_usage()),
         flush=True, file=sys.stderr)
 
     def iter_train_fn(batch: dynamic_batch.Batch):
-        images = batch['images']
-        targets = batch['labels']
-        with torch.cuda.amp.autocast(cache_enabled=False):
-            output = model(images)
-            loss = criterion(output, targets)
-            running_loss = loss.item() * images.size(0)
+        input_ids = batch['input_ids']
+        with torch.cuda.amp.autocast(cache_enabled=False, dtype=torch.bfloat16):
+            output = model(**batch)
+            loss = output.loss
+            running_loss = loss.item() * len(input_ids)
             batch_manager.scale_loss(batch, loss)
         scaler.scale(loss).backward()
-        batch_manager.optimizer_step(batch, optimizer,
-                                     amp_scaler=scaler,
+        batch_manager.optimizer_step(batch, optimizer, 
+                                     amp_scaler=scaler, 
                                      grad_accumulator=grad_accumulator)
         return running_loss
-
+    
     trainer = torch_col.Trainer(model, iter_train_fn)
 
     for epoch in range(num_epoch):
@@ -137,10 +134,12 @@ def train(num_epoch: int, batch_size: int,
     EventManager.dump(None, train_mode)
     cleanup()
 
+
+
 def main():
     parser = argparse.ArgumentParser('Train Resnet')    
     parser.add_argument('--batch-size', type=int, default=64)
-    parser.add_argument('--global-batch-size', type=int, default=2000)
+    parser.add_argument('--global-batch-size', type=int, default=500)
     parser.add_argument('--num-epoch', type=int, default=15)
     args = parser.parse_args()
     
@@ -148,7 +147,7 @@ def main():
     global_batch_size = args.global_batch_size
     num_epoch = args.num_epoch
 
-    print(f"Swin Transformer training, batch-size={batch_size}, "
+    print(f"Qwen/Qwen2-0.5B training, batch-size={batch_size}, "
           f"num-epoch={num_epoch}")
 
     train(num_epoch, batch_size, 

@@ -6,7 +6,7 @@ from datasets import load_dataset, Dataset
 from transformers import BertTokenizer, BertForPreTraining, BertConfig, BertForTokenClassification
 from transformers import DataCollatorForLanguageModeling
 from transformers import AutoModelForSequenceClassification
-from transformers import GPT2LMHeadModel, OPTForCausalLM
+from transformers import GPT2LMHeadModel, OPTForCausalLM, AutoModelForCausalLM
 from torch.autograd.profiler import record_function
 
 import numpy as np
@@ -71,7 +71,8 @@ def allocated_memory(device_id):
     return torch.cuda.memory_reserved(device_id) / 1024 / 1024 / 1024
 
 def train(prof=None):
-    seq_len = 256
+    # seq_len = 256
+    seq_len = 128
     dataset_size = 128 * 10
     dummy_data = {
         "input_ids": np.random.randint(100, 30000, (dataset_size, seq_len)),
@@ -82,18 +83,19 @@ def train(prof=None):
     dataset.set_format("pt")
     
     # batch_size = 128
-    # batch_size = 64
+    batch_size = 64
     # batch_size = 32
     # batch_size = 16
-    batch_size = 24
+    # batch_size = 24
     # batch_size = 2
     # dataloader = DataLoader(dataset, shuffle=False, batch_size=batch_size)
 
-    model = GPT2LMHeadModel.from_pretrained('gpt2')
+    # model = GPT2LMHeadModel.from_pretrained('gpt2')
     # model = OPTForCausalLM.from_pretrained("facebook/opt-350m")
 
     # model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=5)
     # model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=5)
+    model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2-0.5B")
     model = model.cuda(0)
     for param in model.parameters():
         IntermMemoryStat.model_param_add(param)
@@ -104,9 +106,9 @@ def train(prof=None):
     # torch.cuda.memory._record_memory_history(enabled=True)
 
     # eval_batch_size = [128, 64, 32, 16, 8, 4]
-    # eval_batch_size = [64, 32, 16, 8, 4]
+    eval_batch_size = [64, 48, 32, 16, 8]
     # eval_batch_size = [32, 16, 8, 4]
-    eval_batch_size = [24, 12, 6, 3]
+    # eval_batch_size = [36, 24, 12, 6, 3]
     # eval_batch_size = [16, 8, 4, 2, 1]
     # eval_batch_size = [batch_size, ]
     epoch_micro_batch_size = [batch_size, ] # warmup
