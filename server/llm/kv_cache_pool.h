@@ -34,20 +34,15 @@ class KVCachePool {
   );
   static int GetNumGpuKVCacheBlocks();
   static PyObject* InitKVCache(
-      int layer,
+      int n_layers,
       const bp::list &shape,
       std::string dtype,
       int64_t item_size);
-  static void PostInit();
-
-  static void SetupFreeKVCacheBlockIndices(bp::list num_blocks);
-  static uint64_t GetNumFreeBlocks();
-  static void EnsureKVCacheBlock(uint64_t blk_idx);
-  static void FreeKVCacheBlock(uint64_t blk_idx);
-  static uint64_t AllocKVCacheBlock();
+  static size_t GetNumFreeBlocks();
+  static void FreeKVCacheBlock(const bp::list &blk_indices);
+  static bp::list AllocKVCacheBlock(size_t n);
   static double GetKVCacheMemPageUtil();
   static KVCachePoolStat GetKVCachePoolStat();
-  static void ReclaimAllKVCacache(bool require_to_be_empty);
 
 
   // static void ReclaimKVCacheBlocks(
@@ -100,24 +95,12 @@ class KVCachePool {
   void ReclaimMemToTrain(std::unique_lock<std::mutex> &kvc_pool_lock);
 
   std::mutex mut_;
+  std::unordered_map<uint64_t, std::shared_ptr<sta::CUDAMemPool::PoolEntry>> kv_cache_blocks_;
   int64_t block_size_{0}, num_layer_{0}, 
           num_heads_{0}, head_size_{0};
   memory_byte_t cache_block_nbytes_{0};
   uint64_t kvc_blk_grp_size_{0};
   uint64_t num_kvc_blk_grp_per_layer_{0};
-
-  // layout [k-cache-blocks, .... | v-cache-blocks, ...]
-  std::array<
-    std::map<
-      uint64_t, 
-      std::shared_ptr<sta::CUDAMemPool::PoolEntry>
-  >, 128> kvc_blk_pages_;
-  
-  std::array<uint64_t, 128> kvc_space_base_addrs_{0};
-  std::vector<KVCacheBlockGroup> kvc_block_grps_;
-
-  std::set<uint64_t> free_blk_indices_,
-                     free_blk_indices_not_allocted_;
 
   struct KVCachePoolStatInternal {
     // a blk_grp is used when any block in it is used

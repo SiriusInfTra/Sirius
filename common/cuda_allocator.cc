@@ -73,8 +73,7 @@ CUDAMemPool::CUDAMemPool(int device_id, std::size_t nbytes,
       .shm_nbytes = 64_MB,
       .va_range_scale = 8,
       .belong_name = "Torch",
-      .small_block_nbytes = CUDAMemPool::PageNbytes() / 16
-      ,
+      .small_block_nbytes = CUDAMemPool::PageNbytes() / 16,
       .align_nbytes = 1024};
   mpool::VMMAllocatorConfig tvm_allocator_config{
       .log_prefix = "[TVMAllocator] ",
@@ -114,7 +113,7 @@ std::shared_ptr<CUDAMemPool::PoolEntry>
 CUDAMemPool::AllocWithStream(std::size_t nbytes, MemType mtype, 
                              cudaStream_t stream, bool allow_nullptr) {
   CHECK(CUDAMemPool::IsEnable());
-  CHECK(!allow_nullptr) << "currently deprecated";
+  CHECK(mtype == MemType::kInfer || !allow_nullptr) << "currently deprecated";
   if (nbytes == 0) {
     return std::shared_ptr<CUDAMemPool::PoolEntry>{
         new PoolEntry{.addr = nullptr, .nbytes = nbytes, .mtype = mtype}};
@@ -125,7 +124,10 @@ CUDAMemPool::AllocWithStream(std::size_t nbytes, MemType mtype,
   std::byte* ptr;
   if (mtype == MemType::kInfer) {
     mem_block = tvm_allocator_->GetObject()->Alloc(
-        nbytes, 512, stream, 0);
+        nbytes, 512, stream, allow_nullptr ? mpool::MPOOL_ALLOW_NULLPTR : 0);
+    if (allow_nullptr && !mem_block) {
+      return nullptr;
+    }
     ptr = tvm_allocator_->GetObject()->GetBasePtr() 
           + mem_block->addr_offset;
   } else if (mtype == MemType::kTrain) {
@@ -321,5 +323,14 @@ void CUDAMemPool::ResetTrainAllocMs() {
   LOG(FATAL) << "deprecated";
 }
 
-}  // namespace sta
+void *CUDAMemPool::GetBasePtr(MemType mtype) {
+  if (mtype == MemType::kInfer) {
+    return tvm_allocator_->GetObject()->GetBasePtr();
+  } else if (mtype == MemType::kTrain) {
+    return torch_allocator_->GetObject()->GetBasePtr();
+  } else {
+    LOG(FATAL) << "Unknown mtype: " << static_cast<size_t>(mtype);
+  }
+}
+} // namespace sta
 }  // namespace colserve

@@ -34,6 +34,7 @@ class LLMInference:
             gpu_memory_utilization=0.95,
         )
         self.llm_engine = LLMEngine.from_engine_args(engine_args)
+
         del os.environ['https_proxy']
 
     def _process_args(self):

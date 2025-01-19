@@ -851,6 +851,7 @@ void Workload::InferOverallReport(std::ostream &os) {
       timeline_handle_ << record.model_name_ << "," << record.start_time_stamp_ 
                        << ","  << record.end_time_stamp_ << "\n";
     }
+    timeline_handle_.flush();
   }
   { // llm
     for (const auto & record : all_records) {

@@ -63,7 +63,7 @@ class SMPartitioner {
 #if 0 // v100
   int max_train_tpc_num_ = 40;
 #else // a100
-  int max_train_tpc_num_ = 56;
+  int max_train_tpc_num_ = 54;
 #endif
 
   // assume one thread per stream, so no need for lock  

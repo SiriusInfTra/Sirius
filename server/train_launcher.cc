@@ -7,6 +7,9 @@
 #include <server/profiler.h>
 #include <server/config.h>
 
+#include <common/inf_tra_comm/communicator.h>
+#include <common/inf_tra_comm/shared_info.h>
+
 #include <string>
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/c_runtime_api.h>
@@ -353,7 +356,13 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job,
       LOG(FATAL) << "[TrainLauncher]: " << job 
                  << " failed, signal is " << strsignal(signal) 
                  << " target_batch_size " << target_batch_size_ 
+                 << " (COMMUNICATOR " 
+                 << COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(0, current_batch_size) << ")"
                  << " cur_batch_size " << cur_batch_size_ 
+                 << " (COMMUNICATOR pub " 
+                 << COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(0, current_batch_size)
+                 << " unpub " << COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(0, target_batch_size_unpublished)
+                 << ")"
                  << " memory [ " << train_memory_str << "] MB"
                  << " predict memory " 
                  << TrainAdjuster::PredictTrainMemUsageMB(0, false) << "MB"

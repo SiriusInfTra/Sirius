@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <torch/csrc/autograd/utils/wrap_outputs.h>
 
 namespace colserve {
 
@@ -25,11 +26,9 @@ BOOST_PYTHON_MODULE(llm_server)
   bp::def("finish_llm_request", &LLMServer::FinishLLMRequest);
   bp::def("maybe_set_kv_cache_block_nbytes", &KVCachePool::MaybeSetKVCacheBlockNbytes);
   bp::def("get_num_gpu_kv_cache_blocks", &KVCachePool::GetNumGpuKVCacheBlocks);
-  bp::def("setup_free_kv_cache_block_indices", &KVCachePool::SetupFreeKVCacheBlockIndices);
-  bp::def("ensure_kv_cache_block", &KVCachePool::EnsureKVCacheBlock);
   bp::def("free_kv_cache_block", &KVCachePool::FreeKVCacheBlock);
   bp::def("alloc_kv_cache_block", &KVCachePool::AllocKVCacheBlock);
-  bp::def("get_num_free_blocks", &KVCachePool::GetNumFreeBlocks);
+  bp::def("get_num_free_nbytes", &KVCachePool::GetNumFreeBlocks);
   bp::def("get_kv_cache_mem_page_util", &KVCachePool::GetKVCacheMemPageUtil);
   bp::def("get_kv_cache_pool_stat", &KVCachePool::GetKVCachePoolStat);
   bp::def("use_kv_cache_pool", +[]() ->bool { return Config::UseSharedTensor(); });
@@ -37,6 +36,11 @@ BOOST_PYTHON_MODULE(llm_server)
   bp::def("set_num_required_tpc", +[](int tpc_num) {
       SMPartitioner::Get(sta::DeviceManager::GetCurrentDevice())
         ->SetInferRequiredTpcNum(tpc_num);
+  });
+  bp::def("set_num_available_tpc", +[](int tpc_num, uint64_t stream) {
+    uint64_t mask_64 = -1;
+    mask_64 = mask_64 << tpc_num;
+    SMPartitioner::Get(sta::DeviceManager::GetCurrentDevice())->SetStreamTpcMask(reinterpret_cast<CUstream>(stream), mask_64);
   });
   bp::def("info", &CallGLOG_INFO);
   bp::def("info_with_frame", &CallGLOG_INFO_WITH_FRAME);
@@ -111,9 +115,9 @@ void LLMServer::Shutdown() {
 
 void LLMServer::WramupDone() {
   CHECK(llm_server_ != nullptr);
-  if (Config::use_shared_tensor) {
-    KVCachePool::ReclaimAllKVCacache(true);
-  }
+  // if (Config::use_shared_tensor) {
+  //   KVCachePool::ReclaimAllKVCacache(true);
+  // }
   LOG(INFO) << "[LLMServer] warmup done";
 }
 
@@ -232,21 +236,20 @@ LLMServer::LLMServer() : running_(true) {
     KVCachePool::Init();
   }
   PyInit();
-
-  pthread_barrier_t barrier;
-  pthread_barrier_init(&barrier, nullptr, 1 + llm_wrappers_.size());
+  auto barrier = new pthread_barrier_t;
+  pthread_barrier_init(barrier, nullptr, 1 + llm_wrappers_.size());
   for (auto i : boost::irange(sta::DeviceManager::GetNumVisibleGpu())) {
     llm_wrappers_.push_back(std::make_unique<LLMWrapper>(
-        i, py_module_, &barrier));
+        i, py_module_, barrier));
   }
 
   if (Config::use_shared_tensor) {
-    KVCachePool::PostInit();
+    // KVCachePool::PostInit();
   }
 
   // release GIL, start serving
   main_py_ts_ = PyEval_SaveThread();
-  pthread_barrier_wait(&barrier);
+  pthread_barrier_wait(barrier);
 }
 
 void LLMServer::PyInit() {

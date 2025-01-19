@@ -19,6 +19,7 @@ parser.add_argument('--uniform-v2', action='store_true', help='Run uniform-v2')
 parser.add_argument('--burstgpt', action='store_true', help='Run burstgpt')
 parser.add_argument('--burstgpt-rps', type=int, help='BurstGPT RPS', required=False)
 parser.add_argument('--train-mps-pct', type=int, help='Train MPS Pct', required=False)
+parser.add_argument('--colsys-without-train', action='store_true', help='Run colsys without train') 
 
 args = parser.parse_args()
 
@@ -29,6 +30,8 @@ run_static_partition = False
 run_static_partition_I = False
 run_static_partition_F = False
 run_infer_only = False
+
+colsys_without_train = False
 
 enable_burstgpt = False
 enable_uniform_v2 = False
@@ -68,6 +71,9 @@ if args.burstgpt:
 if args.uniform_v2:
     enable_uniform_v2 = True
 
+if args.colsys_without_train:
+    colsys_without_train = True
+
 if args.burstgpt_rps:
     run_comm.BurstGPTConfig.max_rps = args.burstgpt_rps
 
@@ -95,7 +101,7 @@ def get_cuda_memory_pool_gb():
     elif llm_model == InferModel.Llama2_7B_HF:
         return '62'
     elif llm_model == InferModel.Llama2_13B_HF:
-        return '50'
+        return '51'
     else:
         raise ValueError(f"Unknown model: {llm_model}")
     
@@ -128,16 +134,16 @@ if run_colsys:
         'mode': System.ServerMode.ColocateL1,
         'use_sta': True,
         'mps': True,
-        'skip_set_mps_thread_percent': False,
+        'skip_set_mps_thread_percent': True,
         'use_xsched': True,
         'has_warmup': True,
         # 'cuda_memory_pool_gb': '58', # LLama3-8B
         # 'cuda_memory_pool_gb': '62', # LLama2-7B
         'cuda_memory_pool_gb': get_cuda_memory_pool_gb(),
-        'train_memory_over_predict_mb': 5000,
+        'train_memory_over_predict_mb': 3000,
         # 'infer_model_max_idle_ms': 5000,
         # 'cold_cache_ratio': 0.5,
-        'dynamic_sm_partition': False,
+        'dynamic_sm_partition': True,
         'serving_llm': True,
         'llm_model_name': llm_model,
         'llm_max_model_len': llm_max_model_len,
@@ -145,7 +151,7 @@ if run_colsys:
     }
     if enable_burstgpt:
         with mps_thread_percent(None):
-            workload = run_comm.burstgpt(infer_only=False)
+            workload = run_comm.burstgpt(infer_only=colsys_without_train)
             system = System(port=port, train_mps_thread_percent=train_mps_pct,
                             **system_config)
             run_comm.run(system, workload, None, 
@@ -156,7 +162,7 @@ if run_colsys:
         for wkld_type in uniform_v2_wkld_types:
             client_model_list, _ = InferModel.get_multi_model([llm_model], 1, 1)
             workload = run_comm.uniform_v2(wkld_type, client_model_list, 
-                                           infer_only=False)
+                                           infer_only=colsys_without_train)
             system = System(port=port, **system_config)
             run_comm.run(system, workload, None,
                          f'{wkld_type}-{runner.get_num_gpu()}gpu', 
@@ -186,8 +192,8 @@ for tag, item in {
         'mode': System.ServerMode.Normal,
         'use_sta': False, # not using kv-cache pool
         'mps': True,
-        'skip_set_mps_thread_percent': False,
-        'use_xsched': True,
+        'skip_set_mps_thread_percent': True,
+        'use_xsched': False,
         'has_warmup': True,
         'dynamic_sm_partition': False,
         'cuda_memory_pool_gb': get_cuda_memory_pool_gb_sp_i(),
@@ -198,14 +204,14 @@ for tag, item in {
         'llm_show_gen_result': False,
     }, {
         # 'train_batch_size': 100
-        'train_batch_size': 75
+        'train_batch_size': 8
     }),
     'F': ({
         'mode': System.ServerMode.Normal,
         'use_sta': False, # not using kv-cache pool
         'mps': True,
-        'skip_set_mps_thread_percent': False,
-        'use_xsched': True,
+        'skip_set_mps_thread_percent': True,
+        'use_xsched': False,
         'has_warmup': True,
         'dynamic_sm_partition': False,
         'cuda_memory_pool_gb': get_cuda_memory_pool_gb_sp_f(),
@@ -216,7 +222,7 @@ for tag, item in {
         'llm_show_gen_result': False,
     }, {
         # 'train_batch_size': 180
-        'train_batch_size': 165
+        'train_batch_size': 32
     }),
 }.items():
     if not run_static_partition:

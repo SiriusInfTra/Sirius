@@ -41,7 +41,8 @@ workload = HyperWorkload(concurrency=1,
 
 InferModel.reset_model_cnt()
 client_model_list, _ = InferModel.get_multi_model([llm_model], 1, 1)
-
+# workload.set_train_workload(
+#             train_workload=TrainWorkload('qwen', 30, 64))
 system.launch("llm-solo-perf", f'{llm_model}', time_stamp=True,
               infer_model_config=None)
 workload.launch_busy_loop(system, client_model_list)

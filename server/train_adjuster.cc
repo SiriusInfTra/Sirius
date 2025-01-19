@@ -351,10 +351,9 @@ TrainAdjuster::GetLLMInferReleaseMemAdjustPlan(
   std::vector<memory_mb_t> train_avail_mem_mbs;
   std::vector<int> cur_train_target_batches;
   for (auto device_id : boost::irange(sta::DeviceManager::GetNumVisibleGpu())) {
-    auto num_free_page_nbytes = (
-      sta::CUDAMemPool::Get(device_id)->NumFreePages()
-      * sta::CUDAMemPool::PageNbytes()
-    ) - Config::train_memory_over_predict_mb * 1_MB;
+    double num_free_page_nbytes = (
+      static_cast<double>(sta::CUDAMemPool::Get(device_id)->NumFreePages() * sta::CUDAMemPool::PageNbytes())
+    ) - Config::train_memory_over_predict_mb * 1_MB - 4_GB;
     free_mem_mbs.push_back(sta::ByteToMB(num_free_page_nbytes));
     train_avail_mem_mbs.push_back(sta::ByteToMB(
         num_free_page_nbytes 
@@ -716,6 +715,19 @@ std::pair<double, double> TrainAdjuster::GetModelMemParam(
     } else if (model_name == "swin_b_ddp") {
       // return {3300, 145};
       return {3800, 200};
+    } else if (model_name == "qwen") {
+      // FIXME: OUTDATED w/ mpool
+      /*
+        1 8.48
+        2 8.81
+        4 9.45
+        8 11.18
+        16 15.79
+        32 24.99
+        64 43.55
+        96 62.24
+      */
+      return {9000, 600};
     } else {
       LOG(FATAL) << "Unsupported model: " << model_name;
     }

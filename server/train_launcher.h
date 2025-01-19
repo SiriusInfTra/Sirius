@@ -51,7 +51,6 @@ class TrainLauncher {
     }
   }
 
-  double PredictMemUsageMB(bool verbose);
   int PredictTargetBatchSize(double memory_mb);
   int GetAdjustBatchSize(double memory_mb);
 

@@ -9,7 +9,6 @@ from torch_col import MemoryPool, EventManager
 from torch_col import dynamic_batch
 from typing import Optional
 
-
 def setup():
     import time
     torch_col.info(f'[Train PID {os.getpid()}] setup')
@@ -80,7 +79,7 @@ def train(num_epoch: int, batch_size: int,
 
     def iter_train_fn(batch: dynamic_batch.Batch):
         input_ids = batch['input_ids']
-        with torch.cuda.amp.autocast(cache_enabled=False, dtype=torch.bfloat16):
+        with torch.cuda.amp.autocast(cache_enabled=False, dtype=torch.float16):
             output = model(**batch)
             loss = output.loss
             running_loss = loss.item() * len(input_ids)
