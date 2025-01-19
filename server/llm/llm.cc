@@ -10,10 +10,10 @@
 #include <boost/format.hpp>
 #include <boost/range/irange.hpp>
 
+#include <torch/csrc/autograd/utils/wrap_outputs.h>
 #include <filesystem>
 #include <memory>
 #include <string>
-#include <torch/csrc/autograd/utils/wrap_outputs.h>
 
 namespace colserve {
 
@@ -40,7 +40,8 @@ BOOST_PYTHON_MODULE(llm_server)
   bp::def("set_num_available_tpc", +[](int tpc_num, uint64_t stream) {
     uint64_t mask_64 = -1;
     mask_64 = mask_64 << tpc_num;
-    SMPartitioner::Get(sta::DeviceManager::GetCurrentDevice())->SetStreamTpcMask(reinterpret_cast<CUstream>(stream), mask_64);
+    SMPartitioner::Get(sta::DeviceManager::GetCurrentDevice()
+      )->SetStreamTpcMask(reinterpret_cast<CUstream>(stream), mask_64);
   });
   bp::def("info", &CallGLOG_INFO);
   bp::def("info_with_frame", &CallGLOG_INFO_WITH_FRAME);
