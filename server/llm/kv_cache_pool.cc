@@ -210,8 +210,10 @@ void KVCachePool::FreeKVCacheBlock(const bp::list &blk_indices) {
     CHECK(iter != kv_cache_pool_->kv_cache_blocks_.end());
     kv_cache_pool_->kv_cache_blocks_.erase(iter);
   }
+  
   if (!ctrl::Controller::Get()->IsTrainIdle() &&
-    sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice())->NumFreePages() * sta::CUDAMemPool::PageNbytes() >= 6_GB) {
+    sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice()
+      )->NumFreePages() * sta::CUDAMemPool::PageNbytes() >= 6_GB) {
     kv_cache_pool_->ReclaimMemToTrain(lock);
   }
 }

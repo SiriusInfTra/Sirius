@@ -31,11 +31,16 @@ BOOST_PYTHON_MODULE(llm_server)
   bp::def("get_num_free_nbytes", &KVCachePool::GetNumFreeBlocks);
   bp::def("get_kv_cache_mem_page_util", &KVCachePool::GetKVCacheMemPageUtil);
   bp::def("get_kv_cache_pool_stat", &KVCachePool::GetKVCachePoolStat);
-  bp::def("use_kv_cache_pool", +[]() ->bool { return Config::UseSharedTensor(); });
+  bp::def("use_kv_cache_pool", +[]() -> bool { 
+    return Config::UseSharedTensor(); 
+  });
   bp::def("init_kv_cache", &KVCachePool::InitKVCache);
+  bp::def("enable_dynamic_sm_partition", +[]() -> bool {
+    return Config::dynamic_sm_partition;
+  }); 
   bp::def("set_num_required_tpc", +[](int tpc_num) {
-      SMPartitioner::Get(sta::DeviceManager::GetCurrentDevice())
-        ->SetInferRequiredTpcNum(tpc_num);
+    SMPartitioner::Get(sta::DeviceManager::GetCurrentDevice())
+      ->SetInferRequiredTpcNum(tpc_num);
   });
   bp::def("set_num_available_tpc", +[](int tpc_num, uint64_t stream) {
     uint64_t mask_64 = -1;
