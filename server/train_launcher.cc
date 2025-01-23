@@ -4,6 +4,7 @@
 #include <server/train_launcher.h>
 #include <server/control/controller.h>
 #include <server/train_adjuster.h>
+#include <server/llm/kv_cache_pool.h>
 #include <server/profiler.h>
 #include <server/config.h>
 
@@ -101,6 +102,13 @@ bool TrainLauncher::Train() {
     }
     LOG(INFO) << "[Warm Cache Fallback for Colocation] set max warm cache nbytes to "
               << sta::PrintByte(Config::max_warm_cache_nbytes);
+  }
+
+  if (Config::IsColocateMode() && Config::serving_llm) {
+    auto [base, slope] = TrainAdjuster::adjuster_->GetModelMemParam(cur_model_name_);
+    if (Config::use_shared_tensor) {
+      KVCachePool::UpdateNumFreeLayerBlocksByTrainBase(base * 1_MB);
+    }
   }
 
   std::vector<std::string> args_str;

@@ -28,13 +28,25 @@ BOOST_PYTHON_MODULE(llm_server)
   bp::def("get_num_gpu_kv_cache_blocks", &KVCachePool::GetNumGpuKVCacheBlocks);
   bp::def("free_kv_cache_block", &KVCachePool::FreeKVCacheBlock);
   bp::def("alloc_kv_cache_block", &KVCachePool::AllocKVCacheBlock);
-  bp::def("get_num_free_nbytes", &KVCachePool::GetNumFreeBlocks);
+  bp::def("get_num_free_layer_blocks", &KVCachePool::GetNumFreeLayerBlocks);
+  bp::def("update_num_free_layer_blocks", &KVCachePool::UpdateNumFreeLayerBlocks);
   bp::def("get_kv_cache_mem_page_util", &KVCachePool::GetKVCacheMemPageUtil);
   bp::def("get_kv_cache_pool_stat", &KVCachePool::GetKVCachePoolStat);
   bp::def("use_kv_cache_pool", +[]() -> bool { 
     return Config::UseSharedTensor(); 
   });
-  bp::def("init_kv_cache", &KVCachePool::InitKVCache);
+  bp::def("create_kv_cache", &KVCachePool::CreateKVCache);
+  bp::def("get_kv_cache_shape", +[]() {
+    return bp::list(KVCachePool::GetKVCacheShape());
+  });
+  bp::def("get_kv_cache_stride", +[]() {
+    return bp::list(KVCachePool::GetKVCacheStride());
+  });
+  bp::def("get_block_nbytes", &KVCachePool::GetBlockNbytes);
+  bp::def("get_num_layers", &KVCachePool::GetNumLayers);
+  bp::def("get_mpool_page_nbytes", +[]() {
+    return sta::CUDAMemPool::PageNbytes();
+  });
   bp::def("enable_dynamic_sm_partition", +[]() -> bool {
     return Config::dynamic_sm_partition;
   }); 

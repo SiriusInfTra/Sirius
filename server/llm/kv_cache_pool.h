@@ -33,16 +33,21 @@ class KVCachePool {
     memory_byte_t block_nbytes    
   );
   static int GetNumGpuKVCacheBlocks();
-  static PyObject* InitKVCache(
-      int n_layers,
-      const bp::list &shape,
+  static int64_t GetBlockNbytes();
+  static int64_t GetNumLayers(); 
+  static PyObject* CreateKVCache(
       std::string dtype,
       int64_t item_size);
-  static size_t GetNumFreeBlocks();
+  static std::vector<int64_t> GetKVCacheShape();
+  static std::vector<int64_t> GetKVCacheStride();
+  static int64_t GetNumFreeLayerBlocks();
+  static void UpdateNumFreeLayerBlocks(int64_t delta);
+  static void UpdateNumFreeLayerBlocksByTrainBase(memory_byte_t train_base);
   static void FreeKVCacheBlock(const bp::list &blk_indices);
   static bp::list AllocKVCacheBlock(size_t n);
   static double GetKVCacheMemPageUtil();
   static KVCachePoolStat GetKVCachePoolStat();
+  
 
 
   // static void ReclaimKVCacheBlocks(
@@ -95,10 +100,17 @@ class KVCachePool {
   void ReclaimMemToTrain(std::unique_lock<std::mutex> &kvc_pool_lock);
 
   std::mutex mut_;
-  std::unordered_map<uint64_t, std::shared_ptr<sta::CUDAMemPool::PoolEntry>> kv_cache_blocks_;
   int64_t block_size_{0}, num_layer_{0}, 
           num_heads_{0}, head_size_{0};
   memory_byte_t cache_block_nbytes_{0};
+  int64_t num_kvc_blks_{-1};
+  bool has_set_block_shape_{false};
+
+  int64_t num_free_layer_blks_{-1},
+          num_used_layer_blks_{-1};
+
+  // deprecated
+  std::unordered_map<uint64_t, std::shared_ptr<sta::CUDAMemPool::PoolEntry>> kv_cache_blocks_;
   uint64_t kvc_blk_grp_size_{0};
   uint64_t num_kvc_blk_grp_per_layer_{0};
 

@@ -56,13 +56,21 @@ void KVCachePool::MaybeSetKVCacheBlockNbytes(
 
   CHECK(kv_cache_pool_ != nullptr);
   std::unique_lock lock{kv_cache_pool_->mut_};
+  
+  /* Note: kv cache shape
+   *   vLLM kv cache shape can be treated as: [#layer, 2, #blk, blk_size * #head * head_size]
+   *   (actually, one tensor for one layer)
+   *   with following layout:
+   *      <----- k-cache ---->|<---- v-cache --->
+   *      |K_1|K_2|K_3|K_4|...|V_1|V_2|V_3|V_4|...  (layer i)
+   *        ↳ k-cache of blk_size tokens
+   *        
+   *   we organize the kv cache as a single tensor, 
+   *   shape: [2, #layer * #blk, blk_size * #head * head_size]
+   *   layout:
+   *      |K_1,V_1|K_2,V_2|K_3,V_3|K_4,V_4|...
+   */
 
-  uint64_t layer_k_or_v_blk_nbytes = block_size * num_heads * head_size; // size of k (or v) blk size
-  CHECK(PhyPageFactor() * sta::CUDAMemPool::PageNbytes() % layer_k_or_v_blk_nbytes == 0) 
-      << "k/v block_nbytes of a layer " << layer_k_or_v_blk_nbytes
-      << " is not a factor of " 
-      << sta::PrintByte(sta::CUDAMemPool::PageNbytes())
-      << " x " << PhyPageFactor();
   if (kv_cache_pool_->cache_block_nbytes_ == 0) {
     kv_cache_pool_->cache_block_nbytes_ = block_nbytes;
     kv_cache_pool_->block_size_ = block_size;
@@ -78,6 +86,7 @@ void KVCachePool::MaybeSetKVCacheBlockNbytes(
         << " is not consistent with previous value "
         << sta::PrintByte(kv_cache_pool_->cache_block_nbytes_);
   }
+  kv_cache_pool_->has_set_block_shape_ = true;
 }
 
 int KVCachePool::GetNumGpuKVCacheBlocks() {
@@ -87,90 +96,48 @@ int KVCachePool::GetNumGpuKVCacheBlocks() {
   }
 
   CHECK(kv_cache_pool_ != nullptr);
-  size_t item_size = 2;
-  size_t layer_k_or_v_blk_nbytes = (
-      item_size * kv_cache_pool_->block_size_ 
-      * kv_cache_pool_->num_heads_ 
-      * kv_cache_pool_->head_size_);
-  CHECK(layer_k_or_v_blk_nbytes != 0);
-  size_t blk_grp_size = KVCachePool::KVCPageNybtes() / layer_k_or_v_blk_nbytes;
+  if (kv_cache_pool_->num_kvc_blks_ != -1) {
+    return kv_cache_pool_->num_kvc_blks_;
+  }
 
-  size_t kvc_blk_grp_nbytes = 
-      layer_k_or_v_blk_nbytes 
-      * 2 /* k-cache in a page, v-cache in other page */
-      * blk_grp_size 
-      * kv_cache_pool_->num_layer_;
+  size_t cache_blk_nbytes = 
+    2     /* float16 */
+    * 2   /* k/v     */
+    * kv_cache_pool_->block_size_
+    * kv_cache_pool_->num_heads_
+    * kv_cache_pool_->head_size_
+    * kv_cache_pool_->num_layer_;
+  CHECK_EQ(cache_blk_nbytes, kv_cache_pool_->cache_block_nbytes_);
+
+  auto ret = sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice())
+      ->PoolNbytes() / KVCachePool::cls_kv_cache_block_nbytes_;
 
   LOG(INFO) << "[GetNumGpuKVCacheBlocks] "
-            << "layer_k_or_v_blk_nbytes " << sta::PrintByte(layer_k_or_v_blk_nbytes)
-            << " blk_grp_size " << blk_grp_size
-            << " kvc_blk_grp_nbytes " << sta::PrintByte(kvc_blk_grp_nbytes);
+            << "cache_blk_nbytes " << sta::PrintByte(cache_blk_nbytes)
+            << " #blk " << ret;
+  kv_cache_pool_->num_kvc_blks_ = ret;
 
-  // auto ret = sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice())
-  //     ->PoolNbytes() / kv_cache_pool_->cache_block_nbytes_;
-  auto ret = sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice())
-      ->PoolNbytes() / kvc_blk_grp_nbytes * blk_grp_size;
+
   return ret;
 }
 
-PyObject* KVCachePool::InitKVCache(
-    int n_layers, const bp::list &shape_, std::string dtype, int64_t itemsize) {
-  std::vector<int64_t> shape;
-  for (auto i : boost::irange(bp::len(shape_))) {
-    shape.push_back(bp::extract<int64_t>(shape_[i]));
-  }
-
+int64_t KVCachePool::GetBlockNbytes() {
   CHECK(kv_cache_pool_ != nullptr);
-  //z at::ten
-  // torch::from_blob()
-  memory_byte_t total_nbytes_per_layer = 1;
-  for (auto dim : shape) {
-    // block_nbytes_per_layer *= dim;
-    total_nbytes_per_layer *= dim;
-  }
-  CHECK(shape.size() == 3 && shape[0] == 2) << "shape " << shape;
-  memory_byte_t block_nbytes_per_layer = shape[2] * shape[0];
+  CHECK(kv_cache_pool_->has_set_block_shape_);
+  return kv_cache_pool_->cache_block_nbytes_;
+}
 
-  CHECK_EQ(block_nbytes_per_layer, 
-    2 
-    * kv_cache_pool_->num_heads_ 
-    * kv_cache_pool_->block_size_ 
-    * kv_cache_pool_->head_size_
-  );
-  block_nbytes_per_layer *= itemsize;
-  total_nbytes_per_layer *= itemsize;
-  
-  // CHECK(total_nbytes_per_layer % sta::CUDAMemPool::PageNbytes() == 0);
-  CHECK(total_nbytes_per_layer % KVCPageNybtes() == 0);
-  auto num_blocks_per_page = 
-      KVCPageNybtes() / block_nbytes_per_layer 
-      * 2 /* k-cache in a page, v-cache in other page */;
-  auto num_pages_per_layer = 
-      total_nbytes_per_layer / KVCPageNybtes();
+int64_t KVCachePool::GetNumLayers() {
+  CHECK(kv_cache_pool_ != nullptr);
+  CHECK(kv_cache_pool_->has_set_block_shape_);
+  return kv_cache_pool_->num_layer_;
+}
 
-  CHECK(num_pages_per_layer % 2 == 0);
-  auto num_blk_grps_per_layer = (
-    num_pages_per_layer / 2 /* k-cache in a page, v-cache in other page */
-  );
-
-  if (kv_cache_pool_->kvc_blk_grp_size_ == 0) {
-    kv_cache_pool_->kvc_blk_grp_size_ = num_blocks_per_page;
-  } else {
-    CHECK_EQ(kv_cache_pool_->kvc_blk_grp_size_, num_blocks_per_page);
-  }
-  if (kv_cache_pool_->num_kvc_blk_grp_per_layer_ == 0) {
-    kv_cache_pool_->num_kvc_blk_grp_per_layer_ = num_blk_grps_per_layer;
-  } else {
-    CHECK_EQ(kv_cache_pool_->num_kvc_blk_grp_per_layer_, num_blk_grps_per_layer);
-  }
-  
-  DLOG(INFO) << "[InitKVCache] layer " << n_layers
-            << " block_nbytes_per_layer " << sta::PrintByte(block_nbytes_per_layer)
-            << " total_nbytes_per_layer " << sta::PrintByte(total_nbytes_per_layer)
-            << " kvc_blk_grp_size " << kv_cache_pool_->kvc_blk_grp_size_
-            << " num_pages_per_layer " << num_pages_per_layer
-            << " num_kvc_blk_grp_per_layer " 
-            << kv_cache_pool_->num_kvc_blk_grp_per_layer_;
+PyObject* KVCachePool::CreateKVCache(std::string dtype, int64_t itemsize) {
+  CHECK(kv_cache_pool_ != nullptr);
+  CHECK(kv_cache_pool_->has_set_block_shape_)
+      << "kv cache shape must be set before create kv cache";
+  CHECK_EQ(itemsize, 2) << "only support float16/half";
 
   std::unique_lock lock{kv_cache_pool_->mut_};
   try {
@@ -185,19 +152,89 @@ PyObject* KVCachePool::InitKVCache(
     } else {
       LOG(FATAL) << "unsupported dtype " << dtype;
     }
-    std::vector<int64_t> tensor_shape = {
-      shape[0], shape[1], n_layers, shape[2]
-    };
-    auto tensor = at::from_blob(sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice())->GetBasePtr(sta::MemType::kInfer), tensor_shape, tensor_opt);
+    // auto 
+    auto tensor = at::from_blob(
+        sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice()
+      )->GetBasePtr(sta::MemType::kInfer), 
+      kv_cache_pool_->GetKVCacheShape(), 
+      kv_cache_pool_->GetKVCacheStride(),
+      tensor_opt);
     return torch::autograd::utils::wrap(tensor);
   } catch (const std::exception& e) {
     LOG(FATAL) << "InitKVCache failed: " << e.what();
   }
 }
 
-size_t KVCachePool::GetNumFreeBlocks() {
+std::vector<int64_t> KVCachePool::GetKVCacheShape() {
   CHECK(kv_cache_pool_ != nullptr);
-  return Config::cuda_memory_pool_gb * 1_GB - 9_GB - Config::train_memory_over_predict_mb * 1_MB;
+  CHECK(kv_cache_pool_->has_set_block_shape_);
+  
+  auto & kvc_pool = kv_cache_pool_;
+  std::vector<int64_t> ret{
+    2,
+    kvc_pool->num_layer_ * kvc_pool->GetNumGpuKVCacheBlocks(),
+    kvc_pool->block_size_ * kvc_pool->num_heads_ * kvc_pool->head_size_,
+  };
+  return ret;
+}
+
+std::vector<int64_t> KVCachePool::GetKVCacheStride() {
+  CHECK(kv_cache_pool_ != nullptr);
+  CHECK(kv_cache_pool_->has_set_block_shape_);
+  
+  auto & kvc_pool = kv_cache_pool_;
+  std::vector<int64_t> ret{
+    kvc_pool->block_size_ * kvc_pool->num_heads_ * kvc_pool->head_size_,
+    kvc_pool->block_size_ * kvc_pool->num_heads_ * kvc_pool->head_size_ * 2,
+    1
+  };
+  return ret;
+}
+
+int64_t KVCachePool::GetNumFreeLayerBlocks() {
+  CHECK(kv_cache_pool_ != nullptr);
+  std::unique_lock lock{kv_cache_pool_->mut_};
+  if (kv_cache_pool_->num_free_layer_blks_ == -1) {
+    CHECK(kv_cache_pool_->num_kvc_blks_ > 0);
+    CHECK(kv_cache_pool_->has_set_block_shape_);
+    kv_cache_pool_->num_free_layer_blks_ = 
+        kv_cache_pool_->num_kvc_blks_ * kv_cache_pool_->num_layer_;
+    kv_cache_pool_->num_used_layer_blks_ = 0;
+  }
+  return kv_cache_pool_->num_free_layer_blks_;
+}
+
+void KVCachePool::UpdateNumFreeLayerBlocks(int64_t delta) {
+  CHECK(kv_cache_pool_ != nullptr);
+  std::unique_lock lock{kv_cache_pool_->mut_};
+  CHECK_GE(kv_cache_pool_->num_free_layer_blks_, 0);
+
+  kv_cache_pool_->num_free_layer_blks_ += delta;
+  kv_cache_pool_->num_used_layer_blks_ -= delta;
+
+  CHECK_GE(kv_cache_pool_->num_free_layer_blks_, 0);
+}
+
+void KVCachePool::UpdateNumFreeLayerBlocksByTrainBase(memory_byte_t train_base) {
+  CHECK(kv_cache_pool_ != nullptr);
+  std::unique_lock lock{kv_cache_pool_->mut_};
+  CHECK(kv_cache_pool_->has_set_block_shape_);
+  CHECK_GE(kv_cache_pool_->num_free_layer_blks_, 0);
+  CHECK_EQ(kv_cache_pool_->num_used_layer_blks_, 0);
+
+  int64_t num_free_blks = 
+      kv_cache_pool_->GetNumGpuKVCacheBlocks()
+      - (train_base 
+         + Config::train_memory_over_predict_mb * 1_MB
+        ) / kv_cache_pool_->cache_block_nbytes_; 
+  CHECK_GE(num_free_blks, 0);
+
+  auto old_num_free_layer_blks = kv_cache_pool_->num_free_layer_blks_;
+  kv_cache_pool_->num_free_layer_blks_ = num_free_blks * kv_cache_pool_->num_layer_;
+
+  LOG(INFO) << "[UpdateNumFreeLayerBlocksByTrainBase] "
+            << " num_free_layer_blks " << old_num_free_layer_blks
+            << " -> " << kv_cache_pool_->num_free_layer_blks_;
 }
 
 void KVCachePool::FreeKVCacheBlock(const bp::list &blk_indices) {
