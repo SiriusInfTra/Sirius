@@ -12,21 +12,6 @@
 
 namespace colserve {
 
-std::ostream & operator << (
-    std::ostream &os,
-    const KVCachePool::KVCacheBlockGroup&kvc_page_group) {
-  os << "stat " << kvc_page_group.stat.allocted
-      << " " << kvc_page_group.stat.num_idle_blks
-      << " " << kvc_page_group.stat.num_used_blks
-      << ", blk_idx " << kvc_page_group.block_indices[0]
-      << "..." << kvc_page_group.block_indices.back()
-      << ", base_addr (k,v) " << std::hex 
-      << "0x" << kvc_page_group.layer_kvc_page_base_addr[0].first
-      << " 0x" << kvc_page_group.layer_kvc_page_base_addr[0].second
-      << std::dec;
-  return os;
-}
-
 std::unique_ptr<KVCachePool> KVCachePool::kv_cache_pool_ = nullptr;
 uint64_t KVCachePool::cls_kv_cache_block_nbytes_ = 0;
 
@@ -191,7 +176,7 @@ std::vector<int64_t> KVCachePool::GetKVCacheStride() {
   return ret;
 }
 
-int64_t KVCachePool::GetNumFreeLayerBlocks() {
+std::pair<int64_t, int64_t> KVCachePool::GetNumLayerBlockInfo() {
   CHECK(kv_cache_pool_ != nullptr);
   std::unique_lock lock{kv_cache_pool_->mut_};
   if (kv_cache_pool_->num_free_layer_blks_ == -1) {
@@ -200,8 +185,20 @@ int64_t KVCachePool::GetNumFreeLayerBlocks() {
     kv_cache_pool_->num_free_layer_blks_ = 
         kv_cache_pool_->num_kvc_blks_ * kv_cache_pool_->num_layer_;
     kv_cache_pool_->num_used_layer_blks_ = 0;
+
+    auto num_vllm_blk_env = std::getenv("COLSYS_VLLM_NUM_LAYER_BLOCK");
+    if (num_vllm_blk_env != nullptr) {
+      auto num_vllm_blk = std::stoll(num_vllm_blk_env);
+      CHECK_GT(num_vllm_blk, 0);
+      CHECK_LE(num_vllm_blk, kv_cache_pool_->num_free_layer_blks_);
+      kv_cache_pool_->num_free_layer_blks_ = num_vllm_blk;
+      LOG(INFO) << "[GetNumFreeLayerBlocks] COLSYS_VLLM_NUM_LAYER_BLOCK env: "
+                << " num_free_layer_blks " 
+                << kv_cache_pool_->num_free_layer_blks_;
+    }
   }
-  return kv_cache_pool_->num_free_layer_blks_;
+  return {kv_cache_pool_->num_free_layer_blks_, 
+          kv_cache_pool_->num_used_layer_blks_};
 }
 
 void KVCachePool::UpdateNumFreeLayerBlocks(int64_t delta) {
@@ -237,15 +234,16 @@ void KVCachePool::UpdateNumFreeLayerBlocksByTrainBase(memory_byte_t train_base) 
             << " -> " << kv_cache_pool_->num_free_layer_blks_;
 }
 
-void KVCachePool::FreeKVCacheBlock(const bp::list &blk_indices) {
+void KVCachePool::FreeKVCachePage(size_t page_nbytes, 
+                                  const bp::list &page_indices) {
   CHECK(kv_cache_pool_ != nullptr);
-  size_t page_nbytes = 5 * sta::CUDAMemPool::PageNbytes();
+  // size_t page_nbytes = 5 * sta::CUDAMemPool::PageNbytes();
   std::unique_lock lock{kv_cache_pool_->mut_};
-  for (auto k : boost::irange(bp::len(blk_indices))) {
-    auto blk_idx = bp::extract<int64_t>(blk_indices[k]);
-    auto iter = kv_cache_pool_->kv_cache_blocks_.find(blk_idx);
-    CHECK(iter != kv_cache_pool_->kv_cache_blocks_.end());
-    kv_cache_pool_->kv_cache_blocks_.erase(iter);
+  for (auto k : boost::irange(bp::len(page_indices))) {
+    auto pg_idx = bp::extract<int64_t>(page_indices[k]);
+    auto iter = kv_cache_pool_->kv_cache_pages_.find(pg_idx);
+    CHECK(iter != kv_cache_pool_->kv_cache_pages_.end());
+    kv_cache_pool_->kv_cache_pages_.erase(iter);
   }
   
   if (!ctrl::Controller::Get()->IsTrainIdle() &&
@@ -255,14 +253,15 @@ void KVCachePool::FreeKVCacheBlock(const bp::list &blk_indices) {
   }
 }
 
-bp::list KVCachePool::AllocKVCacheBlock(size_t n) {
+bp::list KVCachePool::AllocKVCachePage(size_t page_nbytes, size_t n) {
   CHECK(kv_cache_pool_ != nullptr);
   // NOTE: nbytes = 160MB * n
-  size_t page_nbytes = 160_MB;
+  // size_t page_nbytes = 160_MB;
   auto *mem_pool = sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice());
   std::unique_lock lock{kv_cache_pool_->mut_};
   int64_t train_memory = std::max(
-    static_cast<size_t>(TrainAdjuster::PredictTrainMemUsageMB(sta::DeviceManager::GetCurrentDevice(), true) * 1_MB),
+    static_cast<size_t>(TrainAdjuster::PredictTrainMemUsageMB(
+      sta::DeviceManager::GetCurrentDevice(), true) * 1_MB),
     mem_pool->TrainAllMemUsage()
   );
   int64_t available_memory = 
@@ -280,17 +279,17 @@ bp::list KVCachePool::AllocKVCacheBlock(size_t n) {
   for (auto k : boost::irange(n)) {
     auto block = mem_pool->Alloc(page_nbytes, sta::MemType::kInfer, false);
     int64_t blk = block->block->addr_offset; 
-    CHECK(kv_cache_pool_->kv_cache_blocks_.insert(std::make_pair(blk, block)).second);
+    CHECK(kv_cache_pool_->kv_cache_pages_.insert(std::make_pair(blk, block)).second);
     ret.append(blk);
   }
   
   return ret;
 }
 
-
-uint64_t KVCachePool::MaybeAdjustTrain(uint64_t num_required_pages,
-                                   uint64_t min_num_required_pages,
-                                   std::unique_lock<std::mutex> &kvc_pool_lock) {
+uint64_t KVCachePool::MaybeAdjustTrain(
+    uint64_t num_required_pages,
+    uint64_t min_num_required_pages,
+    std::unique_lock<std::mutex> &kvc_pool_lock) {
   auto device_id = sta::DeviceManager::GetCurrentDevice();
   auto mpool = sta::CUDAMemPool::Get(device_id);
   // const auto page_size = 32_MB;
@@ -342,41 +341,20 @@ void KVCachePool::ReclaimMemToTrain(
   ctrl::Controller::Get()->ColocateInferReleaseAdjust(adjust_plan);
 }
 
-double KVCachePool::GetKVCacheMemPageUtil() {
-  auto & kvc_pool_stat = kv_cache_pool_->kvc_pool_stat_;
-  if (kvc_pool_stat.num_allocated_blk_grps_.load(std::memory_order_relaxed) == 0) {
+double KVCachePool::GetKVCachePoolkUtil() {
+  if (kv_cache_pool_ == nullptr 
+      || !kv_cache_pool_->has_set_block_shape_) {
     return std::nan("");
   }
-  return 1 - (
-    1.0 * kvc_pool_stat.num_idle_blk_grps_.load(std::memory_order_relaxed) / 
-        kvc_pool_stat.num_allocated_blk_grps_.load(std::memory_order_relaxed)
-  );
+
+  auto infer_mem = sta::CUDAMemPool::Get(
+      sta::DeviceManager::GetCurrentDevice()
+    )->InferMemUsage();
+
+  return 1.0 * kv_cache_pool_->num_used_layer_blks_ 
+      * kv_cache_pool_->cache_block_nbytes_ 
+      / kv_cache_pool_->num_layer_ / infer_mem; 
 }
 
-KVCachePoolStat KVCachePool::GetKVCachePoolStat() {
-  auto & stat = kv_cache_pool_->kvc_pool_stat_;
-
-#if 0
-  {
-    std::unique_lock lock{kv_cache_pool_->mut_};
-    std::stringstream ss;
-    ss << "kvc_blk_grps stat: ";
-    for (auto & kvc_blk_grp : kv_cache_pool_->kvc_block_grps_) {
-      if (kvc_blk_grp.stat.allocted) {
-        ss << kvc_blk_grp.stat.num_used_blks << " "
-          << kvc_blk_grp.stat.num_idle_blks << ", ";
-      }
-    }
-    LOG(INFO) << ss.str();
-  }
-#endif
-
-  return KVCachePoolStat {
-    .num_idle_blk_grps = 
-        stat.num_idle_blk_grps_.load(std::memory_order_relaxed),
-    .num_allocated_blk_grps = 
-        stat.num_allocated_blk_grps_.load(std::memory_order_relaxed)
-  };
-}
 
 } // namespace colserve

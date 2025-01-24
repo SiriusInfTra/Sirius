@@ -26,12 +26,14 @@ BOOST_PYTHON_MODULE(llm_server)
   bp::def("finish_llm_request", &LLMServer::FinishLLMRequest);
   bp::def("maybe_set_kv_cache_block_nbytes", &KVCachePool::MaybeSetKVCacheBlockNbytes);
   bp::def("get_num_gpu_kv_cache_blocks", &KVCachePool::GetNumGpuKVCacheBlocks);
-  bp::def("free_kv_cache_block", &KVCachePool::FreeKVCacheBlock);
-  bp::def("alloc_kv_cache_block", &KVCachePool::AllocKVCacheBlock);
-  bp::def("get_num_free_layer_blocks", &KVCachePool::GetNumFreeLayerBlocks);
+  bp::def("free_kv_cache_page", &KVCachePool::FreeKVCachePage);
+  bp::def("alloc_kv_cache_page", &KVCachePool::AllocKVCachePage);
+  bp::def("get_num_layer_block_info", +[]() {
+    auto [num_free_blk, num_used_blk] = KVCachePool::GetNumLayerBlockInfo();
+    return bp::make_tuple(num_free_blk, num_used_blk);
+  });
   bp::def("update_num_free_layer_blocks", &KVCachePool::UpdateNumFreeLayerBlocks);
-  bp::def("get_kv_cache_mem_page_util", &KVCachePool::GetKVCacheMemPageUtil);
-  bp::def("get_kv_cache_pool_stat", &KVCachePool::GetKVCachePoolStat);
+  bp::def("get_kv_cache_pool_util", &KVCachePool::GetKVCachePoolkUtil);
   bp::def("use_kv_cache_pool", +[]() -> bool { 
     return Config::UseSharedTensor(); 
   });
@@ -96,15 +98,6 @@ BOOST_PYTHON_MODULE(llm_server)
               % self.queue_ms 
               % self.prefill_ms 
               % self.decode_ms);
-      });
-  bp::class_<KVCachePoolStat>("KVCachePoolStat")
-      .def_readwrite("num_idle_blk_grps", &KVCachePoolStat::num_idle_blk_grps)
-      .def_readwrite("num_allocated_blk_grps", &KVCachePoolStat::num_allocated_blk_grps)
-      .def("__repr__", +[](const KVCachePoolStat& self) -> std::string {
-          return str(boost::format(
-              "KVCachePoolStat(num_idle_blk_grps=%d, num_allocated_blk_grps=%d)") 
-              % self.num_idle_blk_grps 
-              % self.num_allocated_blk_grps);
       });
 
   bp::to_python_converter<std::vector<LLMRequest>, 

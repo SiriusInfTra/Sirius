@@ -95,6 +95,7 @@ int Config::llm_max_model_len = 0;
 bool Config::llm_show_gen_result = false;
 int Config::llm_show_gen_result_period = 10;
 int Config::llm_blk_grp_adjust_size = 2;
+// int Config::llm_
 
 bool Config::dummy_adjust = false;
 
