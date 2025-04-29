@@ -101,13 +101,9 @@ class Controller {
   // std::mutex infer_change_memory_mutex_; // to allocate inference model in a sequential way
   // std::condition_variable infer_change_memory_cv_;
   // std::atomic<size_t> last_infer_change_memory_model_ = static_cast<size_t>(-1);
-
-
-
 };
 
 }
 }
-
 
 #endif

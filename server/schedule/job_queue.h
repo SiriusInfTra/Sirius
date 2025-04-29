@@ -97,8 +97,9 @@ class JobQueue {
 
 class BatchJobQueue : public JobQueue {
  public:
-  std::vector<std::shared_ptr<Job>> GetBatch(size_t batch_size, size_t interval_ms = 0, 
-                                             size_t timeout_ms = std::numeric_limits<int64_t>::max());
+  std::vector<std::shared_ptr<Job>> GetBatch(
+      size_t batch_size, size_t interval_ms = 0, 
+      size_t timeout_ms = std::numeric_limits<int64_t>::max());
   bool Put(const std::shared_ptr<Job> &job);
   double FirstJobQueueTime(); // ms
   
