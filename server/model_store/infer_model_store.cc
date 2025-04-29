@@ -12,7 +12,6 @@
 #include <common/device_manager.h>
 
 #include <boost/range/irange.hpp>
-
 #include <atomic>
 #include <filesystem>
 #include <cstdio>

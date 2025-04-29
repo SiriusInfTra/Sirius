@@ -42,7 +42,11 @@ class SMPartitioner {
 
   uint64_t SetTrainStreamTpcMask(CUstream s);
 
-  SMPartitioner(int device_id);
+  SMPartitioner(
+      int device_id, 
+      int min_train_tpc_num = 5, 
+      int max_train_tpc_num = std::numeric_limits<int>::max()
+  );
   ~SMPartitioner();
 
  private:
@@ -59,12 +63,8 @@ class SMPartitioner {
   // bip::managed_shared_memory shm_;
   TpcData* tpc_data_;
 
-  int min_train_tpc_num_ = 5;
-#if 0 // v100
-  int max_train_tpc_num_ = 40;
-#else // a100
-  int max_train_tpc_num_ = 54;
-#endif
+  int min_train_tpc_num_;
+  int max_train_tpc_num_;
 
   // assume one thread per stream, so no need for lock  
   static thread_local 

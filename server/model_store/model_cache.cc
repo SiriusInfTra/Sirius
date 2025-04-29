@@ -220,7 +220,10 @@ ColdModelCache::PushCacheItem(
   auto* cache_item = new CacheItem();
   cache_item->cached_group_nbytes = 0;
   cache_item->model = InferModelStore::Get()->GetModel(name);
-  size_t model_max_cached_nbytes = Config::cold_cache_max_capability_nbytes > 0 ? static_cast<size_t>(total_nbytes * Config::cold_cache_ratio) : 0;
+  size_t model_max_cached_nbytes = 
+      Config::cold_cache_max_capability_nbytes > 0 
+      ? static_cast<size_t>(total_nbytes * Config::cold_cache_ratio) 
+      : 0;
   size_t uncache_nbytes = 0;
   LOG(INFO) << "model_max_cached_nbytes: " << model_max_cached_nbytes;
 
@@ -247,7 +250,9 @@ ColdModelCache::PushCacheItem(
     }
   }
   // CHECK_EQ(uncache_nbytes, 0);
-  LOG(INFO) << "cache_item->cached_group_nbytes: " << cache_item->cached_group_nbytes << " uncache_nbytes: " << uncache_nbytes;
+  LOG(INFO) << "cache_item->cached_group_nbytes: " 
+            << cache_item->cached_group_nbytes 
+            << " uncache_nbytes: " << uncache_nbytes;
   CHECK_EQ(cache_item->cached_group_nbytes + uncache_nbytes, total_nbytes);
   LOG_IF(INFO, Config::log_cold_cache) 
       << "[ColdModelCache] decide to cache " << name 

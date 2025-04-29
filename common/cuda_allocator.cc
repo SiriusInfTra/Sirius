@@ -124,7 +124,7 @@ CUDAMemPool::AllocWithStream(std::size_t nbytes, MemType mtype,
   std::byte* ptr;
   if (mtype == MemType::kInfer) {
     mem_block = tvm_allocator_->GetObject()->Alloc(
-        nbytes, 512, stream, allow_nullptr ? mpool::MPOOL_ALLOW_NULLPTR : 0);
+        nbytes, 512, stream, 0);
     if (allow_nullptr && !mem_block) {
       return nullptr;
     }
