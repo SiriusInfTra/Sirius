@@ -65,24 +65,6 @@ class InferModelStore {
   void ClearColdCache();
   void ClearWarmCache();
 
-  // void TaskSwitchEnter() { task_switch_enter_cnt_++; }
-  // void TaskSwitchExit() { task_switch_enter_cnt_--; }
-  // std::mutex &TaskSwitchMutex() { return task_switch_mutex_; }
-  // const std::atomic<int> &TaskSwitchControlCnter() { return task_switch_control_cnter_; }
-  // std::atomic<int> &MutableTaskSwitchControlCnter() { return task_switch_control_cnter_; }
-
-  // std::condition_variable task_switch_cv;
-  // pthread_barrier_t task_switch_barrier;
-
-  // enum class TaskSwitchStatus {
-  //   kExit = 0,
-  //   kCancelExit = 1,
-  //   kPrepareExit = 2, 
-    
-  //   kNotAddWorker = 3,
-  //   kAddWorker = 4,
-  // };
-
   enum class TaskSwitchStatus {
     kNotInfering = 0,
     kInfering = 1,
@@ -117,18 +99,12 @@ class InferModelStore {
 
   std::mutex task_switch_mutex_;
   bool task_switch_to_infer_{false};
-  // std::atomic<int> task_switch_ctrl_{static_cast<int>(TaskSwitchStatus::kNotInfering)};
-  // std::condition_variable task_switch_cv_;
   
   // simulate global infer request queue
   std::set<size_t> queing_infer_reqs_;
 
   std::unique_ptr<std::thread> monitor_thread_;
-  
-  // std::atomic<int> task_switch_control_cnter_{static_cast<int>(TaskSwitchStatus::kNotAddWorker)};
-  // std::unique_ptr<std::thread> task_switch_control_;
-  
-  // std::atomic<int> task_switch_enter_cnt_{0};
+
 };
 
 
