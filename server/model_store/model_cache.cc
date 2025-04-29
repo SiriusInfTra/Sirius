@@ -250,9 +250,10 @@ ColdModelCache::PushCacheItem(
     }
   }
   // CHECK_EQ(uncache_nbytes, 0);
-  LOG(INFO) << "cache_item->cached_group_nbytes: " 
-            << cache_item->cached_group_nbytes 
-            << " uncache_nbytes: " << uncache_nbytes;
+  LOG_IF(INFO, Config::log_cold_cache) 
+      << "[ColdModelCache] cache_item->cached_group_nbytes: " 
+      << cache_item->cached_group_nbytes 
+      << " uncache_nbytes: " << uncache_nbytes;
   CHECK_EQ(cache_item->cached_group_nbytes + uncache_nbytes, total_nbytes);
   LOG_IF(INFO, Config::log_cold_cache) 
       << "[ColdModelCache] decide to cache " << name 
