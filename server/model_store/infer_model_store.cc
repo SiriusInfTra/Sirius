@@ -256,7 +256,8 @@ void InferModelStore::InferingDec(tvm::TVMGraph *graph, tvm::Executor *executor)
   // CHECK(Get()->task_switch_ctrl_.load() == static_cast<int>(TaskSwitchStatus::kInfering));
   CHECK(Get()->num_infering_model_.load(std::memory_order_relaxed) > 0);
   Get()->num_infering_model_.fetch_sub(1, std::memory_order_relaxed);
-  Get()->infering_model_nbytes_.fetch_sub(graph->GetStorageNbytes(), std::memory_order_relaxed);
+  Get()->infering_model_nbytes_.fetch_sub(
+      graph->GetStorageNbytes(), std::memory_order_relaxed);
   // if (res == 1) {
   //   Get()->task_switch_ctrl_.store(static_cast<int>(TaskSwitchStatus::kNotInfering));
   // }

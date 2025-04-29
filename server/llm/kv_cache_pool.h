@@ -13,7 +13,7 @@ namespace colserve {
 //   LLM use mpool as kv-cache pool to adjust memory with training,
 //   a group of kv-cache blocks is the smallest unit of memory allocation.
 //   Model weight and activations will be managed be pytorch native 
-//   memory managemetn
+//   memory management
 
 // KVCachePool w/ vLLM
 //   vLLM use manage kv-cache by block idx. We should map the block idx
