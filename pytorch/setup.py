@@ -57,7 +57,7 @@ def config_extension():
             glog_binary_dir = line.split('=')[1]
         if line.startswith('glog_SOURCE_DIR'):
             glog_source_dir = line.split('=')[1]
-        if line.startswith('BOOST_ROOT'):
+        if line.startswith('Boost_ROOT'):
             boost_root = line.split('=')[1]
         if line.startswith('CONDA_PREFIX'):
             conda_prefix = line.split('=')[1]

@@ -15,9 +15,9 @@ if (NOT DEFINED COLSYS_BUILD_DIR)
 endif()
 
 set(client_impl_cmake_extra_args)
-if (DEFINED BOOST_ROOT)
-    list(APPEND client_impl_cmake_extra_args -DBOOST_ROOT=${BOOST_ROOT})
-    message(STATUS ">>> Client: Use Boost: ${BOOST_ROOT}")
+if (DEFINED Boost_ROOT)
+    list(APPEND client_impl_cmake_extra_args -DBoost_ROOT=${Boost_ROOT})
+    message(STATUS ">>> Client: Use Boost: ${Boost_ROOT}")
 endif()
 
 set(TRITON_SOURCE_DIR ${PROJECT_SOURCE_DIR}/third_party/triton-client)
