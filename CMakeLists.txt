@@ -73,8 +73,8 @@ add_subdirectory(server)
 add_subdirectory(pytorch)
 
 set(client_cmake_extra_args)
-if (DEFINED BOOST_ROOT)
-  list(APPEND client_cmake_extra_args -DBOOST_ROOT=${BOOST_ROOT})
+if (DEFINED Boost_ROOT)
+  list(APPEND client_cmake_extra_args -DBoost_ROOT=${Boost_ROOT})
 endif()
 
 # building client
