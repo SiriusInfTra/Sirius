@@ -4,7 +4,6 @@ project(colserve LANGUAGES CXX CUDA)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-
 include(FetchContent)
 set(FETCHCONTENT_QUIET OFF)
 
@@ -23,61 +22,45 @@ if (NOT DEFINED TVM_HOME)
 endif()
 message(STATUS "TVM_HOME: " ${TVM_HOME})
 
+# ===============================================================
+# find dependencies & build subdirectories
+# ===============================================================
 
-# find cuda toolkit
 find_package(CUDAToolkit 11 REQUIRED)
-
-# Modify if you need a different default value
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
   set(CMAKE_CUDA_ARCHITECTURES 70)
 endif()
+message(STATUS "CMAKE_CUDA_ARCHITECTURES is set to ${CMAKE_CUDA_ARCHITECTURES}")
 
-
-# add dependencies
-# find cli11
 FetchContent_Declare(
   CLI11
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/cli11
 )
 FetchContent_MakeAvailable(CLI11)
-
-
-# find torch and cudnn
 find_package(Torch REQUIRED)
-if((DEFINED CONDA_PREFIX) AND (EXISTS ${CONDA_PREFIX}/include/cudnn.h))
-  set(CUDNN_INCLUDE_DIR ${CONDA_PREFIX}/include)
-  set(CUDNN_LIBRARY ${CONDA_PREFIX}/lib/libcudnn.so)
-  message(STATUS "Found cudnn in ${CONDA_PREFIX}")
-elseif(EXISTS /usr/local/cuda/include/cudnn.h)
-  set(CUDNN_INCLUDE_DIR /usr/local/cuda/include)
-  set(CUDNN_LIBRARY /usr/local/cuda/lib64/libcudnn.so)
-  message(STATUS "Found cudnn in /usr/lcoal/cuda")
-elseif(EXISTS /usr/include/cudnn.h)
-  set(CUDNN_INCLUDE_DIR /usr/include)
-  set(CUDNN_LIBRARY /usr/lib/x86_64-linux-gnu/libcudnn.so)
-  message(STATUS "Found cudnn in /usr")
-else()
-  message(STATUS "cudnn not found")
-endif()
 
+
+include(cmake/cudnn.cmake)
 include(cmake/boost.cmake)
 include(cmake/glog.cmake)
 include(cmake/grpc.cmake)
 include(cmake/xsched.cmake)
 
-add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/mpool)
 
-# building
+add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/mpool)
 add_subdirectory(common)
 add_subdirectory(server)
 add_subdirectory(pytorch)
+
+# ===============================================================
+# building client
+# ===============================================================
 
 set(client_cmake_extra_args)
 if (DEFINED Boost_ROOT)
   list(APPEND client_cmake_extra_args -DBoost_ROOT=${Boost_ROOT})
 endif()
 
-# building client
 include(ExternalProject)
 ExternalProject_Add(client
     SOURCE_DIR ${CMAKE_SOURCE_DIR}/client
@@ -96,7 +79,10 @@ ExternalProject_Add(client
     BUILD_COMMAND ${CMAKE_COMMAND} --build .
 )
 
+# ===============================================================
 # link release/debug build directory to ./build
+# ===============================================================
+
 if (NOT ${CMAKE_BINARY_DIR} STREQUAL ${CMAKE_SOURCE_DIR}/build)
   if (EXISTS "${CMAKE_SOURCE_DIR}/build")
       execute_process(COMMAND unlink ${CMAKE_SOURCE_DIR}/build)
