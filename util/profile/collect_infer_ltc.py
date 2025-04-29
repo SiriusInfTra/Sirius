@@ -35,7 +35,7 @@ with open(log_file, 'r') as F:
             parse_ltc = False
             continue
         # if 'InferWorker TRACE' in line:
-        mat = re.search(r'\[InferWorker TRACE ([0-9a-zA-Z-\/]+)(-(\d+))?\]', line)
+        mat = re.search(r'\[InferWorker TRACE ([0-9a-zA-Z_\/]+)(-(\d+))?\]', line)
         if mat is not None:
             parse_ltc = True
             model_name = mat.group(1)
@@ -68,8 +68,8 @@ if slo_output_file is not None:
     std_ltcs = {
         'resnet152': 9.358644,
         'densenet161': 12.586594,
-        'efficientnet': 5.287647,
-        'efficientvit': 3.7,
+        'efficientnet_v2_s': 5.287647,
+        'efficientvit_b2': 3.7,
         'distilbert_base': 8.030415,
         'distilgpt2': 5.0,
 
