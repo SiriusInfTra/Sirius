@@ -8,7 +8,7 @@
 
 namespace colserve::sta {
 
-#define STA_CURRENT_DEVICE sta::DevMgr::GetCurrentDevice()
+#define STA_CURRENT_DEVICE sta::DeviceManager::GetCurrentDevice()
 
 class DeviceGuard {
  public:

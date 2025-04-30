@@ -335,20 +335,24 @@ void Model::CacheModel(
     ColdModelCache *cold_model_cache,
     std::unique_lock<std::mutex> &cold_cache_lock
 ) {
+  auto GetColdCacheCapacity = [&cold_model_cache, &cold_cache_lock] () {
+    return cold_model_cache->GetCacheCapacity(cold_cache_lock);
+  };
+  auto GetColdCacheNbytes = [&cold_model_cache, &cold_cache_lock] () {
+    return cold_model_cache->GetCachedNbytes(cold_cache_lock);
+  };
+
   if (cold_model_cache->TakeSpace(model_tot_storage_nbytes)) {
     LOG_IF(INFO, Config::log_memory_adjust) 
         << "[MaybeAdjustTrainAndCache] Secound take space success, "
         << "new cold cache: " << cold_model_cache->PrintCacheInfo(cold_cache_lock);
   } else {
-    memory_byte_t init_cached_nbytes = 
-        cold_model_cache->GetCachedNbytes(cold_cache_lock);
-    CHECK_GE(cold_model_cache->GetCacheCapacity(cold_cache_lock), 
-            cold_model_cache->GetCachedNbytes(cold_cache_lock));
+    memory_byte_t init_cached_nbytes = GetColdCacheNbytes();
+    CHECK_GE(GetColdCacheCapacity(), GetColdCacheNbytes());
 
-    CHECK_GE(cold_model_cache->GetCachedNbytes(cold_cache_lock)
-                + model_tot_storage_nbytes, 
-            cold_model_cache->GetCacheCapacity(cold_cache_lock));
-    memory_byte_t evict_to_nbytes = cold_model_cache->GetCacheCapacity(cold_cache_lock) 
+    CHECK_GE(GetColdCacheNbytes() + model_tot_storage_nbytes, 
+             GetColdCacheCapacity());
+    memory_byte_t evict_to_nbytes = GetColdCacheCapacity() 
                                     - model_tot_storage_nbytes;
 
     DLOG_IF(INFO, Config::log_memory_adjust) 
@@ -371,8 +375,7 @@ void Model::CacheModel(
           cached_groups_id, rank, cold_cache_lock);
     }
 
-    size_t release_nbytes = init_cached_nbytes 
-                            - cold_model_cache->GetCachedNbytes(cold_cache_lock);
+    size_t release_nbytes = init_cached_nbytes - GetColdCacheNbytes();
     LOG_IF(INFO, Config::log_memory_adjust) 
         << "[MaybeAdjustTrainAndCache] After maybe evict, "
         << "Cache: " << cold_model_cache->PrintCacheInfo(cold_cache_lock)
@@ -382,7 +385,7 @@ void Model::CacheModel(
     // CHECK_GE(evict_to_nbytes, 
     //          cold_model_cache->GetCachedNbytes(cold_cache_lock) + total_storage_nbytes);
     cold_model_cache->SetNewCapacity(
-        cold_model_cache->GetCacheCapacity(cold_cache_lock) - model_tot_storage_nbytes, 
+        GetColdCacheCapacity() - model_tot_storage_nbytes, 
         cold_cache_lock);
   }
 }
@@ -489,7 +492,8 @@ bool Model::MaybeAdjustTrainAndCache(
     cold_model_cache->UnblockProfilter();
   } else {
     if (ResMgr::GetFreeMemoryMB(STA_CURRENT_DEVICE, false) <= total_storage_nbytes) {
-      memory_mb_t require_mb = sta::ByteToMB(total_storage_nbytes) 
+      memory_mb_t require_mb = 
+          sta::ByteToMB(total_storage_nbytes) 
           - ResMgr::GetFreeMemoryMB(STA_CURRENT_DEVICE, false);
       auto adjust_plan = TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
           device_.device_id, require_mb, nan(""), cold_cache_lock);
