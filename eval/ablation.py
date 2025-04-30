@@ -126,8 +126,8 @@ for max_infer_idle_ms in max_infer_idle_ms_list:
         'train_memory_over_predict_mb' : 1500,
         'infer_model_max_idle_ms' : max_infer_idle_ms,
         'cold_cache_ratio': 0.5, 
-        'cold_cache_min_capability_nbytes': 0,
-        'cold_cache_max_capability_nbytes': 0,
+        'cold_cache_min_capacity_nbytes': 0,
+        'cold_cache_max_capacity_nbytes': 0,
         'dynamic_sm_partition': True,
     }
 
@@ -155,8 +155,8 @@ for cold_cache_min_cap, cold_cache_max_cap in cold_cache_cap_list:
         'train_memory_over_predict_mb' : 1500,
         'infer_model_max_idle_ms' : 500,
         'cold_cache_ratio': 0.5, 
-        'cold_cache_min_capability_nbytes': int(cold_cache_min_cap * 1024 * 1024 * 1024),
-        'cold_cache_max_capability_nbytes': int(cold_cache_max_cap * 1024 * 1024 * 1024),
+        'cold_cache_min_capacity_nbytes': int(cold_cache_min_cap * 1024 * 1024 * 1024),
+        'cold_cache_max_capacity_nbytes': int(cold_cache_max_cap * 1024 * 1024 * 1024),
         'dynamic_sm_partition': True,
     }
         

@@ -299,7 +299,7 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
       << "[Model, Cold Cache Adjust] "
       << "AllocStorageMaybeAdjust: model " << rank
       << " total_storage_nbytes " << total_storage_nbytes;
-  if (Config::cold_cache_max_capability_nbytes > 0 && Config::cold_cache_ratio > 0) {
+  if (Config::cold_cache_max_capacity_nbytes > 0 && Config::cold_cache_ratio > 0) {
     auto cold_model_cache = ColdModelCache::Get(device_.device_id);
     cold_model_cache->BlockProfilter();
     if (!cold_model_cache->TakeSpace(total_storage_nbytes)) {
@@ -316,11 +316,11 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
       
       /* if: need adjust train / infer cache */
       if (cold_model_cache->GetCacheCapacity(cold_cache_lock)
-            < Config::cold_cache_min_capability_nbytes + total_storage_nbytes
+            < Config::cold_cache_min_capacity_nbytes + total_storage_nbytes
       ) { // adjust train 
         memory_byte_t new_capacity = 
-          (Config::cold_cache_max_capability_nbytes 
-          + Config::cold_cache_min_capability_nbytes) / 2 + total_storage_nbytes;
+          (Config::cold_cache_max_capacity_nbytes 
+          + Config::cold_cache_min_capacity_nbytes) / 2 + total_storage_nbytes;
         // reset memory predict accumulation error
         memory_mb_t require_mb = 
             + (sta::ByteToMB(new_capacity) 
@@ -436,9 +436,9 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
     } /* end if: need adjust train / infer cache */
 
     // CHECK_GE(cold_model_cache->GetCacheCapacity(cold_cache_lock), 
-    //          Config::cold_cache_min_capability_nbytes);
+    //          Config::cold_cache_min_capacity_nbytes);
     CHECK_LE(cold_model_cache->GetCacheCapacity(cold_cache_lock), 
-             Config::cold_cache_max_capability_nbytes);
+             Config::cold_cache_max_capacity_nbytes);
     cold_model_cache->UnblockProfilter();
   } else {
     if (ResMgr::GetFreeMemoryMB(

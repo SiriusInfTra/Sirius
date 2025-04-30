@@ -119,7 +119,7 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
   }
 
   // CHECK_LE(ColdModelCache::Get(device_id)->GetCacheSizeMBUnsafe(), 
-  //          Config::cold_cache_max_capability_nbytes / 1024.0);
+  //          Config::cold_cache_max_capacity_nbytes / 1024.0);
   // ColdModelCache::Get(device_id)->ExpandToMax();
   // memory_mb_t adjust_reserve_mb =
   //     ColdModelCache::Get(device_id)->GetAdjustReserveMemoryMBUnsafe();

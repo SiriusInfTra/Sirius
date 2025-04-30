@@ -383,7 +383,7 @@ void Profiler::CollectMemoryResourceInfo(
     } else {
       auto read_cold_cache_info = [&]() {
         auto [cap, cache] = ColdModelCache::Get(device_id)->GetColdCacheCapacityAndCache();
-        if (Config::cold_cache_max_capability_nbytes != 0) {
+        if (Config::cold_cache_max_capacity_nbytes != 0) {
           res_info.cold_cache_nbytes = cache;
           
           res_info.cold_cache_buffer_mb = 

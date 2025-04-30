@@ -143,14 +143,14 @@ void init_cli_options() {
       colserve::Config::max_warm_cache_nbytes, 
       str(boost::format("max warm cache nbytes, default is %s") 
           % colserve::sta::PrintByte(colserve::Config::max_warm_cache_nbytes, true)));
-  app.add_option("--cold-cache-min-capability-nbytes", 
-      colserve::Config::cold_cache_min_capability_nbytes, 
-      str(boost::format("min cold cache capability nbytes, default is %s") 
-          % colserve::sta::PrintByte(colserve::Config::cold_cache_min_capability_nbytes, true)));
-  app.add_option("--cold-cache-max-capability-nbytes", 
-      colserve::Config::cold_cache_max_capability_nbytes, 
-      str(boost::format("max cold cache capability nbytes, default is %s") 
-          % colserve::sta::PrintByte(colserve::Config::cold_cache_max_capability_nbytes, true)));
+  app.add_option("--cold-cache-min-capacity-nbytes", 
+      colserve::Config::cold_cache_min_capacity_nbytes, 
+      str(boost::format("min cold cache capacity nbytes, default is %s") 
+          % colserve::sta::PrintByte(colserve::Config::cold_cache_min_capacity_nbytes, true)));
+  app.add_option("--cold-cache-max-capacity-nbytes", 
+      colserve::Config::cold_cache_max_capacity_nbytes, 
+      str(boost::format("max cold cache capacity nbytes, default is %s") 
+          % colserve::sta::PrintByte(colserve::Config::cold_cache_max_capacity_nbytes, true)));
   app.add_option("--cold-cache-ratio", 
       colserve::Config::cold_cache_ratio, 
       str(boost::format("cold cache ratio, default is %.1f(%.0f%%)") 
@@ -290,7 +290,7 @@ void init_config() {
     cfg::max_warm_cache_nbytes = 
       static_cast<size_t>((cfg::cuda_memory_pool_gb * 1024 
                            - cfg::train_memory_over_predict_mb) * 1_MB
-                           - cfg::cold_cache_max_capability_nbytes); // for warmup
+                           - cfg::cold_cache_max_capacity_nbytes); // for warmup
     LOG(INFO) << "enable enable_warm_cache_fallback, "
               << "cache nbytes (used in warmup, conservative estimated) " 
               << colserve::sta::PrintByte(cfg::max_warm_cache_nbytes, true);
@@ -388,8 +388,8 @@ std::string header = str(boost::format("%s COLSERVE CONFIG [PID %d | PORT %d] %s
   STREAM_OUTPUT(enable_warm_cache_fallback);
   STREAM_OUTPUT(max_warm_cache_nbytes);
   STREAM_OUTPUT(train_memory_over_predict_mb);
-  STREAM_OUTPUT(cold_cache_max_capability_nbytes);
-  STREAM_OUTPUT(cold_cache_min_capability_nbytes);
+  STREAM_OUTPUT(cold_cache_max_capacity_nbytes);
+  STREAM_OUTPUT(cold_cache_min_capacity_nbytes);
   STREAM_OUTPUT(train_over_adjust_nbytes);
   STREAM_OUTPUT(cold_cache_ratio);
   STREAM_OUTPUT(infer_model_max_idle_ms);

@@ -123,7 +123,7 @@ class ColdModelCache {
 
   ColdModelCache(int device_id)
     : current_cached_nbytes_{0}, 
-      current_capacity_nbytes_(Config::cold_cache_min_capability_nbytes), 
+      current_capacity_nbytes_(Config::cold_cache_min_capacity_nbytes), 
       device_id_{device_id} {}
 
   friend class InferModelStore;
@@ -212,9 +212,9 @@ class ColdModelCache {
   }
 
   inline size_t GetColdCacheReleasableMemoryMBUnsafe() {
-    if (current_cached_nbytes_ > Config::cold_cache_min_capability_nbytes) {
+    if (current_cached_nbytes_ > Config::cold_cache_min_capacity_nbytes) {
       return sta::ByteToMB(current_cached_nbytes_ 
-                           - Config::cold_cache_min_capability_nbytes);
+                           - Config::cold_cache_min_capacity_nbytes);
     } else {
       return 0;
     }
@@ -234,9 +234,9 @@ class ColdModelCache {
   inline double GetFreeMemoryWithCacheEmpty(
       double free_memory_MB, 
       std::unique_lock<std::mutex> &lock) {
-    if (current_cached_nbytes_ > Config::cold_cache_min_capability_nbytes) {
+    if (current_cached_nbytes_ > Config::cold_cache_min_capacity_nbytes) {
       free_memory_MB += sta::ByteToMB(current_cached_nbytes_ 
-                                      - Config::cold_cache_min_capability_nbytes);
+                                      - Config::cold_cache_min_capacity_nbytes);
     }
     // LOG(INFO) << "[ColdModelCache] FreeMemory " << free_memory_MB << "MB";
     return free_memory_MB;

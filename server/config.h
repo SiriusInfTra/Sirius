@@ -108,8 +108,8 @@ class Config {
 
   static int train_mps_thread_percent;
 
-  static size_t cold_cache_min_capability_nbytes;
-  static size_t cold_cache_max_capability_nbytes;
+  static size_t cold_cache_min_capacity_nbytes;
+  static size_t cold_cache_max_capacity_nbytes;
 
   static size_t infer_alloc_buffer_nbytes;
   static size_t train_over_adjust_nbytes;

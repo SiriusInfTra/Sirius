@@ -221,7 +221,7 @@ ColdModelCache::PushCacheItem(
   cache_item->cached_group_nbytes = 0;
   cache_item->model = InferModelStore::Get()->GetModel(name);
   size_t model_max_cached_nbytes = 
-      Config::cold_cache_max_capability_nbytes > 0 
+      Config::cold_cache_max_capacity_nbytes > 0 
       ? static_cast<size_t>(total_nbytes * Config::cold_cache_ratio) 
       : 0;
   size_t uncache_nbytes = 0;
@@ -281,7 +281,7 @@ ColdModelCache::PushCacheItem(
   // -------------------
   // 2. cache the group
   // -------------------
-  if (current_capacity_nbytes_ + total_nbytes <= Config::cold_cache_max_capability_nbytes
+  if (current_capacity_nbytes_ + total_nbytes <= Config::cold_cache_max_capacity_nbytes
   ) { /* 2.1 resereve in cache */ 
     // note that all memory (whether or not model is partial cached) is reserved in cache
     current_capacity_nbytes_ += total_nbytes; 
@@ -290,10 +290,10 @@ ColdModelCache::PushCacheItem(
         << "[ColdModelCache] Cache Succes, update Capacity=" 
         << sta::PrintByte(current_capacity_nbytes_);
   } else { /* 2.2 reach limit, evict the coldest */  
-    // CHECK_GE((Config::cold_cache_max_capability_nbytes + Config::cold_cache_min_capability_nbytes) / 2, 
+    // CHECK_GE((Config::cold_cache_max_capacity_nbytes + Config::cold_cache_min_capacity_nbytes) / 2, 
     //          cache_item->cached_group_nbytes);
-    memory_byte_t evict_to_nbytes = (Config::cold_cache_max_capability_nbytes 
-                                     + Config::cold_cache_min_capability_nbytes) / 2;
+    memory_byte_t evict_to_nbytes = (Config::cold_cache_max_capacity_nbytes 
+                                     + Config::cold_cache_min_capacity_nbytes) / 2;
     CHECK_GE(evict_to_nbytes, cache_item->cached_group_nbytes);
 
     memory_byte_t old_capacity_nbytes = current_capacity_nbytes_;
@@ -348,8 +348,8 @@ std::pair<std::vector<size_t>, bool> ColdModelCache::PopCacheItem(const std::str
   if (pop_to_inference) {
     current_capacity_nbytes_ -= iter->second->cached_group_nbytes;
   }
-  // CHECK_GE(current_capacity_nbytes_, Config::cold_cache_min_capability_nbytes - 500_MB);
-  // CHECK_LE(current_capacity_nbytes_, Config::cold_cache_max_capability_nbytes);
+  // CHECK_GE(current_capacity_nbytes_, Config::cold_cache_min_capacity_nbytes - 500_MB);
+  // CHECK_LE(current_capacity_nbytes_, Config::cold_cache_max_capacity_nbytes);
   CHECK_LE(current_cached_nbytes_, current_capacity_nbytes_);
   cold_cache_items_.erase(iter);
   return {cached_groups_id, true};
@@ -393,13 +393,13 @@ ColdModelCache::evict_list ColdModelCache::GetEvictModels(
 double ColdModelCache::GetBufferMBUnsafe() {
   auto buffer_mb = ResourceManager::GetFreeMemoryMB(device_id_, false);
   auto cold_cache_nbytes = current_cached_nbytes_;
-  if (cold_cache_nbytes > Config::cold_cache_min_capability_nbytes) {
+  if (cold_cache_nbytes > Config::cold_cache_min_capacity_nbytes) {
     buffer_mb += sta::ByteToMB(
-      cold_cache_nbytes - Config::cold_cache_min_capability_nbytes);
+      cold_cache_nbytes - Config::cold_cache_min_capacity_nbytes);
   }
   double cur_max_buffer_mb = 
-      sta::ByteToMB(Config::cold_cache_max_capability_nbytes
-                    - std::min(Config::cold_cache_min_capability_nbytes, 
+      sta::ByteToMB(Config::cold_cache_max_capacity_nbytes
+                    - std::min(Config::cold_cache_min_capacity_nbytes, 
                                current_cached_nbytes_));
   buffer_mb = std::min(buffer_mb, cur_max_buffer_mb);
   return std::max(0.0, buffer_mb);
@@ -410,14 +410,14 @@ double ColdModelCache::GetCacheSizeMBUnsafe() {
   // auto cold_cache_nbytes = current_cached_nbytes_;
   // auto free_memory_mb = ResourceManager::GetFreeMemoryMB(device_id_, false);
   // LOG(INFO) << "cold_cache_nbytes = " << cold_cache_nbytes << ", free_memory_mb = " << free_memory_mb;
-  // return std::min(sta::ByteToMB(Config::cold_cache_max_capability_nbytes),
+  // return std::min(sta::ByteToMB(Config::cold_cache_max_capacity_nbytes),
   //                 sta::ByteToMB(cold_cache_nbytes) + std::max(0.0, free_memory_mb));
 }
 
 double ColdModelCache::GetReleaseReserveMemoryMBUnsafe() {
   double cached_MB = sta::ByteToMB(current_cached_nbytes_);
-  double min_cap_MB = sta::ByteToMB(Config::cold_cache_min_capability_nbytes);
-  double max_cap_MB = sta::ByteToMB(Config::cold_cache_max_capability_nbytes);
+  double min_cap_MB = sta::ByteToMB(Config::cold_cache_min_capacity_nbytes);
+  double max_cap_MB = sta::ByteToMB(Config::cold_cache_max_capacity_nbytes);
   double cap_MB = sta::ByteToMB(current_capacity_nbytes_);
   return std::max(0.0, cap_MB - cached_MB);
   // if (ColdModelCache::reserve_policy_on_release == ReservePolicy::kMaxCap) {
@@ -433,8 +433,8 @@ double ColdModelCache::GetReleaseReserveMemoryMBUnsafe() {
 
 double ColdModelCache::GetAdjustReserveMemoryMBUnsafe() {
   double cached_MB = sta::ByteToMB(current_cached_nbytes_);
-  double min_cap_MB = sta::ByteToMB(Config::cold_cache_min_capability_nbytes);
-  double max_cap_MB = sta::ByteToMB(Config::cold_cache_max_capability_nbytes);
+  double min_cap_MB = sta::ByteToMB(Config::cold_cache_min_capacity_nbytes);
+  double max_cap_MB = sta::ByteToMB(Config::cold_cache_max_capacity_nbytes);
   double cap_MB = sta::ByteToMB(current_capacity_nbytes_);
   return std::max(0.0, cap_MB - cached_MB);
 
@@ -461,8 +461,8 @@ double ColdModelCache::GetAdjustReserveMemoryMB(
 
 void ColdModelCache::SetNewCapacity(memory_byte_t new_capacity,
                                     std::unique_lock<std::mutex> &lock) {
-  // CHECK_LE(new_capacity, Config::cold_cache_max_capability_nbytes);
-  // CHECK_GE(new_capacity, Config::cold_cache_min_capability_nbytes);
+  // CHECK_LE(new_capacity, Config::cold_cache_max_capacity_nbytes);
+  // CHECK_GE(new_capacity, Config::cold_cache_min_capacity_nbytes);
   CHECK_GE(new_capacity, current_cached_nbytes_);
   current_capacity_nbytes_ = new_capacity;
   DLOG_IF(INFO, Config::log_cold_cache) 
