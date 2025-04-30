@@ -56,4 +56,4 @@ echo "Installing Boost to $boost_root_dir/install"
 ./b2 install --prefix="$boost_root_dir/install"
 
 echo "Boost has been successfully compiled and installed in $boost_root_dir/install"
-echo "Set Boost_ROOT=$boost_root_dir/install in your environment to use this Boost installation"
+echo "Set Boost_ROOT=$boost_root_dir/install/lib/cmake/ in your environment to use this Boost installation"

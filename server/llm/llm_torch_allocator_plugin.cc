@@ -52,14 +52,14 @@ void CUDAColAllocator::init(int device_count) {
   // memory pool will be initialized before llm server module
   // if not, mpool will raise error
   auto mpool = colserve::sta::CUDAMemPool::Get(
-    colserve::sta::DeviceManager::GetCurrentDevice());
+    colserve::sta::DevMgr::GetCurrentDevice());
 
   initialized_ = true;
   LOG(INFO) << "[LLM Serving] pytorch CUDAColAllocator Initialized";
 }
 
 c10::DataPtr CUDAColAllocator::allocate(size_t nbytes) const {
-  auto current_device = colserve::sta::DeviceManager::GetCurrentDevice();
+  auto current_device = colserve::sta::DevMgr::GetCurrentDevice();
   auto current_stream = at::cuda::getCurrentCUDAStream().stream();
   auto addr = const_cast<CUDAColAllocator*>(this)->raw_alloc_with_stream(
       nbytes, current_stream);
@@ -90,7 +90,7 @@ void* CUDAColAllocator::raw_alloc_with_stream(size_t nbytes, cudaStream_t stream
   ProcessEvents();
 
   // 1. first create a pool entry
-  auto current_device = sta::DeviceManager::GetCurrentDevice();
+  auto current_device = sta::DevMgr::GetCurrentDevice();
   auto entry = sta::CUDAMemPool::Get(current_device)->AllocWithStream(
       nbytes, sta::MemType::kInfer, stream, false);
   DLOG(INFO) << "[CUDAColAllocator] device " << current_device
@@ -152,7 +152,7 @@ void CUDAColAllocator::raw_delete(void* ptr) {
 
 void CUDAColAllocator::emptyCache() {
   ProcessEvents();
-  for (int i = 0; i < sta::DeviceManager::GetNumVisibleGpu(); i++) {
+  for (int i = 0; i < sta::DevMgr::GetNumVisibleGpu(); i++) {
     colserve::sta::CUDAMemPool::Get(i)->FreeTrainLocals();
   }
 }

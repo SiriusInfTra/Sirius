@@ -94,7 +94,7 @@ int KVCachePool::GetNumGpuKVCacheBlocks() {
     * kv_cache_pool_->num_layer_;
   CHECK_EQ(cache_blk_nbytes, kv_cache_pool_->cache_block_nbytes_);
 
-  auto ret = sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice())
+  auto ret = sta::CUDAMemPool::Get(sta::DevMgr::GetCurrentDevice())
       ->PoolNbytes() / KVCachePool::cls_kv_cache_block_nbytes_;
 
   LOG(INFO) << "[GetNumGpuKVCacheBlocks] "
@@ -127,7 +127,7 @@ PyObject* KVCachePool::CreateKVCache(std::string dtype, int64_t itemsize) {
   std::unique_lock lock{kv_cache_pool_->mut_};
   try {
     auto tensor_opt = at::TensorOptions()
-        .device(at::kCUDA, sta::DeviceManager::GetCurrentDevice());
+        .device(at::kCUDA, sta::DevMgr::GetCurrentDevice());
     if (dtype == "torch.float32") {
       tensor_opt = tensor_opt.dtype(at::kFloat);
     } else if (dtype == "torch.float16") {
@@ -139,7 +139,7 @@ PyObject* KVCachePool::CreateKVCache(std::string dtype, int64_t itemsize) {
     }
     // auto 
     auto tensor = at::from_blob(
-        sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice()
+        sta::CUDAMemPool::Get(sta::DevMgr::GetCurrentDevice()
       )->GetBasePtr(sta::MemType::kInfer), 
       kv_cache_pool_->GetKVCacheShape(), 
       kv_cache_pool_->GetKVCacheStride(),
@@ -247,7 +247,7 @@ void KVCachePool::FreeKVCachePage(size_t page_nbytes,
   }
   
   if (!ctrl::Controller::Get()->IsTrainIdle() &&
-    sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice()
+    sta::CUDAMemPool::Get(sta::DevMgr::GetCurrentDevice()
       )->NumFreePages() * sta::CUDAMemPool::PageNbytes() >= 6_GB) {
     kv_cache_pool_->ReclaimMemToTrain(lock);
   }
@@ -257,11 +257,11 @@ bp::list KVCachePool::AllocKVCachePage(size_t page_nbytes, size_t n) {
   CHECK(kv_cache_pool_ != nullptr);
   // NOTE: nbytes = 160MB * n
   // size_t page_nbytes = 160_MB;
-  auto *mem_pool = sta::CUDAMemPool::Get(sta::DeviceManager::GetCurrentDevice());
+  auto *mem_pool = sta::CUDAMemPool::Get(sta::DevMgr::GetCurrentDevice());
   std::unique_lock lock{kv_cache_pool_->mut_};
   int64_t train_memory = std::max(
     static_cast<size_t>(TrainAdjuster::PredictTrainMemUsageMB(
-      sta::DeviceManager::GetCurrentDevice(), true) * 1_MB),
+      sta::DevMgr::GetCurrentDevice(), true) * 1_MB),
     mem_pool->TrainAllMemUsage()
   );
   int64_t available_memory = 
@@ -290,7 +290,7 @@ uint64_t KVCachePool::MaybeAdjustTrain(
     uint64_t num_required_pages,
     uint64_t min_num_required_pages,
     std::unique_lock<std::mutex> &kvc_pool_lock) {
-  auto device_id = sta::DeviceManager::GetCurrentDevice();
+  auto device_id = sta::DevMgr::GetCurrentDevice();
   auto mpool = sta::CUDAMemPool::Get(device_id);
   // const auto page_size = 32_MB;
   // const auto page_size = sta::CUDAMemPool::PageNbytes();
@@ -348,7 +348,7 @@ double KVCachePool::GetKVCachePoolkUtil() {
   }
 
   auto infer_mem = sta::CUDAMemPool::Get(
-      sta::DeviceManager::GetCurrentDevice()
+      sta::DevMgr::GetCurrentDevice()
     )->InferMemUsage();
 
   return 1.0 * kv_cache_pool_->num_used_layer_blks_ 

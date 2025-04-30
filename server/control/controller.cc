@@ -75,7 +75,7 @@ Controller* Controller::Get(){
 
 Controller::Controller() {
   InfTraCommunicator::Init(true, true, 
-                           sta::DeviceManager::GetNumVisibleGpu());
+                           sta::DevMgr::GetNumVisibleGpu());
 
   monitor_train_thread_ = 
       std::make_unique<std::thread>(&Controller::TrainMonitor, this);

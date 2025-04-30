@@ -140,7 +140,7 @@ void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
                                   std::stoi(model.second["num-worker"]),
                                   std::stoi(model.second["max-worker"]));
       if (Config::model_place_policy == ModelPlacePolicy::kRoundRobin) {
-        if (next_gpu >= sta::DeviceManager::GetNumVisibleGpu()) {
+        if (next_gpu >= sta::DevMgr::GetNumVisibleGpu()) {
           next_gpu = 0;
         }
       }

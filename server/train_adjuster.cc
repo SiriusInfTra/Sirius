@@ -109,7 +109,7 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
   auto train_world_size = adjuster_->cached_train_world_size_;
   int cur_train_target_bs = 
       adjuster_->cached_target_batch_sizes_[device_id];
-  // int min_train_bs = sta::DeviceManager::GetNumVisibleGpu() > 1 ? 1 : 0;
+  // int min_train_bs = sta::DevMgr::GetNumVisibleGpu() > 1 ? 1 : 0;
   int min_train_bs = Config::train_adjust_batch_size_limit;
   if (cur_train_target_bs <= min_train_bs) {
     LOG_IF(INFO, Config::log_memory_adjust) 
@@ -139,7 +139,7 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
       adjuster_->GetDeltaBatchSize(device_id, adjust_batch_buf_mb);
   CHECK_GE(adjust_batch_buf_mb, 0);
   int target_batch_size = cur_train_target_bs - delta_batch_size;
-  if (sta::DeviceManager::GetNumVisibleGpu() > 1) {
+  if (sta::DevMgr::GetNumVisibleGpu() > 1) {
     target_batch_size = std::max(target_batch_size, min_train_bs);
   }
 
@@ -215,7 +215,7 @@ std::vector<TrainAdjuster::AdjustPlan>
 TrainAdjuster::GetInferReleaseMemAdjustPlan() {
   CHECK(adjuster_ != nullptr);
   std::vector<std::unique_lock<std::mutex>> cold_cache_locks;
-  for (auto device_id : boost::irange(sta::DeviceManager::GetNumVisibleGpu())) {
+  for (auto device_id : boost::irange(sta::DevMgr::GetNumVisibleGpu())) {
     cold_cache_locks.emplace_back(
         ColdModelCache::Get(device_id)->Lock());
   }
@@ -227,7 +227,7 @@ TrainAdjuster::GetInferReleaseMemAdjustPlanWithInLock(
     std::vector<std::unique_lock<std::mutex>> &cold_cache_locks) {
   // LOG(INFO) << "GetInferReleaseMemAdjustPlanWithInLock";
   CHECK(adjuster_ != nullptr);
-  CHECK(cold_cache_locks.size() == sta::DeviceManager::GetNumVisibleGpu());
+  CHECK(cold_cache_locks.size() == sta::DevMgr::GetNumVisibleGpu());
   
   std::unique_lock adjuster_lock{adjuster_->mut_};
 
@@ -240,11 +240,11 @@ TrainAdjuster::GetInferReleaseMemAdjustPlanWithInLock(
                            reserve_mem_mbs;
   std::vector<int> cur_train_target_batches;
 
-  for (auto device_id : boost::irange(sta::DeviceManager::GetNumVisibleGpu())) {
+  for (auto device_id : boost::irange(sta::DevMgr::GetNumVisibleGpu())) {
     train_avail_mem_mbs.push_back(
-        std::max(ResourceManager::GetTrainAvailMemoryMB(device_id, false), 0.0));
+        std::max(ResMgr::GetTrainAvailMemoryMB(device_id, false), 0.0));
     free_mem_mbs.push_back(
-        std::max(ResourceManager::GetFreeMemoryMB(device_id, false), 0.0));
+        std::max(ResMgr::GetFreeMemoryMB(device_id, false), 0.0));
     reserve_mem_mbs.push_back(
         ColdModelCache::Get(device_id)->GetReleaseReserveMemoryMBUnsafe());
     cur_train_target_batches.push_back(
@@ -350,7 +350,7 @@ TrainAdjuster::GetLLMInferReleaseMemAdjustPlan(
   std::vector<memory_mb_t> free_mem_mbs;
   std::vector<memory_mb_t> train_avail_mem_mbs;
   std::vector<int> cur_train_target_batches;
-  for (auto device_id : boost::irange(sta::DeviceManager::GetNumVisibleGpu())) {
+  for (auto device_id : boost::irange(sta::DevMgr::GetNumVisibleGpu())) {
     double num_free_page_nbytes = (
       static_cast<double>(sta::CUDAMemPool::Get(device_id)->NumFreePages() * sta::CUDAMemPool::PageNbytes())
     ) - Config::train_memory_over_predict_mb * 1_MB - 4_GB;
@@ -618,7 +618,7 @@ void TrainAdjuster::FillAdjustPlanOnlyAdjustOne(int rank, AdjustPlan plan,
 memory_mb_t TrainAdjuster::GetTrainAvailMemMBMinusColdCacheReserve(
     int device_id, bool verbose) {
   auto train_avail_mem_mb = 
-      std::max(ResourceManager::GetTrainAvailMemoryMB(device_id, verbose), 0.0);
+      std::max(ResMgr::GetTrainAvailMemoryMB(device_id, verbose), 0.0);
   auto cold_cache_reserve_mem_mb = 
       ColdModelCache::Get(device_id)->GetAdjustReserveMemoryMBUnsafe();
 

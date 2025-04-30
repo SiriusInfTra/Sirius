@@ -53,13 +53,13 @@ BOOST_PYTHON_MODULE(llm_server)
     return Config::dynamic_sm_partition;
   }); 
   bp::def("set_num_required_tpc", +[](int tpc_num) {
-    SMPartitioner::Get(sta::DeviceManager::GetCurrentDevice())
+    SMPartitioner::Get(sta::DevMgr::GetCurrentDevice())
       ->SetInferRequiredTpcNum(tpc_num);
   });
   bp::def("set_num_available_tpc", +[](int tpc_num, uint64_t stream) {
     uint64_t mask_64 = -1;
     mask_64 = mask_64 << tpc_num;
-    SMPartitioner::Get(sta::DeviceManager::GetCurrentDevice()
+    SMPartitioner::Get(sta::DevMgr::GetCurrentDevice()
       )->SetStreamTpcMask(reinterpret_cast<CUstream>(stream), mask_64);
   });
   bp::def("info", &CallGLOG_INFO);
@@ -249,7 +249,7 @@ LLMServer::LLMServer() : running_(true) {
   PyInit();
   auto barrier = new pthread_barrier_t;
   pthread_barrier_init(barrier, nullptr, 1 + llm_wrappers_.size());
-  for (auto i : boost::irange(sta::DeviceManager::GetNumVisibleGpu())) {
+  for (auto i : boost::irange(sta::DevMgr::GetNumVisibleGpu())) {
     llm_wrappers_.push_back(std::make_unique<LLMWrapper>(
         i, py_module_, barrier));
   }

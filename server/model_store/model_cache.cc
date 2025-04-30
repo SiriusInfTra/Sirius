@@ -23,7 +23,7 @@ ColdModelCache::ReservePolicy ColdModelCache::reserve_policy_on_adjust = \
 constexpr bool warm_cache_try_evict = true;
 
 void WarmModelCache::Init() {
-  for (int i = 0; i < sta::DeviceManager::GetNumVisibleGpu(); i++) {
+  for (int i = 0; i < sta::DevMgr::GetNumVisibleGpu(); i++) {
     warm_model_caches_.push_back(std::make_unique<WarmModelCache>(i));
   }
 }
@@ -194,7 +194,7 @@ void WarmModelCache::ReserveCacheInternal(
 // ==========================================================================
 
 void ColdModelCache::Init() {
-  for (int i = 0; i < sta::DeviceManager::GetNumVisibleGpu(); i++) {
+  for (int i = 0; i < sta::DevMgr::GetNumVisibleGpu(); i++) {
     cold_model_caches_.push_back(std::make_unique<ColdModelCache>(i));
   }
 }
@@ -272,7 +272,7 @@ ColdModelCache::PushCacheItem(
   memory_byte_t before_capacity_nbytes = current_capacity_nbytes_;
   memory_byte_t before_cache_nbytes = current_cached_nbytes_;
   memory_byte_t before_infer_nbytes = 
-      ResourceManager::GetInferMemoryMB(sta::DeviceManager::GetCurrentDevice()) * 1_MB;
+      ResourceManager::GetInferMemoryMB(sta::DevMgr::GetCurrentDevice()) * 1_MB;
   memory_byte_t before_ic_nbytes = before_infer_nbytes 
                                    - current_cached_nbytes_ 
                                    + current_capacity_nbytes_;
@@ -319,7 +319,7 @@ ColdModelCache::PushCacheItem(
   memory_byte_t after_capacity_nbytes = current_capacity_nbytes_;
   memory_byte_t after_cache_nbytes = current_cached_nbytes_;
   memory_byte_t after_infer_nbytes = 
-      ResourceManager::GetInferMemoryMB(sta::DeviceManager::GetCurrentDevice()) * 1_MB;
+      ResourceManager::GetInferMemoryMB(sta::DevMgr::GetCurrentDevice()) * 1_MB;
   memory_byte_t after_ic_nbytes = after_infer_nbytes 
                                   - current_cached_nbytes_ 
                                   + current_capacity_nbytes_ 
@@ -481,7 +481,7 @@ bool ColdModelCache::TakeSpace(memory_byte_t nbytes) {
             % sta::PrintByte(current_capacity_nbytes)
             % sta::PrintByte(current_capacity_nbytes_)
             % ResourceManager::GetFreeMemoryMB(
-                sta::DeviceManager::GetCurrentDevice(), false));
+                sta::DevMgr::GetCurrentDevice(), false));
     return true;
   } else {
     DLOG_IF(INFO, Config::log_cold_cache) 
@@ -492,7 +492,7 @@ bool ColdModelCache::TakeSpace(memory_byte_t nbytes) {
               % sta::PrintByte(current_capacity_nbytes)
               % sta::PrintByte(current_capacity_nbytes_)
               % ResourceManager::GetFreeMemoryMB(
-                  sta::DeviceManager::GetCurrentDevice(), false));
+                  sta::DevMgr::GetCurrentDevice(), false));
     return false;
   }
 }

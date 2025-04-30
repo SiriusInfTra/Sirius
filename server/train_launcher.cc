@@ -354,9 +354,9 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job,
       std::string train_memory_str, free_memory_str;
       for (auto i : boost::irange(train_world_size)) {
         train_memory_str += 
-            std::to_string(ResourceManager::GetTrainMemoryMB(i)) + " ";
+            std::to_string(ResMgr::GetTrainMemoryMB(i)) + " ";
         free_memory_str += 
-            std::to_string(ResourceManager::GetFreeMemoryMB(i, true)) + " ";
+            std::to_string(ResMgr::GetFreeMemoryMB(i, true)) + " ";
       }
       for (auto pid : ctrl::InfTraCommunicator::GetTrainPIDs()) {
         kill(pid, SIGKILL);

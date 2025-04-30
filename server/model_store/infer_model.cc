@@ -233,8 +233,8 @@ void Model::ClearColdCache(const std::vector<size_t> &cold_cached_group_id,
 
   auto t0 = std::chrono::steady_clock::now();
   if (Config::log_cold_cache) {
-    cache_before = ResourceManager::GetFreeMemoryMB(
-        sta::DeviceManager::GetCurrentDevice(), false);
+    cache_before = ResMgr::GetFreeMemoryMB(
+        sta::DevMgr::GetCurrentDevice(), false);
   }
 
   std::unique_lock other_model_lock{muts_[rank]};
@@ -242,8 +242,8 @@ void Model::ClearColdCache(const std::vector<size_t> &cold_cached_group_id,
 
   auto dur = std::chrono::steady_clock::now() - t0;
   if (Config::log_cold_cache) {
-    cache_after = ResourceManager::GetFreeMemoryMB(
-        sta::DeviceManager::GetCurrentDevice(), false);
+    cache_after = ResMgr::GetFreeMemoryMB(
+        sta::DevMgr::GetCurrentDevice(), false);
   }
 
   LOG_IF(INFO, Config::log_cold_cache) << "[ClearCache] cost " 
@@ -272,10 +272,10 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
 #if ADJUST_WITH_FLYING
   // batching adjust with flying adjusts, deprecated currently
 
-  // if (try_lock_memory_changing_succ = ResourceManager::InferChangeMemoryTryLock()) {
+  // if (try_lock_memory_changing_succ = ResMgr::InferChangeMemoryTryLock()) {
   //   if (Controller::Get()->HasFlyingColocateAdjust()) {
   //     double total_storage_MB = sta::ByteToMB(executors_[rank]->GetMissingStorageSizeAlign());
-  //     double free_memory_MB = ResourceManager::GetFreeMemoryMB(true);
+  //     double free_memory_MB = ResMgr::GetFreeMemoryMB(true);
   //     double cold_cache_free_memory_MB = 
   //         ColdModelCache::Get().GetColdCacheFreeMemoryMB(free_memory_MB, cold_cache_lock);
   //     if (total_storage_MB > cold_cache_free_memory_MB && !Controller::Get()->IsTrainIdle()) {
@@ -325,7 +325,7 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
         memory_mb_t require_mb = 
             + (sta::ByteToMB(new_capacity) 
               - sta::ByteToMB(cold_model_cache->GetCachedNbytes(cold_cache_lock))
-            ) - (ResourceManager::GetFreeMemoryMB(sta::DeviceManager::GetCurrentDevice(), true));
+            ) - (ResMgr::GetFreeMemoryMB(sta::DevMgr::GetCurrentDevice(), true));
         LOG_IF(INFO, Config::log_memory_adjust) 
             << "[Model, Cold Cache Adjust] " << "Adjust train " 
             << rank << " require " << require_mb << "MB";
@@ -350,7 +350,7 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
                 << require_mb << "MB < 0.";
           }
           memory_byte_t max_new_capacity = 
-              std::max(ResourceManager::GetFreeMemoryMB(sta::DeviceManager::GetCurrentDevice(), false), 
+              std::max(ResMgr::GetFreeMemoryMB(sta::DevMgr::GetCurrentDevice(), false), 
                       0.0) * 1_MB
               + cold_model_cache->GetCachedNbytes(cold_cache_lock);
           
@@ -441,10 +441,10 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
              Config::cold_cache_max_capability_nbytes);
     cold_model_cache->UnblockProfilter();
   } else {
-    if (ResourceManager::GetFreeMemoryMB(
-          sta::DeviceManager::GetCurrentDevice(), false) <= total_storage_nbytes) {
+    if (ResMgr::GetFreeMemoryMB(
+          sta::DevMgr::GetCurrentDevice(), false) <= total_storage_nbytes) {
       memory_mb_t require_mb = sta::ByteToMB(total_storage_nbytes) 
-        - ResourceManager::GetFreeMemoryMB(sta::DeviceManager::GetCurrentDevice(), false);
+        - ResMgr::GetFreeMemoryMB(sta::DevMgr::GetCurrentDevice(), false);
       auto adjust_plan = TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
         device_.device_id, require_mb, nan(""), cold_cache_lock);
       if (!adjust_plan.empty()) {

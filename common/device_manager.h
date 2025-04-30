@@ -43,6 +43,8 @@ class DeviceManager {
 
 };
 
+using DevMgr = DeviceManager;
+
 } // namespace colserve::sta
 
 #endif
