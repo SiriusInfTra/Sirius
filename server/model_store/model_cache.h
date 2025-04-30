@@ -35,7 +35,7 @@ class InferModelStore;
  *   3. if a model is evicted from warm cache, it should first
  *      be put into cold cache.
  * 
- *   Furthur, we need to lock the protect cache data structure when
+ *   Further, we need to lock the protect cache data structure when 
  *   model are add/delete from the cache. We need to avoid dead lock
  *   during maintaining the cache.
  *   There are involved locks:
@@ -234,7 +234,7 @@ class ColdModelCache {
   inline double GetFreeMemoryWithCacheEmpty(
       double free_memory_MB, 
       std::unique_lock<std::mutex> &lock) {
-    if (current_cached_nbytes_ > Config::cold_cache_min_capability_nbytes){
+    if (current_cached_nbytes_ > Config::cold_cache_min_capability_nbytes) {
       free_memory_MB += sta::ByteToMB(current_cached_nbytes_ 
                                       - Config::cold_cache_min_capability_nbytes);
     }

@@ -225,7 +225,7 @@ ColdModelCache::PushCacheItem(
       ? static_cast<size_t>(total_nbytes * Config::cold_cache_ratio) 
       : 0;
   size_t uncache_nbytes = 0;
-  LOG(INFO) << "model_max_cached_nbytes: " << model_max_cached_nbytes;
+  DLOG(INFO) << "model_max_cached_nbytes: " << model_max_cached_nbytes;
 
   // ----------------------------------------------
   // 1. determine the cache group, uncached nbytes
@@ -466,7 +466,7 @@ void ColdModelCache::SetNewCapacity(memory_byte_t new_capacity,
   CHECK_GE(new_capacity, current_cached_nbytes_);
   current_capacity_nbytes_ = new_capacity;
   DLOG_IF(INFO, Config::log_cold_cache) 
-      << "SetNewCapacity " << sta::ByteToMB(new_capacity) << "MB";
+      << "SetNewCapacity " << sta::PrintByte(new_capacity);
 }
 
 bool ColdModelCache::TakeSpace(memory_byte_t nbytes) {
@@ -474,23 +474,25 @@ bool ColdModelCache::TakeSpace(memory_byte_t nbytes) {
   if (current_cached_nbytes_ + nbytes <= current_capacity_nbytes_) {
     current_capacity_nbytes_ -= nbytes;
     DLOG_IF(INFO, Config::log_cold_cache) 
-        << "[ColdModelCache] TakeSpace Succ " << sta::ByteToMB(nbytes)
-        << "MB, current cache " << sta::ByteToMB(current_cached_nbytes_)
-        << "MB: " << sta::ByteToMB(current_capacity_nbytes) << "MB -> " 
-        << sta::ByteToMB(current_capacity_nbytes_) << "MB,"
-        << "FREE: " << ResourceManager::GetFreeMemoryMB(
-            sta::DeviceManager::GetCurrentDevice(), false) 
-        << ".";
+        << str(boost::format(
+          "[ColdModelCache] TakeSpace Succ %s, current cache %s: %s -> %s, FREE: %s.")
+            % sta::PrintByte(nbytes)
+            % sta::PrintByte(current_cached_nbytes_)
+            % sta::PrintByte(current_capacity_nbytes)
+            % sta::PrintByte(current_capacity_nbytes_)
+            % ResourceManager::GetFreeMemoryMB(
+                sta::DeviceManager::GetCurrentDevice(), false));
     return true;
   } else {
     DLOG_IF(INFO, Config::log_cold_cache) 
-        << "[ColdModelCache] TakeSpace Fail " << sta::ByteToMB(nbytes) 
-        << "MB, current cache " << sta::ByteToMB(current_cached_nbytes_)
-        << "MB: " << sta::ByteToMB(current_capacity_nbytes) << "MB -> " 
-        << sta::ByteToMB(current_capacity_nbytes_) << "MB,"
-        << "FREE: " << ResourceManager::GetFreeMemoryMB(
-            sta::DeviceManager::GetCurrentDevice(), false) 
-        << ".";
+        << str(boost::format(
+          "[ColdModelCache] TakeSpace Fail %s, current cache %s: %s -> %s, FREE: %s.")
+              % sta::PrintByte(nbytes)
+              % sta::PrintByte(current_cached_nbytes_)
+              % sta::PrintByte(current_capacity_nbytes)
+              % sta::PrintByte(current_capacity_nbytes_)
+              % ResourceManager::GetFreeMemoryMB(
+                  sta::DeviceManager::GetCurrentDevice(), false));
     return false;
   }
 }

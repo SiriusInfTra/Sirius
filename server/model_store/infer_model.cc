@@ -263,9 +263,10 @@ bool Model::MaybeAdjustTrainAndCache(size_t rank,
                                      std::unique_lock<std::mutex> &model_lock) {
   CHECK(status_[rank] == Status::kWithoutMemory);
   if (ctrl::Controller::Get()->IsTrainIdle()) {
-    LOG(INFO) << "[Model, Cold Cache Adjust] "
-              << "AllocStorageMaybeAdjust: model " << rank
-              << " train idle, skip adjust";
+    LOG_IF(INFO, Config::log_memory_adjust) 
+        << "[Model, Cold Cache Adjust] "
+        << "AllocStorageMaybeAdjust: model " << rank
+        << " train idle, skip adjust";
     return false;
   }
 #if ADJUST_WITH_FLYING
@@ -559,7 +560,6 @@ bool Model::Inference(uint32_t rank, pthread_barrier_t* barrier) {
     bool setup_memory = false;
     {
       if (status_[rank] == Status::kWithoutMemory) {
-
         auto begin = Profiler::Now();
         SetupMemory(rank, cold_cache_lock, lock);
         setup_mem_ms = Profiler::MilliFrom(begin);

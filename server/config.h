@@ -47,6 +47,7 @@ inline std::ostream & operator<<(std::ostream &os, const ServeMode &mode) {
       break;
     case ServeMode::kColocateL1:
       os << "kColocateL1";
+      break;
     case ServeMode::kColocateL2:
       os << "kColocateL2";
       break;

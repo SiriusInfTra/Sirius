@@ -207,7 +207,8 @@ void Executor::PipelineRun() {
       for (auto eid : input_param_eid_[i]) {
         auto event_id = param_ready_event_ids_[eid];
         CHECK(event_id != -1);
-        COL_CUDA_CALL(cudaStreamWaitEvent((cudaStream_t)exec_stream_, param_ready_events_[event_id]));
+        COL_CUDA_CALL(cudaStreamWaitEvent((cudaStream_t)exec_stream_, 
+                      param_ready_events_[event_id]));
       }
       wait_ms += Profiler::MilliFrom(t1);
 
