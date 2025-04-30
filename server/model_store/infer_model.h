@@ -2,6 +2,7 @@
 #define COLSERVE_INFER_MODEL_H
 
 #include <server/tvm/executor.h>
+#include <server/train_adjuster.h>
 #include <server/grpc/grpc_server.h>
 
 #include <mutex>
@@ -16,6 +17,7 @@ namespace colserve {
 
 std::string GetModelNameWithoutDuplicatedId(const std::string &model_name);
 
+class ColdModelCache;
 class Model {
  public:
   enum class Status {
@@ -69,6 +71,22 @@ class Model {
   bool AddJob(network::InferHandler::InferData* data);
 
   void InitMetaInfo();
+
+  // ------------------------------------------------------
+  // Helper functions for MaybeAdjustTrainAndCache
+  // ------------------------------------------------------
+  void AdjustTrain(size_t rank, 
+                   memory_byte_t model_total_storage_nbytes,
+                   memory_byte_t new_capacity,
+                   memory_mb_t require_mb,
+                   const std::vector<TrainAdjuster::AdjustPlan> &adjust_plan,
+                   ColdModelCache *cold_model_cache,
+                   std::unique_lock<std::mutex> &cold_cache_lock);
+  void CacheModel(size_t rank, 
+                  memory_byte_t model_total_storage_nbytes,
+                  ColdModelCache *cold_model_cache,
+                  std::unique_lock<std::mutex> &cold_cache_lock);
+  // ------------------------------------------------------
   bool MaybeAdjustTrainAndCache(size_t rank, 
                                 std::unique_lock<std::mutex> 
                                 &cold_cache_lock, 

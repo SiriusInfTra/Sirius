@@ -258,6 +258,11 @@ class ColdModelCache {
   double GetReleaseReserveMemoryMB(std::unique_lock<std::mutex> &lock);  
   double GetAdjustReserveMemoryMB(std::unique_lock<std::mutex> &lock);  
 
+  inline static memory_byte_t GetStablePointCapacity() {
+    return (Config::cold_cache_min_capacity_nbytes + 
+           Config::cold_cache_max_capacity_nbytes) / 2;
+  }
+
   std::string PrintCacheInfo(std::unique_lock<std::mutex> &lock); 
 
   static void Init();
