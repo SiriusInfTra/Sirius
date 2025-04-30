@@ -54,19 +54,19 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
   TorchColConfig::train_rank = train_rank_;
   TorchColConfig::train_world_size = train_world_size_;
 
-  auto use_shared_tensor_env = std::getenv("COL_USE_SHARED_TENSOR");
-  auto colocate_use_xsched_env = std::getenv("COL_USE_XSCHED");
-  auto has_infer_server_env = std::getenv("COL_HAS_INFER_SERVER");
-  auto has_shared_tensor_server_env = std::getenv("COL_HAS_SHARED_TENSOR_SERVER");
-  auto pool_size_env = std::getenv("COL_SHARED_TENSOR_POOL_GB");
-  auto dynamic_sm_partition_env = std::getenv("COL_DYNAMIC_SM_PARTITION");
-  auto hook_mode_env = std::getenv("COL_HOOK_MODE");
-  auto train_mode_env = std::getenv("COL_TRAIN_MODE");
-  auto train_profile_log_path_env = std::getenv("COL_TRAIN_PROFILE_LOG_PATH");
-  auto log_all_env = std::getenv("COL_LOG_ALL");
-  auto log_dynamic_batch_env = std::getenv("COL_LOG_DYNAMIC_BATCH");
-  auto log_control_stub_env = std::getenv("COL_LOG_CONTROL_STUB");
-  auto log_nccl_process_group_env = std::getenv("COL_LOG_NCCL_PROCESS_GROUP");
+  auto use_shared_tensor_env = std::getenv("COLTRAIN_USE_SHARED_TENSOR");
+  auto colocate_use_xsched_env = std::getenv("COLTRAIN_USE_XSCHED");
+  auto has_infer_server_env = std::getenv("COLTRAIN_HAS_INFER_SERVER");
+  auto has_shared_tensor_server_env = std::getenv("COLTRAIN_HAS_SHARED_TENSOR_SERVER");
+  auto pool_size_env = std::getenv("COLTRAIN_SHARED_TENSOR_POOL_GB");
+  auto dynamic_sm_partition_env = std::getenv("COLTRAIN_DYNAMIC_SM_PARTITION");
+  auto hook_mode_env = std::getenv("COLTRAIN_HOOK_MODE");
+  auto train_mode_env = std::getenv("COLTRAIN_MODE");
+  auto train_profile_log_path_env = std::getenv("COLTRAIN_PROFILE_LOG_PATH");
+  auto log_all_env = std::getenv("COLTRAIN_LOG_ALL");
+  auto log_dynamic_batch_env = std::getenv("COLTRAIN_LOG_DYNAMIC_BATCH");
+  auto log_control_stub_env = std::getenv("COLTRAIN_LOG_CONTROL_STUB");
+  auto log_nccl_process_group_env = std::getenv("COLTRAIN_LOG_NCCL_PROCESS_GROUP");
 
   use_shared_tensor = use_shared_tensor_env == nullptr ? 
                       false : (std::string(use_shared_tensor_env) == "1");
@@ -102,7 +102,7 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
   }
 
   if (!has_shared_tensor_server && !pool_size_env) {
-    LOG(INFO) << "COL_SHARED_TENSOR_POOL_GB not set, use default 12GB";
+    LOG(INFO) << "COLTRAIN_SHARED_TENSOR_POOL_GB not set, use default 12GB";
   } else if (pool_size_env) {
     shared_tensor_pool_gb = std::stod(pool_size_env);
   }

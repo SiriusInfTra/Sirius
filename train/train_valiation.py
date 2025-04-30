@@ -35,8 +35,8 @@ class SimpleConvNet(nn.Module):
 def val_begin():
     global trace_input
     global trace_output
-    trace_output = [] if 'COL_TRACE_OUTPUT' in os.environ else None
-    trace_input = pd.read_csv(os.environ['COL_TRACE_INPUT']).to_dict(orient='records') if 'COL_TRACE_INPUT' in os.environ else None
+    trace_output = [] if '"COLTRAIN_TRACE_OUTPUT' in os.environ else None
+    trace_input = pd.read_csv(os.environ['"COLTRAIN_TRACE_INPUT']).to_dict(orient='records') if '"COLTRAIN_TRACE_INPUT' in os.environ else None
     if trace_output is not None or trace_input is not None:  
         torch.backends.cudnn.benchmark = False   
         torch.use_deterministic_algorithms(True)
@@ -50,9 +50,9 @@ def val_end():
     global trace_input
     global trace_output
     if trace_output is not None:
-        pd.DataFrame(trace_output).to_csv(os.environ['COL_TRACE_OUTPUT'], index=None)
+        pd.DataFrame(trace_output).to_csv(os.environ['"COLTRAIN_TRACE_OUTPUT'], index=None)
     if trace_input is not None:
-        pd.DataFrame(trace_input).to_csv(os.environ['COL_TRACE_INPUT'], index=None)
+        pd.DataFrame(trace_input).to_csv(os.environ['"COLTRAIN_TRACE_INPUT'], index=None)
         
 def debug_print_loss(batch_size: int, loss: torch.Tensor):
     if trace_input is not None or trace_output is not None:

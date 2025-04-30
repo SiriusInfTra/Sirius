@@ -33,15 +33,18 @@ enable_hybrid = False
 
 enable_uniform_v2 = False
 enable_skewed_v2 = False
+
+# ref: eval/workload_collections/__init__.py
 uniform_v2_workload_types = [
-    'NormalA', 
-    'NormalB',
-    'NormalC'
+    'NormalLight' # 'NormalA', 
+    'NormalHeavy' # 'NormalB',
+    'NormalBirst' # 'NormalC'
 ]
 skew_v2_workload_types = [
     # 'SkewA',
     # 'SkewB',
-    'SkewC'
+
+    'SkewBirst' # 'SkewC'
 ]
 
 # should be false to eval infer-only
