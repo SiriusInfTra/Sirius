@@ -431,23 +431,23 @@ bool Model::MaybeAdjustTrainAndCache(
       << "[Model, Cold Cache Adjust] "
       << "AllocStorageMaybeAdjust: model " << rank
       << " total_storage_nbytes " << total_storage_nbytes;
+
+  /** [Note: memory adjust order]
+  *  gpu memory can be classified into 4 types:
+  *   - inference active memory
+  *   - inference cached memory
+  *   - free memory
+  *   - training memory 
+  *  the cold cache capacity = inference cached memory + free memory
+  *  If inference require more memory, it will first ask 
+  *  free memory, cached memory and training memory in order.
+  */
+
   if (Config::cold_cache_max_capacity_nbytes > 0 && Config::cold_cache_ratio > 0) {
     auto cold_model_cache = ColdModelCache::Get(device_.device_id);
     cold_model_cache->BlockProfilter();
     if (!cold_model_cache->TakeSpace(total_storage_nbytes)) {
       /* if: need adjust train / infer cache */
-
-      /** [Note: memory adjust order]
-      *  gpu memory can be classified into 4 types:
-      *   - inference active memory
-      *   - inference cached memory
-      *   - free memory
-      *   - training memory 
-      *  the cold cache capacity = inference cached memory + free memory
-      *  If inference require more memory, it will first ask 
-      *  free memory, cached memory and training memory in order.
-      */
-
       memory_byte_t cold_cache_min_cap_required_nbytes = 
           Config::cold_cache_min_capacity_nbytes + total_storage_nbytes;
       bool need_adjust_train = 
