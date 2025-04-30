@@ -119,7 +119,7 @@ void Controller::TrainMonitor() {
     case ctrl::CtrlEvent::kColocateAdjustL1Done:
     case ctrl::CtrlEvent::kColocateAdjustL2Done:
       {
-        adjust_done_id_ = entry.id;
+        adjust_done_ids_[train_id] = entry.id;
         wait_train_adjust_cv_.notify_all();
       }
       break;
@@ -374,12 +374,12 @@ bool Controller::WaitInferIdle() {
   return true;
 }
 
-bool Controller::WaitColocateAdjustDone(uint64_t cmd_id) {
+bool Controller::WaitColocateAdjustDone(uint64_t device_id, uint64_t cmd_id) {
   if (!IsTrainIdle()) {
     if (Config::IsColocateMode()) {
       std::unique_lock lock{wait_train_adjust_mutex_};
       wait_train_adjust_cv_.wait(lock, 
-          [&](){ return adjust_done_id_ >= cmd_id; });
+          [&](){ return adjust_done_ids_[device_id] >= cmd_id; });
     }
   }
   return true;
@@ -424,7 +424,11 @@ bool Controller::IsTrainIdle() {
 }
 
 bool Controller::HasFlyingColocateAdjust() {
-  return adjust_done_id_ + 1 < Controller::adjust_cmd_id;
+  for (auto i : boost::irange(sta::DevMgr::GetNumVisibleGpu())) {
+    if (adjust_done_ids_[i] + 1 < Controller::adjust_cmd_id) 
+      return true; 
+  }
+  return false;
 }
 
 void Controller::InferenceWorkloadDone() {

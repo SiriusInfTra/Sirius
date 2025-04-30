@@ -44,7 +44,7 @@ class Controller {
   bool WaitTrainNotRunning();
   bool WaitTaskSwitchDone(uint64_t cmd_id);
   bool WaitInferIdle();
-  bool WaitColocateAdjustDone(uint64_t cmd_id);
+  bool WaitColocateAdjustDone(uint64_t device_id, uint64_t cmd_id);
   // uint64_t InferExit(int device_id);
   uint64_t ColocateInferReleaseAdjust(const std::vector<TrainAdjuster::AdjustPlan> &adjust_plans);
   uint64_t DummyInferExit(int device_id, int target_batch_size);
@@ -95,7 +95,8 @@ class Controller {
   // colocate mode
   std::mutex wait_train_adjust_mutex_;
   std::condition_variable wait_train_adjust_cv_;
-  uint64_t adjust_done_id_{0};
+  // uint64_t adjust_done_id_{0};
+  std::array<uint64_t, MAX_DEVICE_NUM> adjust_done_ids_{0};
   
   // // constrol cooperated allocation
   // std::mutex infer_change_memory_mutex_; // to allocate inference model in a sequential way

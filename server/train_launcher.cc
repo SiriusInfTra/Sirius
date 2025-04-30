@@ -401,7 +401,7 @@ void TrainLauncher::DummyAdjust() {
     LOG(INFO) << "DummyAdjust at " << Profiler::GetTimeStamp();
     auto batch_size = 1;
     auto cmd_id = ctrl::Controller::Get()->ColocateAdjust(-1, 0, batch_size);
-    ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
+    ctrl::Controller::Get()->WaitColocateAdjustDone(0, cmd_id);
     ctrl::Controller::Get()->DummyInferExit(0, ori_target_bs);
     std::this_thread::sleep_for(
         std::chrono::milliseconds(std::uniform_int_distribution<>(200, 1000)(gen)));

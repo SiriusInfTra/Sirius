@@ -136,7 +136,7 @@ if not skip_set_mps_pct:
 if args.binary_dir != 'build':
     set_binary_dir(args.binary_dir)
 
-if args.multi_gpu:
+if args.multi_gpu or runner.is_multi_gpu():
     run_comm.UniformConfig_v2.train_model += "_ddp"
     run_comm.SkewedConfig_v2.train_model += "_ddp"
 
@@ -517,8 +517,8 @@ if run_colsys:
         'cold_cache_ratio': 0.5, 
         # 'cold_cache_min_capacity_nbytes': int(0.5 * 1024 * 1024 * 1024),
         # 'cold_cache_max_capacity_nbytes': int(1 * 1024 * 1024 * 1024),
-        'cold_cache_min_capacity_nbytes': int(2.0 * 1024 * 1024 * 1024),
-        'cold_cache_max_capacity_nbytes': int(3.0 * 1024 * 1024 * 1024),
+        'cold_cache_min_capacity_nbytes': int(0.0 * 1024 * 1024 * 1024),
+        'cold_cache_max_capacity_nbytes': int(2.0 * 1024 * 1024 * 1024),
         'dynamic_sm_partition': dynamic_sm_partition,
     }
 

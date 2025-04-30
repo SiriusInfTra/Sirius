@@ -606,7 +606,8 @@ void ColocateStub::ColocateAdjustL1Done() {
     // colserve::sta::CUDAMemPool::EnableTrainAlloc();
     StubProfiler::RecordAdjustDone();
     LOG_IF(INFO, TorchColConfig::log_control_stub) 
-        << "[ColocateStub] Adjust L1 done, timestamp: " 
+        << "[Rank " << TorchColConfig::GetTrainRank() 
+        << " | ColocateStub] Adjust L1 done, timestamp: " 
         << torch_col::get_unix_timestamp();
   }
 }

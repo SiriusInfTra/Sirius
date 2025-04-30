@@ -160,7 +160,7 @@ class Trainer:
     def handle_abort_batch(self, epoch_idx: int, batch_idx: int, 
                            batch: Batch, exception: Exception):
         if epoch_idx == 0 and batch_idx == 0:
-            raise RuntimeError("first micro batch could not be interrupted.")
+            raise RuntimeError("first micro batch could not be interrupted, please increase the delay time")
         
         # -------------------------
         # first, finish abort batch

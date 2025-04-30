@@ -287,7 +287,7 @@ void Model::AdjustTrain(
       PROFILE_START(TrainAdjust);
       auto cmd_id = ctrl::Controller::Get()->ColocateInferRequireAdjust(
           rank, device_.device_id, adjust_plan);
-      ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
+      ctrl::Controller::Get()->WaitColocateAdjustDone(device_.device_id, cmd_id);
       PROFILE_END(TrainAdjust);
       LOG_IF(INFO, Config::log_memory_adjust) 
           << "[Model, Cold Cache Adjust] "
@@ -296,18 +296,18 @@ void Model::AdjustTrain(
           << " wait adjust " << PROFILE_DURATRION(TrainAdjust);
     } else {
       LOG_IF(INFO, Config::log_memory_adjust) 
-          << "[MaybeAdjustTrainAndCache]  require " 
+          << "[MaybeAdjustTrainAndCache, AdjustTrain]  require " 
           << require_mb << "MB < 0.";
     }
     memory_byte_t max_new_capacity = 
-        std::max(ResMgr::GetFreeMemoryMB(sta::DevMgr::GetCurrentDevice(), false), 
-                0.0) * 1_MB
+        std::max(ResMgr::GetFreeMemoryMB(STA_CURRENT_DEVICE, true), 0.0) * 1_MB
         + cold_model_cache->GetCachedNbytes(cold_cache_lock);
     
     if (max_new_capacity < new_capacity) {
       LOG_IF(INFO, Config::log_memory_adjust) 
-          << "[MaybeAdjustTrainAndCache] require " 
-          << require_mb << "MB, but no enough memory. New capacity: " 
+          << "[MaybeAdjustTrainAndCache, AdjustTrain | Device " 
+          <<  device_.device_id << "] require " << require_mb 
+          << "MB, but no enough memory. New capacity: " 
           << sta::PrintByte(new_capacity) << " -> " 
           << sta::PrintByte(max_new_capacity);
       new_capacity = std::max(
@@ -323,7 +323,7 @@ void Model::AdjustTrain(
       InferModelStore::Get()->GetModel(name)->ClearColdCache(
           cached_groups_id, rank, cold_cache_lock);
     }
-    LOG(INFO) << "[MaybeAdjustTrainAndCache] require " 
+    LOG(INFO) << "[MaybeAdjustTrainAndCache, AdjustTrain] require " 
               << require_mb << "MB, but no adjust plan";
     cold_model_cache->SetNewCapacity(model_total_storage_nbytes, cold_cache_lock);
   }
@@ -344,7 +344,7 @@ void Model::CacheModel(
 
   if (cold_model_cache->TakeSpace(model_tot_storage_nbytes)) {
     LOG_IF(INFO, Config::log_memory_adjust) 
-        << "[MaybeAdjustTrainAndCache] Secound take space success, "
+        << "[MaybeAdjustTrainAndCache, CacheModel] Secound take space success, "
         << "new cold cache: " << cold_model_cache->PrintCacheInfo(cold_cache_lock);
   } else {
     memory_byte_t init_cached_nbytes = GetColdCacheNbytes();
@@ -377,7 +377,7 @@ void Model::CacheModel(
 
     size_t release_nbytes = init_cached_nbytes - GetColdCacheNbytes();
     LOG_IF(INFO, Config::log_memory_adjust) 
-        << "[MaybeAdjustTrainAndCache] After maybe evict, "
+        << "[MaybeAdjustTrainAndCache, CacheModel] After maybe evict, "
         << "Cache: " << cold_model_cache->PrintCacheInfo(cold_cache_lock)
         << " Total storage: " << sta::PrintByte(model_tot_storage_nbytes)
         << " Evict: " << sta::PrintByte(evict_storage) << " | " 
@@ -479,7 +479,8 @@ bool Model::MaybeAdjustTrainAndCache(
           << cold_model_cache->PrintCacheInfo(cold_cache_lock)
           << " Total storage: " << sta::PrintByte(total_storage_nbytes);
       CHECK_GE(cold_model_cache->GetCacheCapacity(cold_cache_lock), 
-               total_storage_nbytes);
+               total_storage_nbytes)
+          << "Device " << device_.device_id;
       
       CacheModel(rank, total_storage_nbytes, 
                  cold_model_cache, cold_cache_lock);
@@ -501,7 +502,7 @@ bool Model::MaybeAdjustTrainAndCache(
         PROFILE_START(TrainAdjust);
         auto cmd_id = ctrl::Controller::Get()->ColocateInferRequireAdjust(
             rank, device_.device_id, adjust_plan);
-        ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
+        ctrl::Controller::Get()->WaitColocateAdjustDone(device_.device_id, cmd_id);
         PROFILE_END(TrainAdjust);
         LOG_IF(INFO, Config::log_memory_adjust) 
             << "[Model, Cold Cache Adjust] "

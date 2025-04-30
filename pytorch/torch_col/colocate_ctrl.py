@@ -443,6 +443,7 @@ class ColocateCtrl(CtrlBase):
               f' memory cached: {old_cached_gpu_mem:.2f}GB -> {cur_cached_gpu_mem:.2f}GB,'
               f' memory allocated: {old_allocate_gpu_mem:.2f}GB -> {cur_allocate_gpu_mem:.2f}GB.', 
               flush=True)
+        # torch_col.info(f'rank {torch_col.get_train_rank()} memory allocated: {old_allocate_gpu_mem:.2f}GB -> {cur_allocate_gpu_mem:.2f}GB')
 
     def adjust_l2(self):
         t0 = time.time()

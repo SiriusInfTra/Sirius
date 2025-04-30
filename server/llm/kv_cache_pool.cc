@@ -318,7 +318,7 @@ uint64_t KVCachePool::MaybeAdjustTrain(
     PROFILE_START(TrainAdjust);
     auto cmd_id = ctrl::Controller::Get()->ColocateInferRequireAdjust(
         0, device_id, adjust_plan);
-    ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
+    ctrl::Controller::Get()->WaitColocateAdjustDone(device_id, cmd_id);
     PROFILE_END(TrainAdjust);
     LOG_IF(INFO, Config::log_memory_adjust) 
         << "[KVCachePool, Memory Adjust] "
