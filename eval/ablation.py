@@ -170,3 +170,8 @@ for cold_cache_min_cap, cold_cache_max_cap in cold_cache_cap_list:
                      "ablation-cold-cache-cap-uniform", f"{cold_cache_min_cap}GB-{cold_cache_max_cap}GB")
 
 
+# =========================================================
+# Parse result
+# =========================================================
+if LogParser._enable:
+    LogParser.parse(TestUnit.ABLATION)

@@ -36,15 +36,15 @@ enable_skewed_v2 = False
 
 # ref: eval/workload_collections/__init__.py
 uniform_v2_workload_types = [
-    'NormalLight' # 'NormalA', 
-    'NormalHeavy' # 'NormalB',
-    'NormalBirst' # 'NormalC'
+    'NormalLight', # 'NormalA', 
+    'NormalHeavy', # 'NormalB',
+    'NormalBurst', # 'NormalC'
 ]
 skew_v2_workload_types = [
     # 'SkewA',
     # 'SkewB',
 
-    'SkewBirst' # 'SkewC'
+    'SkewBurst' # 'SkewC'
 ]
 
 # should be false to eval infer-only
@@ -81,6 +81,7 @@ parser.add_argument('--binary-dir', type=str, default='build')
 parser.add_argument('--multi-gpu', action='store_true')
 parser.add_argument('--uniform-v2-wkld-types', nargs='*', default=[])
 parser.add_argument('--skewed-v2-wkld-types', nargs='*', default=[])
+parser.add_argument('--parse-result', action='store_true')
 args = parser.parse_args()
 
 if args.colsys or args.all_sys:
@@ -151,6 +152,10 @@ run_comm.retry_if_fail = retry_if_fail
 if args.skip_fail:
     skip_fail = True
     run_comm.skip_fail = skip_fail
+
+if args.parse_result:
+    LogParser._enable = True
+
 
 ## MARK: Configurations
 ## =========================================================== ##
@@ -929,3 +934,12 @@ if run_um_mps:
             run(system, workload, server_model_config, 
                 f"overall-azure-{runner.get_num_gpu()}gpu", "um-mps")
 
+
+# =========================================================
+# Parse result
+# =========================================================
+if LogParser._enable:
+    if args.multi_gpu or runner.is_multi_gpu():
+        LogParser.parse(TestUnit.OVER_ALL_MULTI_GPU)
+    else:
+        LogParser.parse(TestUnit.OVER_ALL_SINGLE_GPU)

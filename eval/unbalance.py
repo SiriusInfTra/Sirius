@@ -15,12 +15,12 @@ import tempfile
 def update_sever_config(server_model_config: str, num_workloads: int) -> str:
     for k in range(len(server_model_config)):
         def update(match):
-            # 提取数字并转换为整数
+            # Extract the number and convert to integer
             num = int(match.group(1))
-            # 返回替换后的字符串
+            # Return the replaced string
             return f'[{num * num_workloads}]'
         
-        # 使用正则表达式查找并替换
+        # Use regex to find and replace
         server_model_config[k] = re.sub(r'\[(\d+)\]', update, server_model_config[k])
     return server_model_config
     
@@ -118,7 +118,7 @@ for train_adjust_balance in [
             wkld_type, 
             client_model_list, 
             infer_only=False
-        ) for wkld_type in ['NormalA', 'NormalB']
+        ) for wkld_type in ['NormalLight', 'NormalHeavy']
     ]
     system = System(port=run_comm.UniformConfig_v2.port, 
                     dump_adjust_info=False,
@@ -133,3 +133,10 @@ for train_adjust_balance in [
     run_comm.run(system, workload, server_model_config,
                     f"overall-uniform-v2-{runner.get_num_gpu()}gpu-{num_model}", 
                     'colsys-' + ('balance' if train_adjust_balance else 'imbalance'))
+    
+
+# =========================================================
+# Parse result
+# =========================================================
+if LogParser._enable:
+    LogParser.parse(TestUnit.UNBALANCE)

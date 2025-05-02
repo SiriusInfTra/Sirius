@@ -50,7 +50,7 @@ over_all_multi_gpu() {
   echo -e "\033[1;32m==================================================================\033[0m\n"
 
   multi_gpu_env
-  python eval/overall_v2.py --uniform-v2 --uniform-v2-wkld-types NormalA \
+  python eval/overall_v2.py --uniform-v2 --uniform-v2-wkld-types NormalLight \
     --colsys --static-partition --task-switch --um-mps --infer-only \
     --skip-set-mps-pct --multi-gpu --retry-limit 3
 }

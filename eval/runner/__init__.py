@@ -38,6 +38,7 @@ from .config import (
 )
 from .runner import *
 from .hyper_workload import *
+from .parser import LogParser, TestUnit
 
 
 def get_num_gpu():

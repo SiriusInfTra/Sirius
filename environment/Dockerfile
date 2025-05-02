@@ -42,4 +42,8 @@ RUN source /opt/mambaforge/bin/activate colserve && \
   pip install --upgrade pip && \
   pip install -r /tmp/requirements.txt
 
+
+# Install TVM, PyTorch, vLLM
+
+
 ENTRYPOINT ["/usr/bin/fish"]

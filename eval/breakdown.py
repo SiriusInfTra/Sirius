@@ -216,7 +216,7 @@ if run_colsys:
         'train_memory_over_predict_mb' : 1500,
         'infer_model_max_idle_ms' : 5000,
         'cold_cache_ratio': 0.5, 
-        'cold_cache_min_capacity_nbytes': int(1.5 * 1024 * 1024 * 1024),
+        'cold_cache_min_capacity_nbytes': int(0 * 1024 * 1024 * 1024),
         'cold_cache_max_capacity_nbytes': int(2 * 1024 * 1024 * 1024),
         'dynamic_sm_partition': True,
     }
@@ -356,3 +356,11 @@ if run_strawman:
                          "strawman")
                         
         
+# =========================================================
+# Parse result
+# =========================================================
+if LogParser._enable:
+    if args.multi_gpu:
+        LogParser.parse(TestUnit.BREAKDOWN_MULTI_GPU)
+    else:
+        LogParser.parse(TestUnit.BREAKDOWN_SINGLE_GPU)
