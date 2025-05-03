@@ -19,7 +19,8 @@ parser.add_argument('--uniform-v2', action='store_true', help='Run uniform-v2')
 parser.add_argument('--burstgpt', action='store_true', help='Run burstgpt')
 parser.add_argument('--burstgpt-rps', type=int, help='BurstGPT RPS', required=False)
 parser.add_argument('--train-mps-pct', type=int, help='Train MPS Pct', required=False)
-parser.add_argument('--colsys-without-train', action='store_true', help='Run colsys without train') 
+parser.add_argument('--colsys-without-train', action='store_true', help='Run colsys without train')
+parser.add_argument('--parse-result', action='store_true')
 
 args = parser.parse_args()
 
@@ -76,6 +77,9 @@ if args.colsys_without_train:
 
 if args.burstgpt_rps:
     run_comm.BurstGPTConfig.max_rps = args.burstgpt_rps
+
+if args.parse_result:
+    LogParser._enable = True
 
 # LLM Workload
 # llm_model = InferModel.Llama2_7B_HF
@@ -321,3 +325,10 @@ if run_infer_only:
             system = System(port=port, **system_config)
             run_comm.run(system, workload, None,
                          f'{wkld_type}-{runner.get_num_gpu()}gpu', f'infer-only')
+
+
+# =========================================================
+# Parse result
+# =========================================================
+if LogParser._enable:
+    LogParser.parse(TestUnit.LLM)

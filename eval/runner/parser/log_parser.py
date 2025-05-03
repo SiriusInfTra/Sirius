@@ -9,6 +9,18 @@ from typing import List, Union
 __parser_dir_path__ = pathlib.Path(__file__).parent.absolute()
 __plot_script_dir_path__ = __parser_dir_path__.parent / 'plot_scripts'
 
+
+class TestUnit(enum.Enum):
+    OVER_ALL_SINGLE_GPU = 'over_all_single_gpu'
+    OVER_ALL_MULTI_GPU = 'over_all_multi_gpu'
+    BREAKDOWN_SINGLE_GPU = 'breakdown_single_gpu'
+    BREAKDOWN_MULTI_GPU = 'breakdown_multi_gpu'
+    ABLATION = 'ablation'
+    UNBALANCE = 'unbalance'
+    MEMORY_PRESSURE = 'memory_pressure'
+    LLM = 'llm'
+
+
 def get_plot_script_path(name: str):
     path = __plot_script_dir_path__ / f"{name}.py"
     if not path.exists():
@@ -24,15 +36,6 @@ def static_partition_to_number_name(name: str):
     else:
         return name   
 
-
-class TestUnit(enum.Enum):
-    OVER_ALL_SINGLE_GPU = 'over_all_single_gpu'
-    OVER_ALL_MULTI_GPU = 'over_all_multi_gpu'
-    BREAKDOWN_SINGLE_GPU = 'breakdown_single_gpu'
-    BREAKDOWN_MULTI_GPU = 'breakdown_multi_gpu'
-    ABLATION = 'ablation'
-    UNBALANCE = 'unbalance'
-    MEMORY_PRESSURE = 'memory_pressure'
 
 # MARK: Log Parse Functions
 def _parse_system_and_trace_helper(log: Union[str, pathlib.Path]):
@@ -97,7 +100,7 @@ def _parse_system_and_trace(unit: TestUnit, log: pathlib.Path):
             assert _parse_num_gpu(log_str) > 1, f"Log {log} is not multi gpu"
         return _parse_system_and_trace_helper(log)
     elif (unit == TestUnit.BREAKDOWN_SINGLE_GPU 
-        or unit == TestUnit.BREAKDOWN_SINGLE_GPU
+        or unit == TestUnit.BREAKDOWN_MULTI_GPU
     ):
         assert 'breakdown' in log_str, f"Log {log} is not breakdown"
         if unit == TestUnit.BREAKDOWN_SINGLE_GPU:
@@ -111,11 +114,14 @@ def _parse_system_and_trace(unit: TestUnit, log: pathlib.Path):
             system = 'naive'
         return system, trace
     elif unit == TestUnit.ABLATION:
-        pass
+        assert False, f"should not use this function for ablation"
     elif unit == TestUnit.UNBALANCE:
-        pass
+        assert False, f"should not use this function for unbalance"
     elif unit == TestUnit.MEMORY_PRESSURE:
-        pass
+        assert False, f"should not use this function for memory pressure"
+    elif unit == TestUnit.LLM:
+        system, _ = _parse_system_and_trace_helper(log)
+        return system, None
     else:
         raise ValueError(f"Unknown test unit: {unit}")
     
@@ -140,6 +146,66 @@ def _parse_train_local_thpts(log: pathlib.Path):
     print('_parse_train_local_thpts [(rank, thpt)]', thpts)
     assert len(thpts) == thpts[-1][0] + 1, f"Log {log} does not have all ranks"
     return [thpt[1] for thpt in thpts]
+
+
+def _parse_train_waste_compute(log: pathlib.Path):
+    train_thpt = log / 'train_thpt'
+    if not train_thpt.exists():
+        print(f'Warning: {log} does not have train_thpt')
+        return np.nan
+    
+    waste_compute = np.nan
+    with open(train_thpt, 'r') as f:
+        for line in f.readlines():
+            m = re.search(
+                r'cancel waste ([0-9]+\.[0-9]+) \(([0-9]+\.[0-9]+)%\).*\n^(?!.*global)', 
+                line, re.MULTILINE)
+            if m is not None:
+                waste_compute = float(m.group(2))
+                break
+    return waste_compute
+
+
+def _parse_infer_load_ltc(log: pathlib.Path):
+    profile_log = log / 'profile-log.log'
+    if not profile_log.exists():
+        print(f'Warning: {log} does not have profile-log.log')
+        return np.nan
+
+    load = np.nan
+    with open(profile_log, 'r') as f:
+        for line in f.readlines():
+            m = re.search(r'^InferLoadParam: avg ([0-9]+\.[0-9]+) ', line)
+            if m:
+                load = float(m.group(1))
+                break
+    return load
+
+
+def _parse_infer_cold_start_ratio(log: pathlib.Path):
+    profile_log = log / 'profile-log.log'
+    if not profile_log.exists():
+        print(f'Warning: {log} does not have profile-log.log')
+        return np.nan
+    
+    num_cold_start = None
+    num_infer = None
+    with open(profile_log, 'r') as f:
+        for line in f.readlines():
+            m = re.search(r'^InferLoadParam: .* cnt ([0-9]+) ', line)
+            if m is not None:
+                num_cold_start = int(m.group(1))
+            
+            m = re.search(r'^InferJobProcess: .* cnt ([0-9]+) ', line)
+            if m is not None:
+                num_infer = int(m.group(1))
+            
+            if num_cold_start is not None and num_infer is not None:
+                break
+    if (num_cold_start is None) or (num_infer is None) or (num_infer == 0):
+        return np.nan
+    else:
+        return num_cold_start / num_infer
 
 
 def _parse_system_performance(system: str, trace: str, log: pathlib.Path):
@@ -188,6 +254,30 @@ def _parse_system_performance(system: str, trace: str, log: pathlib.Path):
     p99, slo, thpt = list(map(lambda x : x if x is not None else np.nan, 
                               [p99, slo, thpt]))
     return p99, slo, thpt
+
+
+def _parse_llm_slo(log: pathlib.Path):
+    infer_slo = log / 'infer-slo.svg'
+    if not infer_slo.exists():
+        print(f'Warning: {log} does not have infer-slo.svg')
+        return np.nan
+
+    ttft_slo = None
+    tbt_slo = None
+    with open(infer_slo, 'r') as f:
+        content = f.read()
+        m = re.search(
+            r'^[ ]+<g +id="text_20">[ ]*\n[ ]*<!-- ([0-9]+\.[0-9]+) -->', 
+            content, re.MULTILINE)
+        if m:
+            ttft_slo = m.group(1)
+
+        m = re.search(
+            r'^[ ]+<g +id="text_44">[ ]*\n[ ]*<!-- ([0-9]+\.[0-9]+) -->',
+            content, re.MULTILINE)
+        if m:
+            tbt_slo = m.group(1)
+    return ttft_slo, tbt_slo
 
 
 # MARK: Overall Single GPU
@@ -292,9 +382,10 @@ def parse_breakdown(logs: List[pathlib.Path], single_gpu: bool = True):
     
         adjust_info = None
         with open(profile_log, 'r') as f:
-            adjust_info = re.match(r'^\[Adjust Info\]\n(.*)', f.read())
+            adjust_info = re.search(r'^\[Adjust Info\]\n((?s:.*))', f.read(), 
+                                   re.MULTILINE)
             if adjust_info is None:
-                print(f'Warning: {log} does not contain adjust info')
+                print(f'Warning: {profile_log} does not contain adjust info')
             else:
                 adjust_info = adjust_info.group(1)
                 
@@ -315,19 +406,60 @@ def parse_breakdown(logs: List[pathlib.Path], single_gpu: bool = True):
         raise
 
 
-def _parse_ablation_watermark(logs: List[pathlib.Path]):
+def _parse_ablation_watermark(logs: List[pathlib.Path], parent_dir: pathlib.Path):
+    df = pd.DataFrame(columns=['CacheSize', 'P99', 'Load', 'Thpt', 'WasteCompute'])
+
     if len(logs) == 0:
         print('Warning: parse_ablation_watermark: logs are empty')
-        return
+        df.loc[0] = [0, np.nan, np.nan, np.nan, np.nan]
+    else:
+        df = df.set_index('CacheSize')
+        for log in logs:
+            m = re.search(r'((\d+(\.\d+)?)GB)-((\d+(\.\d+)?)GB)', log.name)
+            if m is None:
+                print(f'Warning: cannot parse cache size from {log}')
+                continue
+            cache_size = m.group(5)
+            p99, slo, thpt = _parse_system_performance('ColSys', None, log)
+            df.loc[cache_size, 'P99'] = p99
+            df.loc[cache_size, 'Thpt'] = thpt
+            df.loc[cache_size, 'Load'] = f'{_parse_infer_load_ltc(log):.1f}'
+            df.loc[cache_size, 'WasteCompute'] = f'{_parse_train_waste_compute(log):.2f}'
 
-    df = pd.DataFrame(columns=['CacheSize', 'P99', 'Load', 'Thpt', 'WasteCompute'])
-    for log in logs:
-        pass
+        df = df.sort_index()
+        df = df.reset_index()
+
+    with open(parent_dir / 'ablation_cache_size.dat', 'w') as f:
+        print(df.to_string(index=False), file=f)
 
 
-def _parse_ablation_idle_time(logs: List[pathlib.Path]):
-    pass
+def _parse_ablation_idle_time(logs: List[pathlib.Path], parent_dir: pathlib.Path):
+    df = pd.DataFrame(columns=['MaxIdleMs', 'ColdStart', 'P99', 'Thpt', 'WasteCompute'])
 
+    if len(logs) == 0:
+        print('Warning: parse_ablation_idle_time: logs are empty')
+        df.loc[0] = [0, np.nan, np.nan, np.nan, np.nan]
+    else:
+        df = df.set_index('MaxIdleMs')
+        for log in logs:
+            m = re.search(r'(\d+)ms', log.name)
+            if m is None:
+                print(f'Warning: cannot parse idle time from {log}')
+                continue
+            idle_time = float(m.group(1))
+            p99, slo, thpt = _parse_system_performance('ColSys', None, log)
+            df.loc[idle_time, 'P99'] = p99
+            df.loc[idle_time, 'Thpt'] = thpt
+            df.loc[idle_time, 'ColdStart'] = f'{_parse_infer_cold_start_ratio(log):.2f}'
+            df.loc[idle_time, 'WasteCompute'] = f'{_parse_train_waste_compute(log):.2f}'
+
+        df = df.sort_index()
+        df = df.reset_index()
+        df['MaxIdleMs'] = df['MaxIdleMs'].apply(lambda x: f'{x / 1000:.1f}')
+
+    with open(parent_dir / 'ablation_infer_idle_time.dat', 'w') as f:
+        print(df.to_string(index=False), file=f)
+    
 
 # MARK: Ablation
 def parse_ablation(logs: List[pathlib.Path]):
@@ -344,8 +476,16 @@ def parse_ablation(logs: List[pathlib.Path]):
         elif 'ablation-infer-idle-time' in str(log):
             idle_time_ablation_logs.append(log)
     
-    _parse_ablation_watermark(watermark_ablation_logs)
-    _parse_ablation_idle_time(idle_time_ablation_logs)
+    _parse_ablation_watermark(watermark_ablation_logs, logs[0].parent)
+    _parse_ablation_idle_time(idle_time_ablation_logs, logs[0].parent)
+
+    try:
+        print(f'Executing plot script: eval/runner/plot_scripts/ablation.py at {logs[0].parent}')
+        subprocess.run(['python', f'{get_plot_script_path("ablation")}'],
+                        cwd=logs[0].parent)
+    except Exception as e:
+        print(f"Error executing plot script: {e}")
+        raise
 
 
 # MARK: Unbalance
@@ -395,8 +535,63 @@ def parse_memory_pressure(logs):
         print('Warning: parse_memory_pressure: logs are empty')
         return
     assert len(logs) == 1, f"Memory pressure only use one log"
+    assert 'memory-pressure' in str(logs[0]), f"Log {logs[0]} is not memory-pressure"
 
-    pass
+    workload_log = logs[0] / 'workload-log'
+    assert workload_log.exists(), f"Log {logs[0]} does not have workload-log"
+
+    train_profile = logs[0] / 'train-profile.csv'
+    assert train_profile.exists(), f"Log {logs[0]} does not have train-profile.csv"
+
+    log_parent_dir = logs[0].parent
+    try:
+        subprocess.run(['python', 'util/profile/collect_infer_ltc.py', 
+                    '-l', str(workload_log), 
+                    '-o', str(log_parent_dir / "memory_pressure_ltc.dat")])
+        subprocess.run['python', 'util/profile/collect_train_thpt.py',
+                       '-l', str(train_profile),
+                       '-o', str(log_parent_dir / "memory_pressure_thpt.dat")]
+        
+        print(f'Executing plot script: eval/runner/plot_scripts/memory_pressure.py at {log_parent_dir}')
+        subprocess.run(['python', f'{get_plot_script_path("memory_pressure")}'],
+                        cwd=log_parent_dir)
+    except Exception as e:
+        print(f"Error executing plot script: {e}")
+        raise
+
+
+# MARK: LLM
+def parse_llm(logs: List[pathlib.Path]):
+    if len(logs) == 0:
+        print('Warning: parse_llm: logs are empty')
+        return
+    
+    df = pd.DataFrame(columns=['TTFT-SLO', 'TBT-SLO', 'Train'],
+                      index=['SP-50', 'SP-75', 'ColSys', 'Infer-Only'])
+    for log in logs:
+        system, _ = _parse_system_and_trace(TestUnit.LLM)
+        if system is None:
+            print(f'Warning: {log} does not match any system')
+            continue
+        system = static_partition_to_number_name(system)
+
+        _, _, thpt = _parse_system_performance(system, None, log)
+
+        ttft_slo, tbt_slo = _parse_llm_slo(log)
+        df.loc[system, 'TTFT-SLO'] = ttft_slo
+        df.loc[system, 'TBT-SLO'] = tbt_slo
+        df.loc[system, 'Train'] = thpt
+
+    with open(logs[0].parent / 'llm.dat', 'w') as f:
+        print(df, file=f)
+
+    try:
+        print(f'Executing plot script: eval/runner/plot_scripts/llm.py at {logs[0].parent}')
+        subprocess.run(['python', f'{get_plot_script_path("llm")}'],
+                        cwd=logs[0].parent)
+    except Exception as e:
+        print(f"Error executing plot script: {e}")
+        raise
 
 
 class LogParser:
@@ -414,8 +609,8 @@ class LogParser:
     @classmethod
     def parse(cls, unit:str, verbose:bool=True):
         if verbose:
-            print(f"Parsing logs for unit: {unit}")
-            print(cls._logs)
+            print(f"Parsing logs for unit: {unit}, Logs:")
+            print("\t[ ", " ".join(str(log) for log in cls._logs), " ]")
             print('')
 
         if unit == TestUnit.OVER_ALL_SINGLE_GPU:
@@ -432,6 +627,8 @@ class LogParser:
             return parse_unbalance(cls._logs)
         elif unit == TestUnit.MEMORY_PRESSURE:
             return parse_memory_pressure(cls._logs)
+        elif unit == TestUnit.LLM:
+            return parse_llm(cls._logs)
         else:
             raise ValueError(f"Unknown test unit: {unit}")
         

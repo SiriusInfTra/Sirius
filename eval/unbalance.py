@@ -11,6 +11,13 @@ import workload_collections as wkld_coll
 import run_comm
 import tempfile
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--parse-result', action='store_true')
+args = parser.parse_args()
+
+if args.parse_result:
+    LogParser._enable = True
+    
 
 def update_sever_config(server_model_config: str, num_workloads: int) -> str:
     for k in range(len(server_model_config)):

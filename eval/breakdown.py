@@ -42,6 +42,7 @@ parser.add_argument('--all-sys', action='store_true')
 parser.add_argument('--all-workload', action='store_true')
 parser.add_argument('--multi-gpu', action='store_true')
 parser.add_argument('--retry-limit', type=int, default=0)
+parser.add_argument('--parse-result', action='store_true')
 args = parser.parse_args()
 
 if args.colsys or args.all_sys:
@@ -66,6 +67,10 @@ if args.retry_limit > 0:
 if args.multi_gpu:
     run_comm.UniformConfig_v2.train_model += "_ddp"
     run_comm.SkewedConfig_v2.train_model += "_ddp"
+
+if args.parse_result:
+    LogParser._enable = True
+
 
 # MARK: Trace Config
 class UniformConfig:

@@ -12,6 +12,7 @@ run_comm.skip_fail = False
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--retry-limit', type=int, default=0)
+parser.add_argument('--parse-result', action='store_true')
 args = parser.parse_args()
 
 if args.retry_limit > 0:
@@ -19,6 +20,8 @@ if args.retry_limit > 0:
     run_comm.retry_limit = args.retry_limit
     run_comm.skip_fail = True
 
+if args.parse_result:
+    LogParser._enable = True
 
 # run_comm.fake_launch = True
 
