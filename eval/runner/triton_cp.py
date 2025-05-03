@@ -1,7 +1,7 @@
 import os
 import shutil
 
-def cp_model(model_list: list[str], n_gpu: int, repo_target_dir: str):
+def cp_model(model_list: list[str], n_gpu: int, repo_target_dir: str, models_nbytes: dict[str, int]):
     repo_source_dir = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, 'server', 'triton_models')
     repo_source_dir = os.path.abspath(repo_source_dir)
     repo_target_dir = os.path.abspath(repo_target_dir)
@@ -32,6 +32,10 @@ def cp_model(model_list: list[str], n_gpu: int, repo_target_dir: str):
     with open(os.path.join(repo_target_dir, 'device_map.txt'), 'w') as f:
         for model_name, device_id in device_map.items():
             f.write(f'{model_name} {device_id}\n')
+    with open(os.path.join(repo_target_dir, 'config.conf'), 'w') as f:
+        for model_name, nbytes in models_nbytes.items():
+            f.write(f'{model_name} = {nbytes}\n')
+        
 
 if __name__ == '__main__':
     model_list = []
