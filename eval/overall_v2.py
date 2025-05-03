@@ -339,6 +339,8 @@ def _run(system: System, workload: HyperWorkload,
                       infer_model_config=server_model_config, fake_launch=False)
         workload.launch_workload(system, fake_launch=False)
         system.stop()
+        if LogParser._enable:
+            LogParser.add_log(system.exit_log_dir)
     except Exception as e:
         print(f"Failed to run {unit} {tag}: {e}")
         if retry_if_fail:
