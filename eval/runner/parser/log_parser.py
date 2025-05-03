@@ -315,7 +315,7 @@ def parse_over_all_single_gpu(logs: List[pathlib.Path]):
         print(sorted_df, file=f)
     
     try:
-        print(f'Executing plot script: eval/runner/plot_scripts/overall_v100.py at {log_parent_dir}')
+        print(f'\033[1m\033[34mExecuting plot script: eval/runner/plot_scripts/overall_v100.py at \033[4:5m{log_parent_dir}\033[24m\033[0m')
         subprocess.run(['python', f'{get_plot_script_path("overall_v100")}'],
                     cwd=log_parent_dir)
     except Exception as e:
@@ -351,7 +351,7 @@ def parse_over_all_multi_gpu(logs: List[pathlib.Path]):
         print(df, file=f)
     
     try:
-        print(f'Executing plot script: eval/runner/plot_scripts/multi_gpu.py at {log_parent_dir}')
+        print(f'\033[1m\033[34mExecuting plot script: eval/runner/plot_scripts/multi_gpu.py at \033[4:5m{log_parent_dir}\033[24m\033[0m')
         subprocess.run(['python', f'{get_plot_script_path("multi_gpu")}'],
                         cwd=log_parent_dir)
     except Exception as e:
@@ -395,9 +395,9 @@ def parse_breakdown(logs: List[pathlib.Path], single_gpu: bool = True):
                 f.write(adjust_info)
 
     try:
-        print(f'Executing plot script: eval/runner/plot_scripts/adjust_breakdown_single_or_multi_gpu.py --single-gpu at {log_parent_dir}' 
+        print(f'\033[1m\033[34mExecuting plot script: eval/runner/plot_scripts/adjust_breakdown_single_or_multi_gpu.py --single-gpu at \033[4:5m{log_parent_dir}\033[24m\033[0m' 
               if single_gpu 
-              else f'Executing plot script: eval/runner/plot_scripts/adjust_breakdown_single_or_multi_gpu.py --multi-gpu at {log_parent_dir}')
+              else f'\033[1m\033[34mExecuting plot script: eval/runner/plot_scripts/adjust_breakdown_single_or_multi_gpu.py --multi-gpu at \033[4:5m{log_parent_dir}\033[24m\033[0m')
         subprocess.run(['python', f'{get_plot_script_path("adjust_breakdown_single_or_multi_gpu")}', 
                         '--single-gpu' if single_gpu else '--multi-gpu'],
                         cwd=log_parent_dir)
@@ -480,7 +480,7 @@ def parse_ablation(logs: List[pathlib.Path]):
     _parse_ablation_idle_time(idle_time_ablation_logs, logs[0].parent)
 
     try:
-        print(f'Executing plot script: eval/runner/plot_scripts/ablation.py at {logs[0].parent}')
+        print(f'\033[1m\033[34mExecuting plot script: eval/runner/plot_scripts/ablation.py at \033[4:5m{logs[0].parent}\033[24m\033[0m')
         subprocess.run(['python', f'{get_plot_script_path("ablation")}'],
                         cwd=logs[0].parent)
     except Exception as e:
@@ -516,12 +516,12 @@ def parse_unbalance(logs: List[pathlib.Path]):
         else:
             subprocess.run(["cp", profile_log, f"{log_parent_dir / 'memory_util_gpus_imbal.dat'}"])
 
-    log_parent_dir = log[0].parent
+    log_parent_dir = logs[0].parent
     with open(log_parent_dir / 'memory_util_gpus_thpt.dat', 'w') as f:
         print(df, file=f)
 
     try:
-        print(f'Executing plot script: eval/runner/plot_scripts/memory_util_gpus.py at {log_parent_dir}')
+        print(f'\033[1m\033[34mExecuting plot script: eval/runner/plot_scripts/memory_util_gpus.py at \033[4:5m{log_parent_dir}\033[24m\033[0m')
         subprocess.run(['python', f'{get_plot_script_path("memory_util_gpus")}'],
                         cwd=log_parent_dir)
     except Exception as e:
@@ -548,11 +548,11 @@ def parse_memory_pressure(logs):
         subprocess.run(['python', 'util/profile/collect_infer_ltc.py', 
                     '-l', str(workload_log), 
                     '-o', str(log_parent_dir / "memory_pressure_ltc.dat")])
-        subprocess.run['python', 'util/profile/collect_train_thpt.py',
+        subprocess.run(['python', 'util/profile/collect_train_thpt.py',
                        '-l', str(train_profile),
-                       '-o', str(log_parent_dir / "memory_pressure_thpt.dat")]
+                       '-o', str(log_parent_dir / "memory_pressure_thpt.dat")])
         
-        print(f'Executing plot script: eval/runner/plot_scripts/memory_pressure.py at {log_parent_dir}')
+        print(f'\033[1m\033[34mExecuting plot script: eval/runner/plot_scripts/memory_pressure.py at \033[4:5m{log_parent_dir}\033[24m\033[0m')
         subprocess.run(['python', f'{get_plot_script_path("memory_pressure")}'],
                         cwd=log_parent_dir)
     except Exception as e:
@@ -586,7 +586,7 @@ def parse_llm(logs: List[pathlib.Path]):
         print(df, file=f)
 
     try:
-        print(f'Executing plot script: eval/runner/plot_scripts/llm.py at {logs[0].parent}')
+        print(f'\033[1m\033[34mExecuting plot script: eval/runner/plot_scripts/llm.py at \033[4:5m{logs[0].parent}\033[24m\033[0m')
         subprocess.run(['python', f'{get_plot_script_path("llm")}'],
                         cwd=logs[0].parent)
     except Exception as e:
@@ -607,10 +607,11 @@ class LogParser:
         cls._logs.append(log)
 
     @classmethod
-    def parse(cls, unit:str, verbose:bool=True):
+    def parse(cls, unit:TestUnit, verbose:bool=True):
         if verbose:
             print(f"Parsing logs for unit: {unit}, Logs:")
-            print("\t[ ", " ".join(str(log) for log in cls._logs), " ]")
+            print(f'    >>> python eval/runner/parser/log_parser.py '
+                  f'--unit {unit.name} --logs {" ".join(str(log) for log in cls._logs)}')
             print('')
 
         if unit == TestUnit.OVER_ALL_SINGLE_GPU:

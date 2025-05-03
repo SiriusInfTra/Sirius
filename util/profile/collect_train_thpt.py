@@ -28,7 +28,7 @@ batch_info['finished'] = (train_batch_timeline['tag'] == 'finish').tolist()
 with open(args.output, 'w') as f:
     f.write('start_timestamp,end_timestamp,batch_size\n')
     for i in range(len(batch_info['timestamp'])):
-        print('##', i)
+        # print('##', i)
         # print(batch_info['start_time'][i])
         # print(batch_info['end_time'][i])
         # print(batch_info['batch_size'][i])

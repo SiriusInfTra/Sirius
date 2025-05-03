@@ -4,6 +4,8 @@ from runner import *
 from dataclasses import dataclass
 import run_comm
 
+set_global_seed(42)
+
 import argparse
 
 run_comm.use_time_stamp = True
