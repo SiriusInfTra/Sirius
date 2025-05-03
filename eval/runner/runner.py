@@ -30,6 +30,19 @@ def get_num_gpu():
     return len(cuda_device_env.split(','))
 
 
+def get_trition_models_MB(offset: int = 0) -> dict[str, int]:
+    models_nbytes = {}
+    with open(os.path.join(_project_root, 'server', 'triton_models', 'config.conf'), 'r') as f:
+        for line in f:
+            line = line.strip().split('#')[0].strip()
+            if len(line) == 0:
+                continue
+            model_name, nbytes = line.split('=')
+            model_name = model_name.strip()
+            nbytes = int(nbytes.strip())
+            models_nbytes[model_name] = int(nbytes) + offset
+    return models_nbytes
+
 _project_root = os.path.join(os.path.abspath(__file__), 
                             os.path.pardir, 
                             os.path.pardir, 
@@ -126,6 +139,7 @@ class System:
                  train_profile: str = "train-profile", 
                  port: str = "18080",
                  use_triton: bool = False,
+                 triton_models_nbytes: Optional[dict[str, int]] = None,
                  train_adjust_balance: bool = True,
                  train_adjust_batch_size_limit: int = 0,
                  infer_model_config: List[InferModelConfig] | InferModelConfig = None,
@@ -169,6 +183,7 @@ class System:
         self.port = str(int(port) + os.getuid() % 10)
         self.triton_port = str(int(self.port) + 1000)
         self.use_triton = use_triton
+        self.triton_models_nbytes = triton_models_nbytes
         self.train_adjust_balance = train_adjust_balance
         self.train_adjust_batch_size_limit = train_adjust_batch_size_limit
         self.server:Optional[subprocess.Popen]= None
@@ -442,7 +457,7 @@ class System:
                 triton_model_dir = os.path.join(_project_root, f'triton_models-{self.port}')
                 docker_model_dir = os.path.join('/colsys', f'triton_models-{self.port}')
                 print(f'Generate triton model repo for {model_lists}.', end='\n\r')
-                cp_model(model_lists, get_num_gpu(), triton_model_dir)
+                cp_model(model_lists, get_num_gpu(), triton_model_dir, self.triton_models_nbytes)
                 cmd = ['docker', 'run', '-it', '--user', f'{os.getuid()}:{os.getgid()}',
                        '--name', f'colsys-triton-{self.triton_port}',
                        '--rm', '--gpus=all', '--ipc=host',
@@ -687,9 +702,8 @@ class HyperWorkload:
         ]
         if server.use_triton:
             cmd += ["--triton-port", str(server.triton_port)]
-            cmd += ["--triton-config", 
-                    os.path.abspath(os.path.join(os.path.dirname(__file__), "../../server/triton_models/config.conf"))]
             triton_model_dir = os.path.join(_project_root, f'triton_models-{server.port}')
+            cmd += ["--triton-config", os.path.join(triton_model_dir, "config.conf")]
             cmd += ["--triton-device-map", os.path.join(triton_model_dir, "device_map.txt")]
             if 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:
                 cmd += ["--triton-max-memory", "0"]
