@@ -22,22 +22,26 @@ SMPartitioner* SMPartitioner::Get(int device_id) {
   return sm_partitioners_[device_id].get();
 }
 
-SMPartitioner::SMPartitioner(int device_id) : device_id_(device_id) {
-  LOG(INFO) << "[SM Partitioner] initialize, "
-            << "train_tpc " << min_train_tpc_num_ << " -- " << max_train_tpc_num_;
-            // << ", "
-            // << "shm_name " << shm_name_.c_str();
-
-  tpc_data_ = &ctrl::InfTraCommunicator::GetSinfo()
-      ->GetMutableInferInfoUnsafe()->tpc_datas[device_id_];
-
+SMPartitioner::SMPartitioner(
+    int device_id, 
+    int min_train_tpc_num,
+    int max_train_tpc_num) 
+  : device_id_(device_id) {
   cudaDeviceProp deviceProp;
   COL_CUDA_CALL(cudaGetDeviceProperties(&deviceProp, device_id));
-  // deviceProp.multiProcessorCount;
-
   gpu_sm_num_ = deviceProp.multiProcessorCount;
   gpu_tpc_num_ = gpu_sm_num_ >> 1;
   sm_num_per_tpc_ = 2; // volta -- hopper
+
+  min_train_tpc_num_ = std::max(min_train_tpc_num, 1);
+  max_train_tpc_num_ = std::min(max_train_tpc_num, gpu_tpc_num_);
+  
+  LOG(INFO) << "[SM Partitioner] initialize, "
+            << "train_tpc " << min_train_tpc_num_ 
+            << " -- " << max_train_tpc_num_;
+
+  tpc_data_ = &ctrl::InfTraCommunicator::GetSinfo()
+      ->GetMutableInferInfoUnsafe()->tpc_datas[device_id_];
 
   CHECK_GE(min_train_tpc_num_, 1);
   CHECK_LE(max_train_tpc_num_, gpu_tpc_num_);
@@ -92,7 +96,8 @@ uint64_t SMPartitioner::GetTrainAvailTpcMask() {
 }
 
 int SMPartitioner::GetTrainAvailTpcNum() {
-  int num_disabled = tpc_data_->infer_required_tpc_num.load(std::memory_order_relaxed);
+  int num_disabled = 
+      tpc_data_->infer_required_tpc_num.load(std::memory_order_relaxed);
   CHECK_GE(num_disabled, 0);
   
   int res = std::max(min_train_tpc_num_, 
@@ -107,4 +112,4 @@ uint64_t SMPartitioner::SetTrainStreamTpcMask(CUstream s) {
   return mask;
 }
 
-}
+} // namespace colserve

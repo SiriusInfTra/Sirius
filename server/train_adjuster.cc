@@ -83,7 +83,7 @@ memory_mb_t TrainAdjuster::PredictTrainMemUsageMB(
 }
 
 std::vector<TrainAdjuster::AdjustPlan>
-TrainAdjuster::GetTrainRequireMemAdjustPlan(
+TrainAdjuster::GetInferRequireMemAdjustPlan(
     int device_id, memory_mb_t required_mem_mb,
     memory_mb_t cold_cache_free_mem_mb) {
   CHECK(adjuster_ != nullptr);
@@ -109,7 +109,7 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
   auto train_world_size = adjuster_->cached_train_world_size_;
   int cur_train_target_bs = 
       adjuster_->cached_target_batch_sizes_[device_id];
-  // int min_train_bs = sta::DeviceManager::GetNumVisibleGpu() > 1 ? 1 : 0;
+  // int min_train_bs = sta::DevMgr::GetNumVisibleGpu() > 1 ? 1 : 0;
   int min_train_bs = Config::train_adjust_batch_size_limit;
   if (cur_train_target_bs <= min_train_bs) {
     LOG_IF(INFO, Config::log_memory_adjust) 
@@ -119,7 +119,7 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
   }
 
   // CHECK_LE(ColdModelCache::Get(device_id)->GetCacheSizeMBUnsafe(), 
-  //          Config::cold_cache_max_capability_nbytes / 1024.0);
+  //          Config::cold_cache_max_capacity_nbytes / 1024.0);
   // ColdModelCache::Get(device_id)->ExpandToMax();
   // memory_mb_t adjust_reserve_mb =
   //     ColdModelCache::Get(device_id)->GetAdjustReserveMemoryMBUnsafe();
@@ -139,7 +139,7 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
       adjuster_->GetDeltaBatchSize(device_id, adjust_batch_buf_mb);
   CHECK_GE(adjust_batch_buf_mb, 0);
   int target_batch_size = cur_train_target_bs - delta_batch_size;
-  if (sta::DeviceManager::GetNumVisibleGpu() > 1) {
+  if (sta::DevMgr::GetNumVisibleGpu() > 1) {
     target_batch_size = std::max(target_batch_size, min_train_bs);
   }
 
@@ -190,7 +190,7 @@ TrainAdjuster::GetInferRequireMemAdjustPlanWithInLock(
         AdjustPlan{.batch_size = target_batch_size}, adjust_plan);
     }
   }
-  
+
   adjuster_->UpdateCachedTrainInfoByAdjustPlan(
       adjust_plan, adjuster_lock);
   adjuster_lock.unlock();
@@ -215,7 +215,7 @@ std::vector<TrainAdjuster::AdjustPlan>
 TrainAdjuster::GetInferReleaseMemAdjustPlan() {
   CHECK(adjuster_ != nullptr);
   std::vector<std::unique_lock<std::mutex>> cold_cache_locks;
-  for (auto device_id : boost::irange(sta::DeviceManager::GetNumVisibleGpu())) {
+  for (auto device_id : boost::irange(sta::DevMgr::GetNumVisibleGpu())) {
     cold_cache_locks.emplace_back(
         ColdModelCache::Get(device_id)->Lock());
   }
@@ -227,7 +227,7 @@ TrainAdjuster::GetInferReleaseMemAdjustPlanWithInLock(
     std::vector<std::unique_lock<std::mutex>> &cold_cache_locks) {
   // LOG(INFO) << "GetInferReleaseMemAdjustPlanWithInLock";
   CHECK(adjuster_ != nullptr);
-  CHECK(cold_cache_locks.size() == sta::DeviceManager::GetNumVisibleGpu());
+  CHECK(cold_cache_locks.size() == sta::DevMgr::GetNumVisibleGpu());
   
   std::unique_lock adjuster_lock{adjuster_->mut_};
 
@@ -240,17 +240,19 @@ TrainAdjuster::GetInferReleaseMemAdjustPlanWithInLock(
                            reserve_mem_mbs;
   std::vector<int> cur_train_target_batches;
 
-  for (auto device_id : boost::irange(sta::DeviceManager::GetNumVisibleGpu())) {
+  for (auto device_id : boost::irange(sta::DevMgr::GetNumVisibleGpu())) {
     train_avail_mem_mbs.push_back(
-        std::max(ResourceManager::GetTrainAvailMemoryMB(device_id, false), 0.0));
+        std::max(ResMgr::GetTrainAvailMemoryMB(device_id, false), 0.0));
     free_mem_mbs.push_back(
-        std::max(ResourceManager::GetFreeMemoryMB(device_id, false), 0.0));
+        std::max(ResMgr::GetFreeMemoryMB(device_id, false), 0.0));
     reserve_mem_mbs.push_back(
         ColdModelCache::Get(device_id)->GetReleaseReserveMemoryMBUnsafe());
     cur_train_target_batches.push_back(
         adjuster_->cached_target_batch_sizes_[device_id]);
   }
 
+  // calcuate target batch size, by both considering delta memory (i.e. the free)
+  // and all training available memory
   std::vector<int> target_bs_predict_by_avail_mems(train_world_size);
   std::vector<int> target_bs_calcu_by_delta_mems(train_world_size);
   std::vector<int> target_batch_sizes(train_world_size);
@@ -337,6 +339,185 @@ TrainAdjuster::GetInferReleaseMemAdjustPlanWithInLock(
   return adjust_plan;
 }
 
+std::vector<TrainAdjuster::AdjustPlan>
+TrainAdjuster::GetLLMInferReleaseMemAdjustPlan(
+    std::unique_lock<std::mutex> &kvc_pool_lock) {
+  CHECK(adjuster_ != nullptr);
+  std::unique_lock adjuster_lock{adjuster_->mut_};
+
+  int train_world_size = adjuster_->cached_train_world_size_;
+
+  std::vector<memory_mb_t> free_mem_mbs;
+  std::vector<memory_mb_t> train_avail_mem_mbs;
+  std::vector<int> cur_train_target_batches;
+  for (auto device_id : boost::irange(sta::DevMgr::GetNumVisibleGpu())) {
+    double num_free_page_nbytes = (
+      static_cast<double>(sta::CUDAMemPool::Get(device_id)->NumFreePages() * sta::CUDAMemPool::PageNbytes())
+    ) - Config::train_memory_over_predict_mb * 1_MB - 4_GB;
+    free_mem_mbs.push_back(sta::ByteToMB(num_free_page_nbytes));
+    train_avail_mem_mbs.push_back(sta::ByteToMB(
+        num_free_page_nbytes 
+        + sta::CUDAMemPool::Get(device_id)->TrainAllMemUsage()   
+    ));
+    cur_train_target_batches.push_back(
+        adjuster_->cached_target_batch_sizes_[device_id]);
+  }
+
+  std::vector<int> target_bs_calcu_by_avail_mems(train_world_size);
+  std::vector<int> target_bs_calcu_by_delta_mems(train_world_size);
+  std::vector<int> target_batch_sizes(train_world_size);
+  for (auto rank : boost::irange(train_world_size)) {
+    auto & target_bs_calcu_by_avail_mem = 
+        target_bs_calcu_by_avail_mems[rank];
+    auto & target_bs_calcu_by_delta_mem =
+        target_bs_calcu_by_delta_mems[rank];
+    auto & target_batch_size = target_batch_sizes[rank];
+
+    auto train_avail_mem_mb = train_avail_mem_mbs[rank];
+    auto free_mem_mb = free_mem_mbs[rank];
+    int cur_train_target_bs = cur_train_target_batches[rank];
+
+    if (Config::use_shared_tensor) {
+      target_bs_calcu_by_avail_mem = adjuster_->PredictTargetBatchSize(
+          0, std::max(train_avail_mem_mb, 0.0));
+      
+      target_bs_calcu_by_delta_mem = (
+          cur_train_target_bs 
+          + adjuster_->GetDeltaBatchSize(0, std::max(free_mem_mb, 0.0))
+        );
+
+      target_batch_size = std::max(
+          cur_train_target_bs,
+          std::min(target_bs_calcu_by_avail_mem, target_bs_calcu_by_delta_mem)
+        );
+    } else {
+      LOG(FATAL) << "not supported";
+    }
+  }
+
+  std::vector<TrainAdjuster::AdjustPlan> adjust_plan(train_world_size);
+
+  int min_target_bs = *std::min_element(
+      target_batch_sizes.begin(), target_batch_sizes.end());
+
+  if (min_target_bs <= 0 /* avoid partial training workers executing */
+      || !adjuster_->CheckImbalance(min_target_bs)) {
+    adjuster_->FillSameAdjustPlan(
+        AdjustPlan{.batch_size = min_target_bs}, adjust_plan);
+  } else {
+    adjuster_->FillAdjustPlan(target_batch_sizes, adjust_plan);
+  }
+
+  adjuster_->UpdateCachedTrainInfoByAdjustPlan(
+      adjust_plan, adjuster_lock);
+  adjuster_lock.unlock();
+
+  if (Config::log_memory_adjust) {
+    std::stringstream ss;
+    ss << "[InferReleaseMemAdjust]"
+      << " cur_train_target_bs [" << cur_train_target_batches << "]"
+      << " train_avail_mem_mb [" << train_avail_mem_mbs << "]";
+    if (Config::use_shared_tensor) {
+      ss << " (target_bs_predict_by_avail_mem [" << target_bs_calcu_by_avail_mems << "]"
+         << " target_bs_calcu_by_delta_mem [" << target_bs_calcu_by_delta_mems << "])";
+    } else {
+      LOG(FATAL) << "not supported";
+    }
+    ss << " free memory [" << free_mem_mbs << "]"
+      << " | release adjust plan: " << PrettyPrintAdjustPlans(adjust_plan);
+
+    LOG(INFO) << ss.str();
+  }
+
+  return adjust_plan;
+}
+
+std::vector<TrainAdjuster::AdjustPlan>
+TrainAdjuster::GetLLMInferRequireMemAdjustPlan(
+    int device_id,
+    memory_mb_t required_mem_mb,
+    std::unique_lock<std::mutex> &kvc_pool_lock) {
+  CHECK(adjuster_ != nullptr);
+  std::unique_lock adjuster_lock{adjuster_->mut_};
+  int cur_train_target_bs = adjuster_->cached_target_batch_sizes_[device_id];
+  if (cur_train_target_bs <= 0) {
+    LOG_IF(INFO, Config::log_memory_adjust)
+        << "[LLMInferRequireMemAdjust] target batch <= 0, skip adjust";
+    return {};
+  }
+
+  if (required_mem_mb <= 0) {
+    LOG_IF(INFO, Config::log_memory_adjust)
+        << "[LLMInferRequireMemAdjust] required memory <= 0, skip adjust";
+    return {};
+  }
+
+  auto num_free_page_nbytes = (
+    sta::CUDAMemPool::Get(device_id)->NumFreePages()
+    * sta::CUDAMemPool::PageNbytes()
+  ) - Config::train_memory_over_predict_mb;
+  auto train_avail_mem_mb = sta::ByteToMB(
+      num_free_page_nbytes 
+      + sta::CUDAMemPool::Get(device_id)->TrainAllMemUsage()   
+  ) - required_mem_mb;
+
+  // Rest of function remains the same
+  int target_bs_calcu_by_avail_mem = adjuster_->PredictTargetBatchSize(
+      device_id, std::max(train_avail_mem_mb, 0.0));
+
+  // Calculate batch size by required mem
+  int delta_batch_size = 
+      adjuster_->GetDeltaBatchSize(device_id, required_mem_mb);
+  int target_bs_calcu_by_required = cur_train_target_bs - delta_batch_size;
+
+  // Combined target
+  int target_batch_size = std::max(0, 
+      std::min(target_bs_calcu_by_avail_mem, target_bs_calcu_by_required));
+
+  bool all_same = true;
+  int train_world_size = adjuster_->cached_train_world_size_;
+  for (auto rank : boost::irange(train_world_size)) {
+    if (adjuster_->cached_target_batch_sizes_[rank] != cur_train_target_bs) {
+      all_same = false;
+      break;
+    }
+  }
+
+  std::vector<AdjustPlan> adjust_plan(train_world_size);
+  if (all_same) {
+    bool imbalance = 
+        (target_batch_size > 0) 
+        && adjuster_->CheckImbalance(target_batch_size);
+    if (imbalance) {
+      adjuster_->FillAdjustPlanOnlyAdjustOne(
+          device_id, AdjustPlan{.batch_size = target_batch_size}, adjust_plan);
+    } else {
+      adjuster_->FillSameAdjustPlan(
+          AdjustPlan{.batch_size = target_batch_size}, adjust_plan);
+    }
+  } else {
+    LOG(FATAL) << "Not supported";
+    // ...existing code for handling different batch sizes...
+  }
+
+  adjuster_->UpdateCachedTrainInfoByAdjustPlan(adjust_plan, adjuster_lock);
+  adjuster_lock.unlock();
+
+  if (Config::log_memory_adjust) {
+    std::stringstream ss;
+    ss << "[LLMInferRequireMemAdjust]"
+       << " device_id [" << device_id << "]"
+       << " required_mem_mb [" << required_mem_mb << "]"
+       << " train_avail_mem_mb [" << train_avail_mem_mb << "]"
+       << " target_bs_calcu_by_avail_mem [" << target_bs_calcu_by_avail_mem << "]"
+       << " target_bs_calcu_by_required [" << target_bs_calcu_by_required << "]"
+       << " final_target_bs [" << target_batch_size << "]"
+       << " adjust plan: " << PrettyPrintAdjustPlans(adjust_plan);
+    LOG(INFO) << ss.str();
+  }
+  return adjust_plan;
+}
+
 int TrainAdjuster::PredictTargetBatchSize(int device_id, memory_mb_t memory_mb) {
   auto [base, slope] = GetModelMemParam();
   auto inftra_info = ctrl::InfTraCommunicator::GetSinfo();
@@ -371,6 +552,9 @@ void TrainAdjuster::UpdateCachedTrainInfoByAdjustPlan(
 bool TrainAdjuster::CheckImbalance(int proposed_same_batch_size) {
   if (!Config::enable_train_adjust_balance) {
     return false;
+  }
+  if (Config::serving_llm) {
+    LOG(FATAL) << "Not supported for LLM";
   }
 
   auto train_world_size = cached_train_world_size_;
@@ -434,7 +618,7 @@ void TrainAdjuster::FillAdjustPlanOnlyAdjustOne(int rank, AdjustPlan plan,
 memory_mb_t TrainAdjuster::GetTrainAvailMemMBMinusColdCacheReserve(
     int device_id, bool verbose) {
   auto train_avail_mem_mb = 
-      std::max(ResourceManager::GetTrainAvailMemoryMB(device_id, verbose), 0.0);
+      std::max(ResMgr::GetTrainAvailMemoryMB(device_id, verbose), 0.0);
   auto cold_cache_reserve_mem_mb = 
       ColdModelCache::Get(device_id)->GetAdjustReserveMemoryMBUnsafe();
 
@@ -473,7 +657,11 @@ std::pair<double, double> TrainAdjuster::GetModelMemParam(
       // NOTE: DID NOT consider grad checkpoint
       return {1150, 85};
     } else if (model_name == "swin_b") {
+#if 0 // v100
       return {1700, 140};
+#else
+      return {1700, 145};
+#endif
     } else if (model_name == "swin_b_ddp") {
       // TODO: remove hard-coded value
       return {2560, 140};
@@ -491,6 +679,18 @@ std::pair<double, double> TrainAdjuster::GetModelMemParam(
         AFTER EMPTY CACHE: 2.4 ~ 2.9 
        */
       return {2700, 490}; 
+    } else if (model_name == "qwen") {
+      /*
+        1 8.48
+        2 8.81
+        4 9.45
+        8 11.18
+        16 15.79
+        32 24.99
+        64 43.55
+        96 62.24
+      */
+      return {9000, 600};
     } else if (model_name == "bert_large") {
       LOG(FATAL) << "Unsupported model: " << model_name;
     } else {
@@ -515,6 +715,19 @@ std::pair<double, double> TrainAdjuster::GetModelMemParam(
     } else if (model_name == "swin_b_ddp") {
       // return {3300, 145};
       return {3800, 200};
+    } else if (model_name == "qwen") {
+      // FIXME: OUTDATED w/ mpool
+      /*
+        1 8.48
+        2 8.81
+        4 9.45
+        8 11.18
+        16 15.79
+        32 24.99
+        64 43.55
+        96 62.24
+      */
+      return {9000, 600};
     } else {
       LOG(FATAL) << "Unsupported model: " << model_name;
     }

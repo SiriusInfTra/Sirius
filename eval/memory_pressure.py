@@ -4,6 +4,8 @@ from runner import *
 from dataclasses import dataclass
 import run_comm
 
+set_global_seed(42)
+
 import argparse
 
 run_comm.use_time_stamp = True
@@ -12,6 +14,7 @@ run_comm.skip_fail = False
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--retry-limit', type=int, default=0)
+parser.add_argument('--parse-result', action='store_true')
 args = parser.parse_args()
 
 if args.retry_limit > 0:
@@ -19,6 +22,8 @@ if args.retry_limit > 0:
     run_comm.retry_limit = args.retry_limit
     run_comm.skip_fail = True
 
+if args.parse_result:
+    LogParser._enable = True
 
 # run_comm.fake_launch = True
 
@@ -100,8 +105,8 @@ system_config = {
     'train_memory_over_predict_mb' : 1500,
     'infer_model_max_idle_ms' : 5000,
     'cold_cache_ratio': 0.5, 
-    'cold_cache_min_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),
-    'cold_cache_max_capability_nbytes': int(2 * 1024 * 1024 * 1024),
+    'cold_cache_min_capacity_nbytes': int(0 * 1024 * 1024 * 1024),
+    'cold_cache_max_capacity_nbytes': int(2 * 1024 * 1024 * 1024),
     'dynamic_sm_partition': True,
 }
 
@@ -124,3 +129,10 @@ with mps_thread_percent(UniformConfig.high_load.mps_infer):
                     **system_config)
     run_comm.run(system, workload, server_model_config, 
                  "memory-pressure", f"{UniformConfig.num_model}")
+    
+
+# =========================================================
+# Parse result
+# =========================================================
+if LogParser._enable:
+    LogParser.parse(TestUnit.MEMORY_PRESSURE)

@@ -78,6 +78,7 @@ parser.add_argument('--eval-max-infer-idle-ms', action='store_true')
 parser.add_argument('--eval-cold-cache-cap', action='store_true')
 parser.add_argument('--eval-all', action='store_true')
 parser.add_argument('--retry-limit', type=int, default=0)
+parser.add_argument('--parse-result', action='store_true')
 args = parser.parse_args()
 
 if args.eval_max_infer_idle_ms or args.eval_all:
@@ -89,6 +90,9 @@ if args.retry_limit > 0:
     run_comm.retry_if_fail = True
     run_comm.retry_limit = args.retry_limit
     run_comm.skip_fail = True
+
+if args.parse_result:
+    LogParser._enable = True
 
 
 max_infer_idle_ms_list = [
@@ -103,10 +107,11 @@ if not enable_eval_max_infer_idle_ms:
 
 cold_cache_cap_list = [
     (0, 0), 
-    (0.5, 1), 
-    (1, 2), 
-    (1.5, 3),
-    (2, 4)
+    (0, 1), 
+    (0, 2), 
+    (0, 3),
+    (0, 4),
+    (0, 5),
 ]
 if not enable_eval_cold_cache_cap:
     cold_cache_cap_list = []
@@ -126,8 +131,8 @@ for max_infer_idle_ms in max_infer_idle_ms_list:
         'train_memory_over_predict_mb' : 1500,
         'infer_model_max_idle_ms' : max_infer_idle_ms,
         'cold_cache_ratio': 0.5, 
-        'cold_cache_min_capability_nbytes': 0,
-        'cold_cache_max_capability_nbytes': 0,
+        'cold_cache_min_capacity_nbytes': 0,
+        'cold_cache_max_capacity_nbytes': 0,
         'dynamic_sm_partition': True,
     }
 
@@ -155,8 +160,8 @@ for cold_cache_min_cap, cold_cache_max_cap in cold_cache_cap_list:
         'train_memory_over_predict_mb' : 1500,
         'infer_model_max_idle_ms' : 500,
         'cold_cache_ratio': 0.5, 
-        'cold_cache_min_capability_nbytes': int(cold_cache_min_cap * 1024 * 1024 * 1024),
-        'cold_cache_max_capability_nbytes': int(cold_cache_max_cap * 1024 * 1024 * 1024),
+        'cold_cache_min_capacity_nbytes': int(cold_cache_min_cap * 1024 * 1024 * 1024),
+        'cold_cache_max_capacity_nbytes': int(cold_cache_max_cap * 1024 * 1024 * 1024),
         'dynamic_sm_partition': True,
     }
         
@@ -167,6 +172,12 @@ for cold_cache_min_cap, cold_cache_max_cap in cold_cache_cap_list:
                             client_model_list=client_model_list)
         system = System(port=AzureConfig.port, **system_config)
         run_comm.run(system, workload, server_model_config, 
-                     "ablation-cold-cache-cap-uniform", f"{cold_cache_min_cap}GB-{cold_cache_max_cap}GB")
+                     "ablation-cold-cache-cap-uniform", 
+                     f"{cold_cache_min_cap}GB-{cold_cache_max_cap}GB")
 
 
+# =========================================================
+# Parse result
+# =========================================================
+if LogParser._enable:
+    LogParser.parse(TestUnit.ABLATION)

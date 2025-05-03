@@ -46,6 +46,8 @@ def config_extension():
     glog_source_dir = None
     glog_include_path = None
     cuda_root_path = None
+    boost_root = None
+    conda_prefix = None
     for line in cmake_cache_path.read_text().splitlines():
         if line.startswith('CUDA_TOOLKIT_ROOT_DIR'):
             cuda_root_path = line.split('=')[1]
@@ -55,6 +57,10 @@ def config_extension():
             glog_binary_dir = line.split('=')[1]
         if line.startswith('glog_SOURCE_DIR'):
             glog_source_dir = line.split('=')[1]
+        if line.startswith('Boost_ROOT'):
+            boost_root = line.split('=')[1]
+        if line.startswith('CONDA_PREFIX'):
+            conda_prefix = line.split('=')[1]
     copy_lib()
 
     compile_args = {
@@ -85,6 +91,11 @@ def config_extension():
         assert glog_source_dir is not None
         compile_args['include_dirs'].append(f"{glog_source_dir}/src")
         compile_args['include_dirs'].append(f"{glog_binary_dir}")
+
+    if boost_root is None or boost_root != conda_prefix:
+        boost_root_path = pathlib.Path(boost_root)
+        compile_args['include_dirs'].append(f'{boost_root_path.parent}')
+        compile_args['library_dirs'].append(f'{boost_root_path / "lib"}')
 
     c_ext = Extension(
         name="torch_col._C._main",

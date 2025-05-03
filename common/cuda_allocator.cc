@@ -26,7 +26,8 @@ std::array<std::unique_ptr<CUDAMemPool>, MAX_DEVICE_NUM> CUDAMemPool::cuda_mem_p
 
 CUDAMemPool* CUDAMemPool::Get(int device_id) {
   auto ret = cuda_mem_pools_.at(device_id).get();
-  CHECK(ret != nullptr) << "CUDAMemPool not initialized";
+  CHECK(ret != nullptr) << "CUDAMemPool not initialized, "
+                        << "device_id " << device_id;
   return ret;
 }
 
@@ -44,6 +45,9 @@ void CUDAMemPool::Init(int device_id, std::size_t nbytes,
   allocate_tensor_from_memory_pool_ = enable_mpool;
   cuda_mem_pools_[device_id] = std::make_unique<CUDAMemPool>(
       device_id, nbytes, cleanup, observe, free_list_policy);
+    
+  LOG(INFO) << "[CUDAMemPool] initialized device " << device_id
+            << " nbytes " << sta::PrintByte(nbytes);
 }
 
 CUDAMemPool::CUDAMemPool(int device_id, std::size_t nbytes, 
@@ -57,7 +61,7 @@ CUDAMemPool::CUDAMemPool(int device_id, std::size_t nbytes,
   std::string prefix = GetDefaultShmNamePrefix(device_id);
   mpool::PagesPoolConf pages_pool_config{
       .device_id = device_id,
-      .page_nbytes = 32_MB,
+      .page_nbytes = CUDAMemPool::PageNbytes(),
       .pool_nbytes = nbytes,
       .shm_name = prefix + "_pages_pool",
       .log_prefix = "[PagesPool] ",
@@ -69,7 +73,7 @@ CUDAMemPool::CUDAMemPool(int device_id, std::size_t nbytes,
       .shm_nbytes = 64_MB,
       .va_range_scale = 8,
       .belong_name = "Torch",
-      .small_block_nbytes = 2_MB,
+      .small_block_nbytes = CUDAMemPool::PageNbytes() / 16,
       .align_nbytes = 1024};
   mpool::VMMAllocatorConfig tvm_allocator_config{
       .log_prefix = "[TVMAllocator] ",
@@ -77,7 +81,7 @@ CUDAMemPool::CUDAMemPool(int device_id, std::size_t nbytes,
       .shm_nbytes = 64_MB,
       .va_range_scale = 1 ,
       .belong_name = "TVM",
-      .small_block_nbytes = 32_MB,
+      .small_block_nbytes = CUDAMemPool::PageNbytes(),
       .align_nbytes = 512};
   if (cleanup) {
     mpool::PagesPool::RemoveShm(pages_pool_config);
@@ -109,7 +113,7 @@ std::shared_ptr<CUDAMemPool::PoolEntry>
 CUDAMemPool::AllocWithStream(std::size_t nbytes, MemType mtype, 
                              cudaStream_t stream, bool allow_nullptr) {
   CHECK(CUDAMemPool::IsEnable());
-  CHECK(!allow_nullptr) << "currently deprecated";
+  CHECK(mtype == MemType::kInfer || !allow_nullptr) << "currently deprecated";
   if (nbytes == 0) {
     return std::shared_ptr<CUDAMemPool::PoolEntry>{
         new PoolEntry{.addr = nullptr, .nbytes = nbytes, .mtype = mtype}};
@@ -121,6 +125,9 @@ CUDAMemPool::AllocWithStream(std::size_t nbytes, MemType mtype,
   if (mtype == MemType::kInfer) {
     mem_block = tvm_allocator_->GetObject()->Alloc(
         nbytes, 512, stream, 0);
+    if (allow_nullptr && !mem_block) {
+      return nullptr;
+    }
     ptr = tvm_allocator_->GetObject()->GetBasePtr() 
           + mem_block->addr_offset;
   } else if (mtype == MemType::kTrain) {
@@ -203,6 +210,33 @@ CUDAMemPool::HostAlloc(size_t nbytes, MemType mtype) {
       });
 }
 
+void CUDAMemPool::Map(std::shared_ptr<PoolEntry> entry) {
+  if (entry->addr == nullptr) {
+    return;
+  }
+  if (entry->mtype == MemType::kInfer) {
+    tvm_allocator_->GetObject()->Map(entry->block);
+  } else if (entry->mtype == MemType::kTrain) {
+    LOG(FATAL) << "Unsupport";
+  } else {
+    LOG(FATAL) << "Unknown mtype: " << static_cast<size_t>(entry->mtype);
+  }
+}
+
+void CUDAMemPool::Unmap(std::shared_ptr<PoolEntry> entry) {
+  if (entry->addr == nullptr) {
+    return;
+  }
+  if (entry->mtype == MemType::kInfer) {
+    // tvm_allocator_->GetObject()->Free(entry->block, 0);
+    tvm_allocator_->GetObject()->Unmap(entry->block);
+  } else if (entry->mtype == MemType::kTrain) {
+    LOG(FATAL) << "Unsupport";
+  } else {
+    LOG(FATAL) << "Unknown mtype: " << static_cast<size_t>(entry->mtype);
+  }
+}
+
 CUDAMemPool::~CUDAMemPool() {
   delete torch_allocator_;
   delete tvm_allocator_;
@@ -216,6 +250,12 @@ size_t CUDAMemPool::InferMemUsage() {
                    + status.mem_block_nbytes[true].allocated_free[0];
   // LOG(INFO) << "InferMemUsage " << ByteDisplay(nbytes) << ".";
   return nbytes;
+}
+
+memory_byte_t CUDAMemPool::InferMemUsageByPage() {
+  CHECK(CUDAMemPool::IsEnable());
+  return (tvm_allocator_->GetObject()->belong.GetPagesNum()
+          * pages_pool_->GetObject()->config.page_nbytes);
 }
 
 size_t CUDAMemPool::TrainMemUsage() {
@@ -237,6 +277,11 @@ size_t CUDAMemPool::TrainAllMemUsage() {
   CHECK(CUDAMemPool::IsEnable());
   return (torch_allocator_->GetObject()->belong.GetPagesNum() 
           * pages_pool_->GetObject()->config.page_nbytes);
+}
+
+size_t CUDAMemPool::NumFreePages() {
+  CHECK(CUDAMemPool::IsEnable());
+  return pages_pool_->GetObject()->GetBelong("FREE").GetPagesNum();
 }
 
 size_t CUDAMemPool::PoolNbytes() {
@@ -278,5 +323,14 @@ void CUDAMemPool::ResetTrainAllocMs() {
   LOG(FATAL) << "deprecated";
 }
 
-}  // namespace sta
+void *CUDAMemPool::GetBasePtr(MemType mtype) {
+  if (mtype == MemType::kInfer) {
+    return tvm_allocator_->GetObject()->GetBasePtr();
+  } else if (mtype == MemType::kTrain) {
+    return torch_allocator_->GetObject()->GetBasePtr();
+  } else {
+    LOG(FATAL) << "Unknown mtype: " << static_cast<size_t>(mtype);
+  }
+}
+} // namespace sta
 }  // namespace colserve

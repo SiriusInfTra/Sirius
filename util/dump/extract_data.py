@@ -5,13 +5,13 @@ from argparse import ArgumentParser
 from typing import Optional, cast
 
 def parse_log_file(file_path):
-    # 正则表达式匹配日志中的 epoch 和 loss
+    # Regular expression to match epoch and loss in log
     pattern = re.compile(r'\[Rank (\d+) \| DistributedDataParallel epoch (\d+)\].*? loss (\d+\.\d+)')
     
-    # 用于存储每个 epoch 的 loss 值
+    # Store loss values for each epoch
     epoch_losses = defaultdict(lambda: dict())
     
-    # 读取文件并解析
+    # Read and parse the file
     with open(file_path, 'r') as file:
         for line in file:
             match = pattern.search(line)
@@ -21,7 +21,7 @@ def parse_log_file(file_path):
                 loss = float(match.group(3))
                 epoch_losses[epoch][rank] = loss
     
-    # 计算每个 epoch 不同 rank 的平均 loss
+    # Calculate the average loss across different ranks for each epoch
     avg_epoch_losses = []
     for epoch, epoch_loss in epoch_losses.items():
         avg_epoch_losses.append(

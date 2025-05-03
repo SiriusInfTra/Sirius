@@ -88,14 +88,15 @@ def train():
     # eval_batch_size = [128, 64, 32, 16, 8, 4]
     # eval_batch_size = [64, 32, 16, 8, 4, 1]
     # eval_batch_size = [64, 32, 16, 8, 4, 1]
-    eval_batch_size = [80, 40, 20, 10, 5]
+    # eval_batch_size = [80, 40, 20, 10, 5]
+    eval_batch_size = [320, 240, 160, 80]
     # eval_batch_size = [128, ]
     # eval_batch_size = [batch_size, ]
     epoch_micro_batch_size = [batch_size, ] # warmup
     for bs in eval_batch_size:
         epoch_micro_batch_size.extend([bs] * 3)
 
-    train_dataset = FakeData(128 * 10, (3, 224, 224), 50, transforms.ToTensor())
+    train_dataset = FakeData(200 * 10, (3, 224, 224), 50, transforms.ToTensor())
     # data_loader = DataLoader(train_dataset, batch_size=batch_size, 
     #                           shuffle=False, pin_memory=True, drop_last=False, num_workers=0)
     scaler = torch.cuda.amp.GradScaler()

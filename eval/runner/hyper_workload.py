@@ -27,6 +27,12 @@ class InferModel:
     EfficientNetV2_s = "efficientnet_v2_s"
     EfficientViT_b2 = "efficientvit_b2"
 
+    Llama2_7B_HF = 'meta-llama/Llama-2-7b-hf'
+    Llama2_13B_HF = 'meta-llama/Llama-2-13b-hf'
+    Llama3_8B = 'meta-llama/Meta-Llama-3-8B'
+    Llama3_8B_Inst = 'meta-llama/Meta-Llama-3-8B-Instruct'
+    OPT_128M = 'facebook/opt-125m'
+
     model_cnt = 0
 
     def __init__(self, model_name: str) -> None:
@@ -40,6 +46,17 @@ class InferModel:
     def __repr__(self) -> str:
         return f"InferModel({self.model_id}, {self.model_name})"
 
+    @classmethod
+    def get_llm_max_model_length(cls, model_name: str) -> int:
+        if model_name == cls.OPT_128M:
+            return 2048
+        elif model_name == cls.Llama3_8B or model_name == cls.Llama3_8B_Inst:
+            return 8192
+        elif model_name == cls.Llama2_7B_HF or model_name == cls.Llama2_13B_HF:
+            return 4096
+        else:
+            raise Exception(f"Model {model_name} not supported")
+    
     @classmethod
     def reset_model_cnt(cls):
         InferModel.model_cnt = 0
@@ -774,6 +791,87 @@ class MicrobenchmarkInferWorkload_ModelMajor(MicrobenchmarkInferWorkloadBase):
                 model_rps[request_model] = self._split_request(rps, num_request_model, 
                                                                self.model_hotness[request_model])
             poisson_param_arr[:, i] = model_rps            
+
+
+class BurstGPTInferWorkload(RandomInferWorkload):
+    TRACE_BurstGPT = "workload_data/burstgpt/BurstGPT_1.csv"
+    TRACE_AzureLLM = "workload_data/burstgpt/AzureLLMInferenceTrace_conv.csv"
+
+    def __init__(self, 
+                 trace_cfg: os.PathLike[str],
+                 duration: float,
+                 time_line_scale_factor: float,
+                 max_request_sec: float | int,
+                 model_list: list[InferModel],
+                 start_point: int = 0, 
+                 seed: Optional[int] = None):
+        super().__init__(seed)
+        self.trace_cfg = trace_cfg
+        self.duration = duration
+        self.time_line_scale_factor = time_line_scale_factor
+        self.max_request_sec = max_request_sec
+        self.start_point = start_point
+        self.model_list = model_list
+
+        assert len(self.model_list) == 1
+        self.timeline = self.read_trace_cfg(
+            self.trace_cfg, 
+            self.duration, 
+            self.time_line_scale_factor,
+            self.max_request_sec,
+            self.start_point)
+        self.summary_trace()
+
+    def get_trace(self) -> list[TraceRecord]:
+        return [TraceRecord(t, self.model_list[0]) for t in self.timeline]
+
+    def summary_trace(self, text_io=None, verbose=False):
+        if text_io is None:
+            text_io = sys.stdout
+        if self.timeline is not None:
+            avg_rps = len(self.timeline) / self.duration
+            max_rps = np.max(np.histogram(self.timeline, bins=int(self.duration))[0])
+            print(f'BurstGPT trace: \n'
+                  f'\ttime_scale {self.time_line_scale_factor} start_point {self.start_point}\n'
+                  f'\tavg_rps {avg_rps:.3f} max_rps {max_rps:.3f}',
+                  file=text_io)
+
+    def read_trace_cfg(self, trace_cfg: str,
+                       duration: float,
+                       timeline_scale: float,
+                       max_rps: float,
+                       start_point: int):
+        trace_df = pd.read_csv(trace_cfg)
+        if trace_cfg == BurstGPTInferWorkload.TRACE_BurstGPT:
+            timeline = trace_df['Timestamp'].to_numpy().astype(np.float64)
+            req_token = trace_df['Request tokens'].to_numpy()
+            resp_token = trace_df['Response tokens'].to_numpy()
+        elif trace_cfg == BurstGPTInferWorkload.TRACE_AzureLLM:
+            timeline = pd.to_datetime(trace_df['TIMESTAMP'])
+            timeline = (timeline - timeline[0]).dt.total_seconds().to_numpy()
+            req_token = trace_df['ContextTokens'].to_numpy()
+            resp_token = trace_df['GeneratedTokens'].to_numpy()
+        else:
+            raise Exception(f"trace_cfg {trace_cfg} not supported")
+        timeline /= timeline_scale
+        timeline = timeline[(timeline < duration + start_point) & (timeline >= start_point)]
+        timeline -= start_point
+
+        # Calculate requests per second
+        request_per_sec, _ = np.histogram(timeline, bins=int(duration))
+        # print(f'Requests per second: {request_per_sec}')
+        if np.max(request_per_sec) > max_rps:
+            print(f"BurstGPT: max request per second {np.max(request_per_sec)} > {max_rps}, scale rps")
+            new_timeline = []
+            survival_prob = max_rps / np.max(request_per_sec)
+            tmp_rs = RandomState(MT19937(SeedSequence(self.seed)))
+            for t in timeline:
+                if tmp_rs.uniform() < survival_prob:
+                    new_timeline.append(t)
+            timeline = np.array(new_timeline)
+
+        return timeline
+
 
 
 class InferTraceDumper:

@@ -12,7 +12,6 @@
 #include <common/device_manager.h>
 
 #include <boost/range/irange.hpp>
-
 #include <atomic>
 #include <filesystem>
 #include <cstdio>
@@ -141,7 +140,7 @@ void InferModelStore::Init(const std::filesystem::path &infer_store_path) {
                                   std::stoi(model.second["num-worker"]),
                                   std::stoi(model.second["max-worker"]));
       if (Config::model_place_policy == ModelPlacePolicy::kRoundRobin) {
-        if (next_gpu >= sta::DeviceManager::GetNumVisibleGpu()) {
+        if (next_gpu >= sta::DevMgr::GetNumVisibleGpu()) {
           next_gpu = 0;
         }
       }
@@ -189,6 +188,7 @@ void InferModelStore::WarmupDone() {
   // for static partition, we don't need to clear models.
   // As cold cache is zero for static partition, 
   // the result is same if we dnot clear cold cache for static partition.
+  CHECK(infer_model_store_ != nullptr);
   if (Config::IsColocateMode() || Config::IsSwitchMode()) {
     infer_model_store_->ClearWarmCache();
     infer_model_store_->ClearColdCache();
@@ -256,7 +256,8 @@ void InferModelStore::InferingDec(tvm::TVMGraph *graph, tvm::Executor *executor)
   // CHECK(Get()->task_switch_ctrl_.load() == static_cast<int>(TaskSwitchStatus::kInfering));
   CHECK(Get()->num_infering_model_.load(std::memory_order_relaxed) > 0);
   Get()->num_infering_model_.fetch_sub(1, std::memory_order_relaxed);
-  Get()->infering_model_nbytes_.fetch_sub(graph->GetStorageNbytes(), std::memory_order_relaxed);
+  Get()->infering_model_nbytes_.fetch_sub(
+      graph->GetStorageNbytes(), std::memory_order_relaxed);
   // if (res == 1) {
   //   Get()->task_switch_ctrl_.store(static_cast<int>(TaskSwitchStatus::kNotInfering));
   // }

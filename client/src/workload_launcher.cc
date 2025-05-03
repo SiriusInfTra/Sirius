@@ -59,7 +59,6 @@ TraceCFG LoadTraceCFG(const std::string &trace_path) {
     CHECK(trace_cfg.models.find(model_id) != trace_cfg.models.cend());
   }
   return trace_cfg;
-  
 }
 
 std::vector<std::pair<std::string, std::vector<double>>> 

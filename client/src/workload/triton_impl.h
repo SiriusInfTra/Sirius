@@ -17,6 +17,7 @@
 #include "warm_cache.h"
 
 #define COLSYS_CLIENT_IMPL_NAMESPACE triton_backend
+#define __COLSYS_CLIENT_BACKEND__ __TRITON_BACKEND__
 
 namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE {
 using TrainRequest = colsys::TrainRequest;
@@ -122,6 +123,7 @@ inline void SetMnistRequest(InferRequest &request, const std::string &model,
     contents->add_fp32_contents(reinterpret_cast<const float*>(data.data())[k]);
   }
 }
+
 inline void SetResnetRequest(InferRequest &request, const std::string &model, 
                              const std::string &data) {
   CHECK_EQ(request.value.inputs_size(), 0);
@@ -159,6 +161,19 @@ inline void SetInceptionRequest(InferRequest &request, const std::string &model,
   }
 }
 
+inline void SetLLMRequest(InferRequest &request, const std::string &model,
+                          const std::string &data,
+                          int input_length, int output_length) {
+  CHECK_EQ(request.value.inputs_size(), 0);
+  request.value.set_model_name(model);
+  auto* input = request.value.add_inputs();
+  input->set_name("input0");
+  input->set_datatype("CHAR");
+  input->add_shape(data.size());
+
+  auto contents = input->mutable_contents();
+  contents->add_bytes_contents(data.c_str());
+}
 
 class TensorData {
 private:

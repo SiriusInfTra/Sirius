@@ -30,6 +30,8 @@ class ResourceManager {
 
 };
 
+using ResMgr = ResourceManager;
+
 }
 
 #endif

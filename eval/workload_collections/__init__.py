@@ -32,9 +32,16 @@ _set_workload_alias({
     'NormalB' : 'Normal_LogNormal_C',
     'NormalC' : 'Normal_Markov_LogNormal_AC',
 
+    'NormalLight' : 'Normal_LogNormal_A',
+    'NormalHeavy' : 'Normal_LogNormal_C',
+    'NormalBurst' : 'Normal_Markov_LogNormal_AC',
+    # 'NormalD' : 'Normal_Markov_LogNormal_AB', 
+ 
     'SkewA'   : 'Skew_LogNormal_A',
     'SkewB'   : 'Skew_LogNormal_C',
     'SkewC'   : 'Skew_Markov_LogNormal_AC',
+
+    'SkewBurst' : 'Skew_Markov_LogNormal_AC',
 
     'RPS_1'   : 'NormalA_LogNormal_RPS_1',
     'RPS_2'   : 'NormalA_LogNormal_RPS_2',

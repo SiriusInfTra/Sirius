@@ -3,6 +3,7 @@
 #include <server/model_store/infer_model_store.h>
 #include <server/model_store/infer_model.h>
 #include <server/train_launcher.h>
+#include <server/llm/llm.h>
 #include <server/control/controller.h>
 #include <server/config.h>
 
@@ -113,7 +114,12 @@ void CommonHandler::SetupCallData() {
     LOG(INFO) << "[Common Data]: WarmupDone";
     Profiler::Get()->Clear();
     // InferModelStore::Get()->ClearColdCache();
-    InferModelStore::WarmupDone();
+    if (!Config::serving_llm) {
+      InferModelStore::WarmupDone();
+    } else {
+      // Maybe TODO
+      LLMServer::WramupDone();
+    }
     data->responder_.Finish(data->response_, grpc::Status::OK, (void*)data);
   };
   new CommonData<EmptyRequest, EmptyResult>{
@@ -188,8 +194,6 @@ void InferHandler::Stop() {
   LOG(INFO) << "InferHandler stop";
 }
 
-
-
 DLDataType InferHandler::InferData::GetInputDType(size_t i) {
   if (request_.inputs(i).dtype() == "float32") {
     return DLDataType{kDLFloat, 32, 1};
@@ -212,6 +216,10 @@ std::vector<int64_t> InferHandler::InferData::GetInputShape(size_t i) {
 
 const char* InferHandler::InferData::GetInputData(size_t i) {
   return request_.inputs(i).data().c_str();
+}
+
+int InferHandler::InferData::GetNumInputData() {
+  return request_.inputs_size();
 }
 
 size_t InferHandler::InferData::GetInputBytes(size_t i) {
@@ -249,7 +257,13 @@ bool InferHandler::InferData::Process(bool ok) {
           << "[gPRC Process InferData] [" << GetModelName() << ", Id " << id_ << "]";
       status_ = Status::kFinish;
       
-      auto res = InferModelStore::AddJob(GetModelName(), this);
+      bool res;
+      if (!LLMServer::IsLLMModel(GetModelName())) {
+        res = InferModelStore::AddJob(GetModelName(), this);
+      } else {
+        res = LLMServer::AddJob(this);
+      }
+
       if (!res) {
         LOG(FATAL) << "[Process InferData] Model " << GetModelName() << " not found";
         response_.set_result("model not found");

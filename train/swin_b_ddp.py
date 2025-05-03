@@ -77,7 +77,8 @@ def train(rank:int, world_size:int,
         enable_grad_accumulate=enable_grad_accumulate,
         checkpoint_micro_batch=checkpoint_micro_batch,
         lazy_batch_distributing=False,
-        batch_distribute_policy=BatchDistributePolicy[os.environ.get('COL_BATCH_DISTRIBUTE_POLICY', 'BY_PERFORMANCE')]
+        batch_distribute_policy=BatchDistributePolicy[
+            os.environ.get('COLTRAIN_BATCH_DISTRIBUTE_POLICY', 'BY_PERFORMANCE')]
     )   
 
     model.train()

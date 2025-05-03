@@ -17,7 +17,8 @@ import re
 
 from .hyper_workload import (
     InferWorkloadBase, TrainWorkload, 
-    InferTraceDumper, InferModel, RandomInferWorkload
+    InferTraceDumper, InferModel, RandomInferWorkload,
+    BurstGPTInferWorkload
 )
 from .config import (
     get_global_seed, get_binary_dir,
@@ -152,8 +153,8 @@ class System:
                  colocate_skip_malloc: bool = False,
                  colocate_skip_loading: bool = False,
                  max_warm_cache_nbytes: int = 0 * 1024 * 1024 * 1024,
-                 cold_cache_min_capability_nbytes: int = 0 * 1024 * 1024 * 1024,
-                 cold_cache_max_capability_nbytes: int = 0 * 1024 * 1024 * 1024,
+                 cold_cache_min_capacity_nbytes: int = 0 * 1024 * 1024 * 1024,
+                 cold_cache_max_capacity_nbytes: int = 0 * 1024 * 1024 * 1024,
                  cold_cache_ratio: float = 0.0,
                  memory_pressure_mb: str | float = None,
                  ondemand_adjust: bool = True,
@@ -168,6 +169,12 @@ class System:
                  profile_gpu_util: bool = True,
                  profile_sm_partition: bool = True,
                  dummy_adjust: bool = False,
+                 serving_llm: bool = False,
+                 llm_model_name: str = "",
+                 llm_max_seq_len: int = None,
+                 llm_max_model_len: int = None,
+                 llm_show_gen_result: bool = False,
+                 llm_show_gen_result_period: int = 10, 
                  keep_last_time_stamp: bool = True,
                  max_live_minute: Optional[int] = None) -> None:
         self.mode = mode
@@ -205,8 +212,8 @@ class System:
         self.colocate_skip_malloc = colocate_skip_malloc
         self.colocate_skip_loading = colocate_skip_loading
         self.max_warm_cache_nbytes = max_warm_cache_nbytes
-        self.cold_cache_min_capability_nbytes = cold_cache_min_capability_nbytes
-        self.cold_cache_max_capability_nbytes = cold_cache_max_capability_nbytes
+        self.cold_cache_min_capacity_nbytes = cold_cache_min_capacity_nbytes
+        self.cold_cache_max_capacity_nbytes = cold_cache_max_capacity_nbytes
         self.cold_cache_ratio = cold_cache_ratio
         self.memory_pressure_mb = memory_pressure_mb
         self.ondemand_adjust = ondemand_adjust
@@ -227,6 +234,12 @@ class System:
         else:
             self.time_stamp = System._last_time_stamp
         self.use_xsched = use_xsched
+        self.serving_llm = serving_llm
+        self.llm_model_name = llm_model_name
+        self.llm_max_seq_len = llm_max_seq_len
+        self.llm_max_model_len = llm_max_model_len
+        self.llm_show_gen_result = llm_show_gen_result
+        self.llm_show_gen_result_period = llm_show_gen_result_period
 
     def next_time_stamp(self):
         self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
@@ -257,7 +270,23 @@ class System:
             # "compute-sanitizer", "--tool", "memcheck",
             f"./{get_binary_dir()}/server/colserve", 
             "-p", self.port, 
-            "--mode", self.mode, 
+            "--mode", self.mode
+        ]
+        if self.serving_llm:
+            cmd += [
+                "--serving-llm", 
+                "--llm-model-name", self.llm_model_name,
+            ]
+            if self.llm_max_model_len:
+                cmd += ["--llm-max-model-len", str(self.llm_max_model_len)]
+            if self.llm_max_seq_len:
+                cmd += ["--llm-max-seq-len", str(self.llm_max_seq_len)]
+            if self.llm_show_gen_result:
+                cmd += ["--llm-show-gen-result"]
+                cmd += ["--llm-show-gen-result-period", 
+                        str(self.llm_show_gen_result_period)]
+
+        cmd += [
             "--use-sta", "1" if self.use_sta else "0", 
             "--use-sta-train", "1" if self.use_sta_train else "0",
             "--profile-log", profile_log,
@@ -334,10 +363,10 @@ class System:
         cmd += ['--train-profile', str(train_profile)]
         
         cmd += ['--max-warm-cache-nbytes', str(self.max_warm_cache_nbytes)]
-        cmd += ['--cold-cache-min-capability-nbytes', 
-                str(self.cold_cache_min_capability_nbytes)]
-        cmd += ['--cold-cache-max-capability-nbytes', 
-                str(self.cold_cache_max_capability_nbytes)]
+        cmd += ['--cold-cache-min-capacity-nbytes', 
+                str(self.cold_cache_min_capacity_nbytes)]
+        cmd += ['--cold-cache-max-capacity-nbytes', 
+                str(self.cold_cache_max_capacity_nbytes)]
         cmd += ['--cold-cache-ratio', str(self.cold_cache_ratio)]
 
         if self.memory_pressure_mb:
@@ -609,7 +638,8 @@ class HyperWorkload:
                  wait_warmup_done_sec: float = 0, # see [Note: client timeline] in client/workload/util.h
                  wait_train_setup_sec: float = 0,
                  wait_stable_before_start_profiling_sec: float = 0, 
-                 show_result: Optional[int] = None) -> None:
+                 show_result: Optional[int] = None,
+                 is_llm_workload = False) -> None:
         """
         Args:
             - concurrency: 
@@ -638,10 +668,15 @@ class HyperWorkload:
         self.wait_train_setup_sec = wait_train_setup_sec
         self.wait_stable_before_start_profiling_sec = wait_stable_before_start_profiling_sec
         self.show_result = show_result
+        self.is_llm_workload = is_llm_workload
         self.manual_trace_cfg = None
         self.infer_extra_infer_sec = self.wait_stable_before_start_profiling_sec
 
     def set_infer_workloads(self, *infer_workloads: InferWorkloadBase):
+        if self.is_llm_workload:
+            assert all([isinstance(workload, BurstGPTInferWorkload) 
+                        for workload in infer_workloads]), \
+                "infer workload should be LLMInferWorkload"
         self.infer_workloads = list(infer_workloads)
     
     def set_train_workload(self, train_workload: TrainWorkload | NoneType):
@@ -656,6 +691,8 @@ class HyperWorkload:
     def launch_workload(self, server: System, 
                         trace_cfg: Optional[PathLike] = None, 
                         **kwargs):
+        if self.is_llm_workload:
+            pass # TODO: handle llm workload
         infer_trace_args = []
         if self.manual_trace_cfg is not None:
             trace_cfg = self.manual_trace_cfg

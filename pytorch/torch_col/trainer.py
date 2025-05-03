@@ -63,6 +63,9 @@ class Trainer:
         self.epoch_events = []
         self._cur_epoch_stat = None
 
+        self._last_max_batch_size_from_last_kill = None
+
+
     def train_one_epoch(self, epoch_idx: int) -> Optional[float]:
         epoch_event_name = f'epoch_{epoch_idx:02d}_{self.dynamic_dataset.ds_size}'
         epoch_event = EventManager.record_event(epoch_event_name)
@@ -75,6 +78,13 @@ class Trainer:
             self._cur_epoch_stat.tried_batch += 1
             self.overall_stat.tried_batch += 1
 
+            if self._last_max_batch_size_from_last_kill is None:
+                self._last_max_batch_size_from_last_kill = len(batch)
+            elif len(batch) > self._last_max_batch_size_from_last_kill:
+                torch_col.MemoryPool.empty_cache()    
+                print(f'empty cache due to greater batch size {self._last_max_batch_size_from_last_kill} -> {len(batch)}')
+                self._last_max_batch_size_from_last_kill = len(batch)
+            
             self.batch_manager.begin_batch(
                     epoch_idx, batch_idx, batch, batch['range']
                 )
@@ -150,7 +160,7 @@ class Trainer:
     def handle_abort_batch(self, epoch_idx: int, batch_idx: int, 
                            batch: Batch, exception: Exception):
         if epoch_idx == 0 and batch_idx == 0:
-            raise RuntimeError("first micro batch could not be interrupted.")
+            raise RuntimeError("first micro batch could not be interrupted, please increase the delay time")
         
         # -------------------------
         # first, finish abort batch
@@ -211,6 +221,7 @@ class Trainer:
 
             if torch_col.get_colocate_train_mode().is_colocate():
                 # Ref: [Note: kill batch] (colcoate)
+                # torch_col.info('set_killed_batch_recover')
                 self.dynamic_dataset.col_ctrl.set_killed_batch_recover()
 
             if torch_col.get_train_rank() == 0:
@@ -235,6 +246,8 @@ class Trainer:
                 time.sleep(1e-3)
             torch_col.dist.wait_barrier()
             # torch_col.info(f'epoch {epoch_idx} batch {batch_idx} resume training.')
+
+        self._last_max_batch_size_from_last_kill = None
 
     def _default_first_batch_callback(self):
         if torch_col.is_enable_shared_tensor():

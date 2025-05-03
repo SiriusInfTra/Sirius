@@ -11,10 +11,10 @@
 #include <thread>
 #include <utility>
 #include <mutex>
+#include <boost/json.hpp>
 
 #include "glog/logging.h"
 #include "workload.h"
-
 
 namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE {
 
@@ -79,10 +79,16 @@ bool Workload::HasTrainFirstEpochDone() {
   return result.status() == "1";
 }
 
+bool Workload::IsLLMInferWorkload() {
+  return is_llm_infer_workload_;
+}
+
 void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_infer) {
   SetupSlot();
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << this << ") " << model_ << " BUSY LOOP] ";
+
+  bool is_llm = IsLLM(model_);
 
   workload.ready_future_.wait();
   std::this_thread::sleep_for(delay_before_infer * std::chrono::seconds(1));
@@ -99,6 +105,12 @@ void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_i
           if (std::chrono::steady_clock::now() >= slots_[s]->req_status_.ready_time_) {
             slot = s;
             status_slots_id_[InferReqStatus::kDone].erase(slot);
+#if __COLSYS_CLIENT_BACKEND__ == __COLSYS_BACKEND__
+            if (is_llm) { // refresh prompt
+              slots_[slot]->request_.Clear();
+              set_request_fn_(slots_[slot]->request_);
+            }
+#endif
             status_slots_id_[InferReqStatus::kWait].insert(slot);
             break;
           }
@@ -225,6 +237,8 @@ void InferWorker::FetchInferResult(Workload &workload,
   std::stringstream log_prefix;
   log_prefix << "[InferWorker(" << std::hex << this << ") " << model_ << "] ";
 
+  bool is_llm_workload = workload.IsLLMInferWorkload();
+
   workload.ready_future_.wait();
   LOG(INFO) << log_prefix.str() << "FetchInferResult start";
   void *tag;
@@ -269,11 +283,34 @@ void InferWorker::FetchInferResult(Workload &workload,
 
     {
       std::shared_lock slot_lock{slot_mutex_};
-      auto latency = std::chrono::duration<double, std::milli>(response_time - slots_[slot]->req_status_.request_time_).count();
-      records_.push_back({slots_[slot]->request_.model(), latency, 
-                         slots_[slot]->req_status_.time_stamp_, GetTimeStamp(), 
-                         slots_[slot]->req_status_.request_time_, response_time});
-      if (show_result > 0) { // check outputs
+      auto latency = std::chrono::duration<double, std::milli>(
+          response_time - slots_[slot]->req_status_.request_time_
+        ).count();
+
+      int num_output_token = 0;
+      double decode_ms = 0;
+      if (is_llm_workload) {
+// #define COLSYS_CLIENT_IMPL_NAMESPACE colsys_backend_
+#if __COLSYS_CLIENT_BACKEND__ == __COLSYS_BACKEND__
+        CHECK_EQ(slots_[slot]->result_.outputs_size(), 2); // text, json infer info 
+        auto llm_info = boost::json::parse(slots_[slot]->result_.outputs(1).data());
+        LOG(INFO) << "llm infer info: " << llm_info;
+        num_output_token = llm_info.at("num_output_token").as_int64();
+        decode_ms = llm_info.at("decode_ms").as_double();
+#endif
+      }
+
+      records_.push_back({
+          .model_name_ = slots_[slot]->request_.model(), 
+          .latency_ = latency, 
+          .start_time_stamp_ = slots_[slot]->req_status_.time_stamp_, 
+          .end_time_stamp_ = GetTimeStamp(), 
+          .request_time_ = slots_[slot]->req_status_.request_time_, 
+          .response_time_ = response_time,
+          .num_output_token_ = num_output_token,
+          .decode_ms_ = decode_ms
+        });
+      if (show_result > 0 && !is_llm_workload) { // check outputs
         std::stringstream ss;
         size_t numel = slots_[slot]->result_.outputs(0).data().size() / sizeof(float);
         ss << "request " << slot << " model " << slots_[slot]->request_.model() 
@@ -283,7 +320,7 @@ void InferWorker::FetchInferResult(Workload &workload,
         }
         ss << "\n";
         std::cout << ss.str();
-      } else if (show_result < 0) {
+      } else if (show_result < 0 && !is_llm_workload) {
         std::stringstream ss;
         size_t numel = slots_[slot]->result_.outputs(0).data().size() / sizeof(float);
         ss << "request " << slot << " model " << slots_[slot]->request_.model() 
@@ -294,6 +331,10 @@ void InferWorker::FetchInferResult(Workload &workload,
         }
         ss << "\n";
         std::cout << ss.str();
+      } else if (show_result > 0 && is_llm_workload) {
+        // TODO
+      } else if (show_result < 0 && is_llm_workload) {
+        // TODO
       }
     }
     {
@@ -375,14 +416,24 @@ void InferWorker::Report(Workload &workload, int verbose, std::ostream &os) {
       return a.request_time_ < b.request_time_;
     });
     os << "[InferWorker TRACE " << model_ 
-       << "] start_time_stamp, end_time_stamp, request_time(ms), response_time(ms), latency(ms)" 
-       << std::endl;
+       << "] start_time_stamp, end_time_stamp, request_time(ms), response_time(ms), latency(ms)";
+    if (IsLLM(model_)) {
+      os << ", first_token(ms), time_between_token(ms)";
+    }
+    os << std::endl;
     for (auto &record : records) {
       os << std::fixed << std::setprecision(1)
          << record.start_time_stamp_ << ", " << record.end_time_stamp_ << ", "
          << std::chrono::duration<double, std::milli>(record.request_time_ - workload.run_btime_).count() << ", "
          << std::chrono::duration<double, std::milli>(record.response_time_ - workload.run_btime_).count() << ", "
-         << record.latency_ << std::endl;
+         << record.latency_;
+      if (IsLLM(model_)) {
+        os << ", " << record.latency_ - record.decode_ms_ 
+           << ", " << (record.num_output_token_ > 1 
+            ? record.decode_ms_ / (record.num_output_token_ - 1) 
+            : 0);
+      }
+      os << std::endl;
     }
   }
 }
@@ -518,6 +569,9 @@ std::function<void(InferRequest&)> Workload::GetSetRequestFn(const std::string &
     return SetBertRequestFn(model);
   } else if (model.find("gpt") != std::string::npos) {
     return SetGPTRequestFn(model);
+  } else if (model.find("llama") != std::string::npos
+      || model.find("opt") != std::string::npos) {
+    return SetLLMRequestFn(model, false, 0, 0, 0);
   } else {
     LOG(FATAL) << "unable to find SetRequestFn for " << model;
     throw std::runtime_error("unable to find SetRequestFn for " + model);
@@ -633,10 +687,80 @@ std::function<void(InferRequest&)> Workload::SetGPTRequestFn(const std::string &
   return set_gpt_request_fn;
 }
 
+std::function<void(InferRequest&)> Workload::SetLLMRequestFn(
+    const std::string &model,
+    bool random_gen, int seq_len, int token_min, int token_max) {
+  static std::mutex llm_input_datas_mutex;
+  static std::vector<std::string> llm_input_datas;
+  static int num_prompt;
+  static std::vector<int> llm_input_num_tokens;
+  static std::vector<int> llm_output_num_tokens;
+
+  {
+    std::unique_lock lock{llm_input_datas_mutex};
+    if (llm_input_datas.empty()) {
+      if (!random_gen) {
+        // std::filesystem::path prompt_data_path{
+        //     "client/data/sharegpt/prompt_with_length.json"};
+        std::filesystem::path prompt_data_path{GetLLMPromptJsonPath(model)};
+        CHECK(std::filesystem::exists(prompt_data_path)) 
+            << "prompt data file (sharegpt/prompt.json) not found";
+
+        std::ifstream prompt_file(prompt_data_path);
+        std::stringstream buffer;
+        buffer << prompt_file.rdbuf();
+        boost::json::value jv = boost::json::parse(buffer.str());
+        boost::json::array& prompts = jv.as_array();
+        for (auto& prompt : prompts) {
+          auto &arr = prompt.as_array();
+          std::string prompt_str = arr[0].as_string().c_str();
+          int prompt_num_token = static_cast<int>(arr[1].as_int64());
+          int output_num_token = static_cast<int>(arr[2].as_int64());
+          if (prompt_num_token > GetLLMMaxModelLen(model)) {
+            continue;
+          }
+          llm_input_datas.push_back(prompt_str);
+          llm_input_num_tokens.push_back(prompt_num_token);
+          llm_output_num_tokens.push_back(output_num_token);
+        }
+        num_prompt = llm_input_datas.size();
+
+        CHECK(num_prompt > 0);
+        LOG(INFO) << "[SetLLMRequestFn] num_prompt=" << num_prompt;
+        for (int i = 0; i < 5; i++) {
+          DLOG(INFO) << "prompt[" << i << "]=" << llm_input_datas[i]
+                     << " prompt_num_token=" << llm_input_num_tokens[i]
+                     << " output_num_token=" << llm_output_num_tokens[i];
+        }
+      } else {
+        LOG(FATAL) << "random gen prompt not implemented";
+      }
+    }
+  }
+  
+  auto set_llm_request_fn = [random_gen, &model](InferRequest &request) {
+    static std::mt19937 gen(AppBase::seed);
+    static std::uniform_int_distribution<int> prompt_dist(0, num_prompt - 1);
+
+    if (random_gen) {
+      LOG(FATAL) << "random gen prompt not implemented";
+    } else {
+      auto idx = prompt_dist(gen);
+      SetLLMRequest(request, model, llm_input_datas[prompt_dist(gen)], 
+                    llm_input_num_tokens[idx], llm_output_num_tokens[idx]);
+    }
+  };
+
+  return set_llm_request_fn;
+}
+
 void Workload::InferBusyLoop(const std::string &model, size_t concurrency, 
                              std::function<double_ms_t(size_t)> interval_fn,
                              double delay_before_infer, int warmup,
                              int64_t show_result) {
+  if (IsLLM(model)) {
+    is_llm_infer_workload_ = true;
+  }
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);
@@ -652,6 +776,9 @@ void Workload::InferTrace(const std::string &model, size_t concurrency,
                           const std::vector<double> &start_points, 
                           double delay_before_infer,
                           int warmup, int64_t show_result) {
+  if (IsLLM(model)) {
+    is_llm_infer_workload_ = true;
+  }
   auto set_request_fn = GetSetRequestFn(model);
   auto worker = std::make_unique<InferWorker>(
       model, concurrency, set_request_fn, *this);
@@ -705,6 +832,8 @@ void Workload::Report(int verbose, std::ostream &os) {
 
 void Workload::InferOverallReport(std::ostream &os) {
   std::vector<Record> all_records;
+  std::vector<double> first_token_ms;
+  std::vector<double> time_between_tokens_ms;
   for (auto &worker : infer_workers_) {
     auto records = worker->GetRecord(*this);
     all_records.insert(all_records.end(), records.begin(), records.end());
@@ -722,7 +851,18 @@ void Workload::InferOverallReport(std::ostream &os) {
       timeline_handle_ << record.model_name_ << "," << record.start_time_stamp_ 
                        << ","  << record.end_time_stamp_ << "\n";
     }
+    timeline_handle_.flush();
   }
+  { // llm
+    for (const auto & record : all_records) {
+      first_token_ms.push_back(record.latency_ - record.decode_ms_);
+      if (record.num_output_token_ > 1) {
+        time_between_tokens_ms.push_back(
+          record.decode_ms_ / (record.num_output_token_ - 1));
+      }
+    }
+  }
+
   auto ltc_avg = std::accumulate(all_records.begin(), all_records.end(), 0.0, 
       [](double acc, const Record &record) {
         return acc + record.latency_;
@@ -748,6 +888,45 @@ void Workload::InferOverallReport(std::ostream &os) {
      << "p60 " << all_records[all_records.size() * 60 / 100].latency_ << " "
      << "p50 " << all_records[all_records.size() * 50 / 100].latency_ << "\n"
      << std::endl;
+
+  if (is_llm_infer_workload_) {
+    auto printVecStats = [&](const std::string& name, const std::vector<double> &vals) {
+      if (vals.empty()) {
+        os << name << ": no record" << std::endl;
+      }
+      std::vector<double> copy = vals;
+      std::sort(copy.begin(), copy.end());
+      double sum = std::accumulate(copy.begin(), copy.end(), 0.0);
+      double avg = sum / copy.size();
+      double minv = copy.front();
+      double maxv = copy.back();
+      double p50 = copy[copy.size() * 50 / 100];
+      double p99 = copy[copy.size() * 99 / 100];
+      double p95 = copy[copy.size() * 95 / 100];
+      double p90 = copy[copy.size() * 90 / 100];
+      double p80 = copy[copy.size() * 80 / 100];
+      double p70 = copy[copy.size() * 70 / 100];
+      double p60 = copy[copy.size() * 60 / 100];
+      os << name << ":" << std::endl 
+         << "    cnt " << copy.size()
+         << " avg " << avg
+         << " max " << maxv
+         << " min " << minv 
+         << std::endl
+         << "    p99 " << p99
+         << " p95 " << p95
+         << " p90 " << p90
+         << " p80 " << p80
+         << " p70 " << p70
+         << " p60 " << p60
+         << " p50 " << p50
+         << std::endl;
+    };
+    os << "[Infer Overall] LLM Infer Stats" << std::endl;
+    printVecStats("time_to_first_token", first_token_ms);
+    printVecStats("time_between_token", time_between_tokens_ms);
+    os << std::endl;
+  }
 }
 
 } // namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE

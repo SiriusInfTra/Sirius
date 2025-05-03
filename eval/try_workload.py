@@ -45,8 +45,8 @@ if run_colsys:
         'train_memory_over_predict_mb': 1500,
         'infer_model_max_idle_ms': 5000,
         'cold_cache_ratio': 0.5, 
-        'cold_cache_min_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),
-        'cold_cache_max_capability_nbytes': int(2 * 1024 * 1024 * 1024),
+        'cold_cache_min_capacity_nbytes': int(1.5 * 1024 * 1024 * 1024),
+        'cold_cache_max_capacity_nbytes': int(2 * 1024 * 1024 * 1024),
     }
 
     for wkld_name, wkld in normal_wklds.items():

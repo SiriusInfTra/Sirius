@@ -4,13 +4,21 @@
 #include <CLI/CLI.hpp>
 #include <glog/logging.h>
 
+#define __COLSYS_BACKEND__ 1
+#define __TRITON_BACKEND__ 2
+
 namespace colserve {
 namespace workload {
 
 std::string ReadInput(std::filesystem::path data_path);
 
+int GetLLMMaxModelLen(const std::string &model_name);
+bool IsLLM(const std::string &model_name);
+std::string GetLLMPromptJsonPath(const std::string &model);
+
 inline long GetTimeStamp() {
-  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
 struct InferModel {

@@ -9,7 +9,6 @@
 
 #include <boost/range/irange.hpp>
 #include <boost/format.hpp>
-
 #include <fstream>
 #include <sys/mman.h>
 #include <sys/stat.h>

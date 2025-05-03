@@ -18,6 +18,7 @@
 #include <regex>
 #include <limits>
 
+
 namespace colserve {
 namespace {
 std::string GetMemMbStr(memory_byte_t bytes) {
@@ -57,7 +58,7 @@ int GetDcgmFieldValues(dcgm_field_entity_group_t entity_grp_id,
   CHECK(entity_grp_id == DCGM_FE_GPU)
       << "entity_grp_id " << entity_grp_id << " entity_id " << entity_id;
 
-  int device_id = sta::DeviceManager::GetVisibleGpuId(entity_id);
+  int device_id = sta::DevMgr::GetVisibleGpuId(entity_id);
   for (int i = 0; i < num_values; i++) {
     dcgm_field_meta_p field = DcgmFieldGetById(values[i].fieldId);
     if (field == nullptr) {
@@ -120,6 +121,18 @@ std::ostream& operator<<(std::ostream &os, Profiler::PerfItem item) {
     LOG_ITEM(Profiler::PerfItem, InferRealBatchSize)
     LOG_ITEM(Profiler::PerfItem, InferModelLoad)
     LOG_ITEM(Profiler::PerfItem, InferModelColdCacheHit)
+
+    LOG_ITEM(Profiler::PerfItem, LLMNumPromptTokens)
+    LOG_ITEM(Profiler::PerfItem, LLMNumGenTokens)
+    LOG_ITEM(Profiler::PerfItem, LLMBackendQueue)
+    LOG_ITEM(Profiler::PerfItem, LLMPrefill)
+    LOG_ITEM(Profiler::PerfItem, LLMTimeBetweenTokens)
+
+    LOG_ITEM(Profiler::PerfItem, LLMReclaimKVCacheBlkGrp)
+    LOG_ITEM(Profiler::PerfItem, LLMAllocKVCacheBlkGrp)
+
+    LOG_ITEM(Profiler::PerfItem, LLMKVCacheMap)
+    LOG_ITEM(Profiler::PerfItem, LLMKVCacheUnMap)
   default:
     return os;
   }
@@ -153,7 +166,7 @@ void Profiler::Start() {
   // std::unique_lock event_info_lock{profiler_->event_info_mut_};
   profiler_->infer_info_.clear();
   // profiler_->event_info_.clear();
-  for (int i = 0; i < sta::DeviceManager::GetNumVisibleGpu(); i++) {
+  for (int i = 0; i < sta::DevMgr::GetNumVisibleGpu(); i++) {
     profiler_->resource_infos_[i].clear();
   }
   profiler_->infering_memory_nbytes_.clear();
@@ -205,14 +218,14 @@ Profiler::Profiler(const std::string &profile_log_path)
   CHECK_GT(dev_cnt, 0);
 
   std::array<nvmlDevice_t, MAX_DEVICE_NUM> devices{0};
-  CHECK_GE(sta::DeviceManager::GetNumVisibleGpu(), 1);
-  for (int i = 0; i < sta::DeviceManager::GetNumVisibleGpu(); i++) {
-    auto gpu_uuid = sta::DeviceManager::GetGpuSystemUuid(i);
+  CHECK_GE(sta::DevMgr::GetNumVisibleGpu(), 1);
+  for (int i = 0; i < sta::DevMgr::GetNumVisibleGpu(); i++) {
+    auto gpu_uuid = sta::DevMgr::GetGpuSystemUuid(i);
     COL_NVML_CALL(nvmlDeviceGetHandleByUUID(gpu_uuid.c_str(), &devices[i]));
   }
 
   nvmlDevice_t device;
-  auto gpu_uuid = sta::DeviceManager::GetGpuSystemUuid(0);
+  auto gpu_uuid = sta::DevMgr::GetGpuSystemUuid(0);
   COL_NVML_CALL(nvmlDeviceGetHandleByUUID(gpu_uuid.c_str(), &device));
 
   // CHECK MPS
@@ -287,11 +300,11 @@ void Profiler::ProfileThread(std::array<nvmlDevice_t, MAX_DEVICE_NUM> devices) {
     snprintf(dcgm_group_name, sizeof(dcgm_group_name), "dcgm_colserve_%d", pid);
     COL_DCGM_CALL(dcgmGroupCreate(this->dcgm_handle_, DCGM_GROUP_EMPTY, 
                               dcgm_group_name, &this->dcgm_gpu_grp_));
-    for (int i = 0; i < sta::DeviceManager::GetNumVisibleGpu(); i++) {
+    for (int i = 0; i < sta::DevMgr::GetNumVisibleGpu(); i++) {
       COL_DCGM_CALL(dcgmGroupAddEntity(this->dcgm_handle_, 
                                        this->dcgm_gpu_grp_, 
                                        DCGM_FE_GPU, 
-                                       sta::DeviceManager::GetGpuSystemId(i)));
+                                       sta::DevMgr::GetGpuSystemId(i)));
     }
     std::vector<uint16_t> field_ids;
     if (Config::profile_gpu_util) {
@@ -318,13 +331,17 @@ void Profiler::ProfileThread(std::array<nvmlDevice_t, MAX_DEVICE_NUM> devices) {
     CollectMemoryResourceInfo(devices, cur_resource_infos);
     CollectComputingResourcesInfo(devices, cur_resource_infos);
     
-    int num_device = sta::DeviceManager::GetNumVisibleGpu();
+    int num_device = sta::DevMgr::GetNumVisibleGpu();
     for (int device_id = 0; device_id < num_device; device_id++) {
       resource_infos_[device_id].emplace_back(Profiler::GetTimeStamp(), 
                                               cur_resource_infos[device_id]);
     }
-    infering_memory_nbytes_.emplace_back(Profiler::GetTimeStamp(), 
-                                         InferModelStore::GetInferingModelNbytes());
+
+    if (!Config::serving_llm) {
+      infering_memory_nbytes_.emplace_back(
+          Profiler::GetTimeStamp(), 
+          InferModelStore::GetInferingModelNbytes());
+    }
 
     std::this_thread::sleep_for(
         std::chrono::milliseconds(monitor_interval_ms_));
@@ -340,7 +357,7 @@ void Profiler::CollectMemoryResourceInfo(
   constexpr uint32_t max_proc_info_cnt = 32;
   nvmlProcessInfo_t proc_infos[32];
 
-  for (auto device_id : boost::irange(sta::DeviceManager::GetNumVisibleGpu())) {
+  for (auto device_id : boost::irange(sta::DevMgr::GetNumVisibleGpu())) {
     auto &res_info = res_infos[device_id];
     if (!Config::use_shared_tensor || !Config::use_shared_tensor_train) {
       uint32_t proc_info_cnt = max_proc_info_cnt;
@@ -364,15 +381,9 @@ void Profiler::CollectMemoryResourceInfo(
         res_info.infer_mem = sta::CUDAMemPool::Get(device_id)->InferMemUsage();
       }
     } else {
-      auto read_resource_info = [&]() {
-        res_info.infer_mem = sta::CUDAMemPool::Get(device_id)->InferMemUsage();
-        res_info.train_mem = sta::CUDAMemPool::Get(device_id)->TrainMemUsage();
-        res_info.train_all_mem = 
-            sta::CUDAMemPool::Get(device_id)->TrainAllMemUsage();
-        res_info.gpu_used_mem = 
-            static_cast<size_t>(Config::cuda_memory_pool_gb * 1_GB);
-         auto [cap, cache] = ColdModelCache::Get(device_id)->GetColdCacheCapacityAndCache();
-        if (Config::cold_cache_max_capability_nbytes != 0) {
+      auto read_cold_cache_info = [&]() {
+        auto [cap, cache] = ColdModelCache::Get(device_id)->GetColdCacheCapacityAndCache();
+        if (Config::cold_cache_max_capacity_nbytes != 0) {
           res_info.cold_cache_nbytes = cache;
           
           res_info.cold_cache_buffer_mb = 
@@ -381,6 +392,23 @@ void Profiler::CollectMemoryResourceInfo(
           res_info.infer_mem_in_cold_cache_buffer_mb = 
               ColdModelCache::Get(device_id)->GetColdCacheReleasableMemoryMBUnsafe();
           res_info.cold_cache_size_mb = sta::ByteToMB(cap);
+        }
+      };
+
+      auto read_resource_info = [&]() {
+        if (!Config::serving_llm) {
+          res_info.infer_mem = sta::CUDAMemPool::Get(device_id)->InferMemUsage();
+        } else {
+          res_info.infer_mem = sta::CUDAMemPool::Get(device_id)->InferMemUsageByPage();
+        }
+        res_info.train_mem = sta::CUDAMemPool::Get(device_id)->TrainMemUsage();
+        res_info.train_all_mem = 
+            sta::CUDAMemPool::Get(device_id)->TrainAllMemUsage();
+        res_info.gpu_used_mem = 
+            static_cast<size_t>(Config::cuda_memory_pool_gb * 1_GB);
+        
+        if (!Config::serving_llm) {
+          read_cold_cache_info();
         }
       };
 
@@ -403,7 +431,11 @@ void Profiler::CollectMemoryResourceInfo(
 void Profiler::CollectComputingResourcesInfo(
       const std::array<nvmlDevice_t, MAX_DEVICE_NUM> &devices,
       std::array<ResourceInfo, MAX_DEVICE_NUM> &res_infos) {
-  int num_device = sta::DeviceManager::GetNumVisibleGpu();
+  if (Config::serving_llm) {
+    return;
+  }
+
+  int num_device = sta::DevMgr::GetNumVisibleGpu();
   for (int device_id = 0; device_id < num_device; device_id++) {
     auto &res_info = res_infos[device_id];
     if (Config::dynamic_sm_partition && Config::profile_sm_partition) {
@@ -518,7 +550,7 @@ void Profiler::WriteLog() {
   ofs << std::endl;
 
   if (Config::profile_gpu_util || Config::profile_gpu_smact) {
-    for (int device_id = 0; device_id < sta::DeviceManager::GetNumVisibleGpu(); device_id++) {
+    for (int device_id = 0; device_id < sta::DevMgr::GetNumVisibleGpu(); device_id++) {
       ofs << str(boost::format("[GPU Util Info | Device %d]") % device_id) << std::endl;
       auto gpu_utils = SelectResourceInfo<decltype(((ResourceInfo*)nullptr)->gpu_util)>(
           device_id, offsetof(ResourceInfo, gpu_util), 
@@ -541,7 +573,7 @@ void Profiler::WriteLog() {
     }
   }
   
-  for (int device_id = 0; device_id < sta::DeviceManager::GetNumVisibleGpu(); device_id++) {
+  for (int device_id = 0; device_id < sta::DevMgr::GetNumVisibleGpu(); device_id++) {
     ofs << str(boost::format("[Memory Info | Device %d]") % device_id) << std::endl;
     auto memory_table = FmtResourceInfos(device_id, {
       offsetof(ResourceInfo, infer_mem),

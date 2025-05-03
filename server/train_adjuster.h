@@ -24,7 +24,7 @@ class TrainAdjuster {
   // TODO: adjust for re-balance training
   // TODO: guarantee either all worker batch size is greater than 0,
   //   or all worker batch size less equal to 0
-  static std::vector<AdjustPlan> GetTrainRequireMemAdjustPlan(
+  static std::vector<AdjustPlan> GetInferRequireMemAdjustPlan(
       int device_id, memory_mb_t required_mem_mb,
       memory_mb_t cold_cache_free_mem_mb);
   static std::vector<AdjustPlan> GetInferRequireMemAdjustPlanWithInLock(
@@ -35,6 +35,13 @@ class TrainAdjuster {
   static std::vector<AdjustPlan> GetInferReleaseMemAdjustPlan();
   static std::vector<AdjustPlan> GetInferReleaseMemAdjustPlanWithInLock(
       std::vector<std::unique_lock<std::mutex>> &cold_cache_locks);
+
+  // TODO: Refactor the interface
+  static std::vector<AdjustPlan> GetLLMInferReleaseMemAdjustPlan(
+      std::unique_lock<std::mutex> &kvc_pool_lock); // will be called within kv-cache-pool lock
+  static std::vector<AdjustPlan> GetLLMInferRequireMemAdjustPlan(
+      int device_id, memory_mb_t required_mem_mb,
+      std::unique_lock<std::mutex> &kvc_pool_lock);
 
   static void LoadTrainInfo();
   static void ResetTrainInfo();

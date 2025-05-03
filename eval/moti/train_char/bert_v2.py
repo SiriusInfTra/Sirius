@@ -82,8 +82,10 @@ def train():
     # dataloader = DataLoader(dataset, shuffle=False, batch_size=batch_size)
 
     # model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=5)
-    model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=5)
-    # model = AutoModelForSequenceClassification.from_pretrained("google-bert/bert-large-uncased", num_labels=5)
+    # model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=5)
+    # model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=5)
+    model = AutoModelForSequenceClassification.from_pretrained("google-bert/bert-large-uncased", num_labels=5)
+    # model = AutoModelForSequenceClassification.from_pretrained("Qwen/Qwen2-0.5B", num_labels=5)
     model = model.cuda(0)
     for param in model.parameters():
         IntermMemoryStat.model_param_add(param)
@@ -92,8 +94,9 @@ def train():
                                 momentum=0.9, weight_decay=1e-4)
 
 
-    # eval_batch_size = [128, 64, 32, 16, 8, 4]
-    eval_batch_size = [64, 32, 16, 8, 4]
+    # eval_batch_size = [256, 128, 64, 32]
+    eval_batch_size = [128, 64, 32, 16, 8, 4]
+    # eval_batch_size = [64, 32, 16, 8, 4]
     # eval_batch_size = [32, 16, 8, 4]
     # eval_batch_size = [28, 16, 8, 4, 1]
     # eval_batch_size = [16, 8, 4, 1]

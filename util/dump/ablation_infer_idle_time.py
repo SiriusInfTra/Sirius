@@ -19,7 +19,7 @@ def print_aligned(A, B):
             size = shutil.get_terminal_size()
             return size.columns
         except OSError:
-            return 80  # 默认宽度
+            return 80  # default width
 
     console_width = get_console_width()
 
@@ -28,7 +28,7 @@ def print_aligned(A, B):
 
     colors = [Fore.RED, Fore.GREEN, Fore.YELLOW, Fore.BLUE, Fore.MAGENTA, Fore.CYAN, Fore.WHITE]
 
-    # 选择随机颜色
+    # select random color
     color = random.choice(colors)
 
     output = f"{A:<{A_width}}{B:>{B_width}}"

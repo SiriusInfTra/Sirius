@@ -33,15 +33,18 @@ enable_hybrid = False
 
 enable_uniform_v2 = False
 enable_skewed_v2 = False
+
+# ref: eval/workload_collections/__init__.py
 uniform_v2_workload_types = [
-    'NormalA', 
-    'NormalB',
-    'NormalC'
+    'NormalLight', # 'NormalA', 
+    'NormalHeavy', # 'NormalB',
+    'NormalBurst', # 'NormalC'
 ]
 skew_v2_workload_types = [
     # 'SkewA',
     # 'SkewB',
-    'SkewC'
+
+    'SkewBurst' # 'SkewC'
 ]
 
 # should be false to eval infer-only
@@ -78,6 +81,7 @@ parser.add_argument('--binary-dir', type=str, default='build')
 parser.add_argument('--multi-gpu', action='store_true')
 parser.add_argument('--uniform-v2-wkld-types', nargs='*', default=[])
 parser.add_argument('--skewed-v2-wkld-types', nargs='*', default=[])
+parser.add_argument('--parse-result', action='store_true')
 args = parser.parse_args()
 
 if args.colsys or args.all_sys:
@@ -136,7 +140,7 @@ if not skip_set_mps_pct:
 if args.binary_dir != 'build':
     set_binary_dir(args.binary_dir)
 
-if args.multi_gpu:
+if args.multi_gpu or runner.is_multi_gpu():
     run_comm.UniformConfig_v2.train_model += "_ddp"
     run_comm.SkewedConfig_v2.train_model += "_ddp"
 
@@ -148,6 +152,10 @@ run_comm.retry_if_fail = retry_if_fail
 if args.skip_fail:
     skip_fail = True
     run_comm.skip_fail = skip_fail
+
+if args.parse_result:
+    LogParser._enable = True
+
 
 ## MARK: Configurations
 ## =========================================================== ##
@@ -331,6 +339,8 @@ def _run(system: System, workload: HyperWorkload,
                       infer_model_config=server_model_config, fake_launch=False)
         workload.launch_workload(system, fake_launch=False)
         system.stop()
+        if LogParser._enable:
+            LogParser.add_log(system.exit_log_dir)
     except Exception as e:
         print(f"Failed to run {unit} {tag}: {e}")
         if retry_if_fail:
@@ -342,6 +352,8 @@ def _run(system: System, workload: HyperWorkload,
                             infer_model_config=server_model_config)
                     workload.launch_workload(system)
                     system.stop()
+                    if LogParser._enable:
+                        LogParser.add_log(system.exit_log_dir)
                 except Exception as e:
                     print(f"Failed to run {unit} {tag}: {e}")
                     if retry_cnt == retry_limit - 1:
@@ -517,10 +529,10 @@ if run_colsys:
         'train_memory_over_predict_mb' : 1000,
         'infer_model_max_idle_ms' : 5000,
         'cold_cache_ratio': 0.5, 
-        # 'cold_cache_min_capability_nbytes': int(0.5 * 1024 * 1024 * 1024),
-        # 'cold_cache_max_capability_nbytes': int(1 * 1024 * 1024 * 1024),
-        'cold_cache_min_capability_nbytes': int(2.0 * 1024 * 1024 * 1024),
-        'cold_cache_max_capability_nbytes': int(3.0 * 1024 * 1024 * 1024),
+        # 'cold_cache_min_capacity_nbytes': int(0.5 * 1024 * 1024 * 1024),
+        # 'cold_cache_max_capacity_nbytes': int(1 * 1024 * 1024 * 1024),
+        'cold_cache_min_capacity_nbytes': int(0.0 * 1024 * 1024 * 1024),
+        'cold_cache_max_capacity_nbytes': int(2.0 * 1024 * 1024 * 1024),
         'dynamic_sm_partition': dynamic_sm_partition,
     }
 
@@ -659,10 +671,10 @@ if run_strawman:
         # 'cuda_memory_pool_gb' : "13" if not runner.is_four_gpu() else "12.5",
         # 'infer_model_max_idle_ms' : 5000,
         'cold_cache_ratio': 0.0, 
-        # 'cold_cache_min_capability_nbytes': int(0.5 * 1024 * 1024 * 1024),
-        # 'cold_cache_max_capability_nbytes': int(1 * 1024 * 1024 * 1024),
-        # 'cold_cache_min_capability_nbytes': int(1.5 * 1024 * 1024 * 1024),
-        # 'cold_cache_max_capability_nbytes': int(2 * 1024 * 1024 * 1024),
+        # 'cold_cache_min_capacity_nbytes': int(0.5 * 1024 * 1024 * 1024),
+        # 'cold_cache_max_capacity_nbytes': int(1 * 1024 * 1024 * 1024),
+        # 'cold_cache_min_capacity_nbytes': int(1.5 * 1024 * 1024 * 1024),
+        # 'cold_cache_max_capacity_nbytes': int(2 * 1024 * 1024 * 1024),
         'dynamic_sm_partition': dynamic_sm_partition,
     }
     if enable_uniform_v2:
@@ -928,3 +940,12 @@ if run_um_mps:
             run(system, workload, server_model_config, 
                 f"overall-azure-{runner.get_num_gpu()}gpu", "um-mps")
 
+
+# =========================================================
+# Parse result
+# =========================================================
+if LogParser._enable:
+    if args.multi_gpu or runner.is_multi_gpu():
+        LogParser.parse(TestUnit.OVER_ALL_MULTI_GPU)
+    else:
+        LogParser.parse(TestUnit.OVER_ALL_SINGLE_GPU)

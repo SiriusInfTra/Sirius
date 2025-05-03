@@ -6,6 +6,7 @@
 #include <atomic>
 #include <iostream>
 #include <filesystem>
+#include <string>
 
 namespace colserve {
 
@@ -46,6 +47,7 @@ inline std::ostream & operator<<(std::ostream &os, const ServeMode &mode) {
       break;
     case ServeMode::kColocateL1:
       os << "kColocateL1";
+      break;
     case ServeMode::kColocateL2:
       os << "kColocateL2";
       break;
@@ -106,12 +108,13 @@ class Config {
 
   static int train_mps_thread_percent;
 
-  static size_t cold_cache_min_capability_nbytes;
-  static size_t cold_cache_max_capability_nbytes;
+  static size_t cold_cache_min_capacity_nbytes;
+  static size_t cold_cache_max_capacity_nbytes;
 
   static size_t infer_alloc_buffer_nbytes;
   static size_t train_over_adjust_nbytes;
   static size_t max_warm_cache_nbytes;
+  static memory_byte_t train_base_usage_nbytes;
   static double cold_cache_ratio;
 
   static bool enable_warm_cache_fallback;
@@ -144,6 +147,14 @@ class Config {
 
   static bool dummy_adjust;
 
+  static bool serving_llm;
+  static std::string llm_model_name;
+  static int llm_max_seq_len;
+  static int llm_max_model_len;
+  static bool llm_show_gen_result;
+  static int llm_show_gen_result_period;
+  static int llm_blk_grp_adjust_size;
+
   static bool system_initialized;
 
   static bool profile_gpu_smact;
@@ -174,6 +185,10 @@ class Config {
   inline static bool IsColocateMode() {
     return Config::serve_mode == ServeMode::kColocateL1
         || Config::serve_mode == ServeMode::kColocateL2;
+  }
+
+  inline static bool UseSharedTensor() {
+    return Config::use_shared_tensor;
   }
 
 };

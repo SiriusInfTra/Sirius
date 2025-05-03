@@ -78,17 +78,27 @@ class CUDAMemPool {
 
   static std::shared_ptr<PoolEntry> 
       HostAlloc(size_t nbytes, MemType mtype);
+  constexpr static memory_byte_t PageNbytes() {
+#if 1
+    return 32_MB;
+#else
+    return 8_MB;
+#endif
+  }
 
   CUDAMemPool(int device_id, std::size_t nbytes, 
               bool cleanup, bool observe, 
               FreeListPolicyType free_list_policy);
 
   size_t InferMemUsage();
+  memory_byte_t InferMemUsageByPage();
   size_t TrainMemUsage();
   size_t TrainPeakMemUsage();
   size_t TrainAllMemUsage();
-  size_t FreeMemUsage();
+  size_t NumFreePages();
   size_t PoolNbytes();
+
+  
   void FreeTrainLocals();
   void DumpDumpBlockList();
   std::shared_ptr<PoolEntry> RawAlloc(size_t nbytes, MemType mtype);
@@ -96,8 +106,12 @@ class CUDAMemPool {
   // Alloc memory and ignore the stream property.
   std::shared_ptr<PoolEntry> Alloc(size_t nbytes, MemType mtype,
                                    bool allow_nullptr);
+  void *GetBasePtr(MemType mtype);
   std::shared_ptr<PoolEntry> AllocWithStream(std::size_t nbytes, MemType mtype, 
                                              cudaStream_t stream, bool allow_nullptr);
+
+  void Map(std::shared_ptr<PoolEntry> entry);
+  void Unmap(std::shared_ptr<PoolEntry> entry);
 
   void RegisterOOMHandler(std::function<void()> oom_handler, MemType mtype);
 
@@ -121,6 +135,7 @@ class CUDAMemPool {
 
   int device_id_;
   int raw_alloc_enable_unified_memory_{-1};
+ public:
   mpool::SharableObject<mpool::PagesPool>* pages_pool_;
   mpool::SharableObject<mpool::CachingAllocator>* torch_allocator_;
   mpool::SharableObject<mpool::DirectAllocator>* tvm_allocator_;

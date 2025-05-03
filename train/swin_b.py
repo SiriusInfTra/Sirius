@@ -54,7 +54,7 @@ def train(num_epoch: int, batch_size: int,
                                or col_ctrl.train_mode.is_colocate())
     checkpoint_micro_batch = col_ctrl.train_mode.is_kill_batch()
     train_dataset, batch_manager = torch_col.init_dynamic_batch(
-        dataset_size=1000,
+        dataset_size=4000,
         dataset_type=dynamic_batch.DatasetType.VISION,
         dataset_config=dynamic_batch.VisionDatasetConfig((3, 224, 224), 10),
         batch_size=batch_size,
@@ -62,6 +62,7 @@ def train(num_epoch: int, batch_size: int,
         enable_grad_accumulate=enable_grad_accumulator,
         checkpoint_micro_batch=checkpoint_micro_batch,
         lazy_batch_distributing=False,
+        fake_data=True,
         batch_distribute_policy=dynamic_batch.BatchDistributePolicy.BY_PERFORMANCE
     )
 
@@ -139,7 +140,7 @@ def train(num_epoch: int, batch_size: int,
 def main():
     parser = argparse.ArgumentParser('Train Resnet')    
     parser.add_argument('--batch-size', type=int, default=64)
-    parser.add_argument('--global-batch-size', type=int, default=500)
+    parser.add_argument('--global-batch-size', type=int, default=2000)
     parser.add_argument('--num-epoch', type=int, default=15)
     args = parser.parse_args()
     

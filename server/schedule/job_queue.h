@@ -29,7 +29,7 @@ class Job {
   inline void RecordEnqueued() { en_queue_time_ = std::chrono::steady_clock::now(); }
   inline void RecordDequeued() { de_queue_time_ = std::chrono::steady_clock::now(); }
   inline void RecordFinished() { finish_time_ = std::chrono::steady_clock::now(); }
-  inline void RecordProfile() {
+  inline virtual void RecordProfile() {
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferJobQueue, 
         std::chrono::duration<double, std::milli>(de_queue_time_ - en_queue_time_).count());
     Profiler::Get()->RecordPerf(Profiler::PerfItem::InferJobProcess,
@@ -52,9 +52,26 @@ class InferJob : public Job {
   InferJob(network::InferHandler::InferData* data);
   network::InferHandler::InferData* GetInferData() override { return data_; }
 
- private:
+ protected:
   network::InferHandler::InferData* data_;
   virtual std::ostream& Print(std::ostream& os) const;
+};
+
+struct LLMRequestMetric;
+class LLMInferJob : public InferJob {
+ public:
+  LLMInferJob(network::InferHandler::InferData* data);
+  std::string_view GetPrompt() {
+    return prompt_;
+  }
+  int GetMaxTokens() {
+    return max_tokens_;
+  }
+  void RecordProfile(const LLMRequestMetric &metric);
+
+ private:
+  std::string_view prompt_;
+  int max_tokens_;
 };
 
 class TrainJob : public Job {
@@ -80,8 +97,9 @@ class JobQueue {
 
 class BatchJobQueue : public JobQueue {
  public:
-  std::vector<std::shared_ptr<Job>> GetBatch(size_t batch_size, size_t interval_ms = 0, 
-                                             size_t timeout_ms = std::numeric_limits<int64_t>::max());
+  std::vector<std::shared_ptr<Job>> GetBatch(
+      size_t batch_size, size_t interval_ms = 0, 
+      size_t timeout_ms = std::numeric_limits<int64_t>::max());
   bool Put(const std::shared_ptr<Job> &job);
   double FirstJobQueueTime(); // ms
   

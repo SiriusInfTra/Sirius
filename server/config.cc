@@ -1,6 +1,7 @@
 #include <common/util.h>
 
 #include <server/config.h>
+#include <string>
 
 namespace colserve {
 
@@ -36,6 +37,7 @@ bool Config::group_param_dump = false;
 bool Config::group_param_nbytes_with_fragment = true;
 size_t Config::group_param_load_threshold = 8_MB;
 
+// for llm, use this var to ctrl kv-cache size
 double Config::cuda_memory_pool_gb = 12;
 
 std::string Config::mempool_freelist_policy= "best-fit";
@@ -52,13 +54,14 @@ double Config::train_memory_over_predict_mb = 0;
 
 int Config::train_mps_thread_percent = -1;
 
-size_t Config::cold_cache_min_capability_nbytes = 0_GB;
-size_t Config::cold_cache_max_capability_nbytes = 0_GB;
+size_t Config::cold_cache_min_capacity_nbytes = 0_GB;
+size_t Config::cold_cache_max_capacity_nbytes = 0_GB;
 
 double Config::cold_cache_ratio = 0.3;
 size_t Config::train_over_adjust_nbytes = 500_MB;
 
 size_t Config::max_warm_cache_nbytes = 0_GB;
+size_t Config::train_base_usage_nbytes = 0_GB;
 
 bool Config::enable_warm_cache_fallback = true;
 
@@ -84,6 +87,15 @@ bool Config::enable_train_adjust_balance = true;
 memory_mb_t Config::train_adjust_balance_threshold = 1500;
 
 int Config::train_adjust_batch_size_limit = 0;
+
+bool Config::serving_llm = false;
+std::string Config::llm_model_name = "";
+int Config::llm_max_seq_len = 0;
+int Config::llm_max_model_len = 0;
+bool Config::llm_show_gen_result = false;
+int Config::llm_show_gen_result_period = 10;
+int Config::llm_blk_grp_adjust_size = 2;
+// int Config::llm_
 
 bool Config::dummy_adjust = false;
 

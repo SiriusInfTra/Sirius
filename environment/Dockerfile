@@ -4,11 +4,11 @@ FROM nvcr.io/nvidia/cuda:11.6.1-cudnn8-devel-ubuntu20.04
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt update && apt install -y \
-  gcc llvm llvm-dev libtinfo-dev zlib1g-dev build-essential libtool autoconf unzip \
+  gcc gdb llvm llvm-dev libtinfo-dev zlib1g-dev build-essential libtool autoconf unzip \
   libedit-dev libxml2-dev ninja-build libgoogle-glog-dev \
   libpng-dev libjpeg-dev \
   datacenter-gpu-manager \
-  git curl vim neovim git-lfs wget fish htop && \
+  git curl tmux vim neovim git-lfs wget fish htop && \
   git lfs install && \
   chsh -s /usr/bin/fish
 
@@ -25,16 +25,25 @@ SHELL ["/bin/bash", "-c"]
 RUN wget https://github.com/conda-forge/miniforge/releases/download/24.3.0-0/Mambaforge-24.3.0-0-Linux-x86_64.sh && \
   bash Mambaforge-24.3.0-0-Linux-x86_64.sh -b -p /opt/mambaforge && \
   source /opt/mambaforge/bin/activate && \
-  conda create -n colserve python=3.10 && \
+  conda create -n colserve python=3.12 && \
   conda activate colserve && \
-  conda install -y conda-forge::python-devtools && \
-  conda install -y conda-forge::boost>=1.82 && \
+  conda install -y conda-forge::python-devtools nvitop && \
   conda init fish && \
   rm Mambaforge-24.3.0-0-Linux-x86_64.sh
 
+# conda boost require higher version glibc, 
+# so we install boost via compile from source
+# (conda install -y conda-forge::boost>=1.82)
+
+# TODO: install boost in docker
+  
 COPY requirements.txt /tmp/requirements.txt
 RUN source /opt/mambaforge/bin/activate colserve && \
   pip install --upgrade pip && \
   pip install -r /tmp/requirements.txt
+
+
+# Install TVM, PyTorch, vLLM
+
 
 ENTRYPOINT ["/usr/bin/fish"]

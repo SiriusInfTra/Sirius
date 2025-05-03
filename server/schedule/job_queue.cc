@@ -2,7 +2,9 @@
 #include <server/grpc/grpc_server.h>
 #include <server/schedule/job_queue.h>
 #include <server/config.h>
+#include <server/llm/llm_util.h>
 
+#include <boost/json.hpp>
 #include <chrono> 
 
 namespace colserve {
@@ -19,6 +21,36 @@ InferJob::InferJob(network::InferHandler::InferData* data)
 std::ostream& InferJob::Print(std::ostream& os) const {
   os << "InferJob [" << data_->GetModelName() << ", " << data_->GetId() << "]";
   return os;
+}
+
+LLMInferJob::LLMInferJob(network::InferHandler::InferData* data) 
+    : InferJob(data) {
+  CHECK_EQ(data->GetNumInputData(), 2); // prompt, sampling args
+
+  prompt_ = std::string_view{data->GetInputData(0)};
+  std::string_view boost_json_str{data->GetInputData(1)};
+  auto json_value = boost::json::parse(boost_json_str);
+  try {
+    max_tokens_ = json_value.at("max_tokens").as_int64();
+  } catch (const std::exception& e) {
+    LOG(FATAL) << "LLMInferJob: " << e.what();
+  }
+}
+
+void LLMInferJob::RecordProfile(const LLMRequestMetric &metric) {
+  InferJob::RecordProfile();
+  Profiler::Get()->RecordPerf(Profiler::PerfItem::LLMNumPromptTokens,
+    metric.num_prompt_token);
+  Profiler::Get()->RecordPerf(Profiler::PerfItem::LLMNumGenTokens, 
+    metric.num_output_token);
+  Profiler::Get()->RecordPerf(Profiler::PerfItem::LLMBackendQueue, 
+    metric.queue_ms);
+  Profiler::Get()->RecordPerf(Profiler::PerfItem::LLMPrefill, 
+    metric.prefill_ms);
+  if (metric.num_output_token > 1) {
+    Profiler::Get()->RecordPerf(Profiler::PerfItem::LLMTimeBetweenTokens, 
+      metric.decode_ms / (metric.num_output_token - 1));
+  }
 }
 
 TrainJob::TrainJob(network::TrainHandler::TrainData* data) 

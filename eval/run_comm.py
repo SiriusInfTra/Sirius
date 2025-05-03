@@ -144,6 +144,27 @@ class SkewedConfig_v2:
     enable = enable_skewed
 
 
+class BurstGPTConfig:
+    train_model = 'qwen'
+    train_batch_size = 72
+    train_global_batch_size = 500
+    train_dataset_size = 1000
+    train_epoch_time = 3
+
+    model_list = [InferModel.Llama3_8B_Inst]
+
+    # time_scale = 1000
+    # max_rps = 10
+    # start_point = 1000 + 200
+
+    time_scale = 100
+    max_rps = 10
+    start_point = 5500
+
+    duration = 300
+    port = str(get_unique_port())
+
+
 # MARK: Workload
 ## =========================================================== ##
 
@@ -284,12 +305,48 @@ def skewed_v2(wkld_type, client_model_list, infer_only=True,
                         SkewedConfig_v2.duration)
     
 
+def burstgpt(infer_only=True, 
+        train_model:Optional[str] = None,
+        train_epoch:Optional[int] = None,
+        train_batch_size:Optional[int] = None,
+        train_epoch_time:Optional[float] = None):
+    if train_model is None:
+        train_model = BurstGPTConfig.train_model
+    if train_batch_size is None:
+        train_batch_size = BurstGPTConfig.train_batch_size
+    if train_epoch_time is None:
+        train_epoch_time = BurstGPTConfig.train_epoch_time
+    workload = HyperWorkload(concurrency=2048,
+                             warmup=5,
+                             wait_warmup_done_sec=5,
+                             wait_train_setup_sec=60,
+                             wait_stable_before_start_profiling_sec=10,
+                             is_llm_workload=True)
+    if not infer_only:
+        if train_epoch is None:
+            train_epoch = get_train_epoch(train_epoch_time, 
+                                          BurstGPTConfig.duration)
+        workload.set_train_workload(
+            train_workload=TrainWorkload(train_model, train_epoch, train_batch_size))
+    workload.set_infer_workloads(BurstGPTInferWorkload(
+        BurstGPTInferWorkload.TRACE_BurstGPT,
+        duration=BurstGPTConfig.duration,
+        time_line_scale_factor=BurstGPTConfig.time_scale,
+        max_request_sec=BurstGPTConfig.max_rps,
+        model_list=InferModel.get_model_list(BurstGPTConfig.model_list[0], 1),
+        start_point=BurstGPTConfig.start_point,
+    ))
+    return workload
+
+
 def _run(system: System, workload: HyperWorkload, server_model_config: str, unit: str, tag: str):
     try:
         system.launch(unit, tag, time_stamp=use_time_stamp,
                     infer_model_config=server_model_config, fake_launch=fake_launch)
         workload.launch_workload(system, fake_launch=fake_launch)
         system.stop()
+        if LogParser._enable:
+            LogParser.add_log(system.exit_log_dir)
     except Exception as e:
         print(f"Failed to run {unit} {tag}: {e}")
         if retry_if_fail:
@@ -301,6 +358,8 @@ def _run(system: System, workload: HyperWorkload, server_model_config: str, unit
                             infer_model_config=server_model_config)
                     workload.launch_workload(system)
                     system.stop()
+                    if LogParser._enable:
+                        LogParser.add_log(system.exit_log_dir)
                 except Exception as e:
                     print(f"Failed to run {unit} {tag}: {e}")
                     if retry_cnt == retry_limit - 1:
@@ -333,5 +392,6 @@ def run(system: System, workload: HyperWorkload,
     else:
         _run(system, workload, server_model_config, unit, tag)
     print("\n===========================\n===========================\n")
+
 
 

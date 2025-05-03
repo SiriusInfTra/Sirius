@@ -4,9 +4,14 @@
 #include <server/train_launcher.h>
 #include <server/control/controller.h>
 #include <server/train_adjuster.h>
+#include <server/llm/kv_cache_pool.h>
 #include <server/profiler.h>
 #include <server/config.h>
 
+#include <common/inf_tra_comm/communicator.h>
+#include <common/inf_tra_comm/shared_info.h>
+
+#include <string>
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/c_runtime_api.h>
 #include <tvm/runtime/packed_func.h>
@@ -85,15 +90,25 @@ bool TrainLauncher::Train() {
       Config::enable_warm_cache_fallback) {
     auto [base, slope] = TrainAdjuster::adjuster_->GetModelMemParam(cur_model_name_);
     if (Config::use_shared_tensor) {
+      Config::train_base_usage_nbytes = (
+          Config::train_memory_over_predict_mb + base) * 1_MB;
       Config::max_warm_cache_nbytes = static_cast<size_t>((
           Config::cuda_memory_pool_gb * 1024 
           - Config::train_memory_over_predict_mb - base
         ) * 1_MB);
     } else {
       Config::max_warm_cache_nbytes = 16_GB - base * 1_MB;
+      Config::train_base_usage_nbytes = base * 1_MB;
     }
     LOG(INFO) << "[Warm Cache Fallback for Colocation] set max warm cache nbytes to "
               << sta::PrintByte(Config::max_warm_cache_nbytes);
+  }
+
+  if (Config::IsColocateMode() && Config::serving_llm) {
+    auto [base, slope] = TrainAdjuster::adjuster_->GetModelMemParam(cur_model_name_);
+    if (Config::use_shared_tensor) {
+      KVCachePool::UpdateNumFreeLayerBlocksByTrainBase(base * 1_MB);
+    }
   }
 
   std::vector<std::string> args_str;
@@ -193,85 +208,85 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job,
       CHECK(std::filesystem::exists(xsched_lib_cuda)) << xsched_lib_cuda << " not exists";
 
       // std::string xsched_preload_path = xsched_path + "lib/libinstrument_sm70.so";
-      CHECK_NE(setenv("COL_USE_XSCHED", "1", 1), -1);
-      extra_env_ss << "COL_USE_XSCHED=1" << " ";
+      CHECK_NE(setenv("COLTRAIN_USE_XSCHED", "1", 1), -1);
+      extra_env_ss << "COLTRAIN_USE_XSCHED=1" << " ";
       CHECK_NE(setenv("LD_LIBRARY_PATH", xsched_lib_path.string().c_str(), 1), -1);
       extra_env_ss << "LD_LIBRARY_PATH=" << xsched_lib_path.string() << " ";
       // CHECK_NE(setenv("LD_PRELOAD", xsched_preload_path.c_str(), 1), -1);
       LOG(INFO) << "[TrainLauncher]: enable xsched.";
     } else {
-      CHECK_NE(setenv("COL_USE_XSCHED", "0", 1), -1);
-      extra_env_ss << "COL_USE_XSCHED=0" << " ";
+      CHECK_NE(setenv("COLTRAIN_USE_XSCHED", "0", 1), -1);
+      extra_env_ss << "COLTRAIN_USE_XSCHED=0" << " ";
     }
 
-    CHECK_NE(setenv("COL_HAS_INFER_SERVER", "1", 1), -1);
-    extra_env_ss << "COL_HAS_INFER_SERVER=1" << " ";
+    CHECK_NE(setenv("COLTRAIN_HAS_INFER_SERVER", "1", 1), -1);
+    extra_env_ss << "COLTRAIN_HAS_INFER_SERVER=1" << " ";
 
     if (Config::use_shared_tensor_train) {
-      CHECK_NE(setenv("COL_USE_SHARED_TENSOR", "1", 1), -1);
-      CHECK_NE(setenv("COL_HAS_SHARED_TENSOR_SERVER", "1", 1), -1);
-      CHECK_NE(setenv("COL_SHARED_TENSOR_POOL_GB", 
+      CHECK_NE(setenv("COLTRAIN_USE_SHARED_TENSOR", "1", 1), -1);
+      CHECK_NE(setenv("COLTRAIN_HAS_SHARED_TENSOR_SERVER", "1", 1), -1);
+      CHECK_NE(setenv("COLTRAIN_SHARED_TENSOR_POOL_GB", 
                       std::to_string(Config::cuda_memory_pool_gb).c_str(), 1), -1);
       CHECK_NE(setenv("SHARED_TENSOR_POOL_FREELIST_POLICY", 
                       Config::mempool_freelist_policy.c_str(), 1), -1);
-      extra_env_ss << "COL_USE_SHARED_TENSOR=1"
-                   << " COL_HAS_SHARED_TENSOR_SERVER=1"
-                   << " COL_SHARED_TENSOR_POOL_GB=" 
+      extra_env_ss << "COLTRAIN_USE_SHARED_TENSOR=1"
+                   << " COLTRAIN_HAS_SHARED_TENSOR_SERVER=1"
+                   << " COLTRAIN_SHARED_TENSOR_POOL_GB=" 
                    << Config::cuda_memory_pool_gb
                    << " SHARED_TENSOR_POOL_FREELIST_POLICY=" 
                    << Config::mempool_freelist_policy 
                    << " ";
       // CHECK_NE(setenv("CUDA_LAUNCH_BLOCKING", "1", 1), -1);
     } else {
-      CHECK_NE(setenv("COL_USE_SHARED_TENSOR", "0", 1), -1);
-      extra_env_ss << "COL_USE_SHARED_TENSOR=0 ";
+      CHECK_NE(setenv("COLTRAIN_USE_SHARED_TENSOR", "0", 1), -1);
+      extra_env_ss << "COLTRAIN_USE_SHARED_TENSOR=0 ";
     }
 
     if (Config::serve_mode == ServeMode::kColocateL1 
         || Config::serve_mode == ServeMode::kTaskSwitchL1) {
       if (Config::use_xsched) {
-        CHECK_NE(setenv("COL_HOOK_MODE", "xsched-sync2", 1), -1);
-        extra_env_ss << "COL_HOOK_MODE=xsched-sync2 ";
+        CHECK_NE(setenv("COLTRAIN_HOOK_MODE", "xsched-sync2", 1), -1);
+        extra_env_ss << "COLTRAIN_HOOK_MODE=xsched-sync2 ";
         // use xsched-sync for dummy adjust
       } else {
-        CHECK_NE(setenv("COL_HOOK_MODE", "sync", 1), -1);
-        extra_env_ss << "COL_HOOK_MODE=sync ";
+        CHECK_NE(setenv("COLTRAIN_HOOK_MODE", "sync", 1), -1);
+        extra_env_ss << "COLTRAIN_HOOK_MODE=sync ";
       }
     } else {
-      CHECK_NE(setenv("COL_HOOK_MODE", "none", 1), -1);
-      extra_env_ss << "COL_HOOK_MODE=none ";
+      CHECK_NE(setenv("COLTRAIN_HOOK_MODE", "none", 1), -1);
+      extra_env_ss << "COLTRAIN_HOOK_MODE=none ";
     }
 
     if (Config::serve_mode == ServeMode::kTaskSwitchL1) {
-      CHECK_NE(setenv("COL_TRAIN_MODE", "taskswitch-l1", 1), -1);
-      extra_env_ss << "COL_TRAIN_MODE=taskswitch-l1 ";
+      CHECK_NE(setenv("COLTRAIN_MODE", "taskswitch-l1", 1), -1);
+      extra_env_ss << "COLTRAIN_MODE=taskswitch-l1 ";
     } else if (Config::serve_mode == ServeMode::kTaskSwitchL3) {
-      CHECK_NE(setenv("COL_TRAIN_MODE", "taskswitch-l3", 1), -1);
-      extra_env_ss << "COL_TRAIN_MODE=taskswitch-l3 ";
+      CHECK_NE(setenv("COLTRAIN_MODE", "taskswitch-l3", 1), -1);
+      extra_env_ss << "COLTRAIN_MODE=taskswitch-l3 ";
     } else if (Config::serve_mode == ServeMode::kColocateL1) {
-      CHECK_NE(setenv("COL_TRAIN_MODE", "colocate-l1", 1), -1);
-      extra_env_ss << "COL_TRAIN_MODE=colocate-l1 ";
+      CHECK_NE(setenv("COLTRAIN_MODE", "colocate-l1", 1), -1);
+      extra_env_ss << "COLTRAIN_MODE=colocate-l1 ";
     } else if (Config::serve_mode == ServeMode::kColocateL2) {
-      CHECK_NE(setenv("COL_TRAIN_MODE", "colocate-l2", 1), -1);
-      extra_env_ss << "COL_TRAIN_MODE=colocate-l2 ";
+      CHECK_NE(setenv("COLTRAIN_MODE", "colocate-l2", 1), -1);
+      extra_env_ss << "COLTRAIN_MODE=colocate-l2 ";
     } else if (Config::serve_mode == ServeMode::kNormal) {
-      CHECK_NE(setenv("COL_TRAIN_MODE", "normal", 1), -1);
-      extra_env_ss << "COL_TRAIN_MODE=normal ";
+      CHECK_NE(setenv("COLTRAIN_MODE", "normal", 1), -1);
+      extra_env_ss << "COLTRAIN_MODE=normal ";
     } else {
       LOG(FATAL) << "Unsupported serve mode: " << static_cast<int>(Config::serve_mode);
     }
 
     if (!Config::train_profile.empty()) {
-      CHECK_NE(setenv("COL_TRAIN_PROFILE_LOG_PATH", 
+      CHECK_NE(setenv("COLTRAIN_PROFILE_LOG_PATH", 
                       Config::train_profile.c_str(), 1), -1);
-      extra_env_ss << "COL_TRAIN_PROFILE_LOG_PATH=" << Config::train_profile << " ";
+      extra_env_ss << "COLTRAIN_PROFILE_LOG_PATH=" << Config::train_profile << " ";
     }
 
     if (Config::skip_set_mps_thread_percent) {
       LOG(INFO) << "[TrainLauncher]: skip set CUDA_MPS_ACTIVE_THREAD_PERCENTAGE";
       if (Config::dynamic_sm_partition) {
-        CHECK_NE(setenv("COL_DYNAMIC_SM_PARTITION", "1", 1), -1);
-        extra_env_ss << "COL_DYNAMIC_SM_PARTITION=1";
+        CHECK_NE(setenv("COLTRAIN_DYNAMIC_SM_PARTITION", "1", 1), -1);
+        extra_env_ss << "COLTRAIN_DYNAMIC_SM_PARTITION=1";
       }
     } else if (Config::train_mps_thread_percent >= 0 
                && Config::train_mps_thread_percent <= 100) {
@@ -284,11 +299,11 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job,
     }
 
     if (Config::enable_train_adjust_balance) {
-      CHECK_NE(setenv("COL_BATCH_DISTRIBUTE_POLICY", "BY_PERFORMANCE", 1), -1);
-      extra_env_ss << "COL_BATCH_DISTRIBUTE_POLICY=BY_PERFORMANCE ";
+      CHECK_NE(setenv("COLTRAIN_BATCH_DISTRIBUTE_POLICY", "BY_PERFORMANCE", 1), -1);
+      extra_env_ss << "COLTRAIN_BATCH_DISTRIBUTE_POLICY=BY_PERFORMANCE ";
     } else {
-      CHECK_NE(setenv("COL_BATCH_DISTRIBUTE_POLICY", "FIX", 1), -1);
-      extra_env_ss << "COL_BATCH_DISTRIBUTE_POLICY=FIX ";
+      CHECK_NE(setenv("COLTRAIN_BATCH_DISTRIBUTE_POLICY", "FIX", 1), -1);
+      extra_env_ss << "COLTRAIN_BATCH_DISTRIBUTE_POLICY=FIX ";
     }
 
     LOG(INFO) << "[TrainLauncher]: " << "Train " << job << " ( "
@@ -339,9 +354,9 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job,
       std::string train_memory_str, free_memory_str;
       for (auto i : boost::irange(train_world_size)) {
         train_memory_str += 
-            std::to_string(ResourceManager::GetTrainMemoryMB(i)) + " ";
+            std::to_string(ResMgr::GetTrainMemoryMB(i)) + " ";
         free_memory_str += 
-            std::to_string(ResourceManager::GetFreeMemoryMB(i, true)) + " ";
+            std::to_string(ResMgr::GetFreeMemoryMB(i, true)) + " ";
       }
       for (auto pid : ctrl::InfTraCommunicator::GetTrainPIDs()) {
         kill(pid, SIGKILL);
@@ -349,7 +364,13 @@ bool TrainLauncher::LaunchTrain(std::shared_ptr<Job> job,
       LOG(FATAL) << "[TrainLauncher]: " << job 
                  << " failed, signal is " << strsignal(signal) 
                  << " target_batch_size " << target_batch_size_ 
+                 << " (COMMUNICATOR " 
+                 << COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(0, current_batch_size) << ")"
                  << " cur_batch_size " << cur_batch_size_ 
+                 << " (COMMUNICATOR pub " 
+                 << COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(0, current_batch_size)
+                 << " unpub " << COMMUNICATOR_GET_SHARED_TRAIN_INFO_FIELD(0, target_batch_size_unpublished)
+                 << ")"
                  << " memory [ " << train_memory_str << "] MB"
                  << " predict memory " 
                  << TrainAdjuster::PredictTrainMemUsageMB(0, false) << "MB"
@@ -380,7 +401,7 @@ void TrainLauncher::DummyAdjust() {
     LOG(INFO) << "DummyAdjust at " << Profiler::GetTimeStamp();
     auto batch_size = 1;
     auto cmd_id = ctrl::Controller::Get()->ColocateAdjust(-1, 0, batch_size);
-    ctrl::Controller::Get()->WaitColocateAdjustDone(cmd_id);
+    ctrl::Controller::Get()->WaitColocateAdjustDone(0, cmd_id);
     ctrl::Controller::Get()->DummyInferExit(0, ori_target_bs);
     std::this_thread::sleep_for(
         std::chrono::milliseconds(std::uniform_int_distribution<>(200, 1000)(gen)));

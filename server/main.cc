@@ -14,6 +14,7 @@
 
 #include <server/grpc/grpc_server.h>
 #include <server/model_store/infer_model_store.h>
+#include <server/llm/llm.h>
 #include <server/train_launcher.h>
 #include <server/train_adjuster.h>
 #include <server/resource_manager.h>
@@ -142,14 +143,14 @@ void init_cli_options() {
       colserve::Config::max_warm_cache_nbytes, 
       str(boost::format("max warm cache nbytes, default is %s") 
           % colserve::sta::PrintByte(colserve::Config::max_warm_cache_nbytes, true)));
-  app.add_option("--cold-cache-min-capability-nbytes", 
-      colserve::Config::cold_cache_min_capability_nbytes, 
-      str(boost::format("min cold cache capability nbytes, default is %s") 
-          % colserve::sta::PrintByte(colserve::Config::cold_cache_min_capability_nbytes, true)));
-  app.add_option("--cold-cache-max-capability-nbytes", 
-      colserve::Config::cold_cache_max_capability_nbytes, 
-      str(boost::format("max cold cache capability nbytes, default is %s") 
-          % colserve::sta::PrintByte(colserve::Config::cold_cache_max_capability_nbytes, true)));
+  app.add_option("--cold-cache-min-capacity-nbytes", 
+      colserve::Config::cold_cache_min_capacity_nbytes, 
+      str(boost::format("min cold cache capacity nbytes, default is %s") 
+          % colserve::sta::PrintByte(colserve::Config::cold_cache_min_capacity_nbytes, true)));
+  app.add_option("--cold-cache-max-capacity-nbytes", 
+      colserve::Config::cold_cache_max_capacity_nbytes, 
+      str(boost::format("max cold cache capacity nbytes, default is %s") 
+          % colserve::sta::PrintByte(colserve::Config::cold_cache_max_capacity_nbytes, true)));
   app.add_option("--cold-cache-ratio", 
       colserve::Config::cold_cache_ratio, 
       str(boost::format("cold cache ratio, default is %.1f(%.0f%%)") 
@@ -183,6 +184,24 @@ void init_cli_options() {
       colserve::Config::train_adjust_batch_size_limit,
       str(boost::format("train adjust batch size limit, default is %d") 
           % colserve::Config::train_adjust_batch_size_limit));
+  app.add_flag("--serving-llm", colserve::Config::serving_llm,
+      str(boost::format("serving llm, default is %d") 
+          % colserve::Config::serving_llm));
+  app.add_option("--llm-model-name", colserve::Config::llm_model_name,
+      str(boost::format("llm model name, default is %s") 
+          % colserve::Config::llm_model_name));
+  app.add_option("--llm-max-seq-len", colserve::Config::llm_max_seq_len,
+      str(boost::format("llm max seq len, default is %d") 
+          % colserve::Config::llm_max_seq_len));
+  app.add_option("--llm-max-model-len", colserve::Config::llm_max_model_len,
+      str(boost::format("llm max model len, default is %d") 
+          % colserve::Config::llm_max_model_len));
+  app.add_flag("--llm-show-gen-result", colserve::Config::llm_show_gen_result,
+      str(boost::format("llm show gen result, default is %d") 
+          % colserve::Config::llm_show_gen_result));
+  app.add_option("--llm-show-gen-result-period", colserve::Config::llm_show_gen_result_period,
+      str(boost::format("llm show gen result period, default is %d") 
+          % colserve::Config::llm_show_gen_result_period));
   app.add_flag("--dump-adjust-info", 
       colserve::Config::dump_adjust_info,
       str(boost::format("dump adjust info, default is %d") 
@@ -211,7 +230,10 @@ void init_cli_options() {
       "  COLSERVE_LOG_TRAIN_INIT,          COLSERVE_LOG_WARM_CACHE,          COLSERVE_LOG_COLD_CACHE\n"
       "  COLSERVE_LOG_INFER_MODEL_INIT,    COLSERVE_LOG_INFER_MODEL_RECLAIM, COLSERVE_LOG_INFER_TIME\n"
       "  COLSERVE_LOG_INFER_PIPELINE_EXEC, COLSERVE_LOG_INFER_LOAD_PARAM,    COLSERVE_LOG_CONTROLLER\n"
-      "  COLSERVE_LOG_TASK_SWITCH\n"
+      "  COLSERVE_LOG_TASK_SWITCH\n\n"
+      "Environment variables that used to configure the training logging:\n"
+      "  COLTRAIN_LOG_ALL                  COLTRAIN_LOG_DYNAMIC_BATCH\n"
+      "  COLTRAIN_LOG_CONTROL_STUB         COLTRAIN_LOG_NCCL_PROCESS_GROUP\n"
   );
 }
 
@@ -271,7 +293,7 @@ void init_config() {
     cfg::max_warm_cache_nbytes = 
       static_cast<size_t>((cfg::cuda_memory_pool_gb * 1024 
                            - cfg::train_memory_over_predict_mb) * 1_MB
-                           - cfg::cold_cache_max_capability_nbytes); // for warmup
+                           - cfg::cold_cache_max_capacity_nbytes); // for warmup
     LOG(INFO) << "enable enable_warm_cache_fallback, "
               << "cache nbytes (used in warmup, conservative estimated) " 
               << colserve::sta::PrintByte(cfg::max_warm_cache_nbytes, true);
@@ -325,7 +347,14 @@ void init_config() {
   READ_ENV_BOOL_CONFIG("COLSERVE_LOG_TASK_SWITCH", log_task_switch);
 
   CHECK(setenv("COLSYS_PORT", cfg::port.c_str(), 1) == 0);
-  
+
+  if (cfg::serving_llm) {
+    if (cfg::enable_train_adjust_balance) {
+      LOG(WARNING) << "Serving LLM, currently disable train adjust balance";
+      cfg::enable_train_adjust_balance = false;
+    }
+  }
+
   if (cfg::log_all) {
     cfg::log_all = true;
     cfg::log_grpc = true;
@@ -362,14 +391,18 @@ std::string header = str(boost::format("%s COLSERVE CONFIG [PID %d | PORT %d] %s
   STREAM_OUTPUT(enable_warm_cache_fallback);
   STREAM_OUTPUT(max_warm_cache_nbytes);
   STREAM_OUTPUT(train_memory_over_predict_mb);
-  STREAM_OUTPUT(cold_cache_max_capability_nbytes);
-  STREAM_OUTPUT(cold_cache_min_capability_nbytes);
+  STREAM_OUTPUT(cold_cache_max_capacity_nbytes);
+  STREAM_OUTPUT(cold_cache_min_capacity_nbytes);
   STREAM_OUTPUT(train_over_adjust_nbytes);
   STREAM_OUTPUT(cold_cache_ratio);
   STREAM_OUTPUT(infer_model_max_idle_ms);
   STREAM_OUTPUT(dynamic_sm_partition);
   STREAM_OUTPUT(enable_train_adjust_balance);
   STREAM_OUTPUT(train_adjust_balance_threshold);
+  STREAM_OUTPUT(serving_llm);
+  STREAM_OUTPUT(llm_model_name);
+  STREAM_OUTPUT(llm_max_model_len);
+  STREAM_OUTPUT(llm_max_seq_len);
   STREAM_OUTPUT(colocate_config.skip_malloc);
   STREAM_OUTPUT(colocate_config.skip_loading);
   std::cerr << std::string(header.size(), '=') << std::endl;
@@ -380,7 +413,11 @@ void Shutdown(int sig) {
   LOG(INFO) <<"signal " <<  strsignal(sig) << "(" << sig << ")" 
             << " received, shutting down...";
   colserve::Config::running = false;
-  colserve::InferModelStore::Shutdown();
+  if (!colserve::Config::serving_llm) {
+    colserve::InferModelStore::Shutdown();
+  } else {
+    colserve::LLMServer::Shutdown();
+  }
   colserve::TrainLauncher::Shutdown();
   colserve::Profiler::Shutdown();
   COL_NVML_CALL(nvmlShutdown());
@@ -398,7 +435,8 @@ int main(int argc, char *argv[]) {
 
   std::thread shutdown_trigger([](){
     std::this_thread::sleep_for(std::chrono::minutes(max_live_minute));
-    LOG(INFO) << "max live minute reached, shutting down...";
+    LOG(INFO) << "max live minute (" << max_live_minute
+              << ") reached, shutting down...";
     Shutdown(SIGINT);
   });
   if (!colserve::Config::no_infer) {
@@ -416,7 +454,7 @@ int main(int argc, char *argv[]) {
         static_cast<size_t>(colserve::Config::cuda_memory_pool_gb * 1_GB),
         true, false, free_list_policy, true);
       colserve::sta::CUDAMemPool::Get(device_id)->RegisterOOMHandler([]() {
-        LOG(INFO) << "[CUDAMemPool OOM] train predict memory" 
+        LOG(INFO) << "[CUDAMemPool INFER OOM] train predict memory" 
                   << boost::accumulate(
                       boost::irange(colserve::sta::DeviceManager::GetNumVisibleGpu()), 
                       std::string{""}, [](std::string acc, int device_id) {
@@ -425,6 +463,16 @@ int main(int argc, char *argv[]) {
                       }) 
                   << ".";
         }, colserve::sta::MemType::kInfer);
+        colserve::sta::CUDAMemPool::Get(device_id)->RegisterOOMHandler([]() {
+        LOG(INFO) << "[CUDAMemPool TRAIN OOM] train predict memory" 
+                  << boost::accumulate(
+                      boost::irange(colserve::sta::DeviceManager::GetNumVisibleGpu()), 
+                      std::string{""}, [](std::string acc, int device_id) {
+                        return acc + " " + std::to_string(
+                            colserve::TrainAdjuster::PredictTrainMemUsageMB(device_id, true));
+                      }) 
+                  << ".";
+        }, colserve::sta::MemType::kTrain);
     }
   } else {
     for (int device_id = 0; 
@@ -447,7 +495,11 @@ int main(int argc, char *argv[]) {
   colserve::Profiler::Init(colserve::Config::profile_log_path);
   colserve::TrainLauncher::Init("train");
   colserve::TrainAdjuster::Init();
-  colserve::InferModelStore::Init("server/models");
+  if (!colserve::Config::serving_llm) {
+    colserve::InferModelStore::Init("server/models");
+  } else {
+    colserve::LLMServer::Init();
+  }
   colserve::Profiler::Start();
 
   if (colserve::Config::memory_pressure_mb > 0) { 

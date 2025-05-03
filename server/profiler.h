@@ -141,6 +141,20 @@ class Profiler {
 
     InferModelColdCacheHit,
 
+    // LLM
+    LLMNumPromptTokens,
+    LLMNumGenTokens,
+
+    LLMBackendQueue, 
+    LLMPrefill,
+    LLMTimeBetweenTokens,
+
+    LLMReclaimKVCacheBlkGrp,
+    LLMAllocKVCacheBlkGrp,
+
+    LLMKVCacheMap,
+    LLMKVCacheUnMap,
+
     NumPerfItem,
   };
 

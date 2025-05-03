@@ -11,16 +11,23 @@ import workload_collections as wkld_coll
 import run_comm
 import tempfile
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--parse-result', action='store_true')
+args = parser.parse_args()
+
+if args.parse_result:
+    LogParser._enable = True
+    
 
 def update_sever_config(server_model_config: str, num_workloads: int) -> str:
     for k in range(len(server_model_config)):
         def update(match):
-            # 提取数字并转换为整数
+            # Extract the number and convert to integer
             num = int(match.group(1))
-            # 返回替换后的字符串
+            # Return the replaced string
             return f'[{num * num_workloads}]'
         
-        # 使用正则表达式查找并替换
+        # Use regex to find and replace
         server_model_config[k] = re.sub(r'\[(\d+)\]', update, server_model_config[k])
     return server_model_config
     
@@ -103,10 +110,10 @@ for train_adjust_balance in [
         'infer_model_max_idle_ms' : 5000,
         'cold_cache_ratio': 0.5, 
         'train_adjust_balance': train_adjust_balance,
-        # 'cold_cache_min_capability_nbytes': int(0.5 * 1024 * 1024 * 1024),
-        # 'cold_cache_max_capability_nbytes': int(1 * 1024 * 1024 * 1024),
-        'cold_cache_min_capability_nbytes': int(0 * 1024 * 1024 * 1024),
-        'cold_cache_max_capability_nbytes': int(2 * 1024  * 1024 * 1024),
+        # 'cold_cache_min_capacity_nbytes': int(0.5 * 1024 * 1024 * 1024),
+        # 'cold_cache_max_capacity_nbytes': int(1 * 1024 * 1024 * 1024),
+        'cold_cache_min_capacity_nbytes': int(0 * 1024 * 1024 * 1024),
+        'cold_cache_max_capacity_nbytes': int(2 * 1024  * 1024 * 1024),
         'dynamic_sm_partition': True,
         'train_adjust_batch_size_limit': 1,
     }
@@ -118,7 +125,7 @@ for train_adjust_balance in [
             wkld_type, 
             client_model_list, 
             infer_only=False
-        ) for wkld_type in ['NormalA', 'NormalB']
+        ) for wkld_type in ['NormalLight', 'NormalHeavy']
     ]
     system = System(port=run_comm.UniformConfig_v2.port, 
                     dump_adjust_info=False,
@@ -133,3 +140,10 @@ for train_adjust_balance in [
     run_comm.run(system, workload, server_model_config,
                     f"overall-uniform-v2-{runner.get_num_gpu()}gpu-{num_model}", 
                     'colsys-' + ('balance' if train_adjust_balance else 'imbalance'))
+    
+
+# =========================================================
+# Parse result
+# =========================================================
+if LogParser._enable:
+    LogParser.parse(TestUnit.UNBALANCE)

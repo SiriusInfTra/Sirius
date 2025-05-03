@@ -8,6 +8,8 @@
 
 namespace colserve::sta {
 
+#define STA_CURRENT_DEVICE sta::DeviceManager::GetCurrentDevice()
+
 class DeviceGuard {
  public:
   DeviceGuard(int device_id);
@@ -42,6 +44,8 @@ class DeviceManager {
   std::unordered_map<int, int> system_to_visible_id_;
 
 };
+
+using DevMgr = DeviceManager;
 
 } // namespace colserve::sta
 
