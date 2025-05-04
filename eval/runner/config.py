@@ -53,7 +53,7 @@ def get_host_name():
 
 
 def is_meepo5():
-    return get_host_name() == 'meepo5'
+    return get_host_name() == 'meepo5' and not pathlib.Path('/.dockerenv').exists()
 
 
 def get_tensorrt_backend_unified_memory_path():
