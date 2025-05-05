@@ -1,25 +1,85 @@
-## Build system  
+## Artifact for paper "<u>#734	Colocating ML Inference and Training with Fast GPU Memory Handover</u>"
 
-1. Prepare the a new conda environment or use docker container, cuda version is `11.6`, cudnn version is `8.4`. Install `boost`, `cmake>=3.24` and `ninja`, `gcc` should have `c++17` support.
+<!-- Intro -->
+
+[TOC]
+
+## Project Structure
+
+```bash
+$ tree --dirsfirst  -L 2 .
+├── client                      
+├── cmake                       # cmake helper files
+├── common                      # common libraries for infer/train  
+├── environment                 # Docker and conda environment files
+├── eval
+│   ├── runner                  # automic evaluation runner
+│   └── ...                     # evaluation scripts of test cases 
+├── log                         # running logs       
+├── proto                       # grpc proto
+├── pytorch                     # pytorch plugin
+├── scripts                    
+├── server                      # inference server 
+│   ├── models                  # contains inference models
+│   └── ... 
+├── train                       # pytorch training scripts
+├── third_party/mpool...        # gpu memory pool
+└── ...
+```
+
+## Hardware Requirements
+
+- 4 * NVIDIA V100 (16GB)
+- 1 * NVIDIA A100 (80GB)
+
+## Build and Install 
+
+### Using Docker Image
+
+**Option 1: Pull from Docker Hub**
 
 
-2. Clone and build [tvm](https://ipads.se.sjtu.edu.cn:1312/infer-train/tvm) for inference, and [pytorch](https://ipads.se.sjtu.edu.cn:1312/infer-train/pytorch) for training. Build [torchvision](https://github.com/pytorch/vision/tree/v0.13.1) to avoid symbol issues. Note CUDA backend should be enabled. Pay attention to pytorch `GLIBCXX_USE_CXX11_ABI` flag, which may cause ABI issues. To accelerate building, set `TORCH_CUDA_ARCH_LIST` flag to gpu computing capability, e.g., `TORCH_CUDA_ARCH_LIST=7.0`.
 
-3. Install python dependencies `cython`, `numpy`, `onnxruntime`, `torchvision` and etc.
+**Option 2: Build from Dockerfile**
 
-4. Set `TVM_HOME` environment, run `echo $TVM_HOME` and `echo $CONDA_REFIX` to check. Then configure cmake.
+
+
+### Compile From Source (using conda)
+
+**Software Requirements**: `cmake>=3.24`, `gcc>=9.4`, `nvcc>=11.6`, `ninja`
+
+**Create Environment and Build System**:
+
+1. Prepare a new conda environment and install python packages
+
+```bash
+conda create -n colserve python=3.12
+conda install -y conda-forge::python-devtools nvitop conda-forge::c-ares
+pip install -r environment/requirements.txt
+```
+
+2. Install `Boost>=1.80` from compiling source (boost installed from apt/conda may require higher version of gcc).  
+
+```bash
+export BOOST_HOME=/path/to/install/boost
+./scripts/install_boost.sh $BOOST_HOME
+```
+
+2. Clone and build [tvm](https://ipads.se.sjtu.edu.cn:1312/infer-train/tvm) for inference; [pytorch](https://ipads.se.sjtu.edu.cn:1312/infer-train/pytorch) and [torchvision](https://github.com/pytorch/vision/tree/v0.13.1) for training. Note CUDA backend should be enabled. Pay attention to pytorch `GLIBCXX_USE_CXX11_ABI` flag, which may cause ABI issues. To accelerate building, set `TORCH_CUDA_ARCH_LIST` flag to gpu computing capability, e.g., `TORCH_CUDA_ARCH_LIST=7.0`.
+
+3. Set `TVM_HOME` environment, run `echo $TVM_HOME` and `echo $CONDA_REFIX` to check. Then configure cmake.
 
 ```
-cmake -DCMAKE_BUILD_TYPE=Release/Debug \
-      -DgRPC_INSTALL=ON \
-      -DgRPC_BUILD_TESTS=OFF \
-      -DCONDA_PREFIX=${CONDA_PREFIX} \
-      -DCMAKE_PREFIX_PATH="${CONDA_PREFIX};${CONDA_PREFIX}/lib/python3.xx/site-packages/torch/share/cmake" \
-      -B build -G Ninja
-cmake --build build --config Release/Debug
+export COLSYS_HOME=$(pwd)
+export TVM_HOME=/path/to/tvm
+export TORCH_HOME=/path/to/pytorch
+export BOOST_HOME=/path/to/boost
+./scripts/build_colsys.sh $COLSYS_HOME $TVM_HOME $TORCH_HOME $BOOST_HOME
 ```
 
-## Run system
+4. [Only required for Triton UM+MPS] Clone and build [Triton TensorRT UM Backend]().  
+
+## Run and Evaluate
 
 ### setup model store
 
@@ -80,7 +140,7 @@ See help for details.
 
 Triton benchmark need additional steps to setup.
 
-### setup triton models
+### setup inference models
 
 models are stored at `server/triton_models`, as following. The model have a directory of the trtion compiled model (`model.plan`and `config.pbtxt`)
 
