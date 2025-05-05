@@ -177,26 +177,32 @@ echo "TEST BEGIN: $(date)"
 for i in `seq 1 1`; do
   if $run_overall_single; then
     over_all_single_gpu
+    echo "\n[$i] OVERALL SINGLE GPU TEST DONE: $(date)\n"
   fi
   
   if $run_overall_multi; then
     over_all_multi_gpu
+    echo "\n[$i] OVERALL MULTI GPU TEST DONE: $(date)"
   fi
   
   if $run_breakdown; then
     breakdown
+    echo "\n[$i] BREAKDOWN TEST DONE: $(date)\n"
   fi
   
   if $run_ablation; then
     ablation_study
+    echo "\n[$i] ABLATION STUDY TEST DONE: $(date)\n"
   fi
   
   if $run_unbalance; then
     unbalance
+    echo "\n[$i] UNBALANCE TEST DONE: $(date)\n"
   fi
   
   if $run_memory_pressure; then
     memory_pressure
+    echo "\n[$i] MEMORY PRESSURE TEST DONE: $(date)\n"
   fi
 done
 
