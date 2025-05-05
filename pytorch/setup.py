@@ -92,10 +92,11 @@ def config_extension():
         compile_args['include_dirs'].append(f"{glog_source_dir}/src")
         compile_args['include_dirs'].append(f"{glog_binary_dir}")
 
-    if boost_root is None or boost_root != conda_prefix:
+    if boost_root is not None or boost_root != conda_prefix:
         boost_root_path = pathlib.Path(boost_root)
-        compile_args['include_dirs'].append(f'{boost_root_path.parent}')
-        compile_args['library_dirs'].append(f'{boost_root_path / "lib"}')
+        boost_install_path = boost_root_path.parent.parent
+        compile_args['include_dirs'].append(f'{boost_install_path / "include"}')
+        compile_args['library_dirs'].append(f'{boost_install_path / "lib"}')
 
     c_ext = Extension(
         name="torch_col._C._main",

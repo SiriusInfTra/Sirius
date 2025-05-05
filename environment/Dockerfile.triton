@@ -1,0 +1,39 @@
+FROM nvcr.io/nvidia/tritonserver:23.12-py3
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG PROXY
+
+ENV TRITON_TRT_BACKEND_HOME=/opt/tritonserver/backends/tensorrt
+ENV TRITON_TRT_UM_HOME=/opt/triton_tensorrt_um
+ENV TRITON_TRT_INSTALL_HOME=/opt/tensorrt_um_install
+
+RUN apt update --allow-insecure-repositories && apt install -y \
+    ninja-build rapidjson-dev
+
+RUN if [ -n "$PROXY" ]; then \
+      export http_proxy=$PROXY https_proxy=$PROXY HTTP_PROXY=$PROXY HTTPS_PROXY=$PROXY; \
+    fi && \
+    wget https://cmake.org/files/v3.27/cmake-3.27.8-linux-x86_64.sh && \
+    mkdir /opt/cmake && \
+    sh cmake-3.27.8-linux-x86_64.sh --prefix=/opt/cmake --skip-license && \
+    ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake && \
+    ln -s /opt/cmake/bin/ccmake /usr/local/bin/ccmake && \
+    rm cmake-3.27.8-linux-x86_64.sh && \
+    if [ -n "$PROXY" ]; then \
+      unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; \
+    fi
+
+
+COPY triton_tensorrt_um ${TRITON_TRT_UM_HOME}
+COPY build_triton_trt_um.sh /tmp/build_triton_trt_um.sh
+RUN if [ -n "$PROXY" ]; then \
+    export http_proxy=$PROXY https_proxy=$PROXY HTTP_PROXY=$PROXY HTTPS_PROXY=$PROXY; \
+    fi && \
+    bash /tmp/build_triton_trt_um.sh ${TRITON_TRT_UM_HOME} ${TRITON_TRT_INSTALL_HOME} && \
+    if [ -n "$PROXY" ]; then \
+      unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; \
+    fi && \
+    mv /opt/tritonserver/backends/tensorrt /opt/tritonserver/backends/tensorrt-cuda && \
+    echo "ln -s /opt/tritonserver/backends/tensorrt-cuda $TRITON_TRT_BACKEND_HOME" > /opt/triton-static-partition.sh && \
+    echo "ln -s $TRITON_TRT_INSTALL_HOME/backends/tensorrt $TRITON_TRT_BACKEND_HOME" >> /opt/triton-um.sh
+

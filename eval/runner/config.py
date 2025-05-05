@@ -4,6 +4,14 @@ import contextlib
 import hashlib
 import pathlib
 
+
+# used for docker
+HOST_DOCKER_RUN_DIR = os.environ.get('HOST_DOCKER_RUN_DIR', None)
+DOCKER_TRITON_MODEL_WKSP = os.environ.get('DOCKER_TRITON_MODEL_WKSP', 'triton-model-wksp') 
+DOCKER_GPU_COL_LOG_DIR = os.environ.get('DOCKER_GPU_COL_LOG_DIR', 'gpu-col-docker-log')
+DOCKER_MPS_PIPE_DIRECTORY = os.environ.get('DOCKER_MPS_PIPE_DIRECTORY', '/dev/shm/')
+
+
 class RunnerConfig:
     _global_seed = None
     _binary_dir = 'build'
@@ -53,7 +61,11 @@ def get_host_name():
 
 
 def is_meepo5():
-    return get_host_name() == 'meepo5'
+    return get_host_name() == 'meepo5' and not pathlib.Path('/.dockerenv').exists()
+
+
+def is_inside_docker():
+    return pathlib.Path('/.dockerenv').exists()
 
 
 def get_tensorrt_backend_unified_memory_path():

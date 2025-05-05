@@ -190,7 +190,7 @@ def get_unique_port():
         cuda_device = int(cuda_device)
     except:
         cuda_device = GPU_UUIDs.index(cuda_device)
-    port = 18100
+    port = 18100 if not runner.is_inside_docker() else 18200
     port += cuda_device
     return port
 
