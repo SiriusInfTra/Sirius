@@ -34,6 +34,5 @@ RUN if [ -n "$PROXY" ]; then \
       unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; \
     fi && \
     mv /opt/tritonserver/backends/tensorrt /opt/tritonserver/backends/tensorrt-cuda && \
-    echo "ln -s /opt/tritonserver/backends/tensorrt-cuda $TRITON_TRT_BACKEND_HOME" > /opt/triton-static-partition.sh && \
-    echo "ln -s $TRITON_TRT_INSTALL_HOME/backends/tensorrt $TRITON_TRT_BACKEND_HOME" >> /opt/triton-um.sh
+    ln -s ${TRITON_TRT_INSTALL_HOME}/backends/tensorrt ${TRITON_TRT_BACKEND_HOME}
 
