@@ -35,6 +35,7 @@ dist/
 
 *.pyc
 
+gpu-col-docker-log/*
 log/*
 log_*/*
 /dcgmi_output/*.txt
@@ -49,6 +50,9 @@ cifar-10-batches-py/*
 triton/*
 
 server/triton_models/*
+triton-model-wksp/*
+
+mps-pipe-directory/*
 
 .clangd
 .cache

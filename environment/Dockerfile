@@ -104,9 +104,9 @@ RUN if [ -n "$PROXY" ]; then \
     
 ARG TVM_MODEL_HOME=tvm-models
 COPY ${PROJECT_DIR} /gpu-col
-COPY tvm-models/* ${PROJECT_DIR}/server/models
+COPY tvm-models/* /gpu-col/server/models/
 ARG TRITON_MODEL_HOME=triton-models
-COPY triton-models/* ${PROJECT_DIR}/server/triton_models
+COPY triton-models/* /gpu-col/server/triton_models/
 
 COPY ${PROJECT_DIR}/scripts/build_colsys.sh /tmp/build_colsys.sh
 RUN if [ -n "$PROXY" ]; then \
@@ -132,5 +132,6 @@ RUN if [ -n "$PROXY" ]; then \
     unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; \
   fi
 
+RUN apt install -y rsync
 
 ENTRYPOINT ["/usr/bin/fish"]
