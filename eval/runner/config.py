@@ -9,7 +9,7 @@ import pathlib
 HOST_DOCKER_RUN_DIR = os.environ.get('HOST_DOCKER_RUN_DIR', None)
 DOCKER_TRITON_MODEL_WKSP = os.environ.get('DOCKER_TRITON_MODEL_WKSP', 'triton-model-wksp') 
 DOCKER_GPU_COL_LOG_DIR = os.environ.get('DOCKER_GPU_COL_LOG_DIR', 'gpu-col-docker-log')
-DOCKER_MPS_PIPE_DIRECTORY = os.environ.get('DOCKER_MPS_PIPE_DIRECTORY', '/dev/shm/')
+DOCKER_MPS_PIPE_DIRECTORY = '/dev/shm/' # this allow different dockers to use same mps pipe path
 
 
 class RunnerConfig:

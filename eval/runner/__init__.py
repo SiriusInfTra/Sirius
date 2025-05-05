@@ -25,7 +25,7 @@ if 'CUDA_VISIBLE_DEVICES' in os.environ:
         os.environ['CUDA_MPS_PIPE_DIRECTORY'] = os.path.join(os.environ['HOME'], f'cuda_mps_{CUDA_VISIBLE_DEVICES_UUID[0]}')
     else:
         # use shared memory inside docker
-        DOCKER_MPS_PIPE_DIRECTORY = os.environ.get('DOCKER_MPS_PIPE_DIRECTORY', '/dev/shm/')
+        from .config import DOCKER_MPS_PIPE_DIRECTORY
         os.environ['CUDA_MPS_PIPE_DIRECTORY'] = os.path.join(
             DOCKER_MPS_PIPE_DIRECTORY, f'cuda_mps_{CUDA_VISIBLE_DEVICES_UUID[0]}')
 

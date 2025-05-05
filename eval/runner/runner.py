@@ -494,6 +494,13 @@ class System:
                 docker_model_dir = os.path.join('/colsys', f'triton_models-{self.port}')
                 print(f'Generate triton model repo for {model_lists}.', end='\n\r')
                 cp_model(model_lists, get_num_gpu(), triton_model_dir, self.triton_models_nbytes)
+                if is_inside_docker():
+                    # client will use this path
+                    link_triton_model_dir = os.path.join(_project_root, f'triton_models-{self.port}')
+                    if os.path.exists(link_triton_model_dir):
+                        os.unlink(link_triton_model_dir)
+                    print(f'Create link {link_triton_model_dir} -> {triton_model_dir}')
+                    os.symlink(triton_model_dir, link_triton_model_dir)
                 cmd = ['docker', 'run', '-it', '--user', f'{os.getuid()}:{os.getgid()}',
                        '--name', f'colsys-triton-{self.triton_port}',
                        '--rm', '--gpus=all', '--ipc=host',
