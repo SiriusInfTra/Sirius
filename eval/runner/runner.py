@@ -330,6 +330,8 @@ class System:
                         env=os.environ.copy())
                     while True:
                         if self.mps_server.poll() is not None:
+                            print(f'\n\x1b[33;1mFail to start MPS, rm MPS directory {os.environ["CUDA_MPS_PIPE_DIRECTORY"]}\x1b[0m')
+                            os.system(f'rm -rf {os.environ["CUDA_MPS_PIPE_DIRECTORY"]}')
                             raise RuntimeError("MPS exited")
                         log_file.flush()
                         with open(mps_log, 'r') as f:

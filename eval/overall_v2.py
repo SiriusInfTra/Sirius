@@ -396,7 +396,7 @@ for use_triton in [True]:
             'triton_models_nbytes': runner.get_trition_models_MB(0 if not runner.is_four_gpu() else 5),
             'dynamic_sm_partition': dynamic_sm_partition and not use_triton,
             'has_warmup': True,
-            'max_warm_cache_nbytes': int(9 * 1024 ** 3),
+            'max_warm_cache_nbytes': int(9 * 1024 ** 3), # not used by triton
             'cuda_memory_pool_gb': '10.5',
             'use_sta_train': False
         }, {'train_batch_size': 8 if not runner.is_four_gpu() else 2, 
@@ -408,11 +408,11 @@ for use_triton in [True]:
             'skip_set_mps_thread_percent': skip_set_mps_pct,
             'use_xsched': not use_triton,
             'use_triton': use_triton,
-            'triton_models_nbytes': runner.get_trition_models_MB(0 if not runner.is_four_gpu() else 5),
+            'triton_models_nbytes': runner.get_trition_models_MB(0 if not runner.is_four_gpu() else 10),
             'dynamic_sm_partition': dynamic_sm_partition and not use_triton,
             'max_live_minute': 60,
             'has_warmup': True,
-            'max_warm_cache_nbytes': int(5.5 * 1024 ** 3),
+            'max_warm_cache_nbytes': int(5.5 * 1024 ** 3), # not used by triton
             'cuda_memory_pool_gb': '7.0',
             'use_sta_train': False
         }, {'train_batch_size': 32 if not runner.is_four_gpu() else 26, 
@@ -855,6 +855,7 @@ if run_um_mps:
         'use_xsched': False,
         'has_warmup': True,
         'use_triton': True,
+        'triton_models_nbytes': runner.get_trition_models_MB(0),
         'dynamic_sm_partition': False,
     }
 

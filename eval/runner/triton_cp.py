@@ -2,6 +2,7 @@ import os
 import shutil
 
 def cp_model(model_list: list[str], n_gpu: int, repo_target_dir: str, models_nbytes: dict[str, int]):
+    assert models_nbytes is not None, 'models_nbytes should not be None'
     repo_source_dir = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, 'server', 'triton_models')
     repo_source_dir = os.path.abspath(repo_source_dir)
     repo_target_dir = os.path.abspath(repo_target_dir)
