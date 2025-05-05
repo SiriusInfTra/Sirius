@@ -49,6 +49,15 @@ rsync -a --exclude="build" --exclude="build_Release" --exclude="build_Debug" \
   --exclude="mps-pipe-directory" \
   "$PROJECT_DIR"/ "$WORKSPACE_DIR"/gpu-col/
 
+
+if [ ! -d "$WORKSPACE_DIR/tvm-models" ]; then
+  mkdir -p "$WORKSPACE_DIR/tvm-models"
+fi
+
+if [ ! -d "$WORKSPACE_DIR/triton-models" ]; then
+  mkdir -p "$WORKSPACE_DIR/triton-models"
+fi
+
 # Check if https_proxy environment variable exists and add it as build arg if it does
 PROXY_ARG=""
 if [ ! -z "$https_proxy" ]; then
