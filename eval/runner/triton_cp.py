@@ -1,9 +1,17 @@
 import os
 import shutil
+from .config import is_inside_docker, DOCKER_TRITON_MODEL_WKSP
 
 def cp_model(model_list: list[str], n_gpu: int, repo_target_dir: str, models_nbytes: dict[str, int]):
     repo_source_dir = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, 'server', 'triton_models')
     repo_source_dir = os.path.abspath(repo_source_dir)
+    if is_inside_docker():
+        triton_model_wksp = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, DOCKER_TRITON_MODEL_WKSP)
+        os.system(f'rsync -a {repo_source_dir} {triton_model_wksp}/')
+        repo_source_dir = os.path.join(triton_model_wksp, 'triton_models')
+        print(f"Prepare model inside docker: Copying triton models from "
+              f"{repo_source_dir} to {repo_target_dir}")
+
     repo_target_dir = os.path.abspath(repo_target_dir)
     device_map = {}
     if os.path.exists(repo_target_dir):

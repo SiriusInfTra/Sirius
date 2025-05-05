@@ -22,8 +22,9 @@ from .hyper_workload import (
 )
 from .config import (
     get_global_seed, get_binary_dir,
-    get_host_name, is_meepo5,
-    get_tensorrt_backend_unified_memory_path
+    get_host_name, is_meepo5, is_inside_docker,
+    get_tensorrt_backend_unified_memory_path,
+    DOCKER_TRITON_MODEL_WKSP, HOST_DOCKER_RUN_DIR, DOCKER_GPU_COL_LOG_DIR
 )
 
 def get_num_gpu():
@@ -483,7 +484,11 @@ class System:
                         return []
                 for config in self.infer_model_config:
                     model_lists.extend(parse_and_generate_models(config))
-                triton_model_dir = os.path.join(_project_root, f'triton_models-{self.port}')
+                if not is_inside_docker():
+                    triton_model_dir = os.path.join(_project_root, f'triton_models-{self.port}')
+                else:
+                    triton_model_dir = os.path.join(_project_root, DOCKER_TRITON_MODEL_WKSP, 
+                                                    f'triton_models-{self.port}')
                 docker_model_dir = os.path.join('/colsys', f'triton_models-{self.port}')
                 print(f'Generate triton model repo for {model_lists}.', end='\n\r')
                 cp_model(model_lists, get_num_gpu(), triton_model_dir, self.triton_models_nbytes)
@@ -491,9 +496,22 @@ class System:
                        '--name', f'colsys-triton-{self.triton_port}',
                        '--rm', '--gpus=all', '--ipc=host',
                        '-p', f'{self.triton_port}:8001',
-                       '-v', f'{_project_root}:/colsys',
-                       '-v', os.environ['HOME'] + ':' + os.environ['HOME'],
-                       ]
+                    ]
+                if not is_inside_docker():
+                    cmd += ['-v', f'{_project_root}:/colsys',
+                            '-v', os.environ['HOME'] + ':' + os.environ['HOME'],]
+                else:
+                    # HOST_DOCKER_RUN_DIR = '/disk3/wjl/gpu-col-docker'
+                    assert HOST_DOCKER_RUN_DIR is not None, (
+                        "set HOST_DOCKER_RUN_DIR to docker run dir, "
+                        "and ensure the triton model/log/mps dir exist and are mounted.")
+                    host_triton_model_dir = os.path.join(
+                        HOST_DOCKER_RUN_DIR, DOCKER_TRITON_MODEL_WKSP, 
+                        f'triton_models-{self.port}')
+                    host_log_dir = os.path.join(
+                        HOST_DOCKER_RUN_DIR, DOCKER_GPU_COL_LOG_DIR)
+                    cmd += ['-v', f'{host_triton_model_dir}:/colsys/triton_models-{self.port}',
+                            '-v', f'{host_log_dir}:/colsys/log']  
                 if 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:
                     tensorrt_backend_um_path = get_tensorrt_backend_unified_memory_path()
                     cmd += ['-v', f'{tensorrt_backend_um_path}/backends/tensorrt:/opt/tritonserver/backends/tensorrt']
