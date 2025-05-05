@@ -60,7 +60,7 @@ docker build \
   --build-arg PROJECT_DIR="gpu-col" \
   --build-arg DOCKER_BUILD_DIR="$WORKSPACE_DIR" \
   $PROXY_ARG \
-  -t inf-tra:latest \
+  -t siriusinftra/sirius:latest \
   -f "$DOCKER_FILE_PATH" \
   "$WORKSPACE_DIR"
 

@@ -17,4 +17,4 @@ docker run --gpus=all --ipc=host --network=host -it --name "gpu-col-$USER" \
     -e DOCKER_TRITON_MODEL_WKSP=triton-model-wksp \
     -e DOCKER_GPU_COL_LOG_DIR=gpu-col-docker-log \
     -e DOCKER_MPS_PIPE_DIRECTORY=/dev/shm/ \
-    inf-tra:latest
+    siriusinftra/sirius:latest

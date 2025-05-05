@@ -32,6 +32,6 @@ fi
 
 docker build \
     $PROXY_ARG \
-    -t inf-tra-triton-trt-um:latest \
+    -t siriusinftra/triton-trt-um:latest \
     -f "$DOCKER_FILE_PATH" \
     "$WORKSPACE_DIR"
