@@ -104,9 +104,9 @@ RUN if [ -n "$PROXY" ]; then \
     
 ARG TVM_MODEL_HOME=tvm-models
 COPY ${PROJECT_DIR} /gpu-col
-COPY tvm-models/* /gpu-col/server/models/
+COPY tvm-models /gpu-col/server/models
 ARG TRITON_MODEL_HOME=triton-models
-COPY triton-models/* /gpu-col/server/triton_models/
+COPY triton-models /gpu-col/server/triton_models
 
 COPY ${PROJECT_DIR}/scripts/build_sirius.sh /tmp/build_sirius.sh
 RUN if [ -n "$PROXY" ]; then \
