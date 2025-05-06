@@ -97,7 +97,9 @@ RUN if [ -n "$PROXY" ]; then \
     fi && \
     source /opt/mambaforge/bin/activate colserve && \
     rm -rf ${TORCH_HOME}/.git && \
+    export TORCH_CUDA_ARCH_LIST="7.0;8.0" && \
     bash /tmp/build_torch.sh ${TORCH_HOME} ${TORCH_VISION_HOME} && \
+    unset TORCH_CUDA_ARCH_LIST && \
     rm -rf /tmp/build_torch.sh && \
     if [ -n "$PROXY" ]; then \
       unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; \
@@ -124,11 +126,14 @@ RUN if [ -n "$PROXY" ]; then \
 COPY vllm ${VLLM_HOME}
 COPY xformer ${XFORMER_HOME}
 COPY ${PROJECT_DIR}/scripts/build_vllm.sh /tmp/build_vllm.sh
-RUN if [ -n "$PROXY" ]; then \
+RUN --mount=type=cache,target=/gpu-col/build_Release \
+    if [ -n "$PROXY" ]; then \
       export http_proxy=$PROXY https_proxy=$PROXY HTTP_PROXY=$PROXY HTTPS_PROXY=$PROXY; \
     fi && \
   source /opt/mambaforge/bin/activate colserve && \
+  export TORCH_CUDA_ARCH_LIST="7.0;8.0" && \
   bash /tmp/build_vllm.sh ${VLLM_HOME} ${XFORMER_HOME} && \
+  unset TORCH_CUDA_ARCH_LIST && \
   rm -rf /tmp/build_vllm.sh && \
   if [ -n "$PROXY" ]; then \
     unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; \
