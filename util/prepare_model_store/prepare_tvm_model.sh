@@ -13,7 +13,7 @@ models=(
   "resnet152"
 )
 
-TMP_RECORD_PREFIX=/tmp/colsys-tvm-tune-record
+TMP_RECORD_PREFIX=/tmp/sirius-tvm-tune-record
 
 for model in "${tune_models[@]}"; do
   cmd="python $SCRIPT_DIR/$model.py --tune --record $TMP_RECORD_PREFIX-$model"

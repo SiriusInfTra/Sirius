@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(colsys-client LANGUAGES CXX C CUDA)
+project(sirius-client LANGUAGES CXX C CUDA)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_C_STANDARD 11)
 find_package(CUDAToolkit 11 REQUIRED)
@@ -7,11 +7,11 @@ if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
   set(CMAKE_CUDA_ARCHITECTURES 70)
 endif()
 
-if (NOT DEFINED COLSYS_ROOT_DIR)
-  message(FATAL_ERROR "COLSYS_ROOT_DIR is not defined")
+if (NOT DEFINED SIRIUS_ROOT_DIR)
+  message(FATAL_ERROR "SIRIUS_ROOT_DIR is not defined")
 endif()
-if (NOT DEFINED COLSYS_BUILD_DIR)
-  message(FATAL_ERROR "COLSYS_BUILD_DIR is not defined")
+if (NOT DEFINED SIRIUS_BUILD_DIR)
+  message(FATAL_ERROR "SIRIUS_BUILD_DIR is not defined")
 endif()
 if (NOT DEFINED TRITON_3RD_DIR)
   message(FATAL_ERROR "TRITON_3RD_DIR is not defined")
@@ -21,13 +21,13 @@ if (NOT DEFINED TRITON_INSTALL_DIR)
 endif()
 
 # dep
-include(${COLSYS_ROOT_DIR}/cmake/glog.cmake)
-include(${COLSYS_ROOT_DIR}/cmake/boost.cmake)
+include(${SIRIUS_ROOT_DIR}/cmake/glog.cmake)
+include(${SIRIUS_ROOT_DIR}/cmake/boost.cmake)
 
 include(FetchContent)
 FetchContent_Declare(
   CLI11
-  SOURCE_DIR ${COLSYS_ROOT_DIR}/third_party/cli11
+  SOURCE_DIR ${SIRIUS_ROOT_DIR}/third_party/cli11
 )
 FetchContent_MakeAvailable(CLI11)
 
@@ -49,23 +49,23 @@ find_package(TritonClient REQUIRED NO_DEFAULT_PATH
   PATHS ${TRITON_INSTALL_DIR}/lib/cmake/TritonClient)
 
 # proto
-add_library(colsys_proto ${COLSYS_ROOT_DIR}/proto/colserve.proto)
-target_link_libraries(colsys_proto PUBLIC gRPC::grpc++)
+add_library(sirius_proto ${SIRIUS_ROOT_DIR}/proto/colserve.proto)
+target_link_libraries(sirius_proto PUBLIC gRPC::grpc++)
 set(PROTO_BINARY_DIR ${CMAKE_BINARY_DIR}/generated_proto)
-set(PROTO_IMPORT_DIRS ${COLSYS_ROOT_DIR}/proto/)
+set(PROTO_IMPORT_DIRS ${SIRIUS_ROOT_DIR}/proto/)
 file(MAKE_DIRECTORY ${PROTO_BINARY_DIR})
-target_include_directories(colsys_proto PUBLIC ${PROTO_BINARY_DIR})
+target_include_directories(sirius_proto PUBLIC ${PROTO_BINARY_DIR})
 
 # message(status ">> PROTO_BINARY_DIR: ${PROTO_BINARY_DIR}")
 # message(status ">> PROTO_IMPORT_DIRS: ${PROTO_IMPORT_DIRS}")
 
 protobuf_generate(
-  TARGET colsys_proto
+  TARGET sirius_proto
   IMPORT_DIRS ${PROTO_IMPORT_DIRS}
   PROTOC_OUT_DIR "${PROTO_BINARY_DIR}")
 
 protobuf_generate(
-    TARGET colsys_proto
+    TARGET sirius_proto
     LANGUAGE grpc
     GENERATE_EXTENSIONS .grpc.pb.h .grpc.pb.cc
     PLUGIN "protoc-gen-grpc=\$<TARGET_FILE:gRPC::grpc_cpp_plugin>"
@@ -77,13 +77,13 @@ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 add_executable(workload_launcher 
   workload_launcher.cc
-  workload/colsys_impl.cc
+  workload/sirius_impl.cc
   workload/triton_impl.cc
   workload/warm_cache.cc
   workload/util.cc
 )
 target_link_libraries(workload_launcher PUBLIC
-  colsys_proto
+  sirius_proto
   TritonClient::grpcclient_static
   glog::glog 
   CLI11::CLI11
@@ -92,13 +92,13 @@ target_link_libraries(workload_launcher PUBLIC
 
 add_executable(busy_loop_launcher 
   busy_loop_launcher.cc
-  workload/colsys_impl.cc
+  workload/sirius_impl.cc
   workload/triton_impl.cc
   workload/warm_cache.cc
   workload/util.cc
 )
 target_link_libraries(busy_loop_launcher PUBLIC
-  colsys_proto
+  sirius_proto
   TritonClient::grpcclient_static
   glog::glog 
   CLI11::CLI11
@@ -106,5 +106,5 @@ target_link_libraries(busy_loop_launcher PUBLIC
 )
 
 
-install(TARGETS workload_launcher DESTINATION ${COLSYS_BUILD_DIR}/client)
-install(TARGETS busy_loop_launcher DESTINATION ${COLSYS_BUILD_DIR}/client)
+install(TARGETS workload_launcher DESTINATION ${SIRIUS_BUILD_DIR}/client)
+install(TARGETS busy_loop_launcher DESTINATION ${SIRIUS_BUILD_DIR}/client)

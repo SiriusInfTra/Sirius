@@ -8,7 +8,7 @@ pc.set_color_cycle()
 df = pd.read_csv("multi_gpu.dat", sep='\s+', index_col=[0], header=0, comment='#')
 
 # workload = df.head(1).columns.to_list()
-systems = ['TaskSwitch', 'SP-50', 'SP-75', 'UM+MPS', 'ColSys', 'Infer-Only']
+systems = ['TaskSwitch', 'SP-50', 'SP-75', 'UM+MPS', 'Sirius', 'Infer-Only']
 
 fig, ax = plt.subplots(1, 3, figsize=(85*pc.mm, 30*pc.mm))
 fig.subplots_adjust(left=0.10, right=0.98, top=0.78, bottom=0.05, wspace=0.5)

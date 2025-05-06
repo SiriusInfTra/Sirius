@@ -16,7 +16,7 @@
 #include "glog/logging.h"
 #include "workload.h"
 
-namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE {
+namespace colserve::workload::SIRIUS_CLIENT_IMPL_NAMESPACE {
 
 double ComputeThpt(const std::vector<Record> &records) {
   auto first_resp_time = std::min_element(records.begin(), records.end(), 
@@ -105,7 +105,7 @@ void InferWorker::RequestInferBusyLoop(Workload &workload, double delay_before_i
           if (std::chrono::steady_clock::now() >= slots_[s]->req_status_.ready_time_) {
             slot = s;
             status_slots_id_[InferReqStatus::kDone].erase(slot);
-#if __COLSYS_CLIENT_BACKEND__ == __COLSYS_BACKEND__
+#if __SIRIUS_CLIENT_BACKEND__ == __SIRIUS_BACKEND__
             if (is_llm) { // refresh prompt
               slots_[slot]->request_.Clear();
               set_request_fn_(slots_[slot]->request_);
@@ -290,8 +290,8 @@ void InferWorker::FetchInferResult(Workload &workload,
       int num_output_token = 0;
       double decode_ms = 0;
       if (is_llm_workload) {
-// #define COLSYS_CLIENT_IMPL_NAMESPACE colsys_backend_
-#if __COLSYS_CLIENT_BACKEND__ == __COLSYS_BACKEND__
+// #define SIRIUS_CLIENT_IMPL_NAMESPACE sirius_backend_
+#if __SIRIUS_CLIENT_BACKEND__ == __SIRIUS_BACKEND__
         CHECK_EQ(slots_[slot]->result_.outputs_size(), 2); // text, json infer info 
         auto llm_info = boost::json::parse(slots_[slot]->result_.outputs(1).data());
         LOG(INFO) << "llm infer info: " << llm_info;
@@ -929,4 +929,4 @@ void Workload::InferOverallReport(std::ostream &os) {
   }
 }
 
-} // namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE
+} // namespace colserve::workload::SIRIUS_CLIENT_IMPL_NAMESPACE

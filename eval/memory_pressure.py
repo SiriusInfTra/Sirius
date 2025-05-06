@@ -92,7 +92,7 @@ def uniform(rps, client_model_list, infer_only=True, rps_fn=None, num_model_requ
     return workload
 
 
-# MARK: COLSYS
+# MARK: SIRIUS
 system_config = {
     'mode' : System.ServerMode.ColocateL1,
     'use_sta' : True, 

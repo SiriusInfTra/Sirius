@@ -48,7 +48,7 @@ for interval in intervals:
                 system = System(port=run_comm.UniformConfig_v2.port,
                                 **system_config)
                 run_comm.run(system, workload, server_model_config,
-                            "try-interval", f"colsys-{wkld_type}-I{interval}-D{duration}")
+                            "try-interval", f"sirius-{wkld_type}-I{interval}-D{duration}")
                 
 
             for tag, item in {

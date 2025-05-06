@@ -14,7 +14,7 @@ std::unique_ptr<IWorkload> GetTritonWorkload(
     const std::string &triton_config, const std::string &triton_device_map) {
   WarmCache::Init(TritonConfig::LoadConfig(
       triton_config, max_memory_nbytes, triton_device_map));
-  return std::make_unique<colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE::Workload>(
+  return std::make_unique<colserve::workload::SIRIUS_CLIENT_IMPL_NAMESPACE::Workload>(
       channel, duration, delay_before_profile, infer_timeline);
 }
 

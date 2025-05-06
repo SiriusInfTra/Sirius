@@ -16,7 +16,7 @@ skip_fail = False
 run_comm.skip_fail = skip_fail
 run_comm.use_time_stamp = use_time_stamp
 
-run_colsys  = False
+run_sirius  = False
 run_um_mps = False
 run_task_switch = False
 run_static_partition = False
@@ -55,7 +55,7 @@ dynamic_sm_partition = True
 
 # args parser
 parser = argparse.ArgumentParser()
-parser.add_argument('--colsys', action='store_true')
+parser.add_argument('--sirius', action='store_true')
 parser.add_argument('--um-mps', action='store_true')
 parser.add_argument('--task-switch', action='store_true')
 parser.add_argument('--static-partition', action='store_true')
@@ -84,8 +84,8 @@ parser.add_argument('--skewed-v2-wkld-types', nargs='*', default=[])
 parser.add_argument('--parse-result', action='store_true')
 args = parser.parse_args()
 
-if args.colsys or args.all_sys:
-    run_colsys = True
+if args.sirius or args.all_sys:
+    run_sirius = True
 if args.um_mps or args.all_sys:
     run_um_mps = True
 if args.task_switch or args.all_sys:
@@ -393,7 +393,7 @@ for use_triton in [True]:
             'skip_set_mps_thread_percent': skip_set_mps_pct,
             'use_xsched': not use_triton,
             'use_triton': use_triton,
-            'triton_models_nbytes': runner.get_trition_models_MB(0 if not runner.is_four_gpu() else 5),
+            'triton_models_nbytes': runner.get_trition_models_MB(0 if not runner.is_four_gpu() else 10),
             'dynamic_sm_partition': dynamic_sm_partition and not use_triton,
             'has_warmup': True,
             'max_warm_cache_nbytes': int(9 * 1024 ** 3), # not used by triton
@@ -515,8 +515,8 @@ for use_triton in [True]:
                     f"overall-azure-{runner.get_num_gpu()}gpu", 
                     f"static-partition-{tag}")
 
-## MARK: COLSYS
-if run_colsys:
+## MARK: SIRIUS
+if run_sirius:
     system_config = {
         'mode' : System.ServerMode.ColocateL1,
         'use_sta' : True, 
@@ -545,7 +545,7 @@ if run_colsys:
             system = System(train_mps_thread_percent=UniformConfig.high_load.mps_train,
                             port=UniformConfig.port,
                             **system_config)
-            run(system, workload, server_model_config, "overall-uniform", "colsys-high")
+            run(system, workload, server_model_config, "overall-uniform", "sirius-high")
 
     if UniformConfig.enable and UniformConfig.low_load.enable:
         with mps_thread_percent(UniformConfig.high_load.mps_infer):
@@ -556,7 +556,7 @@ if run_colsys:
             system = System(train_mps_thread_percent=UniformConfig.low_load.mps_train,
                             port=UniformConfig.port,
                             **system_config)
-            run(system, workload, server_model_config, "overall-uniform", "colsys-low")
+            run(system, workload, server_model_config, "overall-uniform", "sirius-low")
 
     if UniformConfig.enable and UniformConfig.hybrid_load.enable:
         with mps_thread_percent(UniformConfig.hybrid_load.mps_infer):
@@ -567,7 +567,7 @@ if run_colsys:
             system = System(train_mps_thread_percent=UniformConfig.hybrid_load.mps_train,
                             port=UniformConfig.port,
                             **system_config)
-            run(system, workload, server_model_config, "overall-uniform", "colsys-hybrid")
+            run(system, workload, server_model_config, "overall-uniform", "sirius-hybrid")
 
     if enable_uniform_v2:
         for wkld_type in uniform_v2_workload_types:
@@ -580,7 +580,7 @@ if run_colsys:
                                 **system_config)
                 run_comm.run(system, workload, server_model_config,
                              f"overall-uniform-v2-{runner.get_num_gpu()}gpu", 
-                             f'colsys-{wkld_type}')
+                             f'sirius-{wkld_type}')
 
     if SkewedConfig.enable and SkewedConfig.high_load.enable:
         with mps_thread_percent(SkewedConfig.high_load.mps_infer):
@@ -591,7 +591,7 @@ if run_colsys:
             system = System(train_mps_thread_percent=SkewedConfig.high_load.mps_train,
                             port=SkewedConfig.port,
                             **system_config)
-            run(system, workload, server_model_config, "overall-skewed", "colsys-high")
+            run(system, workload, server_model_config, "overall-skewed", "sirius-high")
 
     if SkewedConfig.enable and SkewedConfig.low_load.enable:
         with mps_thread_percent(SkewedConfig.low_load.mps_infer):
@@ -602,7 +602,7 @@ if run_colsys:
             system = System(train_mps_thread_percent=SkewedConfig.low_load.mps_train,
                             port=SkewedConfig.port,
                             **system_config)
-            run(system, workload, server_model_config, "overall-skewed", "colsys-low")
+            run(system, workload, server_model_config, "overall-skewed", "sirius-low")
 
     if enable_skewed_v2:
         for wkld_type in skew_v2_workload_types:
@@ -613,7 +613,7 @@ if run_colsys:
                 system = System(port=run_comm.SkewedConfig_v2.port, **system_config)
                 run_comm.run(system, workload, server_model_config, 
                              f"overall-skewed-v2-{runner.get_num_gpu()}gpu", 
-                             f'colsys-{wkld_type}')
+                             f'sirius-{wkld_type}')
 
     if AzureConfig.enable:
         with mps_thread_percent(AzureConfig.mps_infer):
@@ -627,7 +627,7 @@ if run_colsys:
                             **system_config)
             run(system, workload, server_model_config, 
                 f"overall-azure-{runner.get_num_gpu()}gpu", 
-                "colsys")
+                "sirius")
 
     if enable_azure_profile_memory:
         with mps_thread_percent(AzureConfig.mps_infer):
@@ -639,7 +639,7 @@ if run_colsys:
                             port=AzureConfig.port,
                             profiler_acquire_resource_lock=True,
                             **system_config)
-            run(system, workload, server_model_config, "overall-azure-memory-profile", "colsys")
+            run(system, workload, server_model_config, "overall-azure-memory-profile", "sirius")
 
     # only used for profiling memory
     if HybridLoad.enable:
@@ -654,7 +654,7 @@ if run_colsys:
                             port=UniformConfig.port,
                             profiler_acquire_resource_lock=True,
                             **system_config)
-            run(system, workload, server_model_config, "overall-hybrid", "colsys-hybrid")
+            run(system, workload, server_model_config, "overall-hybrid", "sirius-hybrid")
 
 ## MARK: strawman
 if run_strawman:

@@ -42,6 +42,21 @@ $ tree --dirsfirst  -L 2 .
 
 **Option 2: Build from Dockerfile**
 
+1. Clone the repo and build docker image. `build_docker.sh` will clone the dependencies in `inftra-docker-build`, which is the docker build context. 
+
+> [Optional] Copy TVM and Triton models to `inftra-docker-build/tvm-models` and `inftra-docker-build/triton-models` respectively, which will be copy to docker image. 
+
+```
+git clone --recurse-submodules git@ipads.se.sjtu.edu.cn:infer-train/gpu-colocation.git gpu-col
+bash ./gpu-col/scripts/build_docker.sh
+```
+
+2. Build Triton TensorRT UM docker image.
+
+```
+bash ./gpu-col/scripts/build_triton_trt_um_docker.sh
+```
+
 
 
 ### Compile From Source (using conda)
@@ -50,62 +65,105 @@ $ tree --dirsfirst  -L 2 .
 
 **Create Environment and Build System**:
 
-1. Prepare a new conda environment and install python packages
+1. Prepare a new conda environment and install python packages, then clone the repo.
 
 ```bash
 conda create -n colserve python=3.12
 conda install -y conda-forge::python-devtools nvitop conda-forge::c-ares
 pip install -r environment/requirements.txt
+
+export SIRIUS_HOME=/path/to/clone/repo
+git clone --recurse-submodules git@ipads.se.sjtu.edu.cn:infer-train/gpu-colocation.git $SIRIUS_HOME
 ```
 
 2. Install `Boost>=1.80` from compiling source (boost installed from apt/conda may require higher version of gcc).  
 
 ```bash
 export BOOST_HOME=/path/to/install/boost
-./scripts/install_boost.sh $BOOST_HOME
+$SIRIUS_HOME/scripts/install_boost.sh $BOOST_HOME
 ```
 
 2. Clone and build [tvm](https://ipads.se.sjtu.edu.cn:1312/infer-train/tvm) for inference; [pytorch](https://ipads.se.sjtu.edu.cn:1312/infer-train/pytorch) and [torchvision](https://github.com/pytorch/vision/tree/v0.13.1) for training. Note CUDA backend should be enabled. Pay attention to pytorch `GLIBCXX_USE_CXX11_ABI` flag, which may cause ABI issues. To accelerate building, set `TORCH_CUDA_ARCH_LIST` flag to gpu computing capability, e.g., `TORCH_CUDA_ARCH_LIST=7.0`.
 
 3. Set `TVM_HOME` environment, run `echo $TVM_HOME` and `echo $CONDA_REFIX` to check. Then configure cmake.
 
-```
-export COLSYS_HOME=$(pwd)
+```bash
 export TVM_HOME=/path/to/tvm
 export TORCH_HOME=/path/to/pytorch
 export BOOST_HOME=/path/to/boost
-./scripts/build_colsys.sh $COLSYS_HOME $TVM_HOME $TORCH_HOME $BOOST_HOME
+$SIRIUS_HOME/scripts/build_sirius.sh $SIRIUS_HOME $TVM_HOME $TORCH_HOME $BOOST_HOME
 ```
 
-4. [Only required for Triton UM+MPS] Clone and build [Triton TensorRT UM Backend]().  
+4. [Only required for Triton UM+MPS] Setup Triton TensorRT backend with Unified Memory support, clone and build [Triton TensorRT UM Backend](https://ipads.se.sjtu.edu.cn:1312/infer-train/triton_tensorrt_um).  
+
+```bash
+bash $SIRIUS_HOME/scripts/build_triton_trt_um.sh
+```
+
+5. [Only required for LLM] Install vLLM by compiling from source, clone [xFormer](git@ipads.se.sjtu.edu.cn:infer-train/xformer.git) and [vLLM](git@ipads.se.sjtu.edu.cn:infer-train/tvm.git).
+
+```bash
+export VLLM_HOME=/path/to/vllm
+export XFORMER_HOME=/path/to/xformer
+bash $SIRIUS_HOME/scripts/build_vllm.sh $VLLM_HOME $XFORMER_HOME
+```
 
 ## Run and Evaluate
 
-### setup model store
+### Prepare Inference Models
 
-models are stored at `./models`, as following. The model have a directory of the tvm compiled model (`mod.josn`, `mod.params` and `mod.so`)
+**TVM Models**
+
+Compile models using TVM (refer to [util/prepare_model_store](util/prepare_model_store)). TVM models (i.e., `mod.josn`, `mod.params` and `mod.so`) are stored at `server/models`, as shown below. 
 
 ```
-├── config
-├── mnist
-│   ├── mod.json
-│   ├── mod.params
-│   └── mod.so
+server/models
+├── densenet161-b1
+├── distilbert_base-b1          
+├── distilgpt2-b1          
+├── efficientnet_v2_s-b1  
+├── efficientvit_b2-b1        
+└── resnet152-b1 
+```
+
+**Triton Models**
+
+Triton models are stored at `server/triton_models`, as shown below. The model have a directory of the trtion compiled model (`model.plan`and `config.pbtxt`)
+
+```
+├── densenet161
+├── distilbert_base
+├── distilgpt2
+├── efficientnet_v2_s
+├── efficientvit_b2
 ├── resnet152
-│   ├── mod.json
-│   ├── mod.params
-│   └── mod.so
-...
+│   ├── 1
+│   │   └── model.plan
+│   └── config.pbtxt
+└── config.conf
 ```
 
-`config` is used to configure model workers, `path` is directory name of the model, `device` should be cuda, `batch-size` should be consistent with tvm compilation. `num-worker` is the default value for the number of model workers. To simulate `n` models, add `[n]` after model name, such as `resnet152[5]`.
+`config.conf` is used to configure memory usage (MiB) of model.
 
+```ini
+resnet152         = 345
+distilgpt2        = 349
+efficientvit_b2   = 143
+efficientnet_v2_s = 114
+densenet161       = 107
+distilbert_base   = 278
 ```
-resnet152
-  path        resnet152
-  device      cuda
-  batch-size  4
-  num-worker  1
+
+**LLM**
+
+Download Llama2 from Huggingface.
+
+```python
+from transformers import AutoConfig, AutoModelForCausalLM
+model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-13b-hf")
+
+config = AutoConfig.from_pretrained('Qwen/Qwen2-0.5B')
+model = AutoModelForCausalLM.from_pretrained('Qwen/Qwen2-0.5B', config=config)
 ```
 
 ### launch server
@@ -136,38 +194,3 @@ GLOG_logtostderr=1 ./build/hybrid_workload \
 
 See help for details.
 
-## Run Triton Benchmark
-
-Triton benchmark need additional steps to setup.
-
-### setup inference models
-
-models are stored at `server/triton_models`, as following. The model have a directory of the trtion compiled model (`model.plan`and `config.pbtxt`)
-
-```
-├── mnist
-│   └── 1
-│   │   └── model.plan
-│   └── model.pbtxt
-├── resnet152
-│   └── 1
-│   │   └── model.plan
-│   └── model.pbtxt
-...
-└── config.conf
-```
-
-`config.conf` is used to configure memory usage of model.
-
-```ini
-resnet152         = 260 # 242MB
-distilgpt2        = 345 # 326MB
-efficientvit_b2   = 125 # 108MB
-efficientnet_v2_s = 115 # 96MB
-densenet161       = 90  # 68MB
-distilbert_base   = 280 # 260MB
-```
-
-### setup triton tensorrt backend with unified memory support
-
-build and install [TensorRT Backend UM](https://ipads.se.sjtu.edu.cn:1312/infer-train/triton_tensorrt_um).

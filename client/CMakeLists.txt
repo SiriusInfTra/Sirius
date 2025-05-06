@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(colsys-client LANGUAGES CXX C CUDA)
+project(sirius-client LANGUAGES CXX C CUDA)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_C_STANDARD 11)
 find_package(CUDAToolkit 11 REQUIRED)
@@ -7,11 +7,11 @@ if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
   set(CMAKE_CUDA_ARCHITECTURES 70)
 endif()
 
-if (NOT DEFINED COLSYS_ROOT_DIR)
-  message(FATAL_ERROR "COLSYS_ROOT_DIR is not defined")
+if (NOT DEFINED SIRIUS_ROOT_DIR)
+  message(FATAL_ERROR "SIRIUS_ROOT_DIR is not defined")
 endif()
-if (NOT DEFINED COLSYS_BUILD_DIR)
-  message(FATAL_ERROR "COLSYS_BUILD_DIR is not defined")
+if (NOT DEFINED SIRIUS_BUILD_DIR)
+  message(FATAL_ERROR "SIRIUS_BUILD_DIR is not defined")
 endif()
 
 set(client_impl_cmake_extra_args)
@@ -21,7 +21,7 @@ if (DEFINED Boost_ROOT)
 endif()
 
 set(TRITON_SOURCE_DIR ${PROJECT_SOURCE_DIR}/third_party/triton-client)
-set(TRITON_PREFIX ${COLSYS_BUILD_DIR}/client/triton-client)
+set(TRITON_PREFIX ${SIRIUS_BUILD_DIR}/client/triton-client)
 set(TRITON_BUILD_DIR ${TRITON_PREFIX}/src/triton-client-build)
 
 # get triton version
@@ -70,7 +70,7 @@ ExternalProject_Add(triton-client
     # BUILD_COMMAND cd ${TRITON_CC_CLIENT_BUILD_DIR} &&
     #     sed -in "s/TRITON_KEEP_TYPEINFO:BOOL=OFF/TRITON_KEEP_TYPEINFO:BOOL=ON/" CMakeCache.txt &&
     #     ${CMAKE_COMMAND} . && cd - && ${CMAKE_COMMAND} --build .
-    BUILD_COMMAND bash ${COLSYS_ROOT_DIR}/client/third_party/triton_cc_client_build_helper.sh ${TRITON_CC_CLIENT_BUILD_DIR}
+    BUILD_COMMAND bash ${SIRIUS_ROOT_DIR}/client/third_party/triton_cc_client_build_helper.sh ${TRITON_CC_CLIENT_BUILD_DIR}
         # ${CMAKE_COMMAND} --build .
 
     LOG_DOWNLOAD ON
@@ -90,10 +90,10 @@ message(">> TRITON_3RD_DIR: ${TRITON_3RD_DIR}")
 include(ExternalProject)
 ExternalProject_Add(client-impl
     SOURCE_DIR ${PROJECT_SOURCE_DIR}/src
-    PREFIX ${COLSYS_BUILD_DIR}/client/impl
+    PREFIX ${SIRIUS_BUILD_DIR}/client/impl
     CMAKE_ARGS 
-        -DCOLSYS_ROOT_DIR=${COLSYS_ROOT_DIR}
-        -DCOLSYS_BUILD_DIR=${COLSYS_BUILD_DIR}
+        -DSIRIUS_ROOT_DIR=${SIRIUS_ROOT_DIR}
+        -DSIRIUS_BUILD_DIR=${SIRIUS_BUILD_DIR}
         -DTRITON_SOURCE_DIR=${TRITON_SOURCE_DIR}
         -DTRITON_BUILD_DIR=${TRITON_BUILD_DIR}
         -DTRITON_3RD_DIR=${TRITON_3RD_DIR}

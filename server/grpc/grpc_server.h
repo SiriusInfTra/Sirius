@@ -12,7 +12,7 @@
 
 namespace colserve {
 namespace network {
-using namespace colsys;
+using namespace sirius;
 class CommonHandler;
 class InferHandler;
 class TrainHandler;

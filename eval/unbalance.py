@@ -139,7 +139,7 @@ for train_adjust_balance in [
 
     run_comm.run(system, workload, server_model_config,
                     f"overall-uniform-v2-{runner.get_num_gpu()}gpu-{num_model}", 
-                    'colsys-' + ('balance' if train_adjust_balance else 'imbalance'))
+                    'sirius-' + ('balance' if train_adjust_balance else 'imbalance'))
     
 
 # =========================================================

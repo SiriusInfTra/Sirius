@@ -16,7 +16,7 @@ def set_color_cycle():
 
 
 def sys_color(system):
-    systems = ['TaskSwitch', 'SP-50', 'SP-75', 'UM+MPS', 'ColSys', 'Infer-Only']
+    systems = ['TaskSwitch', 'SP-50', 'SP-75', 'UM+MPS', 'Sirius', 'Infer-Only']
     for i, s in enumerate(systems):
         if s == system:
             return f'C{i}'
