@@ -114,7 +114,7 @@ bash $SIRIUS_HOME/scripts/build_vllm.sh $VLLM_HOME $XFORMER_HOME
 
 **TVM Models**
 
-Compile models using TVM (refer to [util/prepare_model_store](util/prepare_model_store)). TVM models are stored at `server/models`, as shown below.
+Compile models using TVM (refer to [util/prepare_model_store](util/prepare_model_store)). TVM models (i.e., `mod.josn`, `mod.params` and `mod.so`) are stored at `server/models`, as shown below. 
 
 ```
 server/models
@@ -128,29 +128,30 @@ server/models
 
 **Triton Models**
 
-models are stored at `./models`, as following. The model have a directory of the tvm compiled model (`mod.josn`, `mod.params` and `mod.so`)
+Triton models are stored at `server/triton_models`, as shown below. The model have a directory of the trtion compiled model (`model.plan`and `config.pbtxt`)
 
 ```
-├── config
-├── mnist
-│   ├── mod.json
-│   ├── mod.params
-│   └── mod.so
+├── densenet161
+├── distilbert_base
+├── distilgpt2
+├── efficientnet_v2_s
+├── efficientvit_b2
 ├── resnet152
-│   ├── mod.json
-│   ├── mod.params
-│   └── mod.so
-...
+│   ├── 1
+│   │   └── model.plan
+│   └── config.pbtxt
+└── config.conf
 ```
 
-`config` is used to configure model workers, `path` is directory name of the model, `device` should be cuda, `batch-size` should be consistent with tvm compilation. `num-worker` is the default value for the number of model workers. To simulate `n` models, add `[n]` after model name, such as `resnet152[5]`.
+`config.conf` is used to configure memory usage (MiB) of model.
 
-```
-resnet152
-  path        resnet152
-  device      cuda
-  batch-size  4
-  num-worker  1
+```ini
+resnet152         = 345
+distilgpt2        = 349
+efficientvit_b2   = 143
+efficientnet_v2_s = 114
+densenet161       = 107
+distilbert_base   = 278
 ```
 
 **LLM**
@@ -158,7 +159,7 @@ resnet152
 Download Llama2 from Huggingface.
 
 ```python
-from transformers import AutoModelForCausalLM
+from transformers import AutoConfig, AutoModelForCausalLM
 model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-13b-hf")
 
 config = AutoConfig.from_pretrained('Qwen/Qwen2-0.5B')
@@ -193,34 +194,3 @@ GLOG_logtostderr=1 ./build/hybrid_workload \
 
 See help for details.
 
-## Run Triton Benchmark
-
-Triton benchmark need additional steps to setup.
-
-### setup inference models
-
-models are stored at `server/triton_models`, as following. The model have a directory of the trtion compiled model (`model.plan`and `config.pbtxt`)
-
-```
-├── mnist
-│   └── 1
-│   │   └── model.plan
-│   └── model.pbtxt
-├── resnet152
-│   └── 1
-│   │   └── model.plan
-│   └── model.pbtxt
-...
-└── config.conf
-```
-
-`config.conf` is used to configure memory usage of model.
-
-```ini
-resnet152         = 260 # 242MB
-distilgpt2        = 345 # 326MB
-efficientvit_b2   = 125 # 108MB
-efficientnet_v2_s = 115 # 96MB
-densenet161       = 90  # 68MB
-distilbert_base   = 280 # 260MB
-```
