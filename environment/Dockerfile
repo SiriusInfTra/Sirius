@@ -12,6 +12,7 @@ ENV TORCH_HOME=/opt/torch
 ENV TORCH_VISION_HOME=/opt/vision
 ENV VLLM_HOME=/opt/vllm
 ENV BOOST_HOME=/opt/boost
+ENV XFORMER_HOME=/opt/xformer
 
 # -----------------------------------------------
 
@@ -121,12 +122,13 @@ RUN if [ -n "$PROXY" ]; then \
 
 
 COPY vllm ${VLLM_HOME}
+COPY xformer ${XFORMER_HOME}
 COPY ${PROJECT_DIR}/scripts/build_vllm.sh /tmp/build_vllm.sh
 RUN if [ -n "$PROXY" ]; then \
       export http_proxy=$PROXY https_proxy=$PROXY HTTP_PROXY=$PROXY HTTPS_PROXY=$PROXY; \
     fi && \
   source /opt/mambaforge/bin/activate colserve && \
-  bash /tmp/build_vllm.sh ${VLLM_HOME} && \
+  bash /tmp/build_vllm.sh ${VLLM_HOME} ${XFORMER_HOME} && \
   rm -rf /tmp/build_vllm.sh && \
   if [ -n "$PROXY" ]; then \
     unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; \

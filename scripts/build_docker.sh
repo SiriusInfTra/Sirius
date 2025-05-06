@@ -31,6 +31,7 @@ repos=(
 
   # vLLM
   git@ipads.se.sjtu.edu.cn:infer-train/vllm.git
+  git@ipads.se.sjtu.edu.cn:infer-train/xformer.git
 )
 
 for repo in "${repos[@]}"; do
