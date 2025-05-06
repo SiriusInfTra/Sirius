@@ -42,6 +42,21 @@ $ tree --dirsfirst  -L 2 .
 
 **Option 2: Build from Dockerfile**
 
+1. Clone the repo and build docker image. `build_docker.sh` will clone the dependencies in `inftra-docker-build`, which is the docker build context. 
+
+> [Optional] Copy TVM and Triton models to `inftra-docker-build/tvm-models` and `inftra-docker-build/triton-models` respectively, which will be copy to docker image. 
+
+```
+git clone --recurse-submodules git@ipads.se.sjtu.edu.cn:infer-train/gpu-colocation.git gpu-col
+bash ./gpu-col/scripts/build_docker.sh
+```
+
+2. Build Triton TensorRT UM docker image.
+
+```
+bash ./gpu-col/scripts/build_triton_trt_um_docker.sh
+```
+
 
 
 ### Compile From Source (using conda)
@@ -81,7 +96,11 @@ export BOOST_HOME=/path/to/boost
 
 ## Run and Evaluate
 
-### setup model store
+### Prepare Inference Models
+
+**TVM Models**
+
+**Triton Models**
 
 models are stored at `./models`, as following. The model have a directory of the tvm compiled model (`mod.josn`, `mod.params` and `mod.so`)
 
