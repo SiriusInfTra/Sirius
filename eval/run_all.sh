@@ -17,6 +17,7 @@ show_help() {
   echo "  --ablation             Run ablation study"
   echo "  --unbalance            Run unbalance test"
   echo "  --memory-pressure      Run memory pressure test"
+  echo "  --llm                  Run LLM test"
   echo "  --all                  Run all tests"
   echo
   echo "If no options are specified, all tests will be run."
@@ -29,6 +30,7 @@ run_breakdown=false
 run_ablation=false
 run_unbalance=false
 run_memory_pressure=false
+run_llm=false
 
 # Parse command line arguments
 if [ $# -eq 0 ]; then
@@ -39,6 +41,7 @@ if [ $# -eq 0 ]; then
   run_ablation=true
   run_unbalance=true
   run_memory_pressure=true
+  run_llm=true
 else
   # Process arguments
   for arg in "$@"
@@ -66,6 +69,9 @@ else
       --memory-pressure)
         run_memory_pressure=true
         ;;
+      --llm)
+        run_llm=true
+        ;;
       --all)
         run_overall_single=true
         run_overall_multi=true
@@ -73,10 +79,11 @@ else
         run_ablation=true
         run_unbalance=true
         run_memory_pressure=true
+        run_llm=true
         ;;
       *)
         echo "Unknown argument: $arg"
-        echo "Available arguments: --overall-single-gpu --overall-multi-gpu --breakdown --ablation --unbalance --memory-pressure --all"
+        echo "Available arguments: --overall-single-gpu --overall-multi-gpu --breakdown --ablation --unbalance --memory-pressure --llm --all"
         exit 1
         ;;
     esac
@@ -172,6 +179,15 @@ memory_pressure() {
   python eval/memory_pressure.py --retry-limit 3 --parse-result
 }
 
+llm() {
+  echo -e "\n\033[1;32m==================================================================\033[0m"
+  echo -e "\033[1;32m[llm]\033[0m"
+  echo -e "\033[1;32m==================================================================\033[0m\n"
+  single_gpu_env
+
+  python eval/run_llm.py --colsys --burstgpt --burstgpt-rps 10
+}
+
 echo "TEST BEGIN: $(date)"
 
 for i in `seq 1 1`; do
@@ -197,6 +213,10 @@ for i in `seq 1 1`; do
   
   if $run_memory_pressure; then
     memory_pressure
+  fi
+  
+  if $run_llm; then
+    llm
   fi
 done
 
