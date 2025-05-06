@@ -9,11 +9,11 @@ echo "CUDA_MPS_PIPE_DIRECTORY=$CUDA_MPS_PIPE_DIRECTORY"
 for i in `seq 1 3`; do
   python eval/overall_v2.py --all-sys --all-workload --retry-limit 3
   python eval/ablation.py --eval-all  --retry-limit 3
-  python eval/breakdown.py --colsys --all-workload  --retry-limit 3
+  python eval/breakdown.py --sirius --all-workload  --retry-limit 3
   python eval/memory_pressure.py --retry-limit 3
   # python eval/memory_pressure_v2.py --retry-limit 3
 
-  # python eval/breakdown.py --colsys --all-workload  --retry-limit 3
+  # python eval/breakdown.py --sirius --all-workload  --retry-limit 3
   # python eval/overall_v2.py --all-sys --azure --azure-rps 150 --retry-limit 3
 
 

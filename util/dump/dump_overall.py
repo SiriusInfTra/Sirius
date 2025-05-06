@@ -132,7 +132,7 @@ def get_value(work_dir):
     }[dist] * 100
     r += {
         'static-partition': 0,
-        'colsys': 1,
+        'sirius': 1,
         'task-switch': 2,
         'um-mps': 3,
         'infer-only': 4,

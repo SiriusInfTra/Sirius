@@ -1,5 +1,5 @@
-#ifndef COLSYS_WARMUP_H__
-#define COLSYS_WARMUP_H__
+#ifndef SIRIUS_WARMUP_H__
+#define SIRIUS_WARMUP_H__
 
 #include <condition_variable>
 #include <memory>

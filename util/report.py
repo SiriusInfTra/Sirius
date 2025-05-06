@@ -53,7 +53,7 @@ NAME_ORDER = [
     'UNKNOWN',
     'static-partition-F',
     'static-partition-I',
-    'colsys',
+    'sirius',
     'task-switch',
     'um-mps',
     'infer-only',

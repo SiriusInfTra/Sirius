@@ -25,32 +25,32 @@
   static_assert(false, "Please undefine DEV_MACRO, this macro is used for code completion");
 #endif
 
-#if defined(DEV_MACRO) && __COLSYS_CLIENT_BACKEND__ == __COLSYS_BACKEND__
+#if defined(DEV_MACRO) && __SIRIUS_CLIENT_BACKEND__ == __SIRIUS_BACKEND__
   #include <colserve.grpc.pb.h>
-  using TrainRequest = colsys::TrainRequest;
-  using TrainResult = colsys::TrainResult;
-  using EmptyRequest = colsys::EmptyRequest;
-  using EmptyResult = colsys::EmptyResult;
+  using TrainRequest = sirius::TrainRequest;
+  using TrainResult = sirius::TrainResult;
+  using EmptyRequest = sirius::EmptyRequest;
+  using EmptyResult = sirius::EmptyResult;
 
-  using InferRequest = colsys::InferRequest;
-  using InferResult = colsys::InferResult;
+  using InferRequest = sirius::InferRequest;
+  using InferResult = sirius::InferResult;
 
-  using ServerStatus = colsys::ServerStatus;
-  using ServeStub = colsys::ColServe::Stub;
-  using InferWorkloadDoneRequest = colsys::InferWorkloadDoneRequest;
-  using InferenceWorkloadStartRequest = colsys::InferenceWorkloadStartRequest;
+  using ServerStatus = sirius::ServerStatus;
+  using ServeStub = sirius::ColServe::Stub;
+  using InferWorkloadDoneRequest = sirius::InferWorkloadDoneRequest;
+  using InferenceWorkloadStartRequest = sirius::InferenceWorkloadStartRequest;
 
   using AsyncInferResult = grpc::ClientAsyncResponseReader<InferResult>;
   using AsyncServerStatus = grpc::ClientAsyncResponseReader<ServerStatus>;
-#elif defined(DEV_MACRO) && __COLSYS_CLIENT_BACKEND__ == __TRITON_BACKEND__
-  using TrainRequest = colsys::TrainRequest;
-  using TrainResult = colsys::TrainResult;
-  using EmptyRequest = colsys::EmptyRequest;
-  using EmptyResult = colsys::EmptyResult;
+#elif defined(DEV_MACRO) && __SIRIUS_CLIENT_BACKEND__ == __TRITON_BACKEND__
+  using TrainRequest = sirius::TrainRequest;
+  using TrainResult = sirius::TrainResult;
+  using EmptyRequest = sirius::EmptyRequest;
+  using EmptyResult = sirius::EmptyResult;
 #endif  
 
 
-namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE {
+namespace colserve::workload::SIRIUS_CLIENT_IMPL_NAMESPACE {
 
 using time_point_t = std::chrono::time_point<std::chrono::steady_clock>;
 using double_ms_t = std::chrono::duration<double, std::milli>;

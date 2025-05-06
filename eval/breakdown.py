@@ -17,7 +17,7 @@ run_comm.SkewedConfig.duration = 300
 
 
 
-run_colsys  = False
+run_sirius  = False
 run_strawman = False
 
 enable_uniform = False
@@ -32,7 +32,7 @@ uniform_v2_wkld_type = 'NormalC'
 
 # args parser
 parser = argparse.ArgumentParser()
-parser.add_argument('--colsys', action='store_true')
+parser.add_argument('--sirius', action='store_true')
 parser.add_argument('--strawman', action='store_true')
 parser.add_argument('--uniform', action='store_true')
 parser.add_argument('--uniform-v2', action='store_true')
@@ -45,8 +45,8 @@ parser.add_argument('--retry-limit', type=int, default=0)
 parser.add_argument('--parse-result', action='store_true')
 args = parser.parse_args()
 
-if args.colsys or args.all_sys:
-    run_colsys = True
+if args.sirius or args.all_sys:
+    run_sirius = True
 if args.strawman or args.all_sys:
     run_strawman = True
 
@@ -207,8 +207,8 @@ def azure(rps, client_model_list, infer_only=True, rps_fn=None,
 
 ## =========================================================== ##
 
-## MARK: COLSYS
-if run_colsys:
+## MARK: SIRIUS
+if run_sirius:
     system_config = {
         'mode' : System.ServerMode.ColocateL1,
         'use_sta' : True, 
@@ -237,7 +237,7 @@ if run_colsys:
                             dump_adjust_info=True,
                             **system_config)
             run_comm.run(system, workload, server_model_config, 
-                         "breakdown-uniform", "colsys-high")
+                         "breakdown-uniform", "sirius-high")
 
     if SkewedConfig.enable and SkewedConfig.high_load.enable:
         with mps_thread_percent(SkewedConfig.high_load.mps_infer):
@@ -249,7 +249,7 @@ if run_colsys:
                             port=SkewedConfig.port,
                             dump_adjust_info=True,
                             **system_config)
-            run_comm.run(system, workload, server_model_config, "breakdown-skewed", "colsys-high")
+            run_comm.run(system, workload, server_model_config, "breakdown-skewed", "sirius-high")
 
     if SkewedConfig.enable and SkewedConfig.low_load.enable:
         with mps_thread_percent(SkewedConfig.low_load.mps_infer):
@@ -261,7 +261,7 @@ if run_colsys:
                             port=SkewedConfig.port,
                             dump_adjust_info=True,
                             **system_config)
-            run_comm.run(system, workload, server_model_config, "breakdown-skewed", "colsys-low")
+            run_comm.run(system, workload, server_model_config, "breakdown-skewed", "sirius-low")
 
     if enable_uniform_v2:
         with mps_thread_percent(None):
@@ -273,7 +273,7 @@ if run_colsys:
                             **system_config)
             run_comm.run(system, workload, server_model_config, 
                          f"breakdown-uniform-v2-{runner.get_num_gpu()}gpu", 
-                         f"colsys-{uniform_v2_wkld_type}")
+                         f"sirius-{uniform_v2_wkld_type}")
             
     if AzureConfig.enable:
         with mps_thread_percent(None):
@@ -287,7 +287,7 @@ if run_colsys:
                             **system_config)
             run_comm.run(system, workload, server_model_config,
                          f"breakdown-azure-{runner.get_num_gpu()}gpu", 
-                         "colsys")
+                         "sirius")
 
 
 ## MARK: Strawman

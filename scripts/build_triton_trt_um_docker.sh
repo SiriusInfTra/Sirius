@@ -9,6 +9,7 @@ WORKSPACE_DIR=triton-docker-build
 echo "Project directory: $PROJECT_DIR"
 echo "Dockerfile: $DOCKER_FILE_PATH"
 echo "Docker build directory: $WORKSPACE_DIR"
+echo "Proxy: $https_proxy"
 # Ask for confirmation before proceeding
 read -p "Do you want to continue? (y/n): " confirm
 if [[ $confirm != [yY] ]]; then
@@ -31,6 +32,6 @@ fi
 
 docker build \
     $PROXY_ARG \
-    -t inf-tra-triton:latest \
+    -t siriusinftra/triton-trt-um:latest \
     -f "$DOCKER_FILE_PATH" \
     "$WORKSPACE_DIR"

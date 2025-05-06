@@ -108,13 +108,13 @@ COPY tvm-models/* /gpu-col/server/models/
 ARG TRITON_MODEL_HOME=triton-models
 COPY triton-models/* /gpu-col/server/triton_models/
 
-COPY ${PROJECT_DIR}/scripts/build_colsys.sh /tmp/build_colsys.sh
+COPY ${PROJECT_DIR}/scripts/build_sirius.sh /tmp/build_sirius.sh
 RUN if [ -n "$PROXY" ]; then \
       export http_proxy=$PROXY https_proxy=$PROXY HTTP_PROXY=$PROXY HTTPS_PROXY=$PROXY; \
     fi && \
   source /opt/mambaforge/bin/activate colserve && \
-  bash /tmp/build_colsys.sh /gpu-col ${TVM_HOME} ${TORCH_HOME} ${BOOST_HOME} && \
-  rm -rf /tmp/build_colsys.sh && \
+  bash /tmp/build_sirius.sh /gpu-col ${TVM_HOME} ${TORCH_HOME} ${BOOST_HOME} && \
+  rm -rf /tmp/build_sirius.sh && \
   if [ -n "$PROXY" ]; then \
     unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; \
   fi

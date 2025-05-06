@@ -1,4 +1,4 @@
-COLSYS_HOME=$1
+SIRIUS_HOME=$1
 TVM_HOME=$2
 TORCH_HOME=$3
 BOOST_HOME=$4
@@ -8,7 +8,7 @@ if [ -z "$CONDA_PREFIX" ]; then
   exit 1
 fi
 
-echo "COLSYS_HOME: $COLSYS_HOME | TVM_HOME: $TVM_HOME | TORCH_HOME: $TORCH_HOME | BOOST_HOME: $BOOST_HOME"
+echo "SIRIUS_HOME: $SIRIUS_HOME | TVM_HOME: $TVM_HOME | TORCH_HOME: $TORCH_HOME | BOOST_HOME: $BOOST_HOME"
 
 PYTHON_SITE_PACKAGES=$(python -c "from distutils.sysconfig import get_python_lib; print(get_python_lib())")
 
@@ -19,12 +19,12 @@ cmake_cfg_cmd+=" \"-DCMAKE_PREFIX_PATH:STRING=$CONDA_PREFIX;$TORCH_HOME/torch/sh
 cmake_cfg_cmd+=" -DBoost_ROOT:STRING=$BOOST_HOME/install/lib/cmake/"
 cmake_cfg_cmd+=" \"-DCMAKE_CUDA_ARCHITECTURES:STRING=70;80\""
 cmake_cfg_cmd+=" -DTVM_HOME:STRING=$TVM_HOME"
-cmake_cfg_cmd+=" -GNinja -S $COLSYS_HOME -B $COLSYS_HOME/build_Release"
+cmake_cfg_cmd+=" -GNinja -S $SIRIUS_HOME -B $SIRIUS_HOME/build_Release"
 
 echo "Running: $cmake_cfg_cmd"
 
 eval $cmake_cfg_cmd
 
 # build_Release will be linked to build
-cd $COLSYS_HOME
+cd $SIRIUS_HOME
 cmake --build build

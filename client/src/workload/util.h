@@ -1,10 +1,10 @@
-#ifndef COLSYS_WORKLOAD_UTIL_H_
-#define COLSYS_WORKLOAD_UTIL_H_
+#ifndef SIRIUS_WORKLOAD_UTIL_H_
+#define SIRIUS_WORKLOAD_UTIL_H_
 
 #include <CLI/CLI.hpp>
 #include <glog/logging.h>
 
-#define __COLSYS_BACKEND__ 1
+#define __SIRIUS_BACKEND__ 1
 #define __TRITON_BACKEND__ 2
 
 namespace colserve {
@@ -39,8 +39,8 @@ class AppBase {
   AppBase(const std::string &name = "ColServe Workload");
 
   CLI::App app;
-  std::string colsys_ip = "localhost";
-  std::string colsys_port;
+  std::string sirius_ip = "localhost";
+  std::string sirius_port;
   std::string triton_ip = "localhost";
   std::string triton_port;
   size_t triton_max_memory{0}; // in MB

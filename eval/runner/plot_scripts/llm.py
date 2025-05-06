@@ -7,7 +7,7 @@ pc.set_color_cycle()
 
 df = pd.read_csv("llm.dat", sep='\s+', index_col=[0], header=0, comment='#')
 
-systems = ['SP-50', 'SP-75', 'ColSys', 'Infer-Only']
+systems = ['SP-50', 'SP-75', 'Sirius', 'Infer-Only']
 
 
 fig, ax = plt.subplots(1, 3, figsize=(85*pc.mm, 30*pc.mm))

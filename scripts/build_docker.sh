@@ -45,9 +45,20 @@ done
 
 # TODO: ensure TVM/Triton models are copied to the workspace directory
 rsync -a --exclude="build" --exclude="build_Release" --exclude="build_Debug" \
-  --exclude="log" --exclude="gpu-col-docker-log" --exclude="triton-model-wksp" \
+  --exclude="gpu-col-docker-log" --exclude="triton-model-wksp" \
   --exclude="mps-pipe-directory" \
   "$PROJECT_DIR"/ "$WORKSPACE_DIR"/gpu-col/
+
+
+if [ ! -d "$WORKSPACE_DIR/tvm-models" ]; then
+  mkdir -p "$WORKSPACE_DIR/tvm-models"
+  touch "$WORKSPACE_DIR/tvm-models/keep"
+fi
+
+if [ ! -d "$WORKSPACE_DIR/triton-models" ]; then
+  mkdir -p "$WORKSPACE_DIR/triton-models"
+  touch "$WORKSPACE_DIR/triton-models/keep"
+fi
 
 # Check if https_proxy environment variable exists and add it as build arg if it does
 PROXY_ARG=""
@@ -60,7 +71,7 @@ docker build \
   --build-arg PROJECT_DIR="gpu-col" \
   --build-arg DOCKER_BUILD_DIR="$WORKSPACE_DIR" \
   $PROXY_ARG \
-  -t inf-tra:latest \
+  -t siriusinftra/sirius:latest \
   -f "$DOCKER_FILE_PATH" \
   "$WORKSPACE_DIR"
 
