@@ -119,7 +119,7 @@ over_all_single_gpu() {
 
   single_gpu_env
   python eval/overall_v2.py --uniform-v2 --skewed-v2 --azure \
-    --colsys --static-partition --task-switch --um-mps --infer-only \
+    --sirius --static-partition --task-switch --um-mps --infer-only \
     --skip-set-mps-pct --retry-limit 3 --skip-fail 1 --parse-result
 }
 
@@ -130,7 +130,7 @@ over_all_multi_gpu() {
 
   multi_gpu_env
   python eval/overall_v2.py --uniform-v2 --uniform-v2-wkld-types NormalLight \
-    --colsys --static-partition --task-switch --um-mps --infer-only \
+    --sirius --static-partition --task-switch --um-mps --infer-only \
     --skip-set-mps-pct --multi-gpu --retry-limit 3 --skip-fail 1 --parse-result
 }
 
@@ -140,9 +140,9 @@ breakdown() {
   echo -e "\033[1;32m==================================================================\033[0m\n"
 
   single_gpu_env
-  python eval/breakdown.py --colsys --strawman --azure --retry-limit 3 --parse-result
+  python eval/breakdown.py --sirius --strawman --azure --retry-limit 3 --parse-result
   multi_gpu_env
-  python eval/breakdown.py --colsys --strawman --azure --multi-gpu --retry-limit 3 --parse-result
+  python eval/breakdown.py --sirius --strawman --azure --multi-gpu --retry-limit 3 --parse-result
 }
 
 ablation_study() {

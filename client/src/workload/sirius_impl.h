@@ -1,5 +1,5 @@
-#ifndef COLSYS_COLSYS_IMPL_H_
-#define COLSYS_COLSYS_IMPL_H_
+#ifndef SIRIUS_SIRIUS_IMPL_H_
+#define SIRIUS_SIRIUS_IMPL_H_
 
 #include <colserve.grpc.pb.h>
 #include <grpcpp/channel.h>
@@ -7,23 +7,23 @@
 #include <boost/json.hpp>
 #include "util.h"
 
-#define COLSYS_CLIENT_IMPL_NAMESPACE colsys_backend
-#define __COLSYS_CLIENT_BACKEND__ __COLSYS_BACKEND__
+#define SIRIUS_CLIENT_IMPL_NAMESPACE sirius_backend
+#define __SIRIUS_CLIENT_BACKEND__ __SIRIUS_BACKEND__
 
-namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE {
+namespace colserve::workload::SIRIUS_CLIENT_IMPL_NAMESPACE {
 
-using TrainRequest = colsys::TrainRequest;
-using TrainResult = colsys::TrainResult;
-using EmptyRequest = colsys::EmptyRequest;
-using EmptyResult = colsys::EmptyResult;
+using TrainRequest = sirius::TrainRequest;
+using TrainResult = sirius::TrainResult;
+using EmptyRequest = sirius::EmptyRequest;
+using EmptyResult = sirius::EmptyResult;
 
-using InferRequest = colsys::InferRequest;
-using InferResult = colsys::InferResult;
+using InferRequest = sirius::InferRequest;
+using InferResult = sirius::InferResult;
 
-using ServerStatus = colsys::ServerStatus;
-using ServeStub = colsys::ColServe::Stub;
-using InferWorkloadDoneRequest = colsys::InferWorkloadDoneRequest;
-using InferenceWorkloadStartRequest = colsys::InferenceWorkloadStartRequest;
+using ServerStatus = sirius::ServerStatus;
+using ServeStub = sirius::ColServe::Stub;
+using InferWorkloadDoneRequest = sirius::InferWorkloadDoneRequest;
+using InferenceWorkloadStartRequest = sirius::InferenceWorkloadStartRequest;
 
 using AsyncInferResult = grpc::ClientAsyncResponseReader<InferResult>;
 using AsyncServerStatus = grpc::ClientAsyncResponseReader<ServerStatus>;
@@ -109,7 +109,7 @@ inline void SetLLMRequest(InferRequest &request, const std::string &model,
 }
 
 inline std::unique_ptr<ServeStub> NewStub(std::shared_ptr<grpc::Channel> channel) {
-  return colsys::ColServe::NewStub(channel);
+  return sirius::ColServe::NewStub(channel);
 }
 
 inline void StubAsyncInferenceDone(ServeStub &stub, ::grpc::ClientContext *context, 

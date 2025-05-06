@@ -13,7 +13,7 @@ df = pd.read_csv("overall_v100.dat", sep='\s+', index_col=[0, 1], header=0, comm
 
 # workload = ['Uniform-A', 'Uniform-B', 'Uniform-C', 'Skew-C', 'MAF']
 workload = ['Light', 'Heavy', 'Burst', 'Skewed', 'MAF']
-systems = ['TaskSwitch', 'SP-F', 'SP-I', 'UM+MPS', 'ColSys', 'Infer-Only']
+systems = ['TaskSwitch', 'SP-F', 'SP-I', 'UM+MPS', 'Sirius', 'Infer-Only']
 
 
 # systems = list(set([x[0] for x in df.index.to_list()]))
@@ -67,13 +67,13 @@ for i in range(3): # infer, train
         s = systems[j]
         rects = ax[i][0].bar(x + offset + margin, df.loc[(s, type), :], width)
         if i == 0:
-            # if s != 'ColSys':
+            # if s != 'Sirius':
             handles.append(rects)
             ax[i][1].bar(x + offset + margin, df.loc[(s, type), :], width)
         if type == 'Train' and 'Infer-Only' == s:
             ax[i][0].scatter(x+offset+margin, 5+np.zeros(len(workload)), marker='x', color=f'C{j}', s=10)
             
-        # if type == 'Infer' and 'ColSys' == s:
+        # if type == 'Infer' and 'Sirius' == s:
         #     star_handle = ax[i][0].scatter(x+offset+margin, np.zeros(len(workload))-14, marker='*', color=f'C{j}', s=16, 
         #                                    clip_on=False, lw=0.5)
         #     handles.append(star_handle)
@@ -167,9 +167,9 @@ plt.savefig("overall_v100.pdf")
 slo_delta = []
 for w in workload:
     for s in systems:
-        if s == 'Infer-Only' or s == 'ColSys':
+        if s == 'Infer-Only' or s == 'Sirius':
             continue
-        v = df.loc[('ColSys', 'SLO'), w] - df.loc[(s, 'SLO'), w]
+        v = df.loc[('Sirius', 'SLO'), w] - df.loc[(s, 'SLO'), w]
         slo_delta.append(v)
 
 print('SLO', len(slo_delta), np.mean(slo_delta), np.max(slo_delta))
@@ -177,11 +177,11 @@ print('SLO', len(slo_delta), np.mean(slo_delta), np.max(slo_delta))
 train_delta = []
 for w in workload:
     for s in systems:
-        if s == 'Infer-Only' or s == 'ColSys':
+        if s == 'Infer-Only' or s == 'Sirius':
             continue
         if df.loc[(s, 'Train'), w] == 0:
             continue
-        v = df.loc[('ColSys', 'Train'), w] / df.loc[(s, 'Train'), w]
+        v = df.loc[('Sirius', 'Train'), w] / df.loc[(s, 'Train'), w]
         train_delta.append(v)
 
 print('Train', len(train_delta), np.mean(train_delta), np.max(train_delta))

@@ -1,5 +1,5 @@
-#ifndef COLSYS_TRITON_GRPC_H_
-#define COLSYS_TRITON_GRPC_H_
+#ifndef SIRIUS_TRITON_GRPC_H_
+#define SIRIUS_TRITON_GRPC_H_
 
 #include <colserve.pb.h>
 #include <cstdint>
@@ -16,14 +16,14 @@
 #include <stdexcept>
 #include "warm_cache.h"
 
-#define COLSYS_CLIENT_IMPL_NAMESPACE triton_backend
-#define __COLSYS_CLIENT_BACKEND__ __TRITON_BACKEND__
+#define SIRIUS_CLIENT_IMPL_NAMESPACE triton_backend
+#define __SIRIUS_CLIENT_BACKEND__ __TRITON_BACKEND__
 
-namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE {
-using TrainRequest = colsys::TrainRequest;
-using TrainResult = colsys::TrainResult;
-using EmptyRequest = colsys::EmptyRequest;
-using EmptyResult = colsys::EmptyResult;
+namespace colserve::workload::SIRIUS_CLIENT_IMPL_NAMESPACE {
+using TrainRequest = sirius::TrainRequest;
+using TrainResult = sirius::TrainResult;
+using EmptyRequest = sirius::EmptyRequest;
+using EmptyResult = sirius::EmptyResult;
 
 struct InferenceWorkloadStartRequest {
   int64_t time_stamp_;
@@ -338,6 +338,6 @@ inline void StubAsyncInferenceDone(
   WarmCache::DecModel(stub.Stub(), context, model_name);
 }
 
-} // namespace colserve::workload::COLSYS_CLIENT_IMPL_NAMESPACE
+} // namespace colserve::workload::SIRIUS_CLIENT_IMPL_NAMESPACE
 
 #endif

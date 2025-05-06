@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(colsys-client LANGUAGES CXX C CUDA)
+project(sirius-client LANGUAGES CXX C CUDA)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_C_STANDARD 11)
 find_package(CUDAToolkit 11 REQUIRED)

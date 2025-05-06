@@ -8,7 +8,7 @@ import workload_collections as wkld_coll
 import run_comm
 
 parser = argparse.ArgumentParser(description='Run LLM')
-parser.add_argument('--colsys', action='store_true', help='Run colsys')
+parser.add_argument('--sirius', action='store_true', help='Run sirius')
 parser.add_argument('--um-mps', action='store_true', help='Run UM+MPS')
 parser.add_argument('--task-switch', action='store_true', help='Run task switch')
 parser.add_argument('--static-partition', action='store_true', help='Run static partition')
@@ -19,12 +19,12 @@ parser.add_argument('--uniform-v2', action='store_true', help='Run uniform-v2')
 parser.add_argument('--burstgpt', action='store_true', help='Run burstgpt')
 parser.add_argument('--burstgpt-rps', type=int, help='BurstGPT RPS', required=False)
 parser.add_argument('--train-mps-pct', type=int, help='Train MPS Pct', required=False)
-parser.add_argument('--colsys-without-train', action='store_true', help='Run colsys without train')
+parser.add_argument('--sirius-without-train', action='store_true', help='Run sirius without train')
 parser.add_argument('--parse-result', action='store_true')
 
 args = parser.parse_args()
 
-run_colsys = False
+run_sirius = False
 run_um_mps = False
 run_task_switch = False
 run_static_partition = False
@@ -32,7 +32,7 @@ run_static_partition_I = False
 run_static_partition_F = False
 run_infer_only = False
 
-colsys_without_train = False
+sirius_without_train = False
 
 enable_burstgpt = False
 enable_uniform_v2 = False
@@ -48,8 +48,8 @@ uniform_v2_wkld_types = [
 run_comm.UniformConfig_v2.train_batch_size = 400
 run_comm.UniformConfig_v2.interval_sec = 20
 
-if args.colsys:
-    run_colsys = True
+if args.sirius:
+    run_sirius = True
 if args.um_mps:
     run_um_mps = True
 if args.task_switch:
@@ -72,8 +72,8 @@ if args.burstgpt:
 if args.uniform_v2:
     enable_uniform_v2 = True
 
-if args.colsys_without_train:
-    colsys_without_train = True
+if args.sirius_without_train:
+    sirius_without_train = True
 
 if args.burstgpt_rps:
     run_comm.BurstGPTConfig.max_rps = args.burstgpt_rps
@@ -96,7 +96,7 @@ train_mps_pct = None
 if args.train_mps_pct:
     train_mps_pct = args.train_mps_pct
     print('Train MPS Pct:', train_mps_pct)
-print(run_colsys)
+print(run_sirius)
 
 
 def get_cuda_memory_pool_gb():
@@ -131,9 +131,9 @@ def get_cuda_memory_pool_gb_sp_i():
 
 
 
-# MARK: colsys
-if run_colsys:
-    # Implement colsys logic
+# MARK: sirius
+if run_sirius:
+    # Implement sirius logic
     system_config = {
         'mode': System.ServerMode.ColocateL1,
         'use_sta': True,
@@ -155,22 +155,22 @@ if run_colsys:
     }
     if enable_burstgpt:
         with mps_thread_percent(None):
-            workload = run_comm.burstgpt(infer_only=colsys_without_train)
+            workload = run_comm.burstgpt(infer_only=sirius_without_train)
             system = System(port=port, train_mps_thread_percent=train_mps_pct,
                             **system_config)
             run_comm.run(system, workload, None, 
                         f"burstgpt-{runner.get_num_gpu()}gpu", 
-                        f"colsys")
+                        f"sirius")
     
     if enable_uniform_v2:
         for wkld_type in uniform_v2_wkld_types:
             client_model_list, _ = InferModel.get_multi_model([llm_model], 1, 1)
             workload = run_comm.uniform_v2(wkld_type, client_model_list, 
-                                           infer_only=colsys_without_train)
+                                           infer_only=sirius_without_train)
             system = System(port=port, **system_config)
             run_comm.run(system, workload, None,
                          f'{wkld_type}-{runner.get_num_gpu()}gpu', 
-                         f'colsys')
+                         f'sirius')
 
 
 # MARK: task switch

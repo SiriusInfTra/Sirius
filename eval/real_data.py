@@ -45,4 +45,4 @@ with mps_thread_percent(None):
     workload = run_comm.uniform_v2(wkld_type, client_model_list, infer_only=False)
     system = System(port=run_comm.UniformConfig_v2.port, **system_config)
     run_comm.run(system, workload, server_model_config, 
-                "overall-uniform-v2", f'colsys-{wkld_type}')
+                "overall-uniform-v2", f'sirius-{wkld_type}')

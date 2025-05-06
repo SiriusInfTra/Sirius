@@ -85,11 +85,11 @@ export BOOST_HOME=/path/to/install/boost
 3. Set `TVM_HOME` environment, run `echo $TVM_HOME` and `echo $CONDA_REFIX` to check. Then configure cmake.
 
 ```
-export COLSYS_HOME=$(pwd)
+export SIRIUS_HOME=$(pwd)
 export TVM_HOME=/path/to/tvm
 export TORCH_HOME=/path/to/pytorch
 export BOOST_HOME=/path/to/boost
-./scripts/build_colsys.sh $COLSYS_HOME $TVM_HOME $TORCH_HOME $BOOST_HOME
+./scripts/build_sirius.sh $SIRIUS_HOME $TVM_HOME $TORCH_HOME $BOOST_HOME
 ```
 
 4. [Only required for Triton UM+MPS] Clone and build [Triton TensorRT UM Backend]().  

@@ -352,7 +352,7 @@ void init_config() {
   READ_ENV_BOOL_CONFIG("COLSERVE_LOG_CONTROLLER", log_controller);
   READ_ENV_BOOL_CONFIG("COLSERVE_LOG_TASK_SWITCH", log_task_switch);
 
-  CHECK(setenv("COLSYS_PORT", cfg::port.c_str(), 1) == 0);
+  CHECK(setenv("SIRIUS_PORT", cfg::port.c_str(), 1) == 0);
 
   if (cfg::serving_llm) {
     if (cfg::enable_train_adjust_balance) {

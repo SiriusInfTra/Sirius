@@ -44,14 +44,14 @@ int main(int argc, char** argv) {
   }
 
 
-  std::string colsys_target = app.colsys_ip + ":" + app.colsys_port;
+  std::string sirius_target = app.sirius_ip + ":" + app.sirius_port;
   std::string triton_target = app.triton_ip + ":" + app.triton_port;
-  LOG(INFO) << "Connect to " << colsys_target;
+  LOG(INFO) << "Connect to " << sirius_target;
   std::shared_ptr<IWorkload> train_workload;
-  if (!app.colsys_port.empty()) {
-    LOG(INFO) << "Connect to " << colsys_target;
-    train_workload = GetColsysWorkload(
-      grpc::CreateChannel(colsys_target, grpc::InsecureChannelCredentials()),
+  if (!app.sirius_port.empty()) {
+    LOG(INFO) << "Connect to " << sirius_target;
+    train_workload = GetSiriusWorkload(
+      grpc::CreateChannel(sirius_target, grpc::InsecureChannelCredentials()),
       std::chrono::seconds(app.duration),
       app.wait_train_setup_sec + app.wait_stable_before_start_profiling_sec,
       app.infer_timeline
