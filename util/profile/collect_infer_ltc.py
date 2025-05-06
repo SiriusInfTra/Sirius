@@ -13,12 +13,14 @@ parser = argparse.ArgumentParser('Collect inference latency')
 parser.add_argument('-l', '--log', type=str, required=True)
 parser.add_argument('-o', '--output', type=str, required=False)
 parser.add_argument('--slo-output', type=str, required=False)
+parser.add_argument('--llm', action='store_true', help='Whether the model is LLM or not')
 
 args = parser.parse_args()
 
 log_file = args.log
 output_file = args.output
 slo_output_file = args.slo_output
+llm_flag = args.llm
 
 if slo_output_file is not None and pathlib.Path(slo_output_file).is_dir():
     slo_output_file = pathlib.Path(slo_output_file) / 'infer-slo.svg'
@@ -35,10 +37,15 @@ with open(log_file, 'r') as F:
             parse_ltc = False
             continue
         # if 'InferWorker TRACE' in line:
-        mat = re.search(r'\[InferWorker TRACE ([0-9a-zA-Z_\/]+)(-(\d+))?\]', line)
+        if not llm_flag:
+            mat = re.search(r'\[InferWorker TRACE ([0-9a-zA-Z_\/]+)(-(\d+))?\]', line)
+        else:
+            mat = re.search(r'\[InferWorker TRACE ([0-9a-zA-Z_\/\-]+)\]', line)
         if mat is not None:
             parse_ltc = True
             model_name = mat.group(1)
+            if llm_flag:
+                assert is_llm(model_name), f'LLM flag is set but model {model_name} is not LLM'
             continue
         if '=' in line or '[ ' in line or ']' in line:
             parse_ltc = False
