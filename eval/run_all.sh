@@ -223,6 +223,7 @@ for i in `seq 1 1`; do
   
   if $run_llm; then
     llm
+    echo "\n[$i] LLM TEST DONE: $(date)\n"
   fi
 done
 
