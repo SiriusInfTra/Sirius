@@ -393,7 +393,7 @@ for use_triton in [True]:
             'skip_set_mps_thread_percent': skip_set_mps_pct,
             'use_xsched': not use_triton,
             'use_triton': use_triton,
-            'triton_models_nbytes': runner.get_trition_models_MB(0 if not runner.is_four_gpu() else 5),
+            'triton_models_nbytes': runner.get_trition_models_MB(0 if not runner.is_four_gpu() else 10),
             'dynamic_sm_partition': dynamic_sm_partition and not use_triton,
             'has_warmup': True,
             'max_warm_cache_nbytes': int(9 * 1024 ** 3), # not used by triton
