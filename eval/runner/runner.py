@@ -646,7 +646,8 @@ class System:
     def draw_infer_slo(self):
         cmd = (f'python util/profile/collect_infer_ltc.py'
                f' -l {self.exit_log_dir}/workload-log'
-               f' --slo-output {self.exit_log_dir}')
+               f' --slo-output {self.exit_log_dir}'
+               f'{" --llm" if self.serving_llm else ""}')
         print(f'execute {cmd}', end='\n\r')
         os.system(cmd)
 
