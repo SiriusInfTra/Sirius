@@ -92,7 +92,7 @@ export BOOST_HOME=/path/to/boost
 ./scripts/build_sirius.sh $SIRIUS_HOME $TVM_HOME $TORCH_HOME $BOOST_HOME
 ```
 
-4. [Only required for Triton UM+MPS] Clone and build [Triton TensorRT UM Backend]().  
+4. [Only required for Triton UM+MPS] Setup Triton TensorRT backend with Unified Memory support, clone and build [Triton TensorRT UM Backend](https://ipads.se.sjtu.edu.cn:1312/infer-train/triton_tensorrt_um).  
 
 ## Run and Evaluate
 
@@ -125,6 +125,18 @@ resnet152
   device      cuda
   batch-size  4
   num-worker  1
+```
+
+**LLM**
+
+Download Llama2 from Huggingface.
+
+```python
+from transformers import AutoModelForCausalLM
+model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-13b-hf")
+
+config = AutoConfig.from_pretrained('Qwen/Qwen2-0.5B')
+model = AutoModelForCausalLM.from_pretrained('Qwen/Qwen2-0.5B', config=config)
 ```
 
 ### launch server
@@ -186,7 +198,3 @@ efficientnet_v2_s = 115 # 96MB
 densenet161       = 90  # 68MB
 distilbert_base   = 280 # 260MB
 ```
-
-### setup triton tensorrt backend with unified memory support
-
-build and install [TensorRT Backend UM](https://ipads.se.sjtu.edu.cn:1312/infer-train/triton_tensorrt_um).
