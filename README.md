@@ -181,4 +181,6 @@ python eval/overall_v2.py --uniform-v2 --uniform-v2-wkld-types NormalLight \
 
 The evaluation results will be saved in a directory like `log/overall-uniform-v2-1gpu-YYYYMMDD-HHMM/colsys-NormalLight`.
 
+### Artifact Evaluation
+
 Please refer to [./artifact-evaluation/README.md](artifact-evaluation/README.md) for more details on the artifact evaluation process.
