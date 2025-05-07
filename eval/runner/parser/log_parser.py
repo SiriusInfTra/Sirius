@@ -569,7 +569,7 @@ def parse_llm(logs: List[pathlib.Path]):
     df = pd.DataFrame(columns=['TTFT-SLO', 'TBT-SLO', 'Train'],
                       index=['SP-50', 'SP-75', 'Sirius', 'Infer-Only'])
     for log in logs:
-        system, _ = _parse_system_and_trace(TestUnit.LLM)
+        system, _ = _parse_system_and_trace(TestUnit.LLM, log)
         if system is None:
             print(f'Warning: {log} does not match any system')
             continue

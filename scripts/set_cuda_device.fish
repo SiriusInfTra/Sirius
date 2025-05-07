@@ -28,6 +28,14 @@ for i in $argv
     set cur_gpu_uuid (get_gpu_uuid 3)
   else if test $i -eq 3
     set cur_gpu_uuid (get_gpu_uuid 4)
+  else if test $i -eq 4
+    set cur_gpu_uuid (get_gpu_uuid 5)
+  else if test $i -eq 5
+    set cur_gpu_uuid (get_gpu_uuid 6)
+  else if test $i -eq 6
+    set cur_gpu_uuid (get_gpu_uuid 7)
+  else if test $i -eq 7
+    set cur_gpu_uuid (get_gpu_uuid 8)
   else
     echo "Invalid GPU ID: $i"
   end
@@ -41,3 +49,4 @@ end
 
 # Set the environment variable
 export CUDA_VISIBLE_DEVICES=$GPU_UUID
+echo "CUDA_VISIBLE_DEVICES set to: $CUDA_VISIBLE_DEVICES"
