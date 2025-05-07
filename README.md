@@ -98,7 +98,9 @@ $SIRIUS_HOME/scripts/build_sirius.sh $SIRIUS_HOME $TVM_HOME $TORCH_HOME $BOOST_H
 5. [Only required for Triton UM+MPS] Set up Triton TensorRT backend with Unified Memory support. Clone and build [Triton TensorRT UM Backend](https://ipads.se.sjtu.edu.cn:1312/infer-train/triton_tensorrt_um).
 
 ```bash
-bash $SIRIUS_HOME/scripts/build_triton_trt_um.sh
+export TRITON_TRT_UM_HOME=/path/to/triton_tensorrt_um
+export TRITON_TRT_INSTALL_HOME=/path/to/triton_tensorrt_um_install # e.g., $SIRIUS_HOME/triton/tensorrt_um/install
+bash $SIRIUS_HOME/scripts/build_triton_trt_um.sh $TRITON_TRT_UM_HOME $TRITON_TRT_INSTALL_HOME
 ```
 
 5. [Only required for LLM] Install vLLM by compiling from source, clone [xFormer](git@ipads.se.sjtu.edu.cn:infer-train/xformer.git) and [vLLM](git@ipads.se.sjtu.edu.cn:infer-train/tvm.git).
