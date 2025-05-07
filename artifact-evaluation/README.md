@@ -1,11 +1,5 @@
 ## Overview
 
-<style type="text/css">
-u {    
-    border-bottom: 1px dashed #000;
-    text-decoration: none;
-}
-</style>
 
 A bash script ([./eval/run_all.sh](../eval/run_all.sh)) is provided to wrap evaluation scripts, automating the evaluation process and data collection. To run all evaluations, simply execute `bash ./eval/run_all.sh`. The details of each evaluation are described below.
 
