@@ -1,4 +1,4 @@
-## Artifact for paper "<u>#734	Colocating ML Inference and Training with Fast GPU Memory Handover</u>"
+## Artifact for the Paper "<u>#734 Colocating ML Inference and Training with Fast GPU Memory Handover</u>"
 
 <!-- Intro -->
 
@@ -9,28 +9,28 @@
 ```bash
 $ tree --dirsfirst  -L 2 .
 ├── client                      
-├── cmake                       # cmake helper files
-├── common                      # common libraries for infer/train  
+├── cmake                       # CMake helper files
+├── common                      # Common libraries for inference/training
 ├── environment                 # Docker and conda environment files
 ├── eval
-│   ├── runner                  # automic evaluation runner
-│   └── ...                     # evaluation scripts of test cases 
-├── log                         # running logs       
-├── proto                       # grpc proto
-├── pytorch                     # pytorch plugin
+│   ├── runner                  # Automatic evaluation runner
+│   └── ...                     # Evaluation scripts for test cases
+├── log                         # Running logs
+├── proto                       # gRPC proto
+├── pytorch                     # PyTorch plugin
 ├── scripts                    
-├── server                      # inference server 
-│   ├── models                  # contains inference models
+├── server                      # Inference server
+│   ├── models                  # Contains inference models
 │   └── ... 
-├── train                       # pytorch training scripts
-├── third_party/mpool...        # gpu memory pool
+├── train                       # PyTorch training scripts
+├── third_party/mpool...        # GPU memory pool
 └── ...
 ```
 
 ## Hardware Requirements
 
-- 4 * NVIDIA V100 (16GB)
-- 1 * NVIDIA A100 (80GB)
+- 4 x NVIDIA V100 (16GB)
+- 1 x NVIDIA A100 (80GB)
 
 ## Build and Install 
 
@@ -42,18 +42,18 @@ $ tree --dirsfirst  -L 2 .
 
 **Option 2: Build from Dockerfile**
 
-1. Clone the repo and build docker image. `build_docker.sh` will clone the dependencies in `inftra-docker-build`, which is the docker build context. 
+1. Clone the repository and build the Docker image. The `build_docker.sh` script will clone dependencies into `inftra-docker-build`, which serves as the Docker build context.
 
-> [Optional] Copy TVM and Triton models to `inftra-docker-build/tvm-models` and `inftra-docker-build/triton-models` respectively, which will be copy to docker image. 
+> [Optional] Copy TVM and Triton models to `inftra-docker-build/tvm-models` and `inftra-docker-build/triton-models` respectively. These will be copied into the Docker image.
 
-```
+```bash
 git clone --recurse-submodules git@ipads.se.sjtu.edu.cn:infer-train/gpu-colocation.git gpu-col
 bash ./gpu-col/scripts/build_docker.sh
 ```
 
-2. Build Triton TensorRT UM docker image.
+2. Build Triton TensorRT UM Docker image.
 
-```
+```bash
 bash ./gpu-col/scripts/build_triton_trt_um_docker.sh
 ```
 
@@ -65,10 +65,11 @@ bash ./gpu-col/scripts/build_triton_trt_um_docker.sh
 
 **Create Environment and Build System**:
 
-1. Prepare a new conda environment and install python packages, then clone the repo.
+1. Prepare a new conda environment, install Python packages, and then clone the repository.
 
 ```bash
 conda create -n colserve python=3.12
+conda activate colserve
 conda install -y conda-forge::python-devtools nvitop conda-forge::c-ares
 pip install -r environment/requirements.txt
 
@@ -76,16 +77,16 @@ export SIRIUS_HOME=/path/to/clone/repo
 git clone --recurse-submodules git@ipads.se.sjtu.edu.cn:infer-train/gpu-colocation.git $SIRIUS_HOME
 ```
 
-2. Install `Boost>=1.80` from compiling source (boost installed from apt/conda may require higher version of gcc).  
+2. Install `Boost>=1.80` by compiling from source (Boost installed via apt/conda might require a higher GCC version).
 
 ```bash
 export BOOST_HOME=/path/to/install/boost
 $SIRIUS_HOME/scripts/install_boost.sh $BOOST_HOME
 ```
 
-2. Clone and build [tvm](https://ipads.se.sjtu.edu.cn:1312/infer-train/tvm) for inference; [pytorch](https://ipads.se.sjtu.edu.cn:1312/infer-train/pytorch) and [torchvision](https://github.com/pytorch/vision/tree/v0.13.1) for training. Note CUDA backend should be enabled. Pay attention to pytorch `GLIBCXX_USE_CXX11_ABI` flag, which may cause ABI issues. To accelerate building, set `TORCH_CUDA_ARCH_LIST` flag to gpu computing capability, e.g., `TORCH_CUDA_ARCH_LIST=7.0`.
+3. Clone and build [TVM](https://ipads.se.sjtu.edu.cn:1312/infer-train/tvm) for inference, and [PyTorch](https://ipads.se.sjtu.edu.cn:1312/infer-train/pytorch) and [TorchVision](https://github.com/pytorch/vision/tree/v0.13.1) for training. Ensure the CUDA backend is enabled. Pay attention to the PyTorch `GLIBCXX_USE_CXX11_ABI` flag, which can cause ABI issues. To accelerate the build, set the `TORCH_CUDA_ARCH_LIST` flag to your GPU's compute capability (e.g., `TORCH_CUDA_ARCH_LIST=7.0` for V100).
 
-3. Set `TVM_HOME` environment, run `echo $TVM_HOME` and `echo $CONDA_REFIX` to check. Then configure cmake.
+4. Set the `TVM_HOME` environment variable. Verify by running `echo $TVM_HOME` and `echo $CONDA_PREFIX`. Then, configure CMake.
 
 ```bash
 export TVM_HOME=/path/to/tvm
@@ -94,7 +95,7 @@ export BOOST_HOME=/path/to/boost
 $SIRIUS_HOME/scripts/build_sirius.sh $SIRIUS_HOME $TVM_HOME $TORCH_HOME $BOOST_HOME
 ```
 
-4. [Only required for Triton UM+MPS] Setup Triton TensorRT backend with Unified Memory support, clone and build [Triton TensorRT UM Backend](https://ipads.se.sjtu.edu.cn:1312/infer-train/triton_tensorrt_um).  
+5. [Only required for Triton UM+MPS] Set up Triton TensorRT backend with Unified Memory support. Clone and build [Triton TensorRT UM Backend](https://ipads.se.sjtu.edu.cn:1312/infer-train/triton_tensorrt_um).
 
 ```bash
 bash $SIRIUS_HOME/scripts/build_triton_trt_um.sh
@@ -114,7 +115,7 @@ bash $SIRIUS_HOME/scripts/build_vllm.sh $VLLM_HOME $XFORMER_HOME
 
 **TVM Models**
 
-Compile models using TVM (refer to [util/prepare_model_store](util/prepare_model_store)). TVM models (i.e., `mod.josn`, `mod.params` and `mod.so`) are stored at `server/models`, as shown below. 
+Compile models using TVM (refer to [util/prepare_model_store](util/prepare_model_store)). TVM models (i.e., `mod.json`, `mod.params`, and `mod.so`) are stored in `server/models`, as shown below. 
 
 ```
 server/models
@@ -128,7 +129,7 @@ server/models
 
 **Triton Models**
 
-Triton models are stored at `server/triton_models`, as shown below. The model have a directory of the trtion compiled model (`model.plan`and `config.pbtxt`)
+Triton models are stored in `server/triton_models`. Each model has a directory containing the Triton compiled model (`model.plan` and `config.pbtxt`), as shown below.
 
 ```
 ├── densenet161
@@ -143,7 +144,7 @@ Triton models are stored at `server/triton_models`, as shown below. The model ha
 └── config.conf
 ```
 
-`config.conf` is used to configure memory usage (MiB) of model.
+`config.conf` is used to configure the memory usage (in MiB) for each model.
 
 ```ini
 resnet152         = 345
@@ -156,7 +157,7 @@ distilbert_base   = 278
 
 **LLM**
 
-Download Llama2 from Huggingface.
+Download Llama2 from Hugging Face.
 
 ```python
 from transformers import AutoConfig, AutoModelForCausalLM
@@ -166,31 +167,16 @@ config = AutoConfig.from_pretrained('Qwen/Qwen2-0.5B')
 model = AutoModelForCausalLM.from_pretrained('Qwen/Qwen2-0.5B', config=config)
 ```
 
-### launch server
+### Run Benchmark
 
-```
-GLOG_logtostderr=1 ./build/server/colserve
-```
+The evaluation is fully automated by the script at [./eval/runner](./eval/runner). This script will automatically launch GPU MPS, Sirius's inference server, PyTorch training tasks, and inference workloads.
 
-Options
-```
--m,--mode TEXT:{normal,task-switch-l1,task-switch-l2,task-switch-l3,colocate-l2}, server mode, see detail in server/config.h, default is normal
---use-sta, use shared tensor allocator, default is 1           
--p,--port, gRPC server port, default is 8080
-```
+For example, to evaluate Sirius with the **Light** workload:
 
-### launch client/benchmark
-
-```
-GLOG_logtostderr=1 ./build/hybrid_workload \
-  -p 8080 \ # gRPC port
-  -d 30   \ # request duration in seconds
-  -c 16   \ # the number of concurrency
-  --infer --infer-model resnet152 \
-  --train --train-model resnet --num-epoch 5 --batch-size 16 \
-  --show-result 10 \ # show first 10 elem in result tensor
-  -v 1      # verbose
+```bash
+source ./scripts/set_cuda_device.sh 0
+python eval/overall_v2.py --uniform-v2 --uniform-v2-wkld-types NormalLight \
+    --sirius --skip-set-mps-pct
 ```
 
-See help for details.
-
+The evaluation results will be saved in a directory like `log/overall-uniform-v2-1gpu-YYYYMMDD-HHMM/colsys-NormalLight`.
