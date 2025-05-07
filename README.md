@@ -38,6 +38,21 @@ $ tree --dirsfirst  -L 2 .
 
 **Option 1: Pull from Docker Hub**
 
+Pull the pre-built Docker images from Docker Hub. The script `./scripts/docker.sh` is provided as a wrapper for Docker commands.
+
+```bash
+docker pull siriusinftra/sirius:latest
+docker pull siriusinftra/triton-trt-um:latest # Triton TensorRT UM backend
+
+bash ./scripts/docker.sh
+```
+
+The project is located at `/gpu-col` within the Docker container. TVM and Triton models are pre-installed in this image. 
+
+Before running the system, activate the conda environment (e.g., `conda activate colserve`). 
+
+To evaluate Sirius, refer to [Run Benchmark](#run-and-evaluate) and [Artifact Evaluation](artifact-evaluation/README.md) for more details.
+
 
 
 **Option 2: Build from Dockerfile**
