@@ -277,7 +277,7 @@ bp::list KVCachePool::AllocKVCachePage(size_t page_nbytes, size_t n) {
   }
   bp::list ret;
   for (auto k : boost::irange(n)) {
-    auto block = mem_pool->Alloc(page_nbytes, sta::MemType::kInfer, false);
+    auto block = mem_pool->Alloc(page_nbytes, page_nbytes, sta::MemType::kInfer, false);
     int64_t blk = block->block->addr_offset; 
     CHECK(kv_cache_pool_->kv_cache_pages_.insert(std::make_pair(blk, block)).second);
     ret.append(blk);
