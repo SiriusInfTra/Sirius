@@ -17,7 +17,7 @@ class TrtModelConfig(Enum):
     }
 
 def convert_to_tensorrt(model_name: str, batch_size: int, model_config: TrtModelConfig) -> bool:
-    if 'COLSYS_TENSORRT_HOME' not in os.environ:
+    if 'SIRIUS_TENSORRT_HOME' not in os.environ:
         return False
     trt_model_path = f"server/triton_models/{model_name}/1/model.plan"
     trt_config_path = f"server/triton_models/{model_name}/config.pbtxt"
@@ -37,7 +37,7 @@ instance_group [
         os.makedirs(os.path.dirname(trt_model_path))
     if not os.path.exists(os.path.dirname(trt_config_path)):
         os.makedirs(os.path.dirname(trt_config_path))
-    tensorrt_home = os.environ['COLSYS_TENSORRT_HOME']
+    tensorrt_home = os.environ['SIRIUS_TENSORRT_HOME']
     amd64_home = f'{tensorrt_home}/targets/x86_64-linux-gnu'
     envs = os.environ.copy()
     if 'LD_LIBRARY_PATH' in envs:

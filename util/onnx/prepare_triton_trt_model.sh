@@ -1,13 +1,13 @@
-if [ -z "$COLSYS_TENSORRT_HOME" ]; then
-  echo "Please set the environment variable COLSYS_TENSORRT_HOME \
+if [ -z "$SIRIUS_TENSORRT_HOME" ]; then
+  echo "Please set the environment variable SIRIUS_TENSORRT_HOME \
 to the root of the TensorRT installation."
   exit 1
 fi
 
-if [ -f "$COLSYS_TENSORRT_HOME/bin/trtexec" ]; then
-  echo "TensorRT executable found at: $COLSYS_TENSORRT_HOME/bin/trtexec"
+if [ -f "$SIRIUS_TENSORRT_HOME/bin/trtexec" ]; then
+  echo "TensorRT executable found at: $SIRIUS_TENSORRT_HOME/bin/trtexec"
 else
-  echo "TensorRT executable not found at: $COLSYS_TENSORRT_HOME/bin/trtexec"
+  echo "TensorRT executable not found at: $SIRIUS_TENSORRT_HOME/bin/trtexec"
   exit 1
 fi
 
@@ -23,7 +23,7 @@ models=(
   "resnet152"
 )
 
-# TMP_LOG=/tmp/colsys-triton-trt-model-log
+# TMP_LOG=/tmp/sirius-triton-trt-model-log
 
 for model in "${models[@]}"; do
   cmd="python $SCRIPT_DIR/$model.py"

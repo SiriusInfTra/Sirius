@@ -22,8 +22,9 @@ from .hyper_workload import (
 )
 from .config import (
     get_global_seed, get_binary_dir,
-    get_host_name, is_meepo5,
-    get_tensorrt_backend_unified_memory_path
+    get_host_name, is_meepo5, is_inside_docker,
+    get_tensorrt_backend_unified_memory_path,
+    DOCKER_TRITON_MODEL_WKSP, HOST_DOCKER_RUN_DIR, DOCKER_GPU_COL_LOG_DIR
 )
 
 def get_num_gpu():
@@ -330,6 +331,8 @@ class System:
                         env=os.environ.copy())
                     while True:
                         if self.mps_server.poll() is not None:
+                            print(f'\n\x1b[33;1mFail to start MPS, rm MPS directory {os.environ["CUDA_MPS_PIPE_DIRECTORY"]}\x1b[0m')
+                            os.system(f'rm -rf {os.environ["CUDA_MPS_PIPE_DIRECTORY"]}')
                             raise RuntimeError("MPS exited")
                         log_file.flush()
                         with open(mps_log, 'r') as f:
@@ -461,6 +464,15 @@ class System:
                                            env=env_copy)
 
         if self.use_triton:
+            def _get_triton_docker_image_name():
+                if not is_inside_docker():
+                    return 'nvcr.io/nvidia/tritonserver:23.12-py3'
+                else:
+                    if not 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:
+                        return 'nvcr.io/nvidia/tritonserver:23.12-py3'
+                    else:
+                        return 'siriusinftra/triton-trt-um:latest'
+
             # with open(triton_log, "w") as log_file:
             with contextlib.nullcontext():
 
@@ -483,26 +495,49 @@ class System:
                         return []
                 for config in self.infer_model_config:
                     model_lists.extend(parse_and_generate_models(config))
-                triton_model_dir = os.path.join(_project_root, f'triton_models-{self.port}')
-                docker_model_dir = os.path.join('/colsys', f'triton_models-{self.port}')
+                if not is_inside_docker():
+                    triton_model_dir = os.path.join(_project_root, f'triton_models-{self.port}')
+                else:
+                    triton_model_dir = os.path.join(_project_root, DOCKER_TRITON_MODEL_WKSP, 
+                                                    f'triton_models-{self.port}')
+                docker_model_dir = os.path.join('/sirius', f'triton_models-{self.port}')
                 print(f'Generate triton model repo for {model_lists}.', end='\n\r')
                 cp_model(model_lists, get_num_gpu(), triton_model_dir, self.triton_models_nbytes)
+                if is_inside_docker():
+                    # client will use this path
+                    link_triton_model_dir = os.path.join(_project_root, f'triton_models-{self.port}')
+                    if os.path.exists(link_triton_model_dir):
+                        os.unlink(link_triton_model_dir)
+                    print(f'Create link {link_triton_model_dir} -> {triton_model_dir}')
+                    os.symlink(triton_model_dir, link_triton_model_dir)
                 cmd = ['docker', 'run', '-it', '--user', f'{os.getuid()}:{os.getgid()}',
-                       '--name', f'colsys-triton-{self.triton_port}',
+                       '--name', f'sirius-triton-{self.triton_port}',
                        '--rm', '--gpus=all', '--ipc=host',
                        '-p', f'{self.triton_port}:8001',
-                       '-v', f'{_project_root}:/colsys',
-                       '-v', os.environ['HOME'] + ':' + os.environ['HOME'],
-                       ]
-                if 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ:
+                    ]
+                if not is_inside_docker():
+                    cmd += ['-v', f'{_project_root}:/sirius',
+                            '-v', os.environ['HOME'] + ':' + os.environ['HOME'],]
+                else:
+                    # HOST_DOCKER_RUN_DIR = '/disk3/wjl/gpu-col-docker'
+                    assert HOST_DOCKER_RUN_DIR is not None, (
+                        "set HOST_DOCKER_RUN_DIR to docker run dir, "
+                        "and ensure the triton model/log/mps dir exist and are mounted.")
+                    host_triton_model_dir = os.path.join(
+                        HOST_DOCKER_RUN_DIR, DOCKER_TRITON_MODEL_WKSP, 
+                        f'triton_models-{self.port}')
+                    host_log_dir = os.path.join(
+                        HOST_DOCKER_RUN_DIR, DOCKER_GPU_COL_LOG_DIR)
+                    cmd += ['-v', f'{host_triton_model_dir}:/sirius/triton_models-{self.port}',
+                            '-v', f'{host_log_dir}:/sirius/log']  
+                if 'STA_RAW_ALLOC_UNIFIED_MEMORY' in os.environ and not is_inside_docker():
                     tensorrt_backend_um_path = get_tensorrt_backend_unified_memory_path()
                     cmd += ['-v', f'{tensorrt_backend_um_path}/backends/tensorrt:/opt/tritonserver/backends/tensorrt']
-                    # cmd += ['-v', '/disk2/wyk/tensorrt_backend/install/backends/tensorrt:/opt/tritonserver/backends/tensorrt']
                 for key, value in os.environ.items():
                     if key.startswith('CUDA_'):
                         cmd += ['-e', f'{key}={value}']
                 cmd += [
-                    'nvcr.io/nvidia/tritonserver:23.12-py3',
+                    f'{_get_triton_docker_image_name()}',
                     'tritonserver',
                     f'--model-load-thread-count={4 * get_num_gpu()}',
                     f'--model-repository={docker_model_dir}']
@@ -514,7 +549,7 @@ class System:
         with open(f'{self.log_dir}/cmd-trace', 'w') as f:
             f.write("\n\n".join(self.cmd_trace))
 
-        print('Wait ColSys Server start...', end='\n\r')
+        print('Wait Sirius Server start...', end='\n\r')
         while True:
             with open(server_log, "r") as log_file:
                 if self.server.poll() is not None:
@@ -563,7 +598,7 @@ class System:
                 os.system(cmd)
         self.infer_model_config_path = None
         if self.triton_server is not None:
-            stop_triton = subprocess.Popen(['docker', 'stop', f'colsys-triton-{self.triton_port}'])
+            stop_triton = subprocess.Popen(['docker', 'stop', f'sirius-triton-{self.triton_port}'])
             stop_triton.wait()
             self.triton_server = None
         if self.mps_server is not None:
@@ -611,7 +646,8 @@ class System:
     def draw_infer_slo(self):
         cmd = (f'python util/profile/collect_infer_ltc.py'
                f' -l {self.exit_log_dir}/workload-log'
-               f' --slo-output {self.exit_log_dir}')
+               f' --slo-output {self.exit_log_dir}'
+               f'{" --llm" if self.serving_llm else ""}')
         print(f'execute {cmd}', end='\n\r')
         os.system(cmd)
 

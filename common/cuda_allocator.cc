@@ -106,11 +106,23 @@ CUDAMemPool::CUDAMemPool(int device_id, std::size_t nbytes,
 
 std::shared_ptr<CUDAMemPool::PoolEntry>
 CUDAMemPool::Alloc(size_t nbytes, MemType mtype, bool allow_nullptr) {
-  return AllocWithStream(nbytes, mtype, 0, allow_nullptr);
+  return AllocWithStream(nbytes, 512, mtype, 0, allow_nullptr);
 }
+
+
+std::shared_ptr<CUDAMemPool::PoolEntry>
+CUDAMemPool::Alloc(size_t nbytes, size_t alignment, MemType mtype, bool allow_nullptr) {
+  return AllocWithStream(nbytes, alignment, mtype, 0, allow_nullptr);
+}
+
 
 std::shared_ptr<CUDAMemPool::PoolEntry> 
 CUDAMemPool::AllocWithStream(std::size_t nbytes, MemType mtype, 
+                             cudaStream_t stream, bool allow_nullptr) {
+  return AllocWithStream(nbytes, 512, mtype, stream, allow_nullptr);                            
+}
+std::shared_ptr<CUDAMemPool::PoolEntry> 
+CUDAMemPool::AllocWithStream(std::size_t nbytes, size_t alignment, MemType mtype, 
                              cudaStream_t stream, bool allow_nullptr) {
   CHECK(CUDAMemPool::IsEnable());
   CHECK(mtype == MemType::kInfer || !allow_nullptr) << "currently deprecated";
@@ -124,7 +136,7 @@ CUDAMemPool::AllocWithStream(std::size_t nbytes, MemType mtype,
   std::byte* ptr;
   if (mtype == MemType::kInfer) {
     mem_block = tvm_allocator_->GetObject()->Alloc(
-        nbytes, 512, stream, 0);
+        nbytes, alignment, stream, 0);
     if (allow_nullptr && !mem_block) {
       return nullptr;
     }
@@ -132,7 +144,7 @@ CUDAMemPool::AllocWithStream(std::size_t nbytes, MemType mtype,
           + mem_block->addr_offset;
   } else if (mtype == MemType::kTrain) {
     mem_block = torch_allocator_->GetObject()->Alloc(
-        nbytes, 512, stream, mpool::VMMAllocator::ALLOC_TRY_EXPAND_VA);
+        nbytes, alignment, stream, mpool::VMMAllocator::ALLOC_TRY_EXPAND_VA);
     ptr = torch_allocator_->GetObject()->GetBasePtr() 
           + mem_block->addr_offset;
     DLOG(INFO) << "Torch Alloc: " << ptr 

@@ -13,7 +13,7 @@ for model_name in os.listdir(work_dir):
         new_model_dir = os.path.join(model_dir, os.pardir, f'{model_name}-{n}')
         new_model_dir = os.path.abspath(new_model_dir)
         if os.path.exists(new_model_dir):
-            print(f"模型目录 {new_model_dir} 已经存在，跳过。")
+            print(f"Model directory {new_model_dir} already exists, skipping.")
             continue
         os.mkdir(new_model_dir)
         data_name = '1'
@@ -27,6 +27,6 @@ for model_name in os.listdir(work_dir):
         with open(config_path, 'r') as file:
             config_data = file.read()
         new_config_data = config_data.replace(f'name: "{model_name}"', f'name: "{model_name}-{n}"')
-        # 写回修改后的内容
+        # Write back the modified content
         with open(config_path, 'w') as file:
             file.write(new_config_data)

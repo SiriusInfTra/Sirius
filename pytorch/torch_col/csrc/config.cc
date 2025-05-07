@@ -111,8 +111,8 @@ void TorchColConfig::InitConfig(int train_rank_, int train_world_size_) {
       "================ TORCH_COL CONFIG [Rank %d PID %d | PORT %d ] ================") 
         % train_rank 
         % getpid()
-        % (std::getenv("COLSYS_PORT") == nullptr 
-           ? 0 : std::stoi(std::getenv("COLSYS_PORT"))));
+        % (std::getenv("SIRIUS_PORT") == nullptr 
+           ? 0 : std::stoi(std::getenv("SIRIUS_PORT"))));
 
   std::stringstream config_ss;
   config_ss << config_head << std::endl;

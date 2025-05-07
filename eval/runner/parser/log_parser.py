@@ -47,8 +47,8 @@ def _parse_system_and_trace_helper(log: Union[str, pathlib.Path]):
     system, trace = None, None
 
     # system name
-    if 'colsys' in log_dir_name:
-        system = 'ColSys'
+    if 'sirius' in log_dir_name:
+        system = 'Sirius'
     elif 'infer-only' in log_dir_name:
         system = 'Infer-Only'
     elif 'task-switch' in log_dir_name:
@@ -108,8 +108,8 @@ def _parse_system_and_trace(unit: TestUnit, log: pathlib.Path):
         else:
             assert _parse_num_gpu(log_str) > 1, f"Log {log} is not multi gpu"
         _, trace = _parse_system_and_trace_helper(log)
-        if 'colsys' in log_str:
-            system = 'colsys'
+        if 'sirius' in log_str:
+            system = 'sirius'
         elif 'strawman' in log_str:
             system = 'naive'
         return system, trace
@@ -136,7 +136,7 @@ def _parse_train_local_thpts(log: pathlib.Path):
     with open(train_thpt, 'r') as f:
         for line in f.readlines():
             m = re.search(
-                r'\[Rank (\d) \| [a-zA-Z-]+\] thpt: ([0-9]+\.[0-9]+) / ([0-9]+\.[0-9]+|nan) it/sec', 
+                r'\[Rank (\d) \| [0-9a-zA-Z-]+\] thpt: ([0-9]+\.[0-9]+) / ([0-9]+\.[0-9]+|nan) it/sec', 
                 line)
             if m:
                 rank = int(m.group(1))
@@ -287,7 +287,7 @@ def parse_over_all_single_gpu(logs: List[pathlib.Path]):
         return
 
     idx = []
-    for sys in ['ColSys', 'Infer-Only', 'SP-I', 'SP-F', 'TaskSwitch', 'UM+MPS']:
+    for sys in ['Sirius', 'Infer-Only', 'SP-I', 'SP-F', 'TaskSwitch', 'UM+MPS']:
         for metric in ['Infer', 'SLO', 'Train']:
             idx.append((sys, metric))
 
@@ -329,7 +329,7 @@ def parse_over_all_multi_gpu(logs: List[pathlib.Path]):
         print('Warning: over_all_multi_gpu: logs are empty')
         return
 
-    idx = ['SP-50', 'SP-75', 'ColSys', 'TaskSwitch', 'UM+MPS', 'Infer-Only']
+    idx = ['SP-50', 'SP-75', 'Sirius', 'TaskSwitch', 'UM+MPS', 'Infer-Only']
     columns = ['Infer', 'Train', 'SLO']
     df = pd.DataFrame(columns=columns, index=idx)
 
@@ -420,7 +420,7 @@ def _parse_ablation_watermark(logs: List[pathlib.Path], parent_dir: pathlib.Path
                 print(f'Warning: cannot parse cache size from {log}')
                 continue
             cache_size = m.group(5)
-            p99, slo, thpt = _parse_system_performance('ColSys', None, log)
+            p99, slo, thpt = _parse_system_performance('Sirius', None, log)
             df.loc[cache_size, 'P99'] = p99
             df.loc[cache_size, 'Thpt'] = thpt
             df.loc[cache_size, 'Load'] = f'{_parse_infer_load_ltc(log):.1f}'
@@ -447,7 +447,7 @@ def _parse_ablation_idle_time(logs: List[pathlib.Path], parent_dir: pathlib.Path
                 print(f'Warning: cannot parse idle time from {log}')
                 continue
             idle_time = float(m.group(1))
-            p99, slo, thpt = _parse_system_performance('ColSys', None, log)
+            p99, slo, thpt = _parse_system_performance('Sirius', None, log)
             df.loc[idle_time, 'P99'] = p99
             df.loc[idle_time, 'Thpt'] = thpt
             df.loc[idle_time, 'ColdStart'] = f'{_parse_infer_cold_start_ratio(log):.2f}'
@@ -496,9 +496,9 @@ def parse_unbalance(logs: List[pathlib.Path]):
 
     df = pd.DataFrame(columns=['GPU0', 'GPU1'], index=['BAL', 'IMBAL'])
     for log in logs:
-        if 'colsys-balance' in log.name:
+        if 'sirius-balance' in log.name:
             idx = 'BAL'
-        elif 'colsys-imbalance' in log.name:
+        elif 'sirius-imbalance' in log.name:
             idx = 'IMBAL'
         else:
             print(f'Warning: {log} does not match any')
@@ -567,9 +567,9 @@ def parse_llm(logs: List[pathlib.Path]):
         return
     
     df = pd.DataFrame(columns=['TTFT-SLO', 'TBT-SLO', 'Train'],
-                      index=['SP-50', 'SP-75', 'ColSys', 'Infer-Only'])
+                      index=['SP-50', 'SP-75', 'Sirius', 'Infer-Only'])
     for log in logs:
-        system, _ = _parse_system_and_trace(TestUnit.LLM)
+        system, _ = _parse_system_and_trace(TestUnit.LLM, log)
         if system is None:
             print(f'Warning: {log} does not match any system')
             continue

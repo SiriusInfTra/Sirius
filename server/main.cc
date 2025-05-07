@@ -334,6 +334,12 @@ void init_config() {
     cfg::log_memory_adjust = std::string(col_log_adjust_env) == "1";
   }
 
+  // disable dcgm in docker
+  if (std::filesystem::exists("/.dockerenv")) {
+    cfg::profile_gpu_smact = false;
+    cfg::profile_gpu_util = false;
+  }
+
   READ_ENV_BOOL_CONFIG("COLSERVE_LOG_GRPC", log_grpc);
   READ_ENV_BOOL_CONFIG("COLSERVE_LOG_TRAIN_INIT", log_train_init);
   READ_ENV_BOOL_CONFIG("COLSERVE_LOG_WARM_CACHE", log_warm_cache);
@@ -346,7 +352,7 @@ void init_config() {
   READ_ENV_BOOL_CONFIG("COLSERVE_LOG_CONTROLLER", log_controller);
   READ_ENV_BOOL_CONFIG("COLSERVE_LOG_TASK_SWITCH", log_task_switch);
 
-  CHECK(setenv("COLSYS_PORT", cfg::port.c_str(), 1) == 0);
+  CHECK(setenv("SIRIUS_PORT", cfg::port.c_str(), 1) == 0);
 
   if (cfg::serving_llm) {
     if (cfg::enable_train_adjust_balance) {

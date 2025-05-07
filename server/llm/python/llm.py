@@ -21,8 +21,8 @@ class LLMInference:
 
         # print("Model Name: ", model_name)
         # if os.environ['https_proxy'] is None:
-        if 'https_proxy' not in os.environ:
-            os.environ['https_proxy'] = 'http://127.0.0.1:7890'
+        # if 'https_proxy' not in os.environ:
+        #     os.environ['https_proxy'] = 'http://127.0.0.1:7890'
         llm_server.info(f"LLMInfer: Model Name: {self.model_name}")
         engine_args = EngineArgs(
             model=self.model_name,
@@ -35,7 +35,7 @@ class LLMInference:
         )
         self.llm_engine = LLMEngine.from_engine_args(engine_args)
 
-        del os.environ['https_proxy']
+        # del os.environ['https_proxy']
 
     def _process_args(self):
         if self.max_model_len == 0:

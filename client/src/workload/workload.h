@@ -1,5 +1,5 @@
-#ifndef COLSYS_IWORKLOAD_H__
-#define COLSYS_IWORKLOAD_H__
+#ifndef SIRIUS_IWORKLOAD_H__
+#define SIRIUS_IWORKLOAD_H__
 
 #include <grpcpp/channel.h>
 #include <memory>
@@ -33,7 +33,7 @@ class IWorkload {
   virtual void Report(int verbose = false, std::ostream &os = std::cout) = 0;
 };
 
-std::unique_ptr<IWorkload> GetColsysWorkload(
+std::unique_ptr<IWorkload> GetSiriusWorkload(
     std::shared_ptr<grpc::Channel> channel,
     std::chrono::seconds duration, double delay_before_profile,
     const std::string &infer_timeline);

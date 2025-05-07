@@ -186,13 +186,13 @@ std::pair<int64_t, int64_t> KVCachePool::GetNumLayerBlockInfo() {
         kv_cache_pool_->num_kvc_blks_ * kv_cache_pool_->num_layer_;
     kv_cache_pool_->num_used_layer_blks_ = 0;
 
-    auto num_vllm_blk_env = std::getenv("COLSYS_VLLM_NUM_LAYER_BLOCK");
+    auto num_vllm_blk_env = std::getenv("SIRIUS_VLLM_NUM_LAYER_BLOCK");
     if (num_vllm_blk_env != nullptr) {
       auto num_vllm_blk = std::stoll(num_vllm_blk_env);
       CHECK_GT(num_vllm_blk, 0);
       CHECK_LE(num_vllm_blk, kv_cache_pool_->num_free_layer_blks_);
       kv_cache_pool_->num_free_layer_blks_ = num_vllm_blk;
-      LOG(INFO) << "[GetNumFreeLayerBlocks] COLSYS_VLLM_NUM_LAYER_BLOCK env: "
+      LOG(INFO) << "[GetNumFreeLayerBlocks] SIRIUS_VLLM_NUM_LAYER_BLOCK env: "
                 << " num_free_layer_blks " 
                 << kv_cache_pool_->num_free_layer_blks_;
     }
@@ -277,7 +277,7 @@ bp::list KVCachePool::AllocKVCachePage(size_t page_nbytes, size_t n) {
   }
   bp::list ret;
   for (auto k : boost::irange(n)) {
-    auto block = mem_pool->Alloc(page_nbytes, sta::MemType::kInfer, false);
+    auto block = mem_pool->Alloc(page_nbytes, page_nbytes, sta::MemType::kInfer, false);
     int64_t blk = block->block->addr_offset; 
     CHECK(kv_cache_pool_->kv_cache_pages_.insert(std::make_pair(blk, block)).second);
     ret.append(blk);

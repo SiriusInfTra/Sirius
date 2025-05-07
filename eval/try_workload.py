@@ -16,7 +16,7 @@ run_comm.SkewedConfig_v2.duration = 300
 run_comm.SkewedConfig_v2.interval_sec = 20
 
 
-run_colsys = True
+run_sirius = True
 run_static_partition = True
 
 normal_wklds = wkld_coll.get_all_normal_workload(name_filter=r'LogNormal|Weibull')
@@ -32,7 +32,7 @@ wklds = {**normal_wklds, **skew_wklds}
 print('try workload: ', wklds.keys())
 
 # for wkld_name, wkld in wklds.items():
-if run_colsys:
+if run_sirius:
     system_config = {
         'mode': System.ServerMode.ColocateL1,
         'use_sta': True,
@@ -58,7 +58,7 @@ if run_colsys:
             system = System(port=run_comm.UniformConfig_v2.port,
                             **system_config)
             run_comm.run(system, workload, server_model_config,
-                        "try-workload", f"colsys-{wkld_name}")
+                        "try-workload", f"sirius-{wkld_name}")
             
     for wkld_name, wkld in skew_wklds.items():
         # with mps_thread_percent(50):
@@ -69,7 +69,7 @@ if run_colsys:
             system = System(port=run_comm.SkewedConfig_v2.port,
                             **system_config)
             run_comm.run(system, workload, server_model_config,
-                        "try-workload", f"colsys-{wkld_name}")
+                        "try-workload", f"sirius-{wkld_name}")
 
 
 if run_static_partition:
@@ -168,11 +168,11 @@ if run_static_partition:
 
 # df = pd.DataFrame({
 #     'Unit': [],
-#     'colsys-P99': [],
+#     'sirius-P99': [],
 #     'SP-F-P99': [],
 #     'SP-I-P99': [],
 
-#     'colsys-Thpt': [],
+#     'sirius-Thpt': [],
 #     'SP-F-Thpt': [],
 #     'SP-I-Thpt': [],
 # })
@@ -183,11 +183,11 @@ if run_static_partition:
 # test_units = list(set(test_units))
 
 # for unit in test_units:
-#     colsys_p99, colsys_thpt = get_perf(pathlib.Path(log_root) / f'colsys-{unit}')
+#     sirius_p99, sirius_thpt = get_perf(pathlib.Path(log_root) / f'sirius-{unit}')
 #     sp_f_p99, sp_f_thpt = get_perf(pathlib.Path(log_root) / f'static-partition-F-{unit}')
 #     sp_i_p99, sp_i_thpt = get_perf(pathlib.Path(log_root) / f'static-partition-I-{unit}')
 #     df = pd.concat([df, pd.DataFrame(
-#         [[unit, colsys_p99, sp_f_p99, sp_i_p99, colsys_thpt, sp_f_thpt, sp_i_thpt]], 
+#         [[unit, sirius_p99, sp_f_p99, sp_i_p99, sirius_thpt, sp_f_thpt, sp_i_thpt]], 
 #         columns=df.columns
 #     )], ignore_index=True)
 

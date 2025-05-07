@@ -4,6 +4,8 @@ fi
 
 export TENSORRT_BACKEND_UNIFIED_MEMORY_PATH=$(pwd)/triton/tensorrt_um/install
 
+ON_V100_PLATFORM=$(nvidia-smi -L | grep -c "V100")
+
 # Function to display help information
 show_help() {
   echo "Usage: $(basename $0) [OPTIONS]"
@@ -17,6 +19,7 @@ show_help() {
   echo "  --ablation             Run ablation study"
   echo "  --unbalance            Run unbalance test"
   echo "  --memory-pressure      Run memory pressure test"
+  echo "  --llm                  Run LLM test"
   echo "  --all                  Run all tests"
   echo
   echo "If no options are specified, all tests will be run."
@@ -29,6 +32,7 @@ run_breakdown=false
 run_ablation=false
 run_unbalance=false
 run_memory_pressure=false
+run_llm=false
 
 # Parse command line arguments
 if [ $# -eq 0 ]; then
@@ -39,6 +43,7 @@ if [ $# -eq 0 ]; then
   run_ablation=true
   run_unbalance=true
   run_memory_pressure=true
+  run_llm=true
 else
   # Process arguments
   for arg in "$@"
@@ -66,6 +71,9 @@ else
       --memory-pressure)
         run_memory_pressure=true
         ;;
+      --llm)
+        run_llm=true
+        ;;
       --all)
         run_overall_single=true
         run_overall_multi=true
@@ -73,14 +81,28 @@ else
         run_ablation=true
         run_unbalance=true
         run_memory_pressure=true
+        run_llm=true
         ;;
       *)
         echo "Unknown argument: $arg"
-        echo "Available arguments: --overall-single-gpu --overall-multi-gpu --breakdown --ablation --unbalance --memory-pressure --all"
+        echo "Available arguments: --overall-single-gpu --overall-multi-gpu --breakdown --ablation --unbalance --memory-pressure --llm --all"
         exit 1
         ;;
     esac
   done
+fi
+
+# Disable incompatible tests based on platform
+if [ "$ON_V100_PLATFORM" -eq 0 ]; then
+  # Not on V100 platform, disable specific tests
+  run_overall_single=false
+  run_overall_multi=false
+  run_breakdown=false
+  run_ablation=false
+  run_unbalance=false
+  run_memory_pressure=false
+else
+  run_llm=false
 fi
 
 single_gpu_env() {
@@ -119,8 +141,8 @@ over_all_single_gpu() {
 
   single_gpu_env
   python eval/overall_v2.py --uniform-v2 --skewed-v2 --azure \
-    --colsys --static-partition --task-switch --um-mps --infer-only \
-    --skip-set-mps-pct --retry-limit 3 --parse-result
+    --sirius --static-partition --task-switch --um-mps --infer-only \
+    --skip-set-mps-pct --retry-limit 3 --skip-fail 1 --parse-result
 }
 
 over_all_multi_gpu() {
@@ -130,8 +152,8 @@ over_all_multi_gpu() {
 
   multi_gpu_env
   python eval/overall_v2.py --uniform-v2 --uniform-v2-wkld-types NormalLight \
-    --colsys --static-partition --task-switch --um-mps --infer-only \
-    --skip-set-mps-pct --multi-gpu --retry-limit 3 --parse-result
+    --sirius --static-partition --task-switch --um-mps --infer-only \
+    --skip-set-mps-pct --multi-gpu --retry-limit 3 --skip-fail 1 --parse-result
 }
 
 breakdown() {
@@ -140,9 +162,9 @@ breakdown() {
   echo -e "\033[1;32m==================================================================\033[0m\n"
 
   single_gpu_env
-  python eval/breakdown.py --colsys --strawman --azure --retry-limit 3 --parse-result
+  python eval/breakdown.py --sirius --strawman --azure --retry-limit 3 --parse-result
   multi_gpu_env
-  python eval/breakdown.py --colsys --strawman --azure --multi-gpu --retry-limit 3 --parse-result
+  python eval/breakdown.py --sirius --strawman --azure --multi-gpu --retry-limit 3 --parse-result
 }
 
 ablation_study() {
@@ -172,28 +194,53 @@ memory_pressure() {
   python eval/memory_pressure.py --retry-limit 3 --parse-result
 }
 
+llm() {
+  echo -e "\n\033[1;32m==================================================================\033[0m"
+  echo -e "\033[1;32m[llm]\033[0m"
+  echo -e "\033[1;32m==================================================================\033[0m\n"
+  
+  single_gpu_env
+  python eval/run_llm.py --sirius --static-partition --infer-only \
+    --burstgpt --burstgpt-rps 10 --parse-result
+}
+
+echo "TEST BEGIN: $(date)"
+
 for i in `seq 1 1`; do
   if $run_overall_single; then
     over_all_single_gpu
+    echo "\n[$i] OVERALL SINGLE GPU TEST DONE: $(date)\n"
   fi
   
   if $run_overall_multi; then
     over_all_multi_gpu
+    echo "\n[$i] OVERALL MULTI GPU TEST DONE: $(date)"
   fi
   
   if $run_breakdown; then
     breakdown
+    echo "\n[$i] BREAKDOWN TEST DONE: $(date)\n"
   fi
   
   if $run_ablation; then
     ablation_study
+    echo "\n[$i] ABLATION STUDY TEST DONE: $(date)\n"
   fi
   
   if $run_unbalance; then
     unbalance
+    echo "\n[$i] UNBALANCE TEST DONE: $(date)\n"
   fi
   
   if $run_memory_pressure; then
     memory_pressure
+    echo "\n[$i] MEMORY PRESSURE TEST DONE: $(date)\n"
+  fi
+  
+  if $run_llm; then
+    llm
+    echo "\n[$i] LLM TEST DONE: $(date)\n"
   fi
 done
+
+echo "TEST END: $(date)"
