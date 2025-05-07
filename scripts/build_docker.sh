@@ -68,7 +68,7 @@ if [ ! -z "$https_proxy" ]; then
   echo "Using proxy: $https_proxy"
 fi
 
-docker build \
+DOCKER_BUILDKIT=1 docker build \
   --build-arg PROJECT_DIR="gpu-col" \
   --build-arg DOCKER_BUILD_DIR="$WORKSPACE_DIR" \
   $PROXY_ARG \
