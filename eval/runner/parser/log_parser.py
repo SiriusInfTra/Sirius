@@ -136,7 +136,7 @@ def _parse_train_local_thpts(log: pathlib.Path):
     with open(train_thpt, 'r') as f:
         for line in f.readlines():
             m = re.search(
-                r'\[Rank (\d) \| [a-zA-Z-]+\] thpt: ([0-9]+\.[0-9]+) / ([0-9]+\.[0-9]+|nan) it/sec', 
+                r'\[Rank (\d) \| [0-9a-zA-Z-]+\] thpt: ([0-9]+\.[0-9]+) / ([0-9]+\.[0-9]+|nan) it/sec', 
                 line)
             if m:
                 rank = int(m.group(1))

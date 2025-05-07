@@ -45,7 +45,8 @@ for repo in "${repos[@]}"; do
 done
 
 # TODO: ensure TVM/Triton models are copied to the workspace directory
-rsync -a --exclude="build" --exclude="build_Release" --exclude="build_Debug" \
+rsync -a --exclude="$PROJECT_DIR/build" --exclude="build_Release" \
+  --exclude="build_Debug" \
   --exclude="gpu-col-docker-log" --exclude="triton-model-wksp" \
   --exclude="mps-pipe-directory" \
   "$PROJECT_DIR"/ "$WORKSPACE_DIR"/gpu-col/

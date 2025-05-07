@@ -136,11 +136,13 @@ RUN --mount=type=cache,target=/gpu-col/build_Release \
   source /opt/mambaforge/bin/activate colserve && \
   bash /tmp/build_sirius.sh /gpu-col ${TVM_HOME} ${TORCH_HOME} ${BOOST_HOME} && \
   rm -rf /tmp/build_sirius.sh && \
-  unlink /gpu-col/build && \
-  cp -r /gpu-col/build_Release /gpu-col/build && \
+  cp -r /gpu-col/build_Release /gpu-col/build_Release_cache && \
   if [ -n "$PROXY" ]; then \
     unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; \
   fi
+
+RUN if [ -d "/gpu-col/build_Release" ]; then rmdir /gpu-col/build_Release; fi && \
+    ln -s /gpu-col/build_Release_cache /gpu-col/build_Release
 
 RUN apt install -y rsync
 
