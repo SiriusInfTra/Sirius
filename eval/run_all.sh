@@ -185,7 +185,8 @@ llm() {
   echo -e "\033[1;32m==================================================================\033[0m\n"
   
   single_gpu_env
-  python eval/run_llm.py --sirius --burstgpt --burstgpt-rps 10 --parse-result
+  python eval/run_llm.py --sirius --static-partition --infer-only \
+    --burstgpt --burstgpt-rps 10 --parse-result
 }
 
 echo "TEST BEGIN: $(date)"
