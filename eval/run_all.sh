@@ -4,6 +4,8 @@ fi
 
 export TENSORRT_BACKEND_UNIFIED_MEMORY_PATH=$(pwd)/triton/tensorrt_um/install
 
+ON_V100_PLATFORM=$(nvidia-smi -L | grep -c "V100")
+
 # Function to display help information
 show_help() {
   echo "Usage: $(basename $0) [OPTIONS]"
@@ -88,6 +90,19 @@ else
         ;;
     esac
   done
+fi
+
+# Disable incompatible tests based on platform
+if [ "$ON_V100_PLATFORM" -eq 0 ]; then
+  # Not on V100 platform, disable specific tests
+  run_overall_single=false
+  run_overall_multi=false
+  run_breakdown=false
+  run_ablation=false
+  run_unbalance=false
+  run_memory_pressure=false
+else
+  run_llm=false
 fi
 
 single_gpu_env() {
