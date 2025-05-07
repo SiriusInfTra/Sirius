@@ -105,6 +105,23 @@ RUN if [ -n "$PROXY" ]; then \
       unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; \
     fi
     
+
+COPY vllm ${VLLM_HOME}
+COPY xformer ${XFORMER_HOME}
+COPY ${PROJECT_DIR}/scripts/build_vllm.sh /tmp/build_vllm.sh
+RUN if [ -n "$PROXY" ]; then \
+      export http_proxy=$PROXY https_proxy=$PROXY HTTP_PROXY=$PROXY HTTPS_PROXY=$PROXY; \
+    fi && \
+  source /opt/mambaforge/bin/activate colserve && \
+  export TORCH_CUDA_ARCH_LIST="7.0;8.0" && \
+  bash /tmp/build_vllm.sh ${VLLM_HOME} ${XFORMER_HOME} && \
+  unset TORCH_CUDA_ARCH_LIST && \
+  rm -rf /tmp/build_vllm.sh && \
+  if [ -n "$PROXY" ]; then \
+    unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; \
+  fi
+    
+
 ARG TVM_MODEL_HOME=tvm-models
 COPY ${PROJECT_DIR} /gpu-col
 COPY tvm-models /gpu-col/server/models
@@ -119,22 +136,8 @@ RUN --mount=type=cache,target=/gpu-col/build_Release \
   source /opt/mambaforge/bin/activate colserve && \
   bash /tmp/build_sirius.sh /gpu-col ${TVM_HOME} ${TORCH_HOME} ${BOOST_HOME} && \
   rm -rf /tmp/build_sirius.sh && \
-  if [ -n "$PROXY" ]; then \
-    unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; \
-  fi
-
-
-COPY vllm ${VLLM_HOME}
-COPY xformer ${XFORMER_HOME}
-COPY ${PROJECT_DIR}/scripts/build_vllm.sh /tmp/build_vllm.sh
-RUN if [ -n "$PROXY" ]; then \
-      export http_proxy=$PROXY https_proxy=$PROXY HTTP_PROXY=$PROXY HTTPS_PROXY=$PROXY; \
-    fi && \
-  source /opt/mambaforge/bin/activate colserve && \
-  export TORCH_CUDA_ARCH_LIST="7.0;8.0" && \
-  bash /tmp/build_vllm.sh ${VLLM_HOME} ${XFORMER_HOME} && \
-  unset TORCH_CUDA_ARCH_LIST && \
-  rm -rf /tmp/build_vllm.sh && \
+  unlink /gpu-col/build && \
+  cp -r /gpu-col/build_Release /gpu-col/build && \
   if [ -n "$PROXY" ]; then \
     unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; \
   fi
