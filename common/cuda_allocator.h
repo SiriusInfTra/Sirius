@@ -105,9 +105,13 @@ class CUDAMemPool {
 
   // Alloc memory and ignore the stream property.
   std::shared_ptr<PoolEntry> Alloc(size_t nbytes, MemType mtype,
+    bool allow_nullptr);
+  std::shared_ptr<PoolEntry> Alloc(size_t nbytes, size_t alignment, MemType mtype,
                                    bool allow_nullptr);
   void *GetBasePtr(MemType mtype);
   std::shared_ptr<PoolEntry> AllocWithStream(std::size_t nbytes, MemType mtype, 
+    cudaStream_t stream, bool allow_nullptr);
+  std::shared_ptr<PoolEntry> AllocWithStream(std::size_t nbytes, size_t alignment, MemType mtype, 
                                              cudaStream_t stream, bool allow_nullptr);
 
   void Map(std::shared_ptr<PoolEntry> entry);
