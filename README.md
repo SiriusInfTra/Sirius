@@ -115,7 +115,7 @@ bash $SIRIUS_HOME/scripts/build_vllm.sh $VLLM_HOME $XFORMER_HOME
 
 **TVM Models**
 
-Compile models using TVM (refer to [util/prepare_model_store](util/prepare_model_store)). TVM models (i.e., `mod.json`, `mod.params`, and `mod.so`) are stored in `server/models`, as shown below. 
+Compile models using TVM (refer to [./util/prepare_model_store](util/prepare_model_store)). TVM models (i.e., `mod.json`, `mod.params`, and `mod.so`) are stored in `server/models`, as shown below. 
 
 ```
 server/models
@@ -129,7 +129,7 @@ server/models
 
 **Triton Models**
 
-Triton models are stored in `server/triton_models`. Each model has a directory containing the Triton compiled model (`model.plan` and `config.pbtxt`), as shown below.
+Compile Triton models using TensorRT (refer to [./util/onnx](util/onnx)). Triton models are stored in `server/triton_models`. Each model has a directory containing the Triton compiled model (`model.plan` and `config.pbtxt`), as shown below.
 
 ```
 ├── densenet161
@@ -180,3 +180,5 @@ python eval/overall_v2.py --uniform-v2 --uniform-v2-wkld-types NormalLight \
 ```
 
 The evaluation results will be saved in a directory like `log/overall-uniform-v2-1gpu-YYYYMMDD-HHMM/colsys-NormalLight`.
+
+Please refer to [./artifact-evaluation/README.md](artifact-evaluation/README.md) for more details on the artifact evaluation process.
