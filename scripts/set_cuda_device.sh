@@ -37,3 +37,6 @@ for i in $@; do
     GPU_UUID=$GPU_UUID,$cur_gpu_uuid
   fi
 done
+
+export CUDA_VISIBLE_DEVICES=$GPU_UUID
+echo "Setting CUDA_VISIBLE_DEVICES to $GPU_UUID"
