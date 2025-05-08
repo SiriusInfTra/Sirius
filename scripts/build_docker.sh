@@ -23,15 +23,15 @@ fi
 
 repos=(
   # PyTorch related repos
-  git@ipads.se.sjtu.edu.cn:infer-train/pytorch.git 
-  git@ipads.se.sjtu.edu.cn:infer-train/torch-vision.git 
+  git@github.com:SiriusInfTra/pytorch.git 
+  git@github.com:SiriusInfTra/torch-vision.git
 
   # TVM
-  git@ipads.se.sjtu.edu.cn:infer-train/tvm.git
+  git@github.com:SiriusInfTra/tvm.git
 
   # vLLM
-  git@ipads.se.sjtu.edu.cn:infer-train/vllm.git
-  git@ipads.se.sjtu.edu.cn:infer-train/xformer.git
+  git@github.com:SiriusInfTra/vllm.git
+  git@github.com:SiriusInfTra/xformer.git
 )
 
 for repo in "${repos[@]}"; do

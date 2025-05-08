@@ -62,7 +62,7 @@ To evaluate Sirius, refer to [Run Benchmark](#run-and-evaluate) and [Artifact Ev
 > [Optional] Copy TVM and Triton models to `inftra-docker-build/tvm-models` and `inftra-docker-build/triton-models` respectively. These will be copied into the Docker image.
 
 ```bash
-git clone --recurse-submodules git@ipads.se.sjtu.edu.cn:infer-train/gpu-colocation.git gpu-col
+git clone --recurse-submodules git@github.com:SiriusInfTra/Sirius.git gpu-col
 bash ./gpu-col/scripts/build_docker.sh
 ```
 
@@ -89,7 +89,7 @@ conda install -y conda-forge::python-devtools nvitop conda-forge::c-ares
 pip install -r environment/requirements.txt
 
 export SIRIUS_HOME=/path/to/clone/repo
-git clone --recurse-submodules git@ipads.se.sjtu.edu.cn:infer-train/gpu-colocation.git $SIRIUS_HOME
+git clone --recurse-submodules git@github.com:SiriusInfTra/Sirius.git $SIRIUS_HOME
 ```
 
 2. Install `Boost>=1.80` by compiling from source (Boost installed via apt/conda might require a higher GCC version).
@@ -99,7 +99,7 @@ export BOOST_HOME=/path/to/install/boost
 $SIRIUS_HOME/scripts/install_boost.sh $BOOST_HOME
 ```
 
-3. Clone and build [TVM](https://ipads.se.sjtu.edu.cn:1312/infer-train/tvm) for inference, and [PyTorch](https://ipads.se.sjtu.edu.cn:1312/infer-train/pytorch) and [TorchVision](https://github.com/pytorch/vision/tree/v0.13.1) for training. Ensure the CUDA backend is enabled. Pay attention to the PyTorch `GLIBCXX_USE_CXX11_ABI` flag, which can cause ABI issues. To accelerate the build, set the `TORCH_CUDA_ARCH_LIST` flag to your GPU's compute capability (e.g., `TORCH_CUDA_ARCH_LIST=7.0` for V100).
+3. Clone and build [TVM](git@github.com:SiriusInfTra/tvm.git) for inference, and [PyTorch](git@github.com:SiriusInfTra/pytorch.git) and [TorchVision](https://github.com/pytorch/vision/tree/v0.13.1) for training. Ensure the CUDA backend is enabled. Pay attention to the PyTorch `GLIBCXX_USE_CXX11_ABI` flag, which can cause ABI issues. To accelerate the build, set the `TORCH_CUDA_ARCH_LIST` flag to your GPU's compute capability (e.g., `TORCH_CUDA_ARCH_LIST=7.0` for V100).
 
 4. Set the `TVM_HOME` environment variable. Verify by running `echo $TVM_HOME` and `echo $CONDA_PREFIX`. Then, configure CMake.
 
@@ -110,7 +110,7 @@ export BOOST_HOME=/path/to/boost
 $SIRIUS_HOME/scripts/build_sirius.sh $SIRIUS_HOME $TVM_HOME $TORCH_HOME $BOOST_HOME
 ```
 
-5. [Only required for Triton UM+MPS] Set up Triton TensorRT backend with Unified Memory support. Clone and build [Triton TensorRT UM Backend](https://ipads.se.sjtu.edu.cn:1312/infer-train/triton_tensorrt_um).
+5. [Only required for Triton UM+MPS] Set up Triton TensorRT backend with Unified Memory support. Clone and build [Triton TensorRT UM Backend](git@github.com:SiriusInfTra/triton_tensorrt_um.git).
 
 ```bash
 export TRITON_TRT_UM_HOME=/path/to/triton_tensorrt_um
@@ -118,7 +118,7 @@ export TRITON_TRT_INSTALL_HOME=/path/to/triton_tensorrt_um_install # e.g., $SIRI
 bash $SIRIUS_HOME/scripts/build_triton_trt_um.sh $TRITON_TRT_UM_HOME $TRITON_TRT_INSTALL_HOME
 ```
 
-5. [Only required for LLM] Install vLLM by compiling from source, clone [xFormer](git@ipads.se.sjtu.edu.cn:infer-train/xformer.git) and [vLLM](git@ipads.se.sjtu.edu.cn:infer-train/tvm.git).
+5. [Only required for LLM] Install vLLM by compiling from source, clone [xFormer](git@github.com:SiriusInfTra/xformer.git) and [vLLM](git@github.com:SiriusInfTra/vllm.git).
 
 ```bash
 export VLLM_HOME=/path/to/vllm

@@ -12,7 +12,7 @@
 	branch = 291c587 # v2.3.2
 [submodule "third_party/mpool"]
 	path = third_party/mpool
-	url = git@ipads.se.sjtu.edu.cn:infer-train/mpool.git
+	url = git@github.com:SiriusInfTra/mpool.git
 [submodule "third_party/triton-client"]
 	path = client/third_party/triton-client
 	url = https://github.com/triton-inference-server/client.git

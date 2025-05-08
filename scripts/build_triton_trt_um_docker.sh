@@ -19,7 +19,7 @@ fi
 
 # clone triton tensorrt um
 git clone --recurse-submodules \
-    git@ipads.se.sjtu.edu.cn:infer-train/triton_tensorrt_um.git \
+    git@github.com:SiriusInfTra/triton_tensorrt_um.git \
     "$WORKSPACE_DIR/triton_tensorrt_um"
 
 cp ${PROJECT_DIR}/scripts/build_triton_trt_um.sh ${WORKSPACE_DIR} 
