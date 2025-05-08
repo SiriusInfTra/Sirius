@@ -1,0 +1,11 @@
+.vscode
+.DS_Store
+
+build
+output
+
+*.om
+*.log
+*.wts
+*.onnx
+*.engine
