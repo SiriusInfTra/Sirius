@@ -6,8 +6,7 @@ help() {
 
 get_gpu_uuid() {
     local line=$1
-    GPU_UUID=$(nvidia-smi -L | sed -n 's/.*UUID: \(.*\))/\1/p' | head -n$line)
-    GPU_UUID=$(echo $GPU_UUID | tail -n1)
+    GPU_UUID=$(nvidia-smi -L | sed -n 's/.*UUID: \(.*\))/\1/p' | head -n$line | tail -n1)
     echo $GPU_UUID
 }
 
