@@ -2,7 +2,17 @@
 
 <!-- Intro -->
 
-[TOC]
+- [Artifact for the Paper "<u>#734 Colocating ML Inference and Training with Fast GPU Memory Handover</u>"](#artifact-for-the-paper-734-colocating-ml-inference-and-training-with-fast-gpu-memory-handover)
+- [Project Structure](#project-structure)
+- [Hardware Requirements](#hardware-requirements)
+- [Build and Install](#build-and-install)
+  * [Using Docker Image](#using-docker-image)
+  * [Compile From Source (using conda)](#compile-from-source-using-conda)
+- [Run and Evaluate](#run-and-evaluate)
+  * [Prepare Inference Models](#prepare-inference-models)
+  * [Run Benchmark](#run-benchmark)
+  * [Artifact Evaluation](#artifact-evaluation)
+
 
 ## Project Structure
 
