@@ -20,6 +20,8 @@ class TestUnit(enum.Enum):
     MEMORY_PRESSURE = 'memory_pressure'
     LLM = 'llm'
 
+    EVAL_QUEUEING_MODEL = 'eval_queueing_model'
+
 
 def get_plot_script_path(name: str):
     path = __plot_script_dir_path__ / f"{name}.py"
@@ -136,7 +138,7 @@ def _parse_train_local_thpts(log: pathlib.Path):
     with open(train_thpt, 'r') as f:
         for line in f.readlines():
             m = re.search(
-                r'\[Rank (\d) \| [0-9a-zA-Z-]+\] thpt: ([0-9]+\.[0-9]+) / ([0-9]+\.[0-9]+|nan) it/sec', 
+                r'\[Rank (\d) \| [0-9a-zA-Z-]+\] thpt: ([0-9]+\.[0-9]+|nan) / ([0-9]+\.[0-9]+|nan) it/sec', 
                 line)
             if m:
                 rank = int(m.group(1))
@@ -594,6 +596,41 @@ def parse_llm(logs: List[pathlib.Path]):
         raise
 
 
+# Queuing Model
+def parse_eval_queueing_model(logs: List[pathlib.Path]):
+    if len(logs) == 0:
+        print('Warning: parse_eval_queueing_model: logs are empty')
+        return
+
+    df = pd.DataFrame(columns=['Workload', 'MaxIdleMs', 'Watermark', 'SLO'])
+    for log in logs:
+        m = re.search(r'sirius-([a-zA-Z0-9_]+)-([0-9]+)ms-([0-9]+)GB', log.name)
+        if m is None:
+            print(f'Warning: cannot parse workload from {log}')
+            continue
+        workload = m.group(1)
+        max_idle_ms = m.group(2)
+        watermark = m.group(3)
+
+        _, slo, _ = _parse_system_performance('Sirius', None, log)
+        df.loc[len(df)] = [workload, max_idle_ms, watermark, slo]
+    
+    wklds = df['Workload'].unique()
+
+    print(f'\033[1m\033[34mExecuting parse script at \033[4:5m{logs[0].parent}\033[24m\033[0m')
+    with open(logs[0].parent / 'eval_queueing_model.dat', 'w') as f:
+        for wkld in wklds:
+            df_wkld = df[df['Workload'] == wkld]
+            df_wkld = df_wkld.drop(columns=['Workload'])
+            df_wkld = df_wkld.set_index('MaxIdleMs')
+            df_wkld = df_wkld.sort_index()
+            df_wkld = df_wkld.reset_index()
+        
+            print(f'Workload: {wkld}', file=f)
+            print(df_wkld, file=f)
+            print('', file=f)
+
+
 class LogParser:
     _logs = []
     _enable = False
@@ -630,6 +667,8 @@ class LogParser:
             return parse_memory_pressure(cls._logs)
         elif unit == TestUnit.LLM:
             return parse_llm(cls._logs)
+        elif unit == TestUnit.EVAL_QUEUEING_MODEL:
+            return parse_eval_queueing_model(cls._logs)
         else:
             raise ValueError(f"Unknown test unit: {unit}")
         

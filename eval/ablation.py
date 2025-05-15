@@ -3,6 +3,7 @@ import argparse
 from runner import *
 from dataclasses import dataclass
 import run_comm
+set_global_seed(42)
 
 run_comm.use_time_stamp = True
 run_comm.retry_if_fail = True

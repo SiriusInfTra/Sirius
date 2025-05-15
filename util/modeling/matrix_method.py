@@ -9,6 +9,7 @@ parser.add_argument('--service-time', type=float)
 parser.add_argument('--cold-start-time', type=float)
 parser.add_argument('--hite-rate', type=float)
 parser.add_argument('--live-time', type=float)
+parser.add_argument('--slo', type=float)
 args = parser.parse_args()
 
 
@@ -47,11 +48,17 @@ if args.cold_start_time:
     cold_start_time = args.cold_start_time
     cold_start_rate = 1 / cold_start_time
 
-if args.hite_rate:
+if args.hite_rate is not None:
     hite_rate = args.hite_rate
 
-if args.live_time:
+if args.live_time is not None:
     live_time = args.live_time
+
+if args.slo:
+    slo = args.slo
+
+cold_start_time = cold_start_time + (1 - hite_rate) * 0.005
+cold_start_rate = 1 / cold_start_time
 
 #==============================================================================
 
