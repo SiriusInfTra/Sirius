@@ -1,8 +1,8 @@
-## Artifact for the Paper "<u>#734 Colocating ML Inference and Training with Fast GPU Memory Handover</u>"
+## Artifact for the Paper "<u>Colocating ML Inference and Training with Fast GPU Memory Handover</u>"
 
 <!-- Intro -->
 
-- [Artifact for the Paper "<u>#734 Colocating ML Inference and Training with Fast GPU Memory Handover</u>"](#artifact-for-the-paper-734-colocating-ml-inference-and-training-with-fast-gpu-memory-handover)
+- [Artifact for the Paper "<u>Colocating ML Inference and Training with Fast GPU Memory Handover</u>"](#artifact-for-the-paper-colocating-ml-inference-and-training-with-fast-gpu-memory-handover)
 - [Project Structure](#project-structure)
 - [Hardware Requirements](#hardware-requirements)
 - [Build and Install](#build-and-install)
