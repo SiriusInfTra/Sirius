@@ -5,13 +5,13 @@ A bash script ([./eval/run_all.sh](../eval/run_all.sh)) is provided to wrap eval
 
 |Figure|Hardware|Command To Execute|Execution Time|
 |-|-|-|-|
-|[**Figure 9**](#figure-9)|1*`V100`|`bash ./eval/run_all.sh --overall-single-gpu`|4H:30M|
-|[**Figure 10**](#figure-10)|4*`V100`|`bash ./eval/run_all.sh --overall-multi-gpu`|1H:20M|
-|[**Figure 11**](#figure-11)|4*`V100`|`bash ./eval/run_all.sh --breakdown`|40M|
-|[**Figure 12**](#figure-12)|1*`V100`|`bash ./eval/run_all.sh --ablation`|1H:30M|
-|[**Figure 13**](#figure-13)|2*`V100`|`bash ./eval/run_all.sh --unbalance`|20M|
-|[**Figure 14**](#figure-14)|1*`V100`|`bash ./eval/run_all.sh --memory-pressure`|30M|
-|[**Figure 15**](#figure-15)|1*`A100`|`bash ./eval/run_all.sh --llm`|40M|
+|[**Figure 10**](#figure-10)|1*`V100`|`bash ./eval/run_all.sh --overall-single-gpu`|4H:30M|
+|[**Figure 12**](#figure-12)|4*`V100`|`bash ./eval/run_all.sh --overall-multi-gpu`|1H:20M|
+|[**Figure 13**](#figure-13)|4*`V100`|`bash ./eval/run_all.sh --breakdown`|40M|
+|[**Figure 14**](#figure-14)|1*`V100`|`bash ./eval/run_all.sh --ablation`|1H:30M|
+|[**Figure 15**](#figure-15)|2*`V100`|`bash ./eval/run_all.sh --unbalance`|20M|
+|[**Figure 16**](#figure-16)|1*`V100`|`bash ./eval/run_all.sh --memory-pressure`|30M|
+|[**Figure 17**](#figure-17)|1*`A100`|`bash ./eval/run_all.sh --llm`|40M|
 
 <br>
 
@@ -19,7 +19,7 @@ A bash script ([./eval/run_all.sh](../eval/run_all.sh)) is provided to wrap eval
 
 The following sections detail the evaluation commands executed by the bash script.
 
-### Figure 9
+### Figure 10
 
 ```bash
 source ./scripts/set_cuda_device.sh 0
@@ -35,7 +35,7 @@ The command above evaluates Sirius and baselines with all workloads on a single 
 Executing plot script: eval/runner/plot_scripts/overall_v100.py at <u>log/overall-uniform-v2-1gpu-YYYYMMDD-HHMM</u>
 </pre>
 
-### Figure 10
+### Figure 12
 
 ```bash
 source ./scripts/set_cuda_device.sh 0 1 2 3
@@ -51,7 +51,7 @@ The command above evaluates Sirius and baselines with the **Light** workload on 
 Executing plot script: eval/runner/plot_scripts/multi_gpu.py at <u>log/overall-uniform-v2-4gpu-YYYYMMDD-HHMM</u>
 </pre>
 
-### Figure 11
+### Figure 13
 
 ```bash
 source ./scripts/set_cuda_device.sh 0
@@ -71,7 +71,7 @@ Executing plot script: eval/runner/plot_scripts/adjust_breakdown_single_or_multi
 Executing plot script: eval/runner/plot_scripts/adjust_breakdown_single_or_multi_gpu.py --multi-gpu at <u>log/breakdown-azure-4gpu-YYYYMMDD-HHMM</u>
 </pre>
 
-### Figure 12
+### Figure 14
 
 ```bash
 source ./scripts/set_cuda_device.sh 0
@@ -85,7 +85,7 @@ The command above studies the impact of watermark and model idle time on a singl
 Executing plot script: eval/runner/plot_scripts/ablation.py at <u>log/ablation-infer-idle-time-uniform-YYYYMMDD-HHMM</u>
 </pre>
 
-### Figure 13
+### Figure 15
 
 ```bash
 source ./scripts/set_cuda_device.sh 0 1
@@ -100,7 +100,7 @@ Executing plot script: eval/runner/plot_scripts/memory_util_gpus.py at <u>log/ov
 </pre>
 
 
-### Figure 14
+### Figure 16
 
 ```bash
 source ./scripts/set_cuda_device.sh 0
@@ -115,7 +115,7 @@ Executing plot script: eval/runner/plot_scripts/memory_pressure.py at <u>log/mem
 </pre>
 
 
-### Figure 15
+### Figure 17
 
 ```bash
 source ./scripts/set_cuda_device.sh 0
